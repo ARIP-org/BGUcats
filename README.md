@@ -4,6 +4,7 @@ Identifying, naming, and tracking the ~50 cats of the BGU campus.
 
 Design spec: [`docs/cat-app-design-spec.pdf`](docs/cat-app-design-spec.pdf).
 Constraints digest for agents and humans: [`CLAUDE.md`](CLAUDE.md).
+Working in the codespace from your own machine: [`docs/codespaces.md`](docs/codespaces.md).
 
 **Current phase: 1 — collection and labeling infrastructure. No ML of any kind.**
 
