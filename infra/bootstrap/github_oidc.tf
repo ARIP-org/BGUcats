@@ -63,10 +63,15 @@ resource "aws_iam_role" "github_actions_ci" {
 
 # infra/main's `terraform plan` (which CI runs on every PR) evaluates the
 # aws_kms_alias data source regardless of what's already applied, to
-# resolve the SSM SecureString decryption key. kms:ListAliases doesn't
-# support resource-level scoping — it's one of the few KMS actions AWS
-# requires Resource "*" for — but it's read-only/list-only, no key
-# material or decrypt capability.
+# resolve the SSM SecureString decryption key. That data source resolves
+# the alias via kms:ListAliases (no resource-level scoping — one of the
+# few KMS actions AWS requires Resource "*" for) and then reads the
+# resolved key's metadata via kms:DescribeKey, scoped to that one key.
+# Neither exposes key material or a decrypt capability.
+data "aws_kms_alias" "ssm" {
+  name = "alias/aws/ssm"
+}
+
 resource "aws_iam_role_policy" "github_actions_ci_kms_list" {
   name = "bgucats-kms-list-aliases"
   role = aws_iam_role.github_actions_ci.id
@@ -79,6 +84,12 @@ resource "aws_iam_role_policy" "github_actions_ci_kms_list" {
         Effect   = "Allow"
         Action   = "kms:ListAliases"
         Resource = "*"
+      },
+      {
+        Sid      = "DescribeSsmKmsKeyForPlan"
+        Effect   = "Allow"
+        Action   = "kms:DescribeKey"
+        Resource = data.aws_kms_alias.ssm.target_key_arn
       },
     ]
   })
