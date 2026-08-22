@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.9"
+
+      - name: fmt check
+        run: |
+          terraform -chdir=infra/bootstrap fmt -check -recursive
+          terraform -chdir=infra/main fmt -check -recursive
+
+      - name: validate (no backend, no AWS creds needed)
+        run: |
+          terraform -chdir=infra/bootstrap init -backend=false
+          terraform -chdir=infra/bootstrap validate
+          terraform -chdir=infra/main init -backend=false
+          terraform -chdir=infra/main validate
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::851725214678:role/bgucats-github-actions-ci
+          aws-region: us-east-1
+
+      - name: plan (infra/main only — bootstrap is applied by hand)
+        run: |
+          terraform -chdir=infra/main init -reconfigure
+          terraform -chdir=infra/main plan

@@ -13,6 +13,13 @@ if ! pip install -r requirements-dev.txt; then
 fi
 
 echo
+echo "==> pre-commit hooks"
+if ! pre-commit install; then
+  echo "!! pre-commit install failed - run it by hand to see why"
+  fail=1
+fi
+
+echo
 echo "==> Tool versions"
 python --version
 node --version

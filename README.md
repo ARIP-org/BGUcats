@@ -24,16 +24,22 @@ Locally, VS Code with the Dev Containers extension opens the same container.
 
 ```bash
 claude          # authenticate once (browser flow, or set the ANTHROPIC_API_KEY codespace secret)
-pytest          # once tests exist
-terraform -chdir=infra init
+pre-commit install   # done automatically by postCreate.sh, but harmless to rerun
+make test       # once tests exist
+make tf-init    # infra/main only; infra/bootstrap is applied once, by hand, see infra/README.md
 ```
+
+Common commands are wrapped in the `Makefile` (`make fmt`, `make lint`, `make test`,
+`make tf-init`, `make tf-plan`, `make tf-apply`).
 
 ### Layout
 
 ```
 .devcontainer/  dev container definition
+.github/        CI (GitHub Actions)
 docs/           design spec
-infra/          Terraform (Lambda, API Gateway, S3, DynamoDB)
+infra/          Terraform — infra/bootstrap (state backend, applied by hand),
+                infra/main (application resources, see infra/README.md)
 src/            Python Lambda handlers
 tests/          pytest, moto-backed
 ```
