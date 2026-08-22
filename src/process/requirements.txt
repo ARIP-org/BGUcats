@@ -1,0 +1,6 @@
+# Deliberately no ImageHash: it pulls scipy + PyWavelets (~148MB) purely
+# to compute one 32x32 DCT, which would put this package at 239MB against
+# Lambda's 250MB limit. src/process/phash.py does that DCT in numpy, and
+# tests/process/test_phash.py holds it bit-identical to ImageHash.
+Pillow==12.3.0
+numpy==2.5.2
