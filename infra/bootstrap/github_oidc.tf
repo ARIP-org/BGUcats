@@ -172,7 +172,12 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Resource = "arn:aws:s3:::bgucats-media-${data.aws_caller_identity.current.account_id}"
       },
       {
-        Sid    = "DescribeIngestLambdaRole"
+        # bgucats-* rather than one entry per function: read-only, still
+        # confined to this project's names, and every new Lambda would
+        # otherwise break CI until this policy was extended by hand. The
+        # account is shared with an unrelated project, so the prefix is
+        # what keeps the blast radius right.
+        Sid    = "DescribeLambdaRoles"
         Effect = "Allow"
         Action = [
           "iam:GetRole",
@@ -181,10 +186,10 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "iam:ListAttachedRolePolicies",
           "iam:ListRoleTags",
         ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/bgucats-ingest-lambda"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/bgucats-*"
       },
       {
-        Sid    = "DescribeIngestLambda"
+        Sid    = "DescribeLambdas"
         Effect = "Allow"
         Action = [
           "lambda:GetFunction",
@@ -192,7 +197,7 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "lambda:ListVersionsByFunction",
           "lambda:GetFunctionCodeSigningConfig",
         ]
-        Resource = "arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:bgucats-ingest"
+        Resource = "arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:bgucats-*"
       },
       {
         Sid      = "DescribeApiGateway"

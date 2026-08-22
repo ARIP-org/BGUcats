@@ -55,10 +55,11 @@ jobs:
           terraform -chdir=infra/main init -backend=false
           terraform -chdir=infra/main validate
 
-      # The Lambda deployment package archive_file reads from — needed for
-      # plan to compute source_code_hash, even though nothing gets applied.
-      - name: build ingest Lambda package
-        run: make build-ingest
+      # The Lambda deployment packages archive_file reads from — needed
+      # for plan to compute source_code_hash, even though nothing is
+      # applied here.
+      - name: build Lambda packages
+        run: make build
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
