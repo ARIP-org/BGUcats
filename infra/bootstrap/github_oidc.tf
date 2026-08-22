@@ -201,7 +201,7 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
       {
         Sid    = "DescribeSecretsForPlan"
         Effect = "Allow"
-        Action = "ssm:GetParameter"
+        Action = ["ssm:GetParameter", "ssm:ListTagsForResource"]
         Resource = [
           "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/bot-token",
           "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/webhook-secret",
