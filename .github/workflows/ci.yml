@@ -19,7 +19,18 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
-      - run: pytest
+      - name: pytest
+        # Exit code 5 = "no tests collected" — expected until tests/ has
+        # content, not a real failure. Any other non-zero code still fails.
+        run: |
+          set +e
+          pytest
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ] || [ "$code" -eq 5 ]; then
+            exit 0
+          fi
+          exit "$code"
 
   terraform:
     runs-on: ubuntu-latest
