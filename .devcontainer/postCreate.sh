@@ -1,27 +1,49 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Deliberately not "set -e": one failing step should report itself rather than
+# abort the rest and leave the container half-configured with no explanation.
+set -uo pipefail
 
-echo "==> Installing Claude Code CLI"
-npm install -g @anthropic-ai/claude-code
+fail=0
 
-echo "==> Upgrading pip"
+echo "==> Python dependencies"
 python -m pip install --upgrade pip
-
-if [ -f requirements-dev.txt ]; then
-  echo "==> Installing dev requirements"
-  pip install -r requirements-dev.txt
+if ! pip install -r requirements-dev.txt; then
+  echo "!! pip install failed - run it by hand to see why"
+  fail=1
 fi
-
-if [ -f requirements.txt ]; then
-  echo "==> Installing runtime requirements"
-  pip install -r requirements.txt
-fi
-
-echo "==> Versions"
-python --version
-terraform version | head -n 1
-aws --version
-claude --version || echo "claude CLI installed; run 'claude' once to authenticate"
 
 echo
-echo "==> Next: run 'claude' and authenticate (browser flow or ANTHROPIC_API_KEY codespace secret)."
+echo "==> Tool versions"
+python --version
+node --version
+terraform version | head -n 1
+aws --version
+gh --version | head -n 1
+
+echo
+echo "==> Claude Code"
+# Installed by the ghcr.io/anthropics/devcontainer-features/claude-code feature.
+# The fallback exists so a feature outage degrades to a warning, not a container
+# with no Claude Code in it.
+if command -v claude >/dev/null 2>&1; then
+  echo "claude $(claude --version)"
+else
+  echo "!! claude not on PATH - falling back to npm"
+  if npm install -g @anthropic-ai/claude-code; then
+    echo "claude $(claude --version)"
+  else
+    echo "!! npm fallback failed too. Node is $(node --version); the CLI needs >= 22."
+    fail=1
+  fi
+fi
+
+echo
+if [ "$fail" -ne 0 ]; then
+  echo "==> Setup finished WITH ERRORS - see above."
+else
+  echo "==> Setup complete."
+fi
+echo "    Run 'claude' once to authenticate (browser flow)."
+
+# Always succeed: a setup warning should not stop the container from starting.
+exit 0
