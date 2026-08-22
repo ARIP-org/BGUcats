@@ -235,31 +235,57 @@ def test_unknown_callback_still_answers_the_spinner(dynamo_table, telegram_calls
     assert [m for m, _ in telegram_calls] == ["answerCallbackQuery"]
 
 
-def test_start_command_sends_the_keyboard(dynamo_table, telegram_calls):
-    handler._handle_command(
-        {"text": "/start", "chat": {"id": 42}, "from": {"id": 42}}, SECRETS
-    )
+def _send_text(text):
+    return {"text": text, "chat": {"id": 42}, "from": {"id": 42}}
+
+
+def _pointer_for(dynamo_table, tg_user_id=42):
+    submitter = handler._submitter_hash(SECRETS, tg_user_id)
+    return dynamo_table.get_item(
+        Key={"PK": f"SUBMITTER#{submitter}", "SK": "ACTIVE_SESSION"}
+    ).get("Item")
+
+
+def test_start_sends_the_reply_keyboard(dynamo_table, telegram_calls):
+    handler._handle_text(_send_text("/start"), "/start", SECRETS)
     method, body = telegram_calls[0]
     assert method == "sendMessage"
     assert body["reply_markup"] == handler.SESSION_KEYBOARD
 
 
+def test_keyboard_is_a_reply_keyboard_not_an_inline_one():
+    # A reply keyboard docks under the message box and persists; an inline
+    # one is attached to a single message and scrolls away with it.
+    assert "keyboard" in handler.SESSION_KEYBOARD
+    assert "inline_keyboard" not in handler.SESSION_KEYBOARD
+    assert handler.SESSION_KEYBOARD["is_persistent"] is True
+
+
+def test_new_cat_button_text_opens_a_session(dynamo_table, telegram_calls):
+    handler._handle_text(
+        _send_text(handler.BUTTON_NEW_CAT), handler.BUTTON_NEW_CAT, SECRETS
+    )
+    assert _pointer_for(dynamo_table)["explicit"] is True
+
+
+def test_done_button_text_closes_the_session(dynamo_table, telegram_calls):
+    handler._handle_text(
+        _send_text(handler.BUTTON_NEW_CAT), handler.BUTTON_NEW_CAT, SECRETS
+    )
+    handler._handle_text(_send_text(handler.BUTTON_DONE), handler.BUTTON_DONE, SECRETS)
+    assert _pointer_for(dynamo_table) is None
+
+
 def test_newcat_command_matches_the_button(dynamo_table, telegram_calls):
-    handler._handle_command(
-        {"text": "/newcat@BguCatsBot", "chat": {"id": 42}, "from": {"id": 42}},
-        SECRETS,
+    handler._handle_text(
+        _send_text("/newcat@BguCatsBot"), "/newcat@BguCatsBot", SECRETS
     )
-    submitter = handler._submitter_hash(SECRETS, 42)
-    pointer = dynamo_table.get_item(
-        Key={"PK": f"SUBMITTER#{submitter}", "SK": "ACTIVE_SESSION"}
-    )["Item"]
-    assert pointer["explicit"] is True
+    assert _pointer_for(dynamo_table)["explicit"] is True
 
 
-def test_unknown_command_is_ignored(dynamo_table, telegram_calls):
-    handler._handle_command(
-        {"text": "/nonsense", "chat": {"id": 42}, "from": {"id": 42}}, SECRETS
-    )
+def test_ordinary_chatter_is_ignored(dynamo_table, telegram_calls):
+    handler._handle_text(_send_text("hello there"), "hello there", SECRETS)
+    handler._handle_text(_send_text("/nonsense"), "/nonsense", SECRETS)
     assert telegram_calls == []
 
 

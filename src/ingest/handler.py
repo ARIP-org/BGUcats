@@ -41,14 +41,34 @@ MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
 NEW_SESSION_ACTION = "new_session"
 CLOSE_SESSION_ACTION = "close_session"
 
+BUTTON_NEW_CAT = "\U0001f43e New cat"
+BUTTON_DONE = "✅ Done"
+
+# A reply keyboard (docked under the message box, persistent across
+# messages) rather than an inline one attached to a single message —
+# pressing these sends their label as an ordinary text message, so the
+# controls stay available while you shoot instead of scrolling away.
 SESSION_KEYBOARD = {
-    "inline_keyboard": [
-        [
-            {"text": "\U0001f43e New cat", "callback_data": NEW_SESSION_ACTION},
-            {"text": "✅ Done", "callback_data": CLOSE_SESSION_ACTION},
-        ]
-    ]
+    "keyboard": [[{"text": BUTTON_NEW_CAT}, {"text": BUTTON_DONE}]],
+    "resize_keyboard": True,
+    "is_persistent": True,
 }
+
+TEXT_ACTIONS = {
+    BUTTON_NEW_CAT: NEW_SESSION_ACTION,
+    BUTTON_DONE: CLOSE_SESSION_ACTION,
+    "/newcat": NEW_SESSION_ACTION,
+    "/done": CLOSE_SESSION_ACTION,
+}
+
+START_TEXT = (
+    "Send me photos of a campus cat and I'll file them.\n\n"
+    "Just sending photos works — they're grouped into one encounter "
+    "automatically.\n\n"
+    "Photographing one cat for a while? Tap *New cat* first and *Done* when "
+    "you've finished, and I'll keep every shot in a single session no matter "
+    "how long it takes."
+)
 
 # Magic-byte signatures for the image formats Telegram actually sends.
 # Content type is validated from bytes, never from a filename (spec §8.5).
@@ -123,8 +143,11 @@ def _process_update(event, secrets):
     if not message:
         return {"statusCode": 200, "body": "ok"}
 
-    if message.get("text", "").startswith("/"):
-        return _handle_command(message, secrets)
+    # Reply-keyboard presses arrive as ordinary text messages carrying the
+    # button's label, so buttons and slash commands share one path.
+    text = (message.get("text") or "").strip()
+    if text:
+        return _handle_text(message, text, secrets)
 
     if not message.get("photo"):
         return {"statusCode": 200, "body": "ok"}
@@ -207,6 +230,11 @@ def _submitter_hash(secrets, tg_user_id):
 
 
 def _handle_callback(callback_query, secrets):
+    """Serves the inline buttons from before the switch to a reply keyboard.
+
+    Those messages are still in people's chat history with live buttons;
+    dropping this would leave them spinning until they time out.
+    """
     data = callback_query.get("data")
     chat_id = callback_query["message"]["chat"]["id"]
     tg_user_id = callback_query.get("from", {}).get("id", chat_id)
@@ -229,29 +257,25 @@ def _handle_callback(callback_query, secrets):
     return {"statusCode": 200, "body": "ok"}
 
 
-def _handle_command(message, secrets):
-    command = message["text"].split()[0].split("@")[0].lower()
+def _handle_text(message, text, secrets):
     chat_id = message["chat"]["id"]
     tg_user_id = message.get("from", {}).get("id", chat_id)
     submitter_hash = _submitter_hash(secrets, tg_user_id)
 
-    if command == "/start":
-        text = (
-            "Send me photos of a campus cat and I'll file them.\n\n"
-            "Just sending photos works — they're grouped into one encounter "
-            "automatically.\n\n"
-            "Photographing one cat for a while? Tap *New cat* first and "
-            "*Done* when you've finished, and I'll keep every shot in a "
-            "single session no matter how long it takes."
-        )
-    elif command == "/newcat":
-        text = _start_new_session(submitter_hash)
-    elif command == "/done":
-        text = _finish_session(submitter_hash)
+    # "/done@BguCatsBot extra words" -> "/done"; button labels match as-is.
+    key = text.split()[0].split("@")[0].lower() if text.startswith("/") else text
+    action = TEXT_ACTIONS.get(key)
+
+    if action == NEW_SESSION_ACTION:
+        reply = _start_new_session(submitter_hash)
+    elif action == CLOSE_SESSION_ACTION:
+        reply = _finish_session(submitter_hash)
+    elif key == "/start":
+        reply = START_TEXT
     else:
         return {"statusCode": 200, "body": "ok"}
 
-    _reply(secrets["bot_token"], chat_id, text, keyboard=SESSION_KEYBOARD)
+    _reply(secrets["bot_token"], chat_id, reply, keyboard=SESSION_KEYBOARD)
     return {"statusCode": 200, "body": "ok"}
 
 
