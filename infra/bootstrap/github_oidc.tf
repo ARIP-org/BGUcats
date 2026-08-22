@@ -189,6 +189,7 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Action = [
           "lambda:GetFunction",
           "lambda:GetPolicy",
+          "lambda:ListVersionsByFunction",
         ]
         Resource = "arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:bgucats-ingest"
       },
