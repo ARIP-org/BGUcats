@@ -133,6 +133,85 @@ resource "aws_iam_role_policy" "github_actions_ci_state_access" {
   })
 }
 
+# `terraform plan` against infra/main refreshes every resource already
+# applied there before it can compute a diff — read-only Describe/Get/List
+# calls per resource type, distinct from (and in addition to) the runtime
+# permissions those resources' own execution roles carry. Resource names
+# are hardcoded because they're names *we* chose (deterministic), unlike
+# AWS-assigned IDs (e.g. the API Gateway API ID) which aren't known here —
+# infra/bootstrap and infra/main deliberately don't share state, so this
+# can't reference infra/main's resources directly.
+resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
+  name = "bgucats-plan-read-infra-main"
+  role = aws_iam_role.github_actions_ci.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DescribeDataTable"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:DescribeTimeToLive",
+          "dynamodb:DescribeContinuousBackups",
+          "dynamodb:ListTagsOfResource",
+        ]
+        Resource = "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/bgucats-data"
+      },
+      {
+        Sid    = "DescribeMediaBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucket*",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetLifecycleConfiguration",
+          "s3:GetReplicationConfiguration",
+          "s3:GetAccelerateConfiguration",
+        ]
+        Resource = "arn:aws:s3:::bgucats-media-${data.aws_caller_identity.current.account_id}"
+      },
+      {
+        Sid    = "DescribeIngestLambdaRole"
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListRoleTags",
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/bgucats-ingest-lambda"
+      },
+      {
+        Sid    = "DescribeIngestLambda"
+        Effect = "Allow"
+        Action = [
+          "lambda:GetFunction",
+          "lambda:GetPolicy",
+        ]
+        Resource = "arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:bgucats-ingest"
+      },
+      {
+        Sid      = "DescribeApiGateway"
+        Effect   = "Allow"
+        Action   = "apigateway:GET"
+        Resource = "arn:aws:apigateway:us-east-1::/apis/*"
+      },
+      {
+        Sid    = "DescribeSecretsForPlan"
+        Effect = "Allow"
+        Action = "ssm:GetParameter"
+        Resource = [
+          "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/bot-token",
+          "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/webhook-secret",
+          "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/submitter-hash-salt",
+        ]
+      },
+    ]
+  })
+}
+
 output "github_actions_ci_role_arn" {
   value = aws_iam_role.github_actions_ci.arn
 }
