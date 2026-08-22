@@ -115,6 +115,154 @@ def test_rate_limit_is_scoped_per_submitter(dynamo_table):
     assert handler._check_rate_limit("hash-e") is True
 
 
+def _age_pointer(dynamo_table, submitter_hash, seconds_ago):
+    dynamo_table.update_item(
+        Key={"PK": f"SUBMITTER#{submitter_hash}", "SK": "ACTIVE_SESSION"},
+        UpdateExpression="SET lastPhotoAtEpoch = :t",
+        ExpressionAttributeValues={":t": handler._now_epoch() - seconds_ago},
+    )
+
+
+def test_explicit_session_survives_the_idle_window(dynamo_table):
+    handler._start_new_session("hash-x")
+    first = handler._resolve_or_open_session("hash-x", None)
+    _age_pointer(dynamo_table, "hash-x", handler.SESSION_IDLE_WINDOW_SECONDS + 60)
+    second = handler._resolve_or_open_session("hash-x", None)
+    assert second == first
+
+
+def test_explicit_session_closes_at_the_safety_cap(dynamo_table):
+    handler._start_new_session("hash-x")
+    first = handler._resolve_or_open_session("hash-x", None)
+    _age_pointer(dynamo_table, "hash-x", handler.EXPLICIT_SESSION_MAX_SECONDS + 60)
+    second = handler._resolve_or_open_session("hash-x", None)
+    assert second != first
+
+
+def test_new_cat_while_open_starts_a_fresh_session(dynamo_table):
+    first = handler._resolve_or_open_session("hash-y", None)
+    handler._start_new_session("hash-y")
+    second = handler._resolve_or_open_session("hash-y", None)
+    assert second != first
+
+
+def test_done_closes_session_and_next_photo_opens_a_new_one(dynamo_table):
+    first = handler._resolve_or_open_session("hash-z", None)
+    handler._finish_session("hash-z")
+    assert (
+        dynamo_table.get_item(
+            Key={"PK": "SUBMITTER#hash-z", "SK": "ACTIVE_SESSION"}
+        ).get("Item")
+        is None
+    )
+    second = handler._resolve_or_open_session("hash-z", None)
+    assert second != first
+
+
+def test_done_reports_the_photo_count(dynamo_table):
+    session_id = handler._resolve_or_open_session("hash-w", None)
+    handler._bump_session(session_id)
+    handler._bump_session(session_id)
+    assert "2 photos" in handler._finish_session("hash-w")
+
+
+def test_done_with_no_open_session_is_not_an_error(dynamo_table):
+    assert "No session open" in handler._finish_session("hash-nobody")
+
+
+def test_album_replies_exactly_once(dynamo_table):
+    assert handler._should_reply("mg-album") is True
+    assert handler._should_reply("mg-album") is False
+    assert handler._should_reply("mg-album") is False
+
+
+def test_standalone_photos_always_reply(dynamo_table):
+    assert handler._should_reply(None) is True
+    assert handler._should_reply(None) is True
+
+
+def test_different_albums_each_get_a_reply(dynamo_table):
+    assert handler._should_reply("mg-1") is True
+    assert handler._should_reply("mg-2") is True
+
+
+@pytest.fixture
+def telegram_calls(monkeypatch):
+    """Captures outbound Telegram calls instead of making them."""
+    calls = []
+    monkeypatch.setattr(
+        handler,
+        "_telegram_post",
+        lambda token, method, body: calls.append((method, body)),
+    )
+    return calls
+
+
+SECRETS = {"bot_token": "t", "webhook_secret": "s", "salt": "salt"}
+
+
+def test_new_cat_button_opens_a_session(dynamo_table, telegram_calls):
+    handler._handle_callback(
+        {
+            "id": "cb-1",
+            "data": handler.NEW_SESSION_ACTION,
+            "from": {"id": 42},
+            "message": {"chat": {"id": 42}},
+        },
+        SECRETS,
+    )
+    methods = [m for m, _ in telegram_calls]
+    assert "answerCallbackQuery" in methods
+    assert "sendMessage" in methods
+
+    submitter = handler._submitter_hash(SECRETS, 42)
+    pointer = dynamo_table.get_item(
+        Key={"PK": f"SUBMITTER#{submitter}", "SK": "ACTIVE_SESSION"}
+    )["Item"]
+    assert pointer["explicit"] is True
+
+
+def test_unknown_callback_still_answers_the_spinner(dynamo_table, telegram_calls):
+    handler._handle_callback(
+        {
+            "id": "cb-2",
+            "data": "something-we-do-not-know",
+            "from": {"id": 42},
+            "message": {"chat": {"id": 42}},
+        },
+        SECRETS,
+    )
+    assert [m for m, _ in telegram_calls] == ["answerCallbackQuery"]
+
+
+def test_start_command_sends_the_keyboard(dynamo_table, telegram_calls):
+    handler._handle_command(
+        {"text": "/start", "chat": {"id": 42}, "from": {"id": 42}}, SECRETS
+    )
+    method, body = telegram_calls[0]
+    assert method == "sendMessage"
+    assert body["reply_markup"] == handler.SESSION_KEYBOARD
+
+
+def test_newcat_command_matches_the_button(dynamo_table, telegram_calls):
+    handler._handle_command(
+        {"text": "/newcat@BguCatsBot", "chat": {"id": 42}, "from": {"id": 42}},
+        SECRETS,
+    )
+    submitter = handler._submitter_hash(SECRETS, 42)
+    pointer = dynamo_table.get_item(
+        Key={"PK": f"SUBMITTER#{submitter}", "SK": "ACTIVE_SESSION"}
+    )["Item"]
+    assert pointer["explicit"] is True
+
+
+def test_unknown_command_is_ignored(dynamo_table, telegram_calls):
+    handler._handle_command(
+        {"text": "/nonsense", "chat": {"id": 42}, "from": {"id": 42}}, SECRETS
+    )
+    assert telegram_calls == []
+
+
 def test_sniff_image_type_jpeg():
     assert handler._sniff_image_type(b"\xff\xd8\xff\xe0rest-of-file") == (
         "image/jpeg",

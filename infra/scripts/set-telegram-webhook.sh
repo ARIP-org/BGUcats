@@ -18,7 +18,7 @@ echo "Registering webhook: ${WEBHOOK_URL}"
 curl -sS "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
   -d "url=${WEBHOOK_URL}" \
   -d "secret_token=${WEBHOOK_SECRET}" \
-  -d 'allowed_updates=["message"]'
+  -d 'allowed_updates=["message","callback_query"]'
 echo
 
 echo "Verifying:"

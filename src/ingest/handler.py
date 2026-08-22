@@ -30,8 +30,25 @@ WEBHOOK_SECRET_PARAM = os.environ["TELEGRAM_WEBHOOK_SECRET_PARAM"]
 SALT_PARAM = os.environ["SUBMITTER_HASH_SALT_PARAM"]
 
 SESSION_IDLE_WINDOW_SECONDS = 10 * 60
+# An explicitly-opened session ignores the idle window — you can shoot one
+# cat for half an hour — but not forever: a session left open and forgotten
+# would otherwise swallow the next cat photographed days later, silently
+# corrupting an identity cluster.
+EXPLICIT_SESSION_MAX_SECONDS = 2 * 60 * 60
 RATE_LIMIT_PER_MINUTE = 30
 MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
+
+NEW_SESSION_ACTION = "new_session"
+CLOSE_SESSION_ACTION = "close_session"
+
+SESSION_KEYBOARD = {
+    "inline_keyboard": [
+        [
+            {"text": "\U0001f43e New cat", "callback_data": NEW_SESSION_ACTION},
+            {"text": "✅ Done", "callback_data": CLOSE_SESSION_ACTION},
+        ]
+    ]
+}
 
 # Magic-byte signatures for the image formats Telegram actually sends.
 # Content type is validated from bytes, never from a filename (spec §8.5).
@@ -99,8 +116,17 @@ def _process_update(event, secrets):
     except json.JSONDecodeError:
         return {"statusCode": 200, "body": "ok"}
 
+    if body.get("callback_query"):
+        return _handle_callback(body["callback_query"], secrets)
+
     message = body.get("message") or body.get("channel_post")
-    if not message or not message.get("photo"):
+    if not message:
+        return {"statusCode": 200, "body": "ok"}
+
+    if message.get("text", "").startswith("/"):
+        return _handle_command(message, secrets)
+
+    if not message.get("photo"):
         return {"statusCode": 200, "body": "ok"}
 
     chat_id = message["chat"]["id"]
@@ -109,9 +135,7 @@ def _process_update(event, secrets):
     media_group_id = message.get("media_group_id")
     date = message.get("date")
 
-    submitter_hash = hashlib.sha256(
-        (secrets["salt"] + str(tg_user_id)).encode("utf-8")
-    ).hexdigest()
+    submitter_hash = _submitter_hash(secrets, tg_user_id)
 
     if not _check_rate_limit(submitter_hash):
         logger.info("rate limited submitter=%s", submitter_hash)
@@ -166,9 +190,121 @@ def _process_update(event, secrets):
     _bump_session(session_id)
     _bump_submitter_pointer(submitter_hash, session_id, media_group_id)
 
-    _reply(secrets["bot_token"], chat_id, "Got it! \U0001f431")
+    # One reply per album, not per photo: each photo in a media group is a
+    # separate concurrent invocation, and five "Got it!"s for one album is
+    # noise. No count here — none of these invocations knows how many
+    # siblings it has. "Done" is where a count belongs.
+    if _should_reply(media_group_id):
+        _reply(secrets["bot_token"], chat_id, "Got it! \U0001f431")
 
     return {"statusCode": 200, "body": "ok"}
+
+
+def _submitter_hash(secrets, tg_user_id):
+    return hashlib.sha256(
+        (secrets["salt"] + str(tg_user_id)).encode("utf-8")
+    ).hexdigest()
+
+
+def _handle_callback(callback_query, secrets):
+    data = callback_query.get("data")
+    chat_id = callback_query["message"]["chat"]["id"]
+    tg_user_id = callback_query.get("from", {}).get("id", chat_id)
+    submitter_hash = _submitter_hash(secrets, tg_user_id)
+
+    if data == NEW_SESSION_ACTION:
+        text = _start_new_session(submitter_hash)
+    elif data == CLOSE_SESSION_ACTION:
+        text = _finish_session(submitter_hash)
+    else:
+        text = None
+
+    # Required, or the client shows a spinner on the button until it times
+    # out — regardless of whether we recognized the action.
+    _answer_callback(secrets["bot_token"], callback_query["id"])
+
+    if text:
+        _reply(secrets["bot_token"], chat_id, text, keyboard=SESSION_KEYBOARD)
+
+    return {"statusCode": 200, "body": "ok"}
+
+
+def _handle_command(message, secrets):
+    command = message["text"].split()[0].split("@")[0].lower()
+    chat_id = message["chat"]["id"]
+    tg_user_id = message.get("from", {}).get("id", chat_id)
+    submitter_hash = _submitter_hash(secrets, tg_user_id)
+
+    if command == "/start":
+        text = (
+            "Send me photos of a campus cat and I'll file them.\n\n"
+            "Just sending photos works — they're grouped into one encounter "
+            "automatically.\n\n"
+            "Photographing one cat for a while? Tap *New cat* first and "
+            "*Done* when you've finished, and I'll keep every shot in a "
+            "single session no matter how long it takes."
+        )
+    elif command == "/newcat":
+        text = _start_new_session(submitter_hash)
+    elif command == "/done":
+        text = _finish_session(submitter_hash)
+    else:
+        return {"statusCode": 200, "body": "ok"}
+
+    _reply(secrets["bot_token"], chat_id, text, keyboard=SESSION_KEYBOARD)
+    return {"statusCode": 200, "body": "ok"}
+
+
+def _start_new_session(submitter_hash):
+    _close_session(submitter_hash)
+    _open_session(submitter_hash, media_group_id=None, explicit=True)
+    return "New session started \U0001f43e Send photos of this one cat, then tap Done."
+
+
+def _finish_session(submitter_hash):
+    pointer = table.get_item(
+        Key={"PK": f"SUBMITTER#{submitter_hash}", "SK": "ACTIVE_SESSION"}
+    ).get("Item")
+
+    if not pointer:
+        return "No session open. Send photos, or tap New cat to start one."
+
+    session = table.get_item(
+        Key={"PK": f"SESSION#{pointer['sessionId']}", "SK": "META"}
+    ).get("Item")
+    count = int(session.get("photoCount", 0)) if session else 0
+
+    _close_session(submitter_hash)
+
+    if count == 0:
+        return "Session closed — no photos in it."
+    return f"Session closed with {count} photo{'s' if count != 1 else ''}. Thanks!"
+
+
+def _close_session(submitter_hash):
+    table.delete_item(Key={"PK": f"SUBMITTER#{submitter_hash}", "SK": "ACTIVE_SESSION"})
+
+
+def _should_reply(media_group_id):
+    """True for a standalone photo, or for exactly one photo per album.
+
+    Each album photo is its own concurrent invocation; the conditional
+    write picks a single winner to answer for the whole group.
+    """
+    if not media_group_id:
+        return True
+    try:
+        table.put_item(
+            Item={
+                "PK": f"MGREPLY#{media_group_id}",
+                "SK": "META",
+                "expiresAt": _now_epoch() + 3600,
+            },
+            ConditionExpression="attribute_not_exists(PK)",
+        )
+        return True
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        return False
 
 
 def _check_rate_limit(submitter_hash):
@@ -221,22 +357,32 @@ def _resolve_photo_and_session(chat_id, message_id, submitter_hash, media_group_
 
 
 def _resolve_or_open_session(submitter_hash, media_group_id):
-    pointer_key = {"PK": f"SUBMITTER#{submitter_hash}", "SK": "ACTIVE_SESSION"}
-    pointer = table.get_item(Key=pointer_key).get("Item")
+    pointer = table.get_item(
+        Key={"PK": f"SUBMITTER#{submitter_hash}", "SK": "ACTIVE_SESSION"}
+    ).get("Item")
 
-    now = _now_epoch()
-    if pointer:
-        same_media_group = bool(media_group_id) and media_group_id == pointer.get(
-            "mediaGroupId"
-        )
-        within_idle_window = (
-            now - int(pointer.get("lastPhotoAtEpoch", 0))
-        ) < SESSION_IDLE_WINDOW_SECONDS
-        if same_media_group or within_idle_window:
-            return pointer["sessionId"]
+    if pointer and _pointer_still_open(pointer, media_group_id):
+        return pointer["sessionId"]
 
+    return _open_session(submitter_hash, media_group_id, explicit=False)
+
+
+def _pointer_still_open(pointer, media_group_id):
+    # An album always belongs to one encounter, whatever the clock says.
+    if media_group_id and media_group_id == pointer.get("mediaGroupId"):
+        return True
+
+    idle = _now_epoch() - int(pointer.get("lastPhotoAtEpoch", 0))
+    if pointer.get("explicit"):
+        return idle < EXPLICIT_SESSION_MAX_SECONDS
+    return idle < SESSION_IDLE_WINDOW_SECONDS
+
+
+def _open_session(submitter_hash, media_group_id, explicit):
     session_id = str(ULID())
+    now = _now_epoch()
     now_iso = _now_iso()
+
     table.put_item(
         Item={
             "PK": f"SESSION#{session_id}",
@@ -249,14 +395,17 @@ def _resolve_or_open_session(submitter_hash, media_group_id):
             "photoCount": 0,
             "catId": None,
             "notes": None,
+            "explicit": explicit,
         }
     )
     table.put_item(
         Item={
-            **pointer_key,
+            "PK": f"SUBMITTER#{submitter_hash}",
+            "SK": "ACTIVE_SESSION",
             "sessionId": session_id,
             "mediaGroupId": media_group_id,
             "lastPhotoAtEpoch": now,
+            "explicit": explicit,
         }
     )
     return session_id
@@ -370,13 +519,26 @@ def _sniff_image_type(data):
     return None
 
 
-def _reply(bot_token, chat_id, text):
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8")
+def _reply(bot_token, chat_id, text, keyboard=None):
+    body = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if keyboard:
+        body["reply_markup"] = keyboard
+    _telegram_post(bot_token, "sendMessage", body)
+
+
+def _answer_callback(bot_token, callback_query_id):
+    _telegram_post(
+        bot_token, "answerCallbackQuery", {"callback_query_id": callback_query_id}
+    )
+
+
+def _telegram_post(bot_token, method, body):
+    url = f"https://api.telegram.org/bot{bot_token}/{method}"
+    payload = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         url, data=payload, headers={"Content-Type": "application/json"}
     )
     try:
         urllib.request.urlopen(req, timeout=8)
     except urllib.error.URLError as exc:
-        logger.warning("failed to send reply: %s", exc)
+        logger.warning("telegram %s failed: %s", method, exc)

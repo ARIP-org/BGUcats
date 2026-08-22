@@ -50,6 +50,9 @@ resource "aws_iam_role_policy" "ingest_lambda_access" {
           "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
+          # Closing a session deletes the submitter's ACTIVE_SESSION
+          # pointer; the Session record itself is never deleted.
+          "dynamodb:DeleteItem",
         ]
         Resource = aws_dynamodb_table.data.arn
       },
