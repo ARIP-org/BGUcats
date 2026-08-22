@@ -61,6 +61,29 @@ resource "aws_iam_role" "github_actions_ci" {
   assume_role_policy = data.aws_iam_policy_document.github_actions_trust.json
 }
 
+# infra/main's `terraform plan` (which CI runs on every PR) evaluates the
+# aws_kms_alias data source regardless of what's already applied, to
+# resolve the SSM SecureString decryption key. kms:ListAliases doesn't
+# support resource-level scoping — it's one of the few KMS actions AWS
+# requires Resource "*" for — but it's read-only/list-only, no key
+# material or decrypt capability.
+resource "aws_iam_role_policy" "github_actions_ci_kms_list" {
+  name = "bgucats-kms-list-aliases"
+  role = aws_iam_role.github_actions_ci.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ListKmsAliasesForPlan"
+        Effect   = "Allow"
+        Action   = "kms:ListAliases"
+        Resource = "*"
+      },
+    ]
+  })
+}
+
 # CI's only current job is `terraform plan`, which needs to read the state
 # object and take/release the DynamoDB lock — nothing more. Scoped to
 # exactly the two resources this same root module creates. Extend this

@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (gitignored — never commit the real file) and
+# fill in real values.
+
+# Create the bot via @BotFather on Telegram (send it /newbot), then paste
+# the token it gives you.
+telegram_bot_token = "123456789:REPLACE-WITH-REAL-BOTFATHER-TOKEN"
+
+# Any random string. Telegram echoes it back in the
+# X-Telegram-Bot-Api-Secret-Token header on every webhook call — that's how
+# the ingest Lambda knows a request actually came from Telegram.
+# Generate with: openssl rand -hex 32
+telegram_webhook_secret = "replace-with-openssl-rand-hex-32"
+
+# Salt mixed into the SHA-256 hash of Telegram user IDs before they're
+# stored, so the table never holds a raw, reversible user identifier.
+# Generate with: openssl rand -hex 32
+submitter_hash_salt = "replace-with-openssl-rand-hex-32"

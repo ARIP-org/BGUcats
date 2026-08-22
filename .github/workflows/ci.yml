@@ -36,6 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.15.9"
@@ -52,12 +55,25 @@ jobs:
           terraform -chdir=infra/main init -backend=false
           terraform -chdir=infra/main validate
 
+      # The Lambda deployment package archive_file reads from — needed for
+      # plan to compute source_code_hash, even though nothing gets applied.
+      - name: build ingest Lambda package
+        run: make build-ingest
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::851725214678:role/bgucats-github-actions-ci
           aws-region: us-east-1
 
       - name: plan (infra/main only — bootstrap is applied by hand)
+        # Placeholder secret values: this CI role can only read the
+        # tfstate backend (infra/README.md's incremental-IAM convention),
+        # so it couldn't apply even if it tried. Real values live in a
+        # gitignored terraform.tfvars, applied by hand.
+        env:
+          TF_VAR_telegram_bot_token: "ci-plan-placeholder"
+          TF_VAR_telegram_webhook_secret: "ci-plan-placeholder"
+          TF_VAR_submitter_hash_salt: "ci-plan-placeholder"
         run: |
           terraform -chdir=infra/main init -reconfigure
           terraform -chdir=infra/main plan
