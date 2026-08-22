@@ -208,6 +208,15 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/submitter-hash-salt",
         ]
       },
+      {
+        # DescribeParameters (metadata, not values — tier/type/tags) is
+        # one more KMS-ListAliases-shaped action: no resource-level
+        # scoping, must be Resource "*".
+        Sid      = "DescribeSecretsMetadataForPlan"
+        Effect   = "Allow"
+        Action   = "ssm:DescribeParameters"
+        Resource = "*"
+      },
     ]
   })
 }
