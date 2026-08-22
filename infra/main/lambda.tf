@@ -56,7 +56,10 @@ resource "aws_iam_role_policy" "ingest_lambda_access" {
       {
         Sid    = "ReadSecrets"
         Effect = "Allow"
-        Action = "ssm:GetParameter"
+        # Handler uses the batch API (ssm.get_parameters, plural) to fetch
+        # all three in one call — GetParameter (singular) is a different
+        # IAM action and doesn't cover it.
+        Action = "ssm:GetParameters"
         Resource = [
           aws_ssm_parameter.telegram_bot_token.arn,
           aws_ssm_parameter.telegram_webhook_secret.arn,
