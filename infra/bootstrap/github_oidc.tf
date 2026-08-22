@@ -34,11 +34,24 @@ data "aws_iam_policy_document" "github_actions_trust" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Scoped to this repo, any branch/PR/ref within it.
+    # AWS requires every GitHub-OIDC trust policy to constrain `sub` (or
+    # `job_workflow_ref`) to something other than a bare wildcard — it
+    # rejects an UpdateAssumeRolePolicy that omits it. This environment's
+    # actual `sub` embeds numeric owner/repo IDs
+    # ("repo:sasha720709@<id>/BGUcats@<id>:ref:refs/heads/main") rather than
+    # the plain "repo:owner/name:..." documented for github.com, so the
+    # wildcards sit around those ID segments. `repository` (exact "owner/repo")
+    # is the claim that actually does the scoping precisely.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:sasha720709/BGUcats:*"]
+      values   = ["repo:sasha720709@*/BGUcats@*:*"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:repository"
+      values   = ["sasha720709/BGUcats"]
     }
   }
 }
