@@ -75,6 +75,9 @@ jobs:
           TF_VAR_telegram_bot_token: "ci-plan-placeholder"
           TF_VAR_telegram_webhook_secret: "ci-plan-placeholder"
           TF_VAR_submitter_hash_salt: "ci-plan-placeholder"
+          TF_VAR_google_client_id: "ci-plan-placeholder"
+          TF_VAR_google_client_secret: "ci-plan-placeholder"
+          TF_VAR_bootstrap_admin_email: "ci-plan-placeholder@example.com"
         run: |
           terraform -chdir=infra/main init -reconfigure
           terraform -chdir=infra/main plan

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>BGUcats · labeling</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>"
+    />
+  </head>
+  <body>
+    <div id="login" class="login" hidden>
+      <div class="login-card">
+        <div class="login-mark">🐈</div>
+        <h1>BGUcats</h1>
+        <p>Labeling and dataset curation for the campus cats.</p>
+        <button id="login-button" class="btn btn-primary btn-lg">
+          Sign in with Google
+        </button>
+        <p class="login-note">Admin accounts only.</p>
+      </div>
+    </div>
+
+    <div id="app" hidden>
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">🐈</span> BGUcats</div>
+
+        <nav class="tabs">
+          <button class="tab" data-view="queue">Queue</button>
+          <button class="tab" data-view="cats">Cats</button>
+          <button class="tab" data-view="admins">Admins</button>
+        </nav>
+
+        <div class="stats" id="stats"></div>
+
+        <div class="who">
+          <span id="who-email"></span>
+          <button id="logout" class="btn btn-ghost">Sign out</button>
+        </div>
+      </header>
+
+      <main id="main"></main>
+    </div>
+
+    <div id="lightbox" class="lightbox" hidden>
+      <button class="lightbox-close" title="Close (Esc)">✕</button>
+      <img id="lightbox-img" alt="" />
+      <div class="lightbox-bar">
+        <span id="lightbox-caption"></span>
+        <button id="lightbox-reject" class="btn btn-danger">
+          Delete this photo
+        </button>
+      </div>
+    </div>
+
+    <div id="toasts" class="toasts"></div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

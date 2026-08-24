@@ -15,3 +15,30 @@ variable "submitter_hash_salt" {
   type        = string
   sensitive   = true
 }
+
+variable "google_client_id" {
+  description = "OAuth 2.0 client ID from the Google Cloud console, used by Cognito's Google IdP."
+  type        = string
+  sensitive   = true
+}
+
+variable "google_client_secret" {
+  description = "OAuth 2.0 client secret paired with google_client_id."
+  type        = string
+  sensitive   = true
+}
+
+variable "cognito_domain_prefix" {
+  description = <<-EOT
+    Prefix of the Cognito hosted-UI domain. Must be globally unique across
+    AWS. Chosen rather than generated so the Google redirect URI is known
+    before the first apply.
+  EOT
+  type        = string
+  default     = "bgucats-admin"
+}
+
+variable "bootstrap_admin_email" {
+  description = "Google account seeded into the admin allowlist so the tool can be opened at all."
+  type        = string
+}

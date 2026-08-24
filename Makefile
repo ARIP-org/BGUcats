@@ -1,4 +1,5 @@
-.PHONY: fmt lint test build build-ingest build-process tf-init tf-plan tf-apply
+.PHONY: fmt lint test build build-ingest build-process build-admin \
+	tf-init tf-plan tf-apply admin-add
 
 # Lambda runs Linux x86_64; resolve binary wheels for that, not for whatever
 # the build host happens to be.
@@ -18,7 +19,7 @@ lint:
 test:
 	pytest
 
-build: build-ingest build-process
+build: build-ingest build-process build-admin
 
 # Always rebuilt rather than tracked as file targets: a directory's mtime
 # doesn't change when a source file inside it is edited, so a file-target
@@ -37,6 +38,14 @@ build-process:
 	cp src/process/__init__.py src/process/handler.py src/process/phash.py \
 		build/process/process/
 
+# Same package shape as build-process, and for the same reason: the API and
+# the Cognito trigger are two handlers inside one `admin` package.
+build-admin:
+	rm -rf build/admin && mkdir -p build/admin/admin
+	$(LAMBDA_PIP) --target build/admin -r src/admin/requirements.txt
+	cp src/admin/__init__.py src/admin/handler.py src/admin/presignup.py \
+		build/admin/admin/
+
 tf-init:
 	terraform -chdir=infra/main init
 
@@ -45,3 +54,9 @@ tf-plan: build
 
 tf-apply: build
 	terraform -chdir=infra/main apply
+
+# Convenience wrapper for the same allowlist row the Admins tab writes —
+# useful for adding the first colleague before anyone has logged in.
+admin-add:
+	@test -n "$(EMAIL)" || (echo "usage: make admin-add EMAIL=someone@example.com" && exit 1)
+	infra/scripts/add-admin.sh "$(EMAIL)"

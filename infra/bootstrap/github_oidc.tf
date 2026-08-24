@@ -224,6 +224,56 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Action   = "ssm:DescribeParameters"
         Resource = "*"
       },
+      {
+        # Admin labeling tool: the site bucket CloudFront serves, plus the
+        # three static objects and the generated config.json in it.
+        Sid    = "DescribeWebBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucket*",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetLifecycleConfiguration",
+          "s3:GetReplicationConfiguration",
+          "s3:GetAccelerateConfiguration",
+          "s3:GetObject",
+          "s3:GetObjectTagging",
+        ]
+        Resource = [
+          "arn:aws:s3:::bgucats-admin-web-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::bgucats-admin-web-${data.aws_caller_identity.current.account_id}/*",
+        ]
+      },
+      {
+        # Neither CloudFront nor Cognito supports resource-level scoping on
+        # their read APIs — same shape as kms:ListAliases above. Read-only,
+        # and the account's other project owns no distributions or pools.
+        Sid    = "DescribeCloudFrontAndCognitoForPlan"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:GetDistribution",
+          "cloudfront:GetOriginAccessControl",
+          "cloudfront:GetCachePolicy",
+          "cloudfront:GetOriginRequestPolicy",
+          "cloudfront:ListCachePolicies",
+          "cloudfront:ListOriginRequestPolicies",
+          "cloudfront:ListTagsForResource",
+          "cognito-idp:DescribeUserPool",
+          "cognito-idp:DescribeUserPoolClient",
+          "cognito-idp:DescribeUserPoolDomain",
+          "cognito-idp:DescribeIdentityProvider",
+          "cognito-idp:GetUserPoolMfaConfig",
+          "cognito-idp:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
+        # The bootstrap admin row is a Terraform-managed table item, so plan
+        # has to read it back. Scoped to the one table.
+        Sid      = "ReadBootstrapAdminItem"
+        Effect   = "Allow"
+        Action   = "dynamodb:GetItem"
+        Resource = "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/bgucats-data"
+      },
     ]
   })
 }
