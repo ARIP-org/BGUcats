@@ -1,5 +1,5 @@
 .PHONY: fmt lint test build build-ingest build-process build-admin \
-	tf-init tf-plan tf-apply admin-add
+	tf-init tf-plan tf-apply admin-add poster
 
 # Lambda runs Linux x86_64; resolve binary wheels for that, not for whatever
 # the build host happens to be.
@@ -60,3 +60,8 @@ tf-apply: build
 admin-add:
 	@test -n "$(EMAIL)" || (echo "usage: make admin-add EMAIL=someone@example.com" && exit 1)
 	infra/scripts/add-admin.sh "$(EMAIL)"
+
+# Printable A4 recruitment poster. Defaults to the deployed landing page;
+# override with `make poster URL=https://...` to point it elsewhere.
+poster:
+	python scripts/build_poster.py $(if $(URL),--url $(URL),)

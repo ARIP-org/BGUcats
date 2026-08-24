@@ -389,7 +389,7 @@ textarea:focus {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 10px;
   cursor: pointer;
 }
 
@@ -397,9 +397,37 @@ textarea:focus {
   border-color: var(--accent);
 }
 
+.cat-cover {
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-2);
+  margin-bottom: 10px;
+}
+
+.cat-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cat-cover-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 30px;
+  opacity: 0.35;
+}
+
 .cat-card h3 {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
+  padding: 0 4px;
   font-size: 16px;
+}
+
+.cat-card .meta {
+  padding: 0 4px 4px;
 }
 
 .row {

@@ -243,7 +243,29 @@ def _get_cats(**_):
         KeyConditionExpression=Key("GSI2PK").eq("ENTITY#CAT"),
         ScanIndexForward=True,
     )["Items"]
-    return {"cats": [_clean(c) for c in cats]}
+    return {
+        "cats": [{**_clean(cat), "coverUrl": _cover_url(cat["catId"])} for cat in cats]
+    }
+
+
+def _cover_url(cat_id):
+    """Thumbnail of a cat's earliest photo, for the cat list.
+
+    Looked up rather than stored on the Cat record: a cached coverPhotoId
+    goes stale the moment that photo is rejected, and a cat card with a
+    broken image is worse than one query per cat. GSI3 is sorted by
+    createdAt, so Limit=1 is the oldest photo and the cover stays stable as
+    more are added.
+    """
+    page = table.query(
+        IndexName="GSI3",
+        KeyConditionExpression=Key("GSI3PK").eq(f"CAT#{cat_id}"),
+        ScanIndexForward=True,
+        Limit=1,
+    )["Items"]
+    if not page:
+        return None
+    return _presign(f"derived/{page[0]['photoId']}/thumb-256.webp")
 
 
 def _get_cat(cat_id, **_):

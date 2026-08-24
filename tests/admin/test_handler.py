@@ -403,6 +403,25 @@ def test_queue_photos_carry_presigned_derivative_urls(aws):
     assert "Expires" in photo["thumbUrl"]
 
 
+def test_cat_list_carries_a_cover_thumbnail(aws):
+    _session(aws)
+    _photo(aws, "01PHOTO00000000000000000A")
+    _photo(aws, "01PHOTO00000000000000000B")
+    _, cat = _call("POST", "/api/cats", {"name": "Ginger"})
+    _call("POST", f"/api/sessions/{SESSION}/assign", {"catId": cat["catId"]})
+
+    listed = _call("GET", "/api/cats")[1]["cats"][0]
+
+    # Oldest photo of the cat, so the cover does not shuffle as more arrive.
+    assert "derived/01PHOTO00000000000000000A/thumb-256.webp" in listed["coverUrl"]
+
+
+def test_a_cat_with_no_photos_yet_has_no_cover(aws):
+    _call("POST", "/api/cats", {"name": "Unphotographed"})
+
+    assert _call("GET", "/api/cats")[1]["cats"][0]["coverUrl"] is None
+
+
 def test_key_plumbing_is_not_leaked_to_the_client(aws):
     _session(aws)
     _photo(aws, "01PHOTO00000000000000000A")

@@ -402,7 +402,14 @@ async function renderCats() {
       "div",
       { className: "cat-grid" },
       state.cats.map((cat) => {
+        // A name alone is unnavigable once there are fifty of them — you
+        // recognise the cat, not the string.
+        const cover = cat.coverUrl
+          ? el("img", { src: cat.coverUrl, alt: cat.name, loading: "lazy" })
+          : el("div", { className: "cat-cover-empty", textContent: "🐾" });
+
         const card = el("div", { className: "cat-card" }, [
+          el("div", { className: "cat-cover" }, [cover]),
           el("h3", { textContent: cat.name }),
           el("div", {
             className: "meta",
