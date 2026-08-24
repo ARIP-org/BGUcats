@@ -20,11 +20,15 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Sans throughout rather than the serif this started as: Hebrew serif
+   coverage in system fonts is patchy and inconsistent between devices,
+   and a half-rendered headline is worse than a plain one. */
 body {
   margin: 0;
   background: var(--sand);
   color: var(--ink);
-  font: 17px/1.65 ui-serif, Georgia, "Times New Roman", serif;
+  font: 17px/1.7 system-ui, -apple-system, "Segoe UI", "Noto Sans Hebrew",
+    "Arial Hebrew", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -32,16 +36,6 @@ main {
   max-width: 1080px;
   margin: 0 auto;
   padding: 32px 24px 60px;
-}
-
-h1,
-h2,
-h3,
-.kicker,
-.cta,
-.num {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
 }
 
 /* ---------- hero ---------- */
@@ -64,17 +58,21 @@ h3,
   object-fit: cover;
   border-radius: 14px;
   /* Slight tilt: it should read as a photo pinned to a board, not a stock
-     image in a hero slot. */
-  transform: rotate(-1.5deg);
+     image in a hero slot. Leans away from the text, which in RTL puts the
+     photo on the right — so the rotation is mirrored too. */
+  transform: rotate(1.5deg);
   box-shadow: 0 14px 40px rgba(80, 55, 30, 0.22);
 }
 
+/* No italic: Hebrew has no true italic face, so browsers fake one by
+   slanting the glyphs, which looks wrong. */
 .hero figcaption {
   margin-top: 18px;
-  font-size: 14px;
-  font-style: italic;
+  font-size: 15px;
   color: var(--ink-soft);
   text-align: center;
+  max-width: 34ch;
+  margin-inline: auto;
 }
 
 .kicker {
@@ -132,8 +130,10 @@ h1 {
   opacity: 0.9;
 }
 
+/* ➤ is not a bidi-mirrored character, so RTL has to flip it by hand. */
 .cta-icon {
   font-size: 20px;
+  transform: scaleX(-1);
 }
 
 .cta-small {
@@ -191,28 +191,6 @@ h2 {
   margin: 0;
   font-size: 16px;
   color: var(--ink-soft);
-}
-
-.why,
-.privacy {
-  max-width: 65ch;
-}
-
-.why p,
-.privacy p {
-  margin: 0 0 16px;
-}
-
-.privacy {
-  background: var(--sand-2);
-  border-radius: 12px;
-  padding: 26px 30px;
-  max-width: none;
-}
-
-.privacy p {
-  max-width: 65ch;
-  color: #4a3f38;
 }
 
 footer {

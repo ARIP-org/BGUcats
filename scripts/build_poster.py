@@ -75,7 +75,7 @@ def build(site_url):
     tabs = "\n".join(
         f"""        <div class="tab">
           <div class="tab-qr">{qr_svg(site_url, scale=2)}</div>
-          <div class="tab-text">{BOT_HANDLE}</div>
+          <div class="tab-text" dir="ltr">{BOT_HANDLE}</div>
         </div>"""
         for _ in range(TEAR_OFF_TABS)
     )
@@ -97,7 +97,7 @@ def build(site_url):
 
 
 POSTER_TEMPLATE = """<!doctype html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
 <title>BGUcats poster</title>
@@ -114,8 +114,9 @@ POSTER_TEMPLATE = """<!doctype html>
     height: 297mm;
     background: #faf5ec;
     color: #2a2320;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-      "Helvetica Neue", Arial, sans-serif;
+    /* Hebrew serif coverage in system fonts is patchy; sans everywhere. */
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Hebrew",
+      "Arial Hebrew", Arial, sans-serif;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -176,7 +177,8 @@ POSTER_TEMPLATE = """<!doctype html>
     aspect-ratio: 3 / 4;
     object-fit: cover;
     border-radius: 4mm;
-    transform: rotate(-2deg);
+    /* Mirrored for RTL, where the photo sits on the right. */
+    transform: rotate(2deg);
     box-shadow: 0 4mm 12mm rgba(80, 55, 30, 0.25);
   }}
 
@@ -277,39 +279,39 @@ POSTER_TEMPLATE = """<!doctype html>
 </head>
 <body>
   <div class="poster">
-    <div class="kicker">Ben-Gurion University · Beer-Sheva</div>
-    <h1>Everyone knows the campus cats.<br><em>Nobody knows their names.</em></h1>
+    <div class="kicker">אוניברסיטת בן-גוריון · באר שבע</div>
+    <h1>כולם מכירים את חתולי הקמפוס.<br><em>אף אחד לא יודע איך קוראים להם.</em></h1>
     <p class="lede">
-      About fifty cats live on this campus. We're building a proper record of
-      who they are — and we need your photos to do it.
+      בערך חמישים חתולים חיים בקמפוס הזה. אנחנו בונים תיעוד אמיתי של מי הם —
+      ובשביל זה אנחנו צריכים את התמונות שלכם.
     </p>
 
     <div class="middle">
       <div class="photo">
-        <img src="data:image/webp;base64,{hero_data}" alt="A campus cat">
+        <img src="data:image/webp;base64,{hero_data}" alt="חתול מהקמפוס">
       </div>
 
       <div class="ask">
         <div class="qr">{big_qr}</div>
-        <div class="scan">Scan me</div>
-        <div class="url">{site_url}</div>
-        <div class="or">or find the bot on Telegram</div>
-        <div class="handle">{bot_handle}</div>
+        <div class="scan">סרקו אותי</div>
+        <div class="url" dir="ltr">{site_url}</div>
+        <div class="or">או חפשו את הבוט בטלגרם</div>
+        <div class="handle" dir="ltr">{bot_handle}</div>
       </div>
     </div>
 
     <div class="steps">
       <div class="step">
-        <b>1 · See a cat</b>
-        <span>Anywhere on campus. They are not hard to find.</span>
+        <b>1 · רואים חתול</b>
+        <span>בכל מקום בקמפוס. הם לא קשים למציאה.</span>
       </div>
       <div class="step">
-        <b>2 · Send photos</b>
-        <span>Several angles of one cat beat one perfect shot.</span>
+        <b>2 · שולחים תמונות</b>
+        <span>כמה זוויות של חתול אחד שוות יותר מתמונה מושלמת.</span>
       </div>
       <div class="step">
-        <b>3 · That's it</b>
-        <span>We sort and name them. Takes ten seconds.</span>
+        <b>3 · וזהו</b>
+        <span>אנחנו ממיינים ונותנים שמות. לוקח עשר שניות.</span>
       </div>
     </div>
   </div>
