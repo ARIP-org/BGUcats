@@ -305,3 +305,63 @@ def test_sniff_image_type_png():
 
 def test_sniff_image_type_rejects_non_image_bytes():
     assert handler._sniff_image_type(b"not an image") is None
+
+
+def test_sniff_video_type_mp4():
+    # ISO base media file: a 4-byte size word, then "ftyp" at offset 4 —
+    # not offset 0, unlike the image signatures above.
+    data = b"\x00\x00\x00\x18ftypmp42" + b"rest-of-file"
+    assert handler._sniff_video_type(data) == ("video/mp4", "mp4")
+
+
+def test_sniff_video_type_webm():
+    data = b"\x1a\x45\xdf\xa3" + b"rest-of-file"
+    assert handler._sniff_video_type(data) == ("video/webm", "webm")
+
+
+def test_sniff_video_type_rejects_non_video_bytes():
+    assert handler._sniff_video_type(b"not a video") is None
+
+
+def test_sniff_media_type_detects_a_photo():
+    assert handler._sniff_media_type(b"\xff\xd8\xff\xe0rest") == (
+        "image/jpeg",
+        "jpg",
+        "photo",
+    )
+
+
+def test_sniff_media_type_detects_a_video():
+    data = b"\x00\x00\x00\x18ftypmp42rest-of-file"
+    assert handler._sniff_media_type(data) == ("video/mp4", "mp4", "video")
+
+
+def test_sniff_media_type_rejects_unrecognized_bytes():
+    assert handler._sniff_media_type(b"not media") is None
+
+
+def test_extract_media_picks_the_largest_photo():
+    message = {
+        "photo": [
+            {"file_id": "small", "width": 90, "height": 90, "file_size": 1000},
+            {"file_id": "big", "width": 800, "height": 600, "file_size": 90000},
+        ]
+    }
+    assert handler._extract_media(message)["file_id"] == "big"
+
+
+def test_extract_media_returns_the_video_object():
+    video = {"file_id": "v1", "width": 640, "height": 480, "duration": 12}
+    assert handler._extract_media({"video": video}) == video
+
+
+def test_extract_media_maps_video_note_length_onto_width_and_height():
+    note = {"file_id": "vn1", "length": 240, "duration": 8}
+    media = handler._extract_media({"video_note": note})
+    assert media["width"] == 240
+    assert media["height"] == 240
+    assert media["duration"] == 8
+
+
+def test_extract_media_returns_none_when_theres_nothing_to_fetch():
+    assert handler._extract_media({}) is None

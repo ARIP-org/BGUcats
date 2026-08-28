@@ -338,9 +338,15 @@ function sessionCard({ session, photos }, allSessions) {
 }
 
 function thumb(photo) {
-  const img = el("img", { src: photo.thumbUrl, alt: "", loading: "lazy" });
-  const node = el("div", { className: "thumb" }, [img]);
+  const isVideo = photo.mediaType === "video";
+  const media = isVideo
+    ? el("video", { src: photo.videoUrl, muted: true, preload: "metadata" })
+    : el("img", { src: photo.thumbUrl, alt: "", loading: "lazy" });
+  const node = el("div", { className: "thumb" }, [media]);
 
+  if (isVideo) {
+    node.append(el("span", { className: "flag", textContent: "▶ video" }));
+  }
   if (photo.nearDuplicateOf) {
     node.append(el("span", { className: "flag", textContent: "near-dup" }));
   }
@@ -527,10 +533,23 @@ let lightboxPhoto = null;
 
 function openLightbox(photo) {
   lightboxPhoto = photo;
-  $("#lightbox-img").src = photo.mediumUrl;
+  const isVideo = photo.mediaType === "video";
+
+  $("#lightbox-img").hidden = isVideo;
+  $("#lightbox-video").hidden = !isVideo;
+  if (isVideo) {
+    $("#lightbox-img").src = "";
+    $("#lightbox-video").src = photo.videoUrl;
+  } else {
+    $("#lightbox-video").pause();
+    $("#lightbox-video").src = "";
+    $("#lightbox-img").src = photo.mediumUrl;
+  }
+
   $("#lightbox-caption").textContent = [
     photo.photoId,
-    `${photo.width}×${photo.height}`,
+    photo.width && photo.height ? `${photo.width}×${photo.height}` : null,
+    photo.durationSeconds ? `${photo.durationSeconds}s` : null,
     photo.capturedAt ? fmtDate(photo.capturedAt) : null,
     photo.catId ? `cat ${photo.catId}` : photo.status,
   ]
@@ -542,6 +561,8 @@ function openLightbox(photo) {
 function closeLightbox() {
   $("#lightbox").hidden = true;
   $("#lightbox-img").src = "";
+  $("#lightbox-video").pause();
+  $("#lightbox-video").src = "";
   lightboxPhoto = null;
 }
 

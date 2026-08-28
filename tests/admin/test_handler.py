@@ -118,6 +118,27 @@ def _photo(aws, photo_id, session_id=SESSION, status="unlabeled", sha=None):
     return item
 
 
+def _video(aws, photo_id, session_id=SESSION, status="unlabeled"):
+    key = f"raw/{session_id}/{photo_id}.mp4"
+    aws["s3"].put_object(Bucket=BUCKET, Key=key, Body=b"raw-video-bytes")
+    item = {
+        "PK": f"PHOTO#{photo_id}",
+        "SK": "META",
+        "photoId": photo_id,
+        "sessionId": session_id,
+        "status": status,
+        "mediaType": "video",
+        "createdAt": f"2026-08-24T11:00:00.{photo_id[-3:]}Z",
+        "s3RawKey": key,
+        "GSI1PK": f"SESSION#{session_id}",
+        "GSI1SK": f"2026-08-24T11:00:00.{photo_id[-3:]}Z",
+        "GSI2PK": f"STATUS#{status}",
+        "GSI2SK": f"2026-08-24T11:00:00.{photo_id[-3:]}Z",
+    }
+    aws["table"].put_item(Item=item)
+    return item
+
+
 def _session(aws, session_id=SESSION, **extra):
     aws["table"].put_item(
         Item={
@@ -418,6 +439,40 @@ def test_cat_list_carries_a_cover_thumbnail(aws):
 
 def test_a_cat_with_no_photos_yet_has_no_cover(aws):
     _call("POST", "/api/cats", {"name": "Unphotographed"})
+
+    assert _call("GET", "/api/cats")[1]["cats"][0]["coverUrl"] is None
+
+
+def test_video_queue_item_carries_a_presigned_raw_url_not_derivatives(aws):
+    _session(aws)
+    _video(aws, "01VIDEO0000000000000000A")
+
+    photo = _call("GET", "/api/queue")[1]["sessions"][0]["photos"][0]
+
+    assert "videoUrl" in photo
+    assert "raw/" in photo["videoUrl"]
+    assert "thumbUrl" not in photo
+    assert "mediumUrl" not in photo
+
+
+def test_cat_cover_skips_a_video_and_falls_back_to_the_next_photo(aws):
+    _session(aws)
+    # Earliest media in the session is a video — no thumbnail to show.
+    _video(aws, "01VIDEO0000000000000000A")
+    _photo(aws, "01PHOTO0000000000000000B")
+    _, cat = _call("POST", "/api/cats", {"name": "Ginger"})
+    _call("POST", f"/api/sessions/{SESSION}/assign", {"catId": cat["catId"]})
+
+    listed = _call("GET", "/api/cats")[1]["cats"][0]
+
+    assert "derived/01PHOTO0000000000000000B/thumb-256.webp" in listed["coverUrl"]
+
+
+def test_a_cat_with_only_a_video_has_no_cover(aws):
+    _session(aws)
+    _video(aws, "01VIDEO0000000000000000A")
+    _, cat = _call("POST", "/api/cats", {"name": "Video-only"})
+    _call("POST", f"/api/sessions/{SESSION}/assign", {"catId": cat["catId"]})
 
     assert _call("GET", "/api/cats")[1]["cats"][0]["coverUrl"] is None
 

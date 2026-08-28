@@ -77,6 +77,13 @@ IMAGE_SIGNATURES = {
     b"\x89PNG\r\n\x1a\n": ("image/png", "png"),
 }
 
+# Telegram transcodes ordinary videos and video notes to MP4 (an ISO base
+# media file — a size word, then "ftyp" at offset 4, not offset 0 like the
+# image signatures above). WebM is included for the rare client that sends
+# it as a document-style upload.
+MP4_FTYP_OFFSET = 4
+WEBM_SIGNATURE = b"\x1a\x45\xdf\xa3"
+
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 s3 = boto3.client("s3")
@@ -149,7 +156,8 @@ def _process_update(event, secrets):
     if text:
         return _handle_text(message, text, secrets)
 
-    if not message.get("photo"):
+    media = _extract_media(message)
+    if media is None:
         return {"statusCode": 200, "body": "ok"}
 
     chat_id = message["chat"]["id"]
@@ -183,14 +191,9 @@ def _process_update(event, secrets):
         created_at=created_at,
     )
 
-    largest = max(
-        message["photo"],
-        key=lambda p: p.get("file_size", 0) or p["width"] * p["height"],
-    )
-
     try:
-        image_bytes, ext, content_type = _download_telegram_file(
-            secrets["bot_token"], largest["file_id"]
+        media_bytes, ext, content_type, media_kind = _download_telegram_file(
+            secrets["bot_token"], media["file_id"]
         )
     except (ValueError, urllib.error.URLError) as exc:
         logger.warning("download failed for photo=%s: %s", photo_id, exc)
@@ -198,7 +201,7 @@ def _process_update(event, secrets):
 
     s3_key = f"raw/{session_id}/{photo_id}.{ext}"
     s3.put_object(
-        Bucket=MEDIA_BUCKET, Key=s3_key, Body=image_bytes, ContentType=content_type
+        Bucket=MEDIA_BUCKET, Key=s3_key, Body=media_bytes, ContentType=content_type
     )
 
     _mark_photo_unlabeled(
@@ -207,8 +210,10 @@ def _process_update(event, secrets):
         created_at=created_at,
         s3_key=s3_key,
         content_type=content_type,
-        width=largest["width"],
-        height=largest["height"],
+        width=media.get("width"),
+        height=media.get("height"),
+        media_type=media_kind,
+        duration_seconds=media.get("duration"),
     )
     _bump_session(session_id)
     _bump_submitter_pointer(submitter_hash, session_id, media_group_id)
@@ -221,6 +226,28 @@ def _process_update(event, secrets):
         _reply(secrets["bot_token"], chat_id, "Got it! \U0001f431")
 
     return {"statusCode": 200, "body": "ok"}
+
+
+def _extract_media(message):
+    """Pick the file to fetch: the largest photo size, a video, or a video
+    note (Telegram's circular selfie clips, which report a single `length`
+    instead of width/height).
+
+    What kind of file it actually is gets settled by magic bytes in
+    `_download_telegram_file`, not by which of these fields it arrived
+    in — spec §8.5 applies to video the same as to photos.
+    """
+    if message.get("photo"):
+        return max(
+            message["photo"],
+            key=lambda p: p.get("file_size", 0) or p["width"] * p["height"],
+        )
+    if message.get("video"):
+        return message["video"]
+    if message.get("video_note"):
+        note = message["video_note"]
+        return {**note, "width": note.get("length"), "height": note.get("length")}
+    return None
 
 
 def _submitter_hash(secrets, tg_user_id):
@@ -452,6 +479,7 @@ def _write_pending_photo(photo_id, session_id, submitter_hash, captured_at, crea
             "width": None,
             "height": None,
             "mime": None,
+            "mediaType": None,
             "capturedAt": captured_at,
             "coarseLat": None,
             "coarseLon": None,
@@ -463,26 +491,41 @@ def _write_pending_photo(photo_id, session_id, submitter_hash, captured_at, crea
 
 
 def _mark_photo_unlabeled(
-    photo_id, session_id, created_at, s3_key, content_type, width, height
+    photo_id,
+    session_id,
+    created_at,
+    s3_key,
+    content_type,
+    width,
+    height,
+    media_type,
+    duration_seconds=None,
 ):
+    expression = (
+        "SET s3RawKey = :key, mime = :mime, width = :w, height = :h, "
+        "mediaType = :mt, #status = :status, GSI1PK = :g1pk, GSI1SK = :createdAt, "
+        "GSI2PK = :g2pk, GSI2SK = :createdAt"
+    )
+    values = {
+        ":key": s3_key,
+        ":mime": content_type,
+        ":w": width,
+        ":h": height,
+        ":mt": media_type,
+        ":status": "unlabeled",
+        ":g1pk": f"SESSION#{session_id}",
+        ":g2pk": "STATUS#unlabeled",
+        ":createdAt": created_at,
+    }
+    if duration_seconds is not None:
+        expression += ", durationSeconds = :dur"
+        values[":dur"] = duration_seconds
+
     table.update_item(
         Key={"PK": f"PHOTO#{photo_id}", "SK": "META"},
-        UpdateExpression=(
-            "SET s3RawKey = :key, mime = :mime, width = :w, height = :h, "
-            "#status = :status, GSI1PK = :g1pk, GSI1SK = :createdAt, "
-            "GSI2PK = :g2pk, GSI2SK = :createdAt"
-        ),
+        UpdateExpression=expression,
         ExpressionAttributeNames={"#status": "status"},
-        ExpressionAttributeValues={
-            ":key": s3_key,
-            ":mime": content_type,
-            ":w": width,
-            ":h": height,
-            ":status": "unlabeled",
-            ":g1pk": f"SESSION#{session_id}",
-            ":g2pk": "STATUS#unlabeled",
-            ":createdAt": created_at,
-        },
+        ExpressionAttributeValues=values,
     )
 
 
@@ -528,18 +571,36 @@ def _download_telegram_file(bot_token, file_id):
     if len(image_bytes) > MAX_FILE_SIZE_BYTES:
         raise ValueError("downloaded file exceeds size cap")
 
-    sniffed = _sniff_image_type(image_bytes)
+    sniffed = _sniff_media_type(image_bytes)
     if sniffed is None:
-        raise ValueError("downloaded bytes are not a recognized image format")
+        raise ValueError("downloaded bytes are not a recognized image or video format")
 
-    content_type, ext = sniffed
-    return image_bytes, ext, content_type
+    content_type, ext, media_kind = sniffed
+    return image_bytes, ext, content_type, media_kind
 
 
 def _sniff_image_type(data):
     for signature, info in IMAGE_SIGNATURES.items():
         if data.startswith(signature):
             return info
+    return None
+
+
+def _sniff_video_type(data):
+    if len(data) >= 12 and data[MP4_FTYP_OFFSET : MP4_FTYP_OFFSET + 4] == b"ftyp":
+        return "video/mp4", "mp4"
+    if data.startswith(WEBM_SIGNATURE):
+        return "video/webm", "webm"
+    return None
+
+
+def _sniff_media_type(data):
+    image = _sniff_image_type(data)
+    if image:
+        return (*image, "photo")
+    video = _sniff_video_type(data)
+    if video:
+        return (*video, "video")
     return None
 
 

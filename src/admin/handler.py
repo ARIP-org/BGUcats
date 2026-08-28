@@ -214,8 +214,14 @@ def _session_photos(session_id):
 def _photo_payload(photo):
     photo_id = photo["photoId"]
     payload = _clean(photo)
-    payload["thumbUrl"] = _presign(f"derived/{photo_id}/thumb-256.webp")
-    payload["mediumUrl"] = _presign(f"derived/{photo_id}/medium-1024.webp")
+    if photo.get("mediaType") == "video":
+        # No derivatives exist for video (spec phase 1 skips frame
+        # extraction) — the labeling tool plays the raw upload directly.
+        raw_key = photo.get("s3RawKey")
+        payload["videoUrl"] = _presign(raw_key) if raw_key else None
+    else:
+        payload["thumbUrl"] = _presign(f"derived/{photo_id}/thumb-256.webp")
+        payload["mediumUrl"] = _presign(f"derived/{photo_id}/medium-1024.webp")
     return payload
 
 
@@ -249,23 +255,27 @@ def _get_cats(**_):
 
 
 def _cover_url(cat_id):
-    """Thumbnail of a cat's earliest photo, for the cat list.
+    """Thumbnail of a cat's earliest *photo*, for the cat list.
 
     Looked up rather than stored on the Cat record: a cached coverPhotoId
     goes stale the moment that photo is rejected, and a cat card with a
     broken image is worse than one query per cat. GSI3 is sorted by
-    createdAt, so Limit=1 is the oldest photo and the cover stays stable as
-    more are added.
+    createdAt, so the first photo found is the oldest and the cover stays
+    stable as more are added.
+
+    Videos have no thumbnail derivative to show (spec phase 1 skips frame
+    extraction), so a cat whose earliest media is a video falls through to
+    its next-oldest photo instead of a broken image.
     """
     page = table.query(
         IndexName="GSI3",
         KeyConditionExpression=Key("GSI3PK").eq(f"CAT#{cat_id}"),
         ScanIndexForward=True,
-        Limit=1,
     )["Items"]
-    if not page:
-        return None
-    return _presign(f"derived/{page[0]['photoId']}/thumb-256.webp")
+    for item in page:
+        if item.get("mediaType") != "video":
+            return _presign(f"derived/{item['photoId']}/thumb-256.webp")
+    return None
 
 
 def _get_cat(cat_id, **_):
