@@ -8,56 +8,276 @@
       name="description"
       content="אנחנו בונים תיעוד אמיתי של החתולים שחיים בקמפוס. שלחו תמונה ועזרו לנו לתת להם שמות."
     />
+    <meta name="theme-color" content="#fbf6ec" />
+    <meta property="og:type" content="website" />
     <meta property="og:title" content="חתולי בן-גוריון" />
     <meta
       property="og:description"
       content="עזרו לנו לזהות ולתת שמות לחתולים שחיים בקמפוס."
     />
-    <meta property="og:image" content="/hero.webp" />
-    <link rel="stylesheet" href="/styles.css" />
+    <!-- Absolute, and JPEG rather than WebP: link previews in WhatsApp
+         groups are how this page actually spreads. -->
+    <meta property="og:image" content="https://d2coegt5ci9g2o.cloudfront.net/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>"
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Playpen+Sans+Hebrew:wght@500;700&family=Rubik:wght@400;500;700&display=swap"
     />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
+    <!-- Doodle library. Hand-drawn-ish ink cats, used through <use>. Sized
+         0×0 rather than display:none — Chrome drops filters defined inside
+         a display:none SVG. -->
+    <svg class="defs" width="0" height="0" aria-hidden="true">
+      <defs>
+        <filter id="wobble">
+          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" />
+          <feDisplacementMap in="SourceGraphic" scale="2.4" />
+        </filter>
+
+        <path
+          id="head"
+          d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 60C102 84 84 98 60 98C36 98 18 85 16 61C14 43 17 25 23 9Z"
+        />
+        <path id="whiskers" d="M19 68L-3 62M18 75L-2 79M101 68L123 62M102 75L122 79" />
+        <path id="nose" d="M55 69L65 69L60 75Z" />
+        <path id="mouth" d="M60 75C59 80 54 82 50 79M60 75C61 80 66 82 70 79" />
+
+        <!-- midnight: all black, big round eyes -->
+        <symbol id="cat-midnight" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ink" />
+            <use href="#whiskers" />
+            <circle cx="42" cy="57" r="11.5" class="fill-paper" stroke="none" />
+            <circle cx="78" cy="57" r="11.5" class="fill-paper" stroke="none" />
+            <circle cx="45" cy="59" r="5.5" class="fill-ink" stroke="none" />
+            <circle cx="81" cy="59" r="5.5" class="fill-ink" stroke="none" />
+            <circle cx="46.5" cy="57" r="1.8" class="fill-paper" stroke="none" />
+            <circle cx="82.5" cy="57" r="1.8" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-pink" stroke="none" />
+            <use href="#mouth" class="stroke-paper" />
+          </g>
+        </symbol>
+
+        <!-- tuxedo: black with a white muzzle, slit pupils -->
+        <symbol id="cat-tuxedo" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ink" />
+            <use href="#whiskers" />
+            <path
+              d="M40 73C43 63 53 60 60 65C67 60 77 63 80 73C82 87 72 94 60 94C48 94 38 87 40 73Z"
+              class="fill-paper"
+              stroke="none"
+            />
+            <path d="M32 55C37 48 47 48 51 55C47 62 37 62 32 55Z" class="fill-paper" stroke="none" />
+            <path d="M69 55C73 48 83 48 88 55C83 62 73 62 69 55Z" class="fill-paper" stroke="none" />
+            <ellipse cx="42" cy="55" rx="2.4" ry="5.6" class="fill-ink" stroke="none" />
+            <ellipse cx="78" cy="55" rx="2.4" ry="5.6" class="fill-ink" stroke="none" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <!-- ginger: orange tabby with forehead stripes -->
+        <symbol id="cat-ginger" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ginger" />
+            <use href="#whiskers" />
+            <path d="M52 37L54 47M60 35L60 46M68 37L66 47M18 50L28 53M17 58L27 59M102 50L92 53M103 58L93 59" />
+            <circle cx="42" cy="58" r="6.5" class="fill-ink" stroke="none" />
+            <circle cx="78" cy="58" r="6.5" class="fill-ink" stroke="none" />
+            <circle cx="44" cy="56" r="2" class="fill-paper" stroke="none" />
+            <circle cx="80" cy="56" r="2" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <!-- fluff: white long-hair, asleep -->
+        <symbol id="cat-fluff" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <path
+              d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 57L111 63L104 68L109 75L100 79L103 87L92 89C84 97 72 99 60 99C48 99 36 97 28 89L17 87L20 79L11 75L16 68L9 63L16 57C14 43 17 25 23 9Z"
+              class="fill-paper"
+            />
+            <path d="M34 58C38 63 46 63 50 58M70 58C74 63 82 63 86 58" />
+            <ellipse cx="34" cy="71" rx="6" ry="3.5" class="fill-pink" stroke="none" opacity="0.7" />
+            <ellipse cx="86" cy="71" rx="6" ry="3.5" class="fill-pink" stroke="none" opacity="0.7" />
+            <use href="#nose" class="fill-pink" />
+            <use href="#mouth" />
+            <path d="M104 6H113L104 15H113M116 -4H122L116 2H122" class="thin" />
+          </g>
+        </symbol>
+
+        <!-- calico: patches of ginger and ink -->
+        <symbol id="cat-calico" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-paper" stroke="none" />
+            <path
+              d="M23 9C29 17 36 26 42 33C46 32 49 31 52 31C51 42 44 50 34 50C25 50 19 45 17 38C17 28 19 18 23 9Z"
+              class="fill-ginger"
+              stroke="none"
+            />
+            <path
+              d="M98 9C91 17 85 25 78 33C75 32 71 31 68 31C71 40 79 45 90 43C98 41 102 37 104 33C103 24 101 16 98 9Z"
+              class="fill-ink"
+              stroke="none"
+            />
+            <use href="#head" fill="none" />
+            <use href="#whiskers" />
+            <ellipse cx="42" cy="58" rx="4.6" ry="6.4" class="fill-ink" stroke="none" />
+            <ellipse cx="78" cy="58" rx="4.6" ry="6.4" class="fill-ink" stroke="none" />
+            <circle cx="43.5" cy="56" r="1.6" class="fill-paper" stroke="none" />
+            <circle cx="79.5" cy="56" r="1.6" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-pink" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <!-- grump: grey tabby, unimpressed -->
+        <symbol id="cat-grump" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-grey" />
+            <use href="#whiskers" />
+            <path d="M54 36L55 45M60 35L60 44M66 36L65 45" />
+            <path d="M33 58H51C51 64 47 67 42 67C37 67 33 64 33 58Z" class="fill-paper" />
+            <path d="M69 58H87C87 64 83 67 78 67C73 67 69 64 69 58Z" class="fill-paper" />
+            <circle cx="42" cy="61" r="3.4" class="fill-ink" stroke="none" />
+            <circle cx="78" cy="61" r="3.4" class="fill-ink" stroke="none" />
+            <path d="M32 50L49 54M88 50L71 54" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <path d="M52 82C56 79 64 79 68 82" />
+          </g>
+        </symbol>
+
+        <!-- a cat hooked over an edge: just ears, eyes and two paws -->
+
+        <symbol id="paw" viewBox="0 0 40 40">
+          <path d="M20 21C12 21 7 29 10 34C13 38 17 36 20 36S27 38 30 34C33 29 28 21 20 21Z" />
+          <ellipse cx="8.5" cy="17" rx="3.8" ry="4.8" transform="rotate(-24 8.5 17)" />
+          <ellipse cx="15.5" cy="9.5" rx="3.8" ry="5" transform="rotate(-8 15.5 9.5)" />
+          <ellipse cx="24.5" cy="9.5" rx="3.8" ry="5" transform="rotate(8 24.5 9.5)" />
+          <ellipse cx="31.5" cy="17" rx="3.8" ry="4.8" transform="rotate(24 31.5 17)" />
+        </symbol>
+
+        <symbol id="icon-camera" viewBox="0 0 120 104">
+          <g class="ink-lines">
+            <path
+              d="M20 34H38L45 23H75L82 34H100C104 34 107 37 107 41V84C107 88 104 91 100 91H20C16 91 13 88 13 84V41C13 37 16 34 20 34Z"
+              class="fill-paper"
+            />
+            <circle cx="60" cy="62" r="18" class="fill-ginger" />
+            <circle cx="60" cy="62" r="8" class="fill-ink" stroke="none" />
+            <circle cx="93" cy="45" r="3" class="fill-ink" stroke="none" />
+            <path d="M24 27H34" />
+          </g>
+        </symbol>
+
+        <symbol id="icon-pin" viewBox="0 0 120 104">
+          <g class="ink-lines">
+            <path d="M30 96C42 92 78 92 90 96" class="thin" />
+            <path d="M60 96C60 96 32 66 32 44C32 28 45 15 60 15S88 28 88 44C88 66 60 96 60 96Z" class="fill-ginger" />
+            <g transform="translate(44 26) scale(0.8)" class="fill-ink" stroke="none">
+              <use href="#paw" width="40" height="40" />
+            </g>
+          </g>
+        </symbol>
+
+      </defs>
+    </svg>
+
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="חתולי בן-גוריון — דף הבית">
+        <svg class="doodle brand-mark" aria-hidden="true"><use href="#cat-midnight" /></svg>
+        <span>חתולי בן-גוריון</span>
+      </a>
+      <a class="pill" href="https://t.me/bgucatsbot">
+        <span dir="ltr">@bgucatsbot</span>
+        <svg class="tg" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21.5 4.2 2.9 11.4c-1.3.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.6Zm-4 3.4-8.4 7.6-.3 3.4-1.5-4.8 9.7-6.1c.4-.3.9 0 .5-.1Z" />
+        </svg>
+      </a>
+    </header>
+
     <main>
       <section class="hero">
-        <figure>
-          <img
-            src="/hero.webp"
-            alt="חתול ג'ינג'י-לבן על ריצוף הקמפוס, מביט למעלה אל המצלמה"
-          />
-          <figcaption>
-            צולם בקמפוס. אנחנו קוראים לו אורנג'יק — אבל בקרוב כולם יבחרו לו שם
-            שכולם יאהבו.
-          </figcaption>
-        </figure>
-
         <div class="hero-text">
           <p class="kicker">אוניברסיטת בן-גוריון · באר שבע</p>
-          <h1>כולם מכירים את חתולי הקמפוס.<br />אף אחד לא יודע איך קוראים להם.</h1>
+          <h1>
+            <span class="line">כולם מכירים את חתולי הקמפוס.</span>
+            <span class="line"><span class="underlined">אף אחד לא יודע איך קוראים להם.</span></span>
+          </h1>
           <p class="lede">
             בערך חמישים חתולים חיים בקמפוס הזה. יש להם טריטוריות, שגרות ודעות
-            נחרצות מאוד על הקפיטריה. מה שאין להם זה תיעוד — אז אנחנו בונים אחד,
+            נחרצות מאוד על האוכל שלכם. מה שאין להם זה תיעוד — אז אנחנו בונים אחד,
             ובשביל זה אנחנו צריכים את התמונות שלכם.
           </p>
 
           <a class="cta" href="https://t.me/bgucatsbot">
-            <span class="cta-icon" aria-hidden="true">➤</span>
+            <svg class="tg" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21.5 4.2 2.9 11.4c-1.3.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.6Zm-4 3.4-8.4 7.6-.3 3.4-1.5-4.8 9.7-6.1c.4-.3.9 0 .5-.1Z" />
+            </svg>
             <span>
               <b>שלחו תמונה של חתול</b>
               <small>נפתח בטלגרם אצל <span dir="ltr">@bgucatsbot</span></small>
             </span>
           </a>
         </div>
+
+        <figure class="hero-photo">
+          <!-- One tilted layer so the peeking cat and the frame share a
+               coordinate system: head behind the frame, paws in front of
+               it, which is what makes it read as peeking over the edge. -->
+          <div class="tilt">
+            <svg class="doodle peek-head" viewBox="0 0 120 80" aria-hidden="true">
+              <g class="ink-lines">
+                <path
+                  d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 105 80H15C14 43 17 25 23 9Z"
+                  class="fill-ink"
+                />
+                <g class="eyes">
+                  <circle cx="43" cy="52" r="9.5" class="fill-paper" stroke="none" />
+                  <circle cx="77" cy="52" r="9.5" class="fill-paper" stroke="none" />
+                  <circle cx="44" cy="56" r="4.6" class="fill-ink" stroke="none" />
+                  <circle cx="78" cy="56" r="4.6" class="fill-ink" stroke="none" />
+                </g>
+              </g>
+            </svg>
+            <div class="polaroid">
+              <img
+                src="/cats/ginger.webp"
+                width="750"
+                height="1000"
+                alt="חתול ג'ינג'י-לבן עם עיניים ירוקות, מביט ישר למצלמה מקרוב"
+              />
+              <figcaption>צולם בקמפוס. שם: עוד לא נבחר.</figcaption>
+            </div>
+            <svg class="doodle peek-paws" viewBox="0 0 120 26" aria-hidden="true">
+              <g class="ink-lines">
+                <path d="M15 20C15 4 37 4 37 20C37 25 15 25 15 20Z M83 20C83 4 105 4 105 20C105 25 83 25 83 20Z" class="fill-ink" />
+                <path d="M22 14V20M30 14V20M90 14V20M98 14V20" class="stroke-paper thin" />
+              </g>
+            </svg>
+          </div>
+          <svg class="doodle float f1" aria-hidden="true"><use href="#cat-tuxedo" /></svg>
+          <svg class="doodle float f2" aria-hidden="true"><use href="#cat-fluff" /></svg>
+          <svg class="doodle float f3" aria-hidden="true"><use href="#cat-calico" /></svg>
+        </figure>
       </section>
 
-      <section class="steps">
-        <h2>איך זה עובד</h2>
+      <div class="trail" aria-hidden="true"></div>
+
+      <section class="steps" aria-labelledby="steps-title">
+        <h2 id="steps-title">איך זה עובד</h2>
         <ol>
           <li>
-            <span class="num">1</span>
+            <svg class="doodle step-icon" aria-hidden="true"><use href="#cat-ginger" /></svg>
             <h3>רואים חתול</h3>
             <p>
               בכל מקום בקמפוס. על ספסל, ישן מתחת לשיח, או נכנס לבניין כאילו הוא
@@ -65,7 +285,7 @@
             </p>
           </li>
           <li>
-            <span class="num">2</span>
+            <svg class="doodle step-icon" aria-hidden="true"><use href="#icon-camera" /></svg>
             <h3>שולחים תמונות</h3>
             <p>
               פותחים את הבוט ושולחים כמה שבא לכם. כמה זוויות של אותו חתול שוות
@@ -73,22 +293,139 @@
             </p>
           </li>
           <li>
-            <span class="num">3</span>
-            <h3>וזהו</h3>
+            <svg class="doodle step-icon" aria-hidden="true"><use href="#icon-pin" /></svg>
+            <h3>מסמנים איפה</h3>
             <p>
-              אנחנו ממיינים, מקבצים ונותנים שמות. כל תמונה שתשלחו הופכת את זיהוי
-              החתול הבא לקל יותר.
+              הבוט ישאל איפה ראיתם אותו. נועצים סיכה במפה — גם אם הצילום היה
+              לפני שעה. המיקום נשמר בעיגול של כ-100 מטר.
             </p>
           </li>
         </ol>
       </section>
 
-      <footer>
-        <a class="cta cta-small" href="https://t.me/bgucatsbot">
-          פתחו את <span dir="ltr">@bgucatsbot</span> ←
-        </a>
-        <p>פרויקט סטודנטים. תהיו נחמדים לחתולים; אל תרימו אותם.</p>
-      </footer>
+      <section class="yearbook" aria-labelledby="yearbook-title">
+        <div class="section-head">
+          <h2 id="yearbook-title">ספר המחזור</h2>
+          <p>
+            כמה מהדיירים שכבר צילמנו. לרובם עוד אין שם — ובשביל זה אנחנו פה.
+          </p>
+        </div>
+
+        <!-- Adding a cat: drop a WebP (metadata stripped, ~720px) into
+             site/cats/, copy one <li> below, and `make tf-apply`. -->
+        <ul class="cards">
+          <li class="card">
+            <div class="photo">
+              <img src="/cats/tabby.webp" width="540" height="720" loading="lazy" alt="חתול טאבי חום עם סנטר לבן, מביט במצלמה בחשדנות" />
+            </div>
+            <p class="name">שם: <span class="blank">?</span></p>
+            <dl>
+              <dt>סימנים מזהים</dt>
+              <dd>טאבי חום, סנטר וחזה לבנים, מבט חודר</dd>
+              <dt>הכי סביר ש…</dt>
+              <dd>יבהה בך עד שתוותר על הסנדוויץ'</dd>
+            </dl>
+          </li>
+          <li class="card">
+            <div class="photo">
+              <img src="/cats/calico.webp" width="900" height="675" loading="lazy" alt="חתולה לבנה עם כתמים ג'ינג'יים ואפורים, שוכבת על האדמה וחצי ישנה" />
+            </div>
+            <p class="name">שם: <span class="blank">?</span></p>
+            <dl>
+              <dt>סימנים מזהים</dt>
+              <dd>לבנה עם כתמים ג'ינג'יים ואפורים על הראש</dd>
+              <dt>הכי סביר ש…</dt>
+              <dd>תירדם באמצע ההרצאה. ותגיד שהיא הקשיבה</dd>
+            </dl>
+          </li>
+          <li class="card">
+            <div class="photo">
+              <img src="/cats/bench.webp" width="541" height="720" loading="lazy" alt="חתול לבן עם ראש טאבי אפור, שוכב על ספסל עץ שחור" />
+            </div>
+            <p class="name">שם: <span class="blank">?</span></p>
+            <dl>
+              <dt>סימנים מזהים</dt>
+              <dd>לבן, ראש טאבי אפור, עיניים ירוקות</dd>
+              <dt>הכי סביר ש…</dt>
+              <dd>יתפוס את הספסל הכי טוב בקמפוס</dd>
+            </dl>
+          </li>
+          <li class="card">
+            <div class="photo">
+              <img src="/cats/black.webp" width="541" height="720" loading="lazy" alt="חתול שחור ישן על ספה אפורה, כפות קדמיות מתוחות קדימה" />
+            </div>
+            <p class="name">שם: <span class="blank">?</span></p>
+            <dl>
+              <dt>סימנים מזהים</dt>
+              <dd>שחור לגמרי. כן, זה הכי קשה לזהות</dd>
+              <dt>הכי סביר ש…</dt>
+              <dd>יתפוס כל ספה פנויה, ובמיוחד את שלך</dd>
+            </dl>
+          </li>
+          <li class="card card-next">
+            <a href="https://t.me/bgucatsbot">
+              <svg class="doodle" aria-hidden="true"><use href="#cat-grump" /></svg>
+              <p class="name">עוד בערך 45 חתולים</p>
+              <p>מחכים לתמונה שלכם. כן, גם זה שמסתכל עליכם עכשיו.</p>
+              <span class="cta cta-small">לצלם ולשלוח ←</span>
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <div class="trail" aria-hidden="true"></div>
+
+      <section class="tips" aria-labelledby="tips-title">
+        <h2 id="tips-title">איך מצלמים חתול שאפשר לזהות</h2>
+        <ul>
+          <li><b>פנים מלפנים.</b> מגובה העיניים שלו, לא מלמעלה.</li>
+          <li><b>גם מהצד.</b> הכתמים והפסים הם תעודת הזהות שלו.</li>
+          <li><b>כמה תמונות ברצף.</b> זוויות שונות של אותו חתול עוזרות יותר מכל פילטר.</li>
+          <li><b>ממרחק מכבד.</b> לא רודפים, לא מרימים. הוא כאן לפניכם.</li>
+        </ul>
+      </section>
     </main>
+
+    <footer>
+      <div class="lineup" aria-hidden="true">
+        <svg class="doodle"><use href="#cat-ginger" /></svg>
+        <svg class="doodle"><use href="#cat-midnight" /></svg>
+        <svg class="doodle"><use href="#cat-calico" /></svg>
+        <svg class="doodle"><use href="#cat-grump" /></svg>
+        <svg class="doodle"><use href="#cat-tuxedo" /></svg>
+        <svg class="doodle"><use href="#cat-fluff" /></svg>
+      </div>
+      <a class="cta" href="https://t.me/bgucatsbot">
+        <svg class="tg" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21.5 4.2 2.9 11.4c-1.3.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.6Zm-4 3.4-8.4 7.6-.3 3.4-1.5-4.8 9.7-6.1c.4-.3.9 0 .5-.1Z" />
+        </svg>
+        <span><b>פתחו את <span dir="ltr">@bgucatsbot</span></b></span>
+      </a>
+      <p>פרויקט סטודנטים. תהיו נחמדים לחתולים; אל תרימו אותם.</p>
+    </footer>
+
+    <script>
+      // Paw-print trails. Decorative: built here so the wave can follow the
+      // container's width, and absent entirely without JS. Walks right to
+      // left, the way the page reads.
+      for (const trail of document.querySelectorAll(".trail")) {
+        // One print per ~50px, so a phone gets a walk, not a smudge.
+        const steps = Math.max(8, Math.min(22, Math.round(trail.clientWidth / 50)));
+        for (let i = 0; i < steps; i++) {
+          const t = i / (steps - 1);
+          const side = i % 2 ? 1 : -1;
+          const x = 97 - t * 94;
+          const y = 50 + Math.sin(t * Math.PI * 2.2) * 22 + side * 9;
+          const slope = Math.cos(t * Math.PI * 2.2) * 18;
+          const paw = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          paw.setAttribute("class", "paw");
+          paw.style.cssText = `right:${100 - x}%;top:${y}%;--i:${i};--r:${-90 - slope}deg`;
+          const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+          use.setAttribute("href", "#paw");
+          paw.append(use);
+          trail.append(paw);
+        }
+      }
+    </script>
   </body>
 </html>
