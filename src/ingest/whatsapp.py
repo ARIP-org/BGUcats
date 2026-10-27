@@ -292,6 +292,9 @@ def _handle_action(action, submitter_hash, reply):
     elif action == LOCATION_HELP_ACTION:
         reply.location_request(DONE_ASK_LOCATION_TEXT)
     elif action == START_ACTION:
+        # WhatsApp's nearest thing to /start. No tracked-link payload rides
+        # along, so the profile only says when and on which channel.
+        core.record_contributor(submitter_hash, CHANNEL)
         reply.buttons(START_TEXT)
 
 

@@ -1,5 +1,6 @@
 import json
 import os
+from decimal import Decimal
 
 os.environ.setdefault("TABLE_NAME", "bgucats-data-test")
 os.environ.setdefault("MEDIA_BUCKET", "bgucats-media-test")
@@ -485,3 +486,128 @@ def test_key_plumbing_is_not_leaked_to_the_client(aws):
 
     assert not any(k.startswith("GSI") for k in photo)
     assert "PK" not in photo
+
+
+# --------------------------------------------------------------------------
+# Stats page and tracked links
+# --------------------------------------------------------------------------
+
+
+def test_insights_reads_photos_sessions_profiles_and_traffic(aws):
+    _session(aws, SESSION, coarseLat=Decimal("31.262"), coarseLon=Decimal("34.801"))
+    _session(aws, OTHER_SESSION)
+    for photo_id, session_id in (
+        ("01PHOTO0000000000000000001", SESSION),
+        ("01PHOTO0000000000000000002", SESSION),
+        ("01PHOTO0000000000000000003", OTHER_SESSION),
+    ):
+        item = _photo(aws, photo_id, session_id)
+        aws["table"].update_item(
+            Key={"PK": item["PK"], "SK": "META"},
+            UpdateExpression="SET submitterHash = :h",
+            ExpressionAttributeValues={":h": "a" * 64},
+        )
+    _photo(aws, "01PHOTO0000000000000000004", status="duplicate")
+    aws["table"].put_item(
+        Item={
+            "PK": f"SUBMITTER#{'a' * 64}",
+            "SK": "PROFILE",
+            "submitterHash": "a" * 64,
+            "referral": "poster",
+            "channel": "telegram",
+            "firstSeenAt": "2026-08-24T10:00:00.000Z",
+            "GSI2PK": "ENTITY#SUBMITTER",
+            "GSI2SK": "2026-08-24T10:00:00.000Z",
+        }
+    )
+    aws["table"].put_item(
+        Item={
+            "PK": "TRAFFIC#2026-08-24#poster",
+            "SK": "META",
+            "day": "2026-08-24",
+            "referral": "poster",
+            "visits": 9,
+            "visitors": 7,
+            "botClicks": 3,
+            "GSI2PK": "ENTITY#TRAFFIC",
+            "GSI2SK": "2026-08-24#poster",
+        }
+    )
+
+    status, body = _call("GET", "/api/insights")
+    assert status == 200
+    summary = body["summary"]
+    assert summary["media"] == 3
+    assert summary["duplicates"] == 1
+    assert summary["sessions"] == 2
+    assert summary["sessionsWithLocation"] == 1
+    assert summary["contributors"] == 1
+
+    (poster,) = [r for r in body["referrals"] if r["referral"] == "poster"]
+    assert poster["visitors"] == 7
+    assert poster["botClicks"] == 3
+    assert poster["people"] == 1
+    assert poster["media"] == 3
+
+
+def test_links_can_be_created_labelled_and_given_partner_numbers(aws):
+    status, _ = _call("POST", "/api/links", {"slug": "Friend-App", "label": "Friend"})
+    assert status == 200
+
+    status, body = _call(
+        "PATCH",
+        "/api/links/friend-app",
+        {"partnerViews": 1200, "partnerPlays": 300, "partnerClicks": 45},
+    )
+    assert status == 200
+    assert body["partnerReportedAt"]
+
+    _, insights = _call("GET", "/api/insights")
+    (row,) = [r for r in insights["referrals"] if r["referral"] == "friend-app"]
+    assert row["link"]["label"] == "Friend"
+    assert row["link"]["partnerViews"] == 1200
+    assert row["link"]["partnerClicks"] == 45
+
+
+def test_duplicate_link_slug_is_a_conflict(aws):
+    _call("POST", "/api/links", {"slug": "poster", "label": "Poster"})
+    status, _ = _call("POST", "/api/links", {"slug": "poster", "label": "Again"})
+    assert status == 409
+
+
+@pytest.mark.parametrize("slug", ["has space", "-dash", "x" * 33, "под"])
+def test_bad_link_slugs_are_refused(aws, slug):
+    status, _ = _call("POST", "/api/links", {"slug": slug, "label": "x"})
+    assert status == 400
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, "12", True, 10**10])
+def test_partner_numbers_must_be_whole_and_in_range(aws, value):
+    _call("POST", "/api/links", {"slug": "friend", "label": "Friend"})
+    status, _ = _call("PATCH", "/api/links/friend", {"partnerViews": value})
+    assert status == 400
+
+
+def test_updating_a_missing_link_is_404(aws):
+    status, _ = _call("PATCH", "/api/links/ghost", {"label": "Boo"})
+    assert status == 404
+
+
+def test_deleting_a_link_keeps_its_traffic(aws):
+    _call("POST", "/api/links", {"slug": "poster", "label": "Poster"})
+    aws["table"].put_item(
+        Item={
+            "PK": "TRAFFIC#2026-08-24#poster",
+            "SK": "META",
+            "day": "2026-08-24",
+            "referral": "poster",
+            "visits": 2,
+            "GSI2PK": "ENTITY#TRAFFIC",
+            "GSI2SK": "2026-08-24#poster",
+        }
+    )
+    assert _call("DELETE", "/api/links/poster")[0] == 200
+    _, insights = _call("GET", "/api/insights")
+    (row,) = [r for r in insights["referrals"] if r["referral"] == "poster"]
+    assert row["link"] is None
+    assert row["visits"] == 2

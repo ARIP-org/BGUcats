@@ -43,6 +43,9 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
           "dynamodb:UpdateItem",
           "dynamodb:DeleteItem",
           "dynamodb:Query",
+          # The stats page fetches every session in the dataset by ID for
+          # its pinned location — a hundred keys per call, not one.
+          "dynamodb:BatchGetItem",
         ]
         Resource = [
           aws_dynamodb_table.data.arn,
@@ -158,7 +161,7 @@ resource "aws_lambda_function" "admin_presignup" {
   }
 }
 
-# One catch-all route rather than eighteen: the routing table lives in
+# One catch-all route rather than one per endpoint: the routing table lives in
 # src/admin/handler.py where it can be read in one screen.
 resource "aws_apigatewayv2_integration" "admin" {
   api_id                 = aws_apigatewayv2_api.main.id

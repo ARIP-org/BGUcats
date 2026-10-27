@@ -23,6 +23,8 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from ulid import ULID
 
+from admin import insights
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -44,6 +46,18 @@ QUEUE_PHOTO_SAMPLE = 200
 UNASSIGNABLE_STATUSES = frozenset({"pending", "duplicate"})
 
 DERIVATIVE_NAMES = ("thumb-256.webp", "medium-1024.webp")
+
+# A tracked link's slug — the landing page's ?src= and the bot's /start
+# payload. Same pattern as ingest.core.REFERRAL_PATTERN.
+LINK_SLUG = r"[a-z0-9][a-z0-9-]{0,31}"
+
+# Numbers a partner reports about their own side of an ad — how many saw
+# it, played, clicked through — typed in from their dashboard. Running
+# totals; the stats page lines them up with ours over the same span.
+PARTNER_FIELDS = insights.PARTNER_FIELDS
+PARTNER_MAX = 10**9
+
+BATCH_GET_LIMIT = 100
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
@@ -197,12 +211,16 @@ def _session_payload(session_id):
 
 
 def _session_photos(session_id):
+    return _query_all(
+        IndexName="GSI1",
+        KeyConditionExpression=Key("GSI1PK").eq(f"SESSION#{session_id}"),
+        ScanIndexForward=True,
+    )
+
+
+def _query_all(**kwargs):
+    """Every page of a query, not just the first 1 MB."""
     items = []
-    kwargs = {
-        "IndexName": "GSI1",
-        "KeyConditionExpression": Key("GSI1PK").eq(f"SESSION#{session_id}"),
-        "ScanIndexForward": True,
-    }
     while True:
         page = table.query(**kwargs)
         items.extend(page["Items"])
@@ -287,18 +305,147 @@ def _get_cat(cat_id, **_):
 
 
 def _cat_photos(cat_id):
-    items = []
-    kwargs = {
-        "IndexName": "GSI3",
-        "KeyConditionExpression": Key("GSI3PK").eq(f"CAT#{cat_id}"),
-        "ScanIndexForward": True,
-    }
-    while True:
-        page = table.query(**kwargs)
-        items.extend(page["Items"])
-        if "LastEvaluatedKey" not in page:
-            return items
-        kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+    return _query_all(
+        IndexName="GSI3",
+        KeyConditionExpression=Key("GSI3PK").eq(f"CAT#{cat_id}"),
+        ScanIndexForward=True,
+    )
+
+
+# --------------------------------------------------------------------------
+# Stats page
+# --------------------------------------------------------------------------
+
+
+def _get_insights(**_):
+    """Everything on the stats page, recomputed from the table per request.
+
+    GSI2 queries only, no scan: photos by status, and the profile, traffic,
+    link and cat entity lists. Sessions are fetched by ID for their pinned
+    location. See admin/insights.py for what is computed and why.
+    """
+    unlabeled = _status_items("unlabeled")
+    labeled = _status_items("labeled")
+    media = unlabeled + labeled
+    session_ids = {p["sessionId"] for p in media if p.get("sessionId")}
+    return insights.build(
+        media=media,
+        duplicates=len(_status_items("duplicate")),
+        sessions=_batch_get_sessions(session_ids),
+        profiles=_entities("SUBMITTER"),
+        traffic=_entities("TRAFFIC"),
+        links=_entities("LINK"),
+        cats=_entities("CAT"),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _status_items(status):
+    return _query_all(
+        IndexName="GSI2", KeyConditionExpression=Key("GSI2PK").eq(f"STATUS#{status}")
+    )
+
+
+def _entities(kind):
+    return _query_all(
+        IndexName="GSI2", KeyConditionExpression=Key("GSI2PK").eq(f"ENTITY#{kind}")
+    )
+
+
+def _batch_get_sessions(session_ids):
+    sessions = {}
+    ids = sorted(session_ids)
+    for start in range(0, len(ids), BATCH_GET_LIMIT):
+        keys = [
+            {"PK": f"SESSION#{sid}", "SK": "META"}
+            for sid in ids[start : start + BATCH_GET_LIMIT]
+        ]
+        request = {table.name: {"Keys": keys}}
+        while request:
+            response = table.meta.client.batch_get_item(RequestItems=request)
+            for item in response["Responses"].get(table.name, []):
+                sessions[item["sessionId"]] = item
+            request = response.get("UnprocessedKeys") or None
+    return sessions
+
+
+# --------------------------------------------------------------------------
+# Tracked links
+# --------------------------------------------------------------------------
+
+
+def _create_link(body, email, **_):
+    """Register a source so the stats page can name it and hold the
+    partner's own numbers. Counting works without this — any well-formed
+    ?src= is counted — registering just gives it a label."""
+    slug = _required_string(body, "slug", maximum=32).lower()
+    if not re.fullmatch(LINK_SLUG, slug):
+        raise ApiError(
+            400, "slug: lowercase letters, digits and dashes, starting with a letter"
+        )
+    label = _required_string(body, "label", maximum=60)
+    now = _now_iso()
+    try:
+        table.put_item(
+            Item={
+                "PK": f"LINK#{slug}",
+                "SK": "META",
+                "slug": slug,
+                "label": label,
+                "createdAt": now,
+                "createdBy": email,
+                "GSI2PK": "ENTITY#LINK",
+                "GSI2SK": slug,
+            },
+            ConditionExpression="attribute_not_exists(PK)",
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        raise ApiError(409, f"a link called {slug} already exists")
+    return {"slug": slug, "label": label}
+
+
+def _update_link(slug, body, **_):
+    updates = {}
+    if "label" in body:
+        updates["label"] = _required_string(body, "label", maximum=60)
+    for field in PARTNER_FIELDS:
+        if field in body:
+            updates[field] = _partner_number(body, field)
+    if not updates:
+        raise ApiError(400, "nothing to update")
+    if any(field in updates for field in PARTNER_FIELDS):
+        updates["partnerReportedAt"] = _now_iso()
+
+    expression = ", ".join(f"#{k} = :{k}" for k in updates)
+    try:
+        table.update_item(
+            Key={"PK": f"LINK#{slug}", "SK": "META"},
+            UpdateExpression=f"SET {expression}",
+            ExpressionAttributeNames={f"#{k}": k for k in updates},
+            ExpressionAttributeValues={f":{k}": v for k, v in updates.items()},
+            ConditionExpression="attribute_exists(PK)",
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        raise ApiError(404, "no such link")
+    return {"slug": slug, **updates}
+
+
+def _delete_link(slug, **_):
+    """Forgets the label and partner numbers. The traffic already counted
+    under the slug stays, and shows under the bare slug again."""
+    table.delete_item(Key={"PK": f"LINK#{slug}", "SK": "META"})
+    return {"deleted": slug}
+
+
+def _partner_number(body, field):
+    value = body.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ApiError(400, f"{field} must be a whole number")
+    if not 0 <= value <= PARTNER_MAX:
+        raise ApiError(400, f"{field} is out of range")
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -703,6 +850,10 @@ EMAIL = r"[^/]+"
 ROUTES = (
     ("GET", r"^/api/me$", _get_me),
     ("GET", r"^/api/stats$", _get_stats),
+    ("GET", r"^/api/insights$", _get_insights),
+    ("POST", r"^/api/links$", _create_link),
+    ("PATCH", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _update_link),
+    ("DELETE", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _delete_link),
     ("GET", r"^/api/queue$", _get_queue),
     # Ahead of the /{session_id} patterns: "merge" would otherwise be read
     # as a session id.

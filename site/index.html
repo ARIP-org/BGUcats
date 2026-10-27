@@ -328,18 +328,6 @@
           </li>
           <li class="card">
             <div class="photo">
-              <img src="/cats/calico.webp" width="900" height="675" loading="lazy" alt="חתולה לבנה עם כתמים ג'ינג'יים ואפורים, שוכבת על האדמה וחצי ישנה" />
-            </div>
-            <p class="name">שם: <span class="blank">?</span></p>
-            <dl>
-              <dt>סימנים מזהים</dt>
-              <dd>לבנה עם כתמים ג'ינג'יים ואפורים על הראש</dd>
-              <dt>הכי סביר ש…</dt>
-              <dd>תירדם באמצע ההרצאה. ותגיד שהיא הקשיבה</dd>
-            </dl>
-          </li>
-          <li class="card">
-            <div class="photo">
               <img src="/cats/bench.webp" width="541" height="720" loading="lazy" alt="חתול לבן עם ראש טאבי אפור, שוכב על ספסל עץ שחור" />
             </div>
             <p class="name">שם: <span class="blank">?</span></p>
@@ -426,6 +414,103 @@
           trail.append(paw);
         }
       }
+    </script>
+    <script>
+      // Where visitors come from, for the stats page in the admin tool. No
+      // cookies and no identifiers: each beacon carries an event name, a
+      // source slug and whether this browser was already counted today, and
+      // the server keeps daily totals (src/beacon/handler.py).
+      (() => {
+        const BEACON_URL = "__BEACON_URL__"; // filled in by infra/main/site.tf
+        const BOT_URL = "https://t.me/bgucatsbot";
+        // Same alphabet as the bot's /start payload, which it is passed on as.
+        const SLUG = /^[a-z0-9][a-z0-9-]{0,31}$/;
+        const REMEMBER_MS = 30 * 864e5;
+
+        const store = {
+          get(key) {
+            try {
+              return JSON.parse(localStorage.getItem(key));
+            } catch {
+              return null;
+            }
+          },
+          set(key, value) {
+            try {
+              localStorage.setItem(key, JSON.stringify(value));
+            } catch {}
+          },
+        };
+
+        // A tracked link: ?src=poster on the poster's QR, ?src=<partner> in an ad.
+        function fromLink() {
+          const params = new URLSearchParams(location.search);
+          const raw = (params.get("src") || params.get("utm_source") || "").trim().toLowerCase();
+          return SLUG.test(raw) ? raw : null;
+        }
+
+        // Sites that sent someone here without a tracked link.
+        const REFERRERS = [
+          [/(^|\.)(t\.me|telegram\.org)$/, "telegram"],
+          [/(^|\.)instagram\.com$/, "instagram"],
+          [/(^|\.)(facebook\.com|fb\.com)$/, "facebook"],
+          [/(^|\.)whatsapp\.(com|net)$/, "whatsapp"],
+          [/(^|\.)google\.[a-z.]+$/, "google"],
+        ];
+
+        function fromReferrer() {
+          let host;
+          try {
+            host = new URL(document.referrer).hostname;
+          } catch {
+            return null;
+          }
+          if (!host || host === location.hostname) return null;
+          for (const [pattern, name] of REFERRERS) if (pattern.test(host)) return name;
+          return "referral";
+        }
+
+        // Remembered for a month, so someone who saw the ad on Monday and
+        // typed the address on Wednesday still counts for the ad.
+        function resolveReferral() {
+          const fresh = fromLink() || fromReferrer();
+          if (fresh) {
+            store.set("bgucats.src", { slug: fresh, at: Date.now() });
+            return fresh;
+          }
+          const saved = store.get("bgucats.src");
+          if (saved && SLUG.test(saved.slug) && Date.now() - saved.at < REMEMBER_MS) {
+            return saved.slug;
+          }
+          return "direct";
+        }
+
+        const referral = resolveReferral();
+
+        // A string body goes as text/plain: a "simple" cross-origin request,
+        // so there is no CORS preflight and nothing to configure for one.
+        function send(event, extra) {
+          if (BEACON_URL.startsWith("__")) return; // a local preview, not deployed
+          const body = JSON.stringify({ event, referral, ...extra });
+          try {
+            if (!navigator.sendBeacon?.(BEACON_URL, body)) {
+              fetch(BEACON_URL, { method: "POST", body, keepalive: true, mode: "no-cors" });
+            }
+          } catch {}
+        }
+
+        const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+        const firstToday = store.get("bgucats.day") !== today;
+        store.set("bgucats.day", today);
+        send("visit", { firstToday });
+
+        // Every "send a photo" button carries the source on into the bot as
+        // its /start payload — that is how a contributor gets attributed.
+        for (const link of document.querySelectorAll(`a[href="${BOT_URL}"]`)) {
+          link.href = `${BOT_URL}?start=${referral}`;
+          link.addEventListener("click", () => send("bot_click"));
+        }
+      })();
     </script>
   </body>
 </html>

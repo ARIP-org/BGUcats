@@ -1,4 +1,4 @@
-.PHONY: fmt lint test build build-ingest build-process build-admin \
+.PHONY: fmt lint test build build-ingest build-process build-admin build-beacon \
 	tf-init tf-plan tf-apply site-invalidate whatsapp-secrets admin-add poster
 
 # Lambda runs Linux x86_64; resolve binary wheels for that, not for whatever
@@ -19,7 +19,7 @@ lint:
 test:
 	pytest
 
-build: build-ingest build-process build-admin
+build: build-ingest build-process build-admin build-beacon
 
 # Always rebuilt rather than tracked as file targets: a directory's mtime
 # doesn't change when a source file inside it is edited, so a file-target
@@ -47,8 +47,15 @@ build-process:
 build-admin:
 	rm -rf build/admin && mkdir -p build/admin/admin
 	$(LAMBDA_PIP) --target build/admin -r src/admin/requirements.txt
-	cp src/admin/__init__.py src/admin/handler.py src/admin/presignup.py \
-		build/admin/admin/
+	cp src/admin/__init__.py src/admin/handler.py src/admin/insights.py \
+		src/admin/presignup.py build/admin/admin/
+
+# The landing page's visit counter. Its own package and its own role: the one
+# public endpoint that writes gets the smallest possible zip and grant.
+build-beacon:
+	rm -rf build/beacon && mkdir -p build/beacon/beacon
+	$(LAMBDA_PIP) --target build/beacon -r src/beacon/requirements.txt
+	cp src/beacon/__init__.py src/beacon/handler.py build/beacon/beacon/
 
 tf-init:
 	terraform -chdir=infra/main init

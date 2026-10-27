@@ -96,6 +96,24 @@ The CI role's read access to `/bgucats/whatsapp/*` is in
 `bootstrap/github_oidc.tf` and needs a `terraform apply` of `bootstrap/`
 from the machine that holds its local state.
 
+## Where contributors come from
+
+The admin tool's **Stats** tab follows people from wherever they heard
+about the project to the photos they send:
+
+1. A tracked link — `https://<site>/?src=<slug>` — lands on the landing
+   page, which reports the visit to `POST /landing` (`main/beacon.tf`).
+   Only daily totals are stored: no cookies, IPs or user agents.
+2. The page rewrites its Telegram buttons to `t.me/bgucatsbot?start=<slug>`,
+   counting the press.
+3. The bot records the slug on the submitter's profile at `/start`, so
+   every photo they send later is attributed to it.
+
+Create a link for each partner in **Stats → + Tracked link** and hand out
+the landing-page URL it shows. Their own numbers (ad views, plays,
+click-throughs) are typed in under **Partner numbers** and sit on top of
+the funnel. The poster's QR carries `?src=poster` (`make poster`).
+
 ## Admins
 
 `bootstrap_admin_email` seeds the first row so the tool can be opened at all;

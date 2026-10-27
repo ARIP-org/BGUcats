@@ -2,43 +2,215 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>BGUcats · labeling</title>
+    <meta name="theme-color" content="#fbf6ec" />
+    <title>BGU cats · labeling desk</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Rubik:wght@400;500;700&display=swap"
+    />
     <link rel="stylesheet" href="/styles.css" />
+    <!-- The landing page's favicon, inlined: the two sites share no origin. -->
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='10 4 100 100'%3E%3Cpath d='M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 60C102 84 84 98 60 98C36 98 18 85 16 61C14 43 17 25 23 9Z' fill='%231f1b18'/%3E%3Ccircle cx='42' cy='57' r='12' fill='%23fffdf8'/%3E%3Ccircle cx='78' cy='57' r='12' fill='%23fffdf8'/%3E%3Ccircle cx='45' cy='59' r='6' fill='%231f1b18'/%3E%3Ccircle cx='81' cy='59' r='6' fill='%231f1b18'/%3E%3Cpath d='M54 70L66 70L60 77Z' fill='%23e07b2f'/%3E%3C/svg%3E"
     />
   </head>
   <body>
+    <!-- Doodles, copied from the landing page (site/index.html) so the two
+         read as one project. Sized 0×0 rather than display:none — Chrome
+         drops filters defined inside a display:none SVG. -->
+    <svg class="defs" width="0" height="0" aria-hidden="true">
+      <defs>
+        <filter id="wobble">
+          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" />
+          <feDisplacementMap in="SourceGraphic" scale="2.4" />
+        </filter>
+
+        <path
+          id="head"
+          d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 60C102 84 84 98 60 98C36 98 18 85 16 61C14 43 17 25 23 9Z"
+        />
+        <path id="whiskers" d="M19 68L-3 62M18 75L-2 79M101 68L123 62M102 75L122 79" />
+        <path id="nose" d="M55 69L65 69L60 75Z" />
+        <path id="mouth" d="M60 75C59 80 54 82 50 79M60 75C61 80 66 82 70 79" />
+
+        <symbol id="cat-midnight" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ink" />
+            <use href="#whiskers" />
+            <circle cx="42" cy="57" r="11.5" class="fill-paper" stroke="none" />
+            <circle cx="78" cy="57" r="11.5" class="fill-paper" stroke="none" />
+            <circle cx="45" cy="59" r="5.5" class="fill-ink" stroke="none" />
+            <circle cx="81" cy="59" r="5.5" class="fill-ink" stroke="none" />
+            <circle cx="46.5" cy="57" r="1.8" class="fill-paper" stroke="none" />
+            <circle cx="82.5" cy="57" r="1.8" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-pink" stroke="none" />
+            <use href="#mouth" class="stroke-paper" />
+          </g>
+        </symbol>
+
+        <symbol id="cat-ginger" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ginger" />
+            <use href="#whiskers" />
+            <path d="M52 37L54 47M60 35L60 46M68 37L66 47M18 50L28 53M17 58L27 59M102 50L92 53M103 58L93 59" />
+            <circle cx="42" cy="58" r="6.5" class="fill-ink" stroke="none" />
+            <circle cx="78" cy="58" r="6.5" class="fill-ink" stroke="none" />
+            <circle cx="44" cy="56" r="2" class="fill-paper" stroke="none" />
+            <circle cx="80" cy="56" r="2" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <symbol id="cat-tuxedo" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ink" />
+            <use href="#whiskers" />
+            <path
+              d="M40 73C43 63 53 60 60 65C67 60 77 63 80 73C82 87 72 94 60 94C48 94 38 87 40 73Z"
+              class="fill-paper"
+              stroke="none"
+            />
+            <path d="M32 55C37 48 47 48 51 55C47 62 37 62 32 55Z" class="fill-paper" stroke="none" />
+            <path d="M69 55C73 48 83 48 88 55C83 62 73 62 69 55Z" class="fill-paper" stroke="none" />
+            <ellipse cx="42" cy="55" rx="2.4" ry="5.6" class="fill-ink" stroke="none" />
+            <ellipse cx="78" cy="55" rx="2.4" ry="5.6" class="fill-ink" stroke="none" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <symbol id="cat-fluff" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <path
+              d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 57L111 63L104 68L109 75L100 79L103 87L92 89C84 97 72 99 60 99C48 99 36 97 28 89L17 87L20 79L11 75L16 68L9 63L16 57C14 43 17 25 23 9Z"
+              class="fill-paper"
+            />
+            <path d="M34 58C38 63 46 63 50 58M70 58C74 63 82 63 86 58" />
+            <ellipse cx="34" cy="71" rx="6" ry="3.5" class="fill-pink" stroke="none" opacity="0.7" />
+            <ellipse cx="86" cy="71" rx="6" ry="3.5" class="fill-pink" stroke="none" opacity="0.7" />
+            <use href="#nose" class="fill-pink" />
+            <use href="#mouth" />
+            <path d="M104 6H113L104 15H113M116 -4H122L116 2H122" class="thin" />
+          </g>
+        </symbol>
+
+        <symbol id="cat-calico" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-paper" stroke="none" />
+            <path
+              d="M23 9C29 17 36 26 42 33C46 32 49 31 52 31C51 42 44 50 34 50C25 50 19 45 17 38C17 28 19 18 23 9Z"
+              class="fill-ginger"
+              stroke="none"
+            />
+            <path
+              d="M98 9C91 17 85 25 78 33C75 32 71 31 68 31C71 40 79 45 90 43C98 41 102 37 104 33C103 24 101 16 98 9Z"
+              class="fill-ink"
+              stroke="none"
+            />
+            <use href="#head" fill="none" />
+            <use href="#whiskers" />
+            <ellipse cx="42" cy="58" rx="4.6" ry="6.4" class="fill-ink" stroke="none" />
+            <ellipse cx="78" cy="58" rx="4.6" ry="6.4" class="fill-ink" stroke="none" />
+            <circle cx="43.5" cy="56" r="1.6" class="fill-paper" stroke="none" />
+            <circle cx="79.5" cy="56" r="1.6" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-pink" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <symbol id="cat-grump" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-grey" />
+            <use href="#whiskers" />
+            <path d="M54 36L55 45M60 35L60 44M66 36L65 45" />
+            <path d="M33 58H51C51 64 47 67 42 67C37 67 33 64 33 58Z" class="fill-paper" />
+            <path d="M69 58H87C87 64 83 67 78 67C73 67 69 64 69 58Z" class="fill-paper" />
+            <circle cx="42" cy="61" r="3.4" class="fill-ink" stroke="none" />
+            <circle cx="78" cy="61" r="3.4" class="fill-ink" stroke="none" />
+            <path d="M32 50L49 54M88 50L71 54" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <path d="M52 82C56 79 64 79 68 82" />
+          </g>
+        </symbol>
+
+        <!-- Navigation icons: plain strokes, no wobble — they're controls. -->
+        <symbol id="i-queue" viewBox="0 0 24 24">
+          <path d="M4 7h16M4 12h16M4 17h10" />
+        </symbol>
+        <symbol id="i-cats" viewBox="0 0 24 24">
+          <path d="M5 4l3.5 4.2a9 9 0 0 1 7 0L19 4c.8 3 1 6 .7 8.6C19.2 17 16 20 12 20s-7.2-3-7.7-7.4C4 10 4.2 7 5 4z" />
+          <path d="M9.5 13h.01M14.5 13h.01" stroke-width="2.6" />
+        </symbol>
+        <symbol id="i-stats" viewBox="0 0 24 24">
+          <path d="M5 20V12M10 20V6M15 20v-9M20 20V4M3 20h18" />
+        </symbol>
+        <symbol id="i-admins" viewBox="0 0 24 24">
+          <circle cx="12" cy="8" r="3.6" />
+          <path d="M5 20c.6-3.8 3.4-6 7-6s6.4 2.2 7 6" />
+        </symbol>
+        <symbol id="i-out" viewBox="0 0 24 24">
+          <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10" />
+        </symbol>
+      </defs>
+    </svg>
+
     <div id="login" class="login" hidden>
       <div class="login-card">
-        <div class="login-mark">🐈</div>
-        <h1>BGUcats</h1>
-        <p>Labeling and dataset curation for the campus cats.</p>
-        <button id="login-button" class="btn btn-primary btn-lg">
-          Sign in with Google
-        </button>
+        <svg class="doodle login-mark" aria-hidden="true"><use href="#cat-midnight" /></svg>
+        <h1>BGU cats</h1>
+        <p>The labeling desk — where campus cat photos get their names.</p>
+        <button id="login-button" class="btn btn-primary btn-lg">Sign in with Google</button>
         <p class="login-note">Admin accounts only.</p>
+      </div>
+      <div class="lineup" aria-hidden="true">
+        <svg class="doodle"><use href="#cat-ginger" /></svg>
+        <svg class="doodle"><use href="#cat-tuxedo" /></svg>
+        <svg class="doodle"><use href="#cat-calico" /></svg>
+        <svg class="doodle"><use href="#cat-grump" /></svg>
       </div>
     </div>
 
     <div id="app" hidden>
       <header class="topbar">
-        <div class="brand"><span class="brand-mark">🐈</span> BGUcats</div>
+        <div class="brand">
+          <svg class="doodle brand-mark" aria-hidden="true"><use href="#cat-midnight" /></svg>
+          <span>BGU cats</span>
+          <small>labeling desk</small>
+        </div>
 
-        <nav class="tabs">
-          <button class="tab" data-view="queue">Queue</button>
-          <button class="tab" data-view="cats">Cats</button>
-          <button class="tab" data-view="admins">Admins</button>
+        <!-- One nav for both layouts: inline in the header on a desk, a
+             tab bar along the bottom edge on a phone (styles.css). -->
+        <nav class="tabs" aria-label="Sections">
+          <button class="tab" data-view="queue">
+            <svg class="tab-icon" aria-hidden="true"><use href="#i-queue" /></svg>
+            <span>Queue</span>
+            <b class="badge" id="queue-badge" hidden></b>
+          </button>
+          <button class="tab" data-view="cats">
+            <svg class="tab-icon" aria-hidden="true"><use href="#i-cats" /></svg>
+            <span>Cats</span>
+          </button>
+          <button class="tab" data-view="stats">
+            <svg class="tab-icon" aria-hidden="true"><use href="#i-stats" /></svg>
+            <span>Stats</span>
+          </button>
+          <button class="tab" data-view="admins">
+            <svg class="tab-icon" aria-hidden="true"><use href="#i-admins" /></svg>
+            <span>Admins</span>
+          </button>
         </nav>
-
-        <div class="stats" id="stats"></div>
 
         <div class="who">
           <span id="who-email"></span>
-          <button id="logout" class="btn btn-ghost">Sign out</button>
+          <button id="logout" class="btn btn-ghost btn-icon" title="Sign out" aria-label="Sign out">
+            <svg class="tab-icon" aria-hidden="true"><use href="#i-out" /></svg>
+          </button>
         </div>
       </header>
 
@@ -46,18 +218,24 @@
     </div>
 
     <div id="lightbox" class="lightbox" hidden>
-      <button class="lightbox-close" title="Close (Esc)">✕</button>
-      <img id="lightbox-img" alt="" />
-      <video id="lightbox-video" controls hidden></video>
+      <button class="lightbox-close" aria-label="Close (Esc)">✕</button>
+      <button class="lightbox-nav prev" aria-label="Previous photo">‹</button>
+      <div class="lightbox-stage">
+        <img id="lightbox-img" alt="" />
+        <video id="lightbox-video" controls playsinline hidden></video>
+      </div>
+      <button class="lightbox-nav next" aria-label="Next photo">›</button>
       <div class="lightbox-bar">
+        <span id="lightbox-count" class="lightbox-count"></span>
         <span id="lightbox-caption"></span>
-        <button id="lightbox-reject" class="btn btn-danger">
-          Delete this photo
-        </button>
+        <button id="lightbox-reject" class="btn btn-danger btn-sm">Delete this photo</button>
       </div>
     </div>
 
-    <div id="toasts" class="toasts"></div>
+    <dialog id="picker" class="sheet"></dialog>
+    <dialog id="ask" class="sheet sheet-small"></dialog>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
 
     <script src="/app.js" type="module"></script>
   </body>

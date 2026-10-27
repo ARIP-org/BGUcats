@@ -12,6 +12,15 @@
 #   PK = RATE#{submitterHash}#{minuteBucket}, SK = META   — a per-minute
 #     counter, self-expiring via the table's TTL attribute.
 #
+# And three for the admin tool's stats page, all listed through GSI2 the
+# way cats and admins are (GSI2PK = ENTITY#<kind>):
+#   PK = SUBMITTER#{submitterHash}, SK = PROFILE — when someone first showed
+#     up, on which channel, and the tracked link that brought them.
+#   PK = TRAFFIC#{day}#{referral}, SK = META — the landing page's daily
+#     visit and bot-button counters (beacon.tf). No per-visitor items.
+#   PK = LINK#{slug}, SK = META — a tracked link's name, and the partner's
+#     own numbers for it, typed in from their dashboard.
+#
 # hash_key/range_key are deprecated in favor of key_schema as of provider
 # ~6.29, but key_schema has several open upstream bugs around perpetual
 # drift and forced GSI replacement as of ~6.61 — staying on the

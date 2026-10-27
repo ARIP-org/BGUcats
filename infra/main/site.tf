@@ -124,10 +124,18 @@ locals {
 
   site_css_version = substr(filemd5("${local.site_dir}/styles.css"), 0, 10)
 
+  # The landing page's visit counter (beacon.tf). Filled in here rather than
+  # committed, like the stylesheet version, so the page can't drift from
+  # the API that is actually deployed.
+  beacon_url = "${aws_apigatewayv2_api.main.api_endpoint}/landing"
+
   # HTML is uploaded as rewritten content rather than straight from disk.
   site_html = {
     for f, meta in local.site_files :
-    f => replace(file("${local.site_dir}/${f}"), "href=\"/styles.css\"", "href=\"/styles.css?v=${local.site_css_version}\"")
+    f => replace(
+      replace(file("${local.site_dir}/${f}"), "href=\"/styles.css\"", "href=\"/styles.css?v=${local.site_css_version}\""),
+      "__BEACON_URL__", local.beacon_url,
+    )
     if meta.ext == "html"
   }
 }

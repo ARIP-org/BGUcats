@@ -14,6 +14,7 @@ import hashlib
 import logging
 import math
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -44,6 +45,16 @@ LOCATION_WINDOW_SECONDS = 24 * 60 * 60
 # Same rounding as EXIF GPS in the process Lambda: ~100 m, a cat's territory
 # rather than the spot the contributor was standing on.
 COORDINATE_DECIMALS = 3
+
+# Where someone came from, as a tracked link carries it: the landing page's
+# ?src= and the bot's /start payload are the same slug, so a visitor and the
+# contributor they turn into are counted under one name on the stats page.
+# Fits inside Telegram's start-parameter alphabet (A-Z a-z 0-9 _ -).
+REFERRAL_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+# Recorded when someone starts the bot without a tracked link — found it by
+# name, or came from before tracking existed. A profile with no referral at
+# all reads the same way on the stats page.
+NO_REFERRAL = "none"
 
 # Magic-byte signatures for the image formats the chat apps actually send.
 # Content type is validated from bytes, never from a filename (spec §8.5).
@@ -426,6 +437,7 @@ def _open_session(submitter_hash, media_group_id, explicit, channel, replacing=N
                 continue
 
         _touch_last_session(submitter_hash, session_id)
+        record_contributor(submitter_hash, channel)
         return session_id
 
     raise RuntimeError("could not open a session after repeated contention")
@@ -466,6 +478,57 @@ def _bump_submitter_pointer(submitter_hash, session_id, media_group_id):
         },
     )
     _touch_last_session(submitter_hash, session_id)
+
+
+# --------------------------------------------------------------------------
+# Contributor profiles (stats page)
+# --------------------------------------------------------------------------
+
+
+def clean_referral(raw):
+    """A well-formed referral slug, or None. The /start payload is whatever
+    the link said, so it is user-controlled input like everything else."""
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip().lower()
+    return value if REFERRAL_PATTERN.fullmatch(value) else None
+
+
+def record_contributor(submitter_hash, channel, referral=None):
+    """Note when a submitter first showed up, on which channel, and which
+    tracked link brought them.
+
+    First touch wins: every field is if_not_exists, so a later visit through
+    some other link never rewrites where someone originally came from. That
+    also makes it idempotent — called on every /start and every new session,
+    it writes the profile once and leaves it alone after.
+
+    Listed through GSI2 like cats and admins, so the stats page reads every
+    profile with one query instead of a scan.
+    """
+    expression = (
+        "SET submitterHash = :hash, firstSeenAt = if_not_exists(firstSeenAt, :now), "
+        "#channel = if_not_exists(#channel, :channel), "
+        "GSI2PK = :entity, GSI2SK = if_not_exists(GSI2SK, :now)"
+    )
+    names = {"#channel": "channel"}
+    values = {
+        ":hash": submitter_hash,
+        ":now": now_iso(),
+        ":channel": channel,
+        ":entity": "ENTITY#SUBMITTER",
+    }
+    if referral:
+        expression += ", #referral = if_not_exists(#referral, :referral)"
+        names["#referral"] = "referral"
+        values[":referral"] = referral
+
+    table.update_item(
+        Key={"PK": f"SUBMITTER#{submitter_hash}", "SK": "PROFILE"},
+        UpdateExpression=expression,
+        ExpressionAttributeNames=names,
+        ExpressionAttributeValues=values,
+    )
 
 
 # --------------------------------------------------------------------------

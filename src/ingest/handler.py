@@ -351,6 +351,14 @@ def _handle_text(message, text, secrets):
     elif action == LOCATION_HELP_ACTION:
         reply, keyboard = LOCATION_HELP_TEXT, LOCATION_KEYBOARD
     elif key == "/start":
+        # t.me/bgucatsbot?start=<slug> arrives as "/start <slug>": the landing
+        # page puts its own ?src= there, so the stats page can follow a
+        # visitor from the ad to the bot.
+        words = text.split()
+        referral = core.clean_referral(words[1]) if len(words) > 1 else None
+        core.record_contributor(
+            submitter_hash, CHANNEL, referral=referral or core.NO_REFERRAL
+        )
         reply = START_TEXT
     else:
         return {"statusCode": 200, "body": "ok"}

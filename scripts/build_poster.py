@@ -31,6 +31,11 @@ OUTPUT = ROOT / "build" / "poster.html"
 BOT_HANDLE = "@bgucatsbot"
 BOT_URL = "https://t.me/bgucatsbot"
 
+# The landing page counts visits by ?src= (stats page in the admin tool).
+# Only the QR carries it: someone typing the printed address by hand is
+# still counted, just as "no source".
+QR_SOURCE = "poster"
+
 # Enough tabs to span A4 without any one of them being too narrow to tear.
 TEAR_OFF_TABS = 8
 
@@ -69,12 +74,18 @@ def qr_svg(data, scale, dark="#2a2320"):
     return qr.svg_inline(scale=scale, dark=dark, border=2)
 
 
+def tracked(url):
+    """The URL with ?src=poster, unless it already carries a query."""
+    return url if "?" in url else f"{url}?src={QR_SOURCE}"
+
+
 def build(site_url):
     hero_data = base64.b64encode(HERO.read_bytes()).decode()
+    qr_target = tracked(site_url)
 
     tabs = "\n".join(
         f"""        <div class="tab">
-          <div class="tab-qr">{qr_svg(site_url, scale=2)}</div>
+          <div class="tab-qr">{qr_svg(qr_target, scale=2)}</div>
           <div class="tab-text" dir="ltr">{BOT_HANDLE}</div>
         </div>"""
         for _ in range(TEAR_OFF_TABS)
@@ -82,7 +93,7 @@ def build(site_url):
 
     html = POSTER_TEMPLATE.format(
         hero_data=hero_data,
-        big_qr=qr_svg(site_url, scale=7),
+        big_qr=qr_svg(qr_target, scale=7),
         site_url=site_url.replace("https://", "").rstrip("/"),
         bot_handle=BOT_HANDLE,
         bot_url=BOT_URL,
@@ -92,7 +103,7 @@ def build(site_url):
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(html)
     print(f"Wrote {OUTPUT}")
-    print(f"QR points at {site_url}")
+    print(f"QR points at {qr_target}")
     print("\nOpen it and print: A4 portrait, 100% scale, background graphics on.")
 
 

@@ -136,6 +136,7 @@ locals {
   web_files = {
     "index.html" = "text/html; charset=utf-8"
     "app.js"     = "text/javascript; charset=utf-8"
+    "charts.js"  = "text/javascript; charset=utf-8"
     "styles.css" = "text/css; charset=utf-8"
   }
 }
@@ -161,6 +162,10 @@ resource "aws_s3_object" "web_config" {
     userPoolClientId = aws_cognito_user_pool_client.web.id
     cognitoDomain    = "${aws_cognito_user_pool_domain.admins.domain}.auth.us-east-1.amazoncognito.com"
     redirectUri      = "https://${aws_cloudfront_distribution.web.domain_name}/"
+    # Tracked links on the stats page are built from these: the landing page
+    # with ?src=, and the bot with the same slug as its /start payload.
+    siteUrl = "https://${aws_cloudfront_distribution.site.domain_name}/"
+    botUrl  = "https://t.me/bgucatsbot"
   })
 }
 

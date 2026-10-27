@@ -554,3 +554,68 @@ def test_sessions_record_their_channel(dynamo_table):
     session_id = core.resolve_or_open_session("hash-ch", None, channel="whatsapp")
     item = dynamo_table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"})
     assert item["Item"]["channel"] == "whatsapp"
+
+
+# --------------------------------------------------------------------------
+# Contributor profiles: first-touch referral for the stats page
+# --------------------------------------------------------------------------
+
+
+def _profile_for(dynamo_table, tg_user_id=42):
+    submitter = handler._submitter_hash(SECRETS, tg_user_id)
+    return dynamo_table.get_item(
+        Key={"PK": f"SUBMITTER#{submitter}", "SK": "PROFILE"}
+    ).get("Item")
+
+
+def test_start_with_a_tracked_link_records_the_referral(dynamo_table, telegram_calls):
+    handler._handle_text(_send_text("/start friend-app"), "/start friend-app", SECRETS)
+    profile = _profile_for(dynamo_table)
+    assert profile["referral"] == "friend-app"
+    assert profile["channel"] == "telegram"
+    assert profile["GSI2PK"] == "ENTITY#SUBMITTER"
+    assert telegram_calls[0][1]["text"] == handler.START_TEXT
+
+
+def test_start_without_a_link_is_recorded_as_none(dynamo_table, telegram_calls):
+    handler._handle_text(_send_text("/start"), "/start", SECRETS)
+    assert _profile_for(dynamo_table)["referral"] == core.NO_REFERRAL
+
+
+@pytest.mark.parametrize("payload", ["x" * 40, "-lead", "a_b", "a.b", "שלום"])
+def test_malformed_start_payloads_are_not_stored(dynamo_table, telegram_calls, payload):
+    text = f"/start {payload}"
+    handler._handle_text(_send_text(text), text, SECRETS)
+    assert _profile_for(dynamo_table)["referral"] == core.NO_REFERRAL
+
+
+def test_start_payload_is_lowercased(dynamo_table, telegram_calls):
+    # A hand-typed slug in a different case shouldn't split one source in two.
+    handler._handle_text(_send_text("/start Poster"), "/start Poster", SECRETS)
+    assert _profile_for(dynamo_table)["referral"] == "poster"
+
+
+def test_first_referral_wins(dynamo_table, telegram_calls):
+    handler._handle_text(_send_text("/start poster"), "/start poster", SECRETS)
+    handler._handle_text(_send_text("/start friend-app"), "/start friend-app", SECRETS)
+    profile = _profile_for(dynamo_table)
+    assert profile["referral"] == "poster"
+
+
+def test_first_session_creates_a_profile_without_a_referral(dynamo_table):
+    submitter = handler._submitter_hash(SECRETS, 42)
+    core.resolve_or_open_session(submitter, None, channel="telegram")
+    profile = _profile_for(dynamo_table)
+    assert profile["channel"] == "telegram"
+    assert "referral" not in profile
+
+
+def test_photo_first_then_start_still_records_the_link(dynamo_table, telegram_calls):
+    submitter = handler._submitter_hash(SECRETS, 42)
+    core.resolve_or_open_session(submitter, None, channel="telegram")
+    first_seen = _profile_for(dynamo_table)["firstSeenAt"]
+
+    handler._handle_text(_send_text("/start poster"), "/start poster", SECRETS)
+    profile = _profile_for(dynamo_table)
+    assert profile["referral"] == "poster"
+    assert profile["firstSeenAt"] == first_seen
