@@ -323,8 +323,9 @@ function sessionCard({ session, photos }, allSessions) {
           className: "meta mono",
           textContent: `${sessionId} · ${photos.length} photos${
             session.explicit ? " · explicit session" : ""
-          }`,
+          }${session.channel === "whatsapp" ? " · via WhatsApp" : ""}`,
         }),
+        locationLink(session),
       ]),
       el("div", { className: "actions" }, [
         catSelect,
@@ -335,6 +336,20 @@ function sessionCard({ session, photos }, allSessions) {
     ]),
     el("div", { className: "grid" }, photos.map((p) => thumb(p))),
   ]);
+}
+
+// The pin the submitter sent from the bot, already rounded to ~100 m. Two
+// sessions pinned to the same spot are a hint they're the same cat.
+function locationLink(session) {
+  if (session.coarseLat == null || session.coarseLon == null) return null;
+  const { coarseLat: lat, coarseLon: lon } = session;
+  return el("a", {
+    className: "meta",
+    href: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=18/${lat}/${lon}`,
+    target: "_blank",
+    rel: "noopener",
+    textContent: `📍 ${lat}, ${lon}${session.locationSource === "map" ? " · picked on map" : ""}`,
+  });
 }
 
 function thumb(photo) {

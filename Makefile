@@ -1,5 +1,5 @@
 .PHONY: fmt lint test build build-ingest build-process build-admin \
-	tf-init tf-plan tf-apply admin-add poster
+	tf-init tf-plan tf-apply site-invalidate whatsapp-secrets admin-add poster
 
 # Lambda runs Linux x86_64; resolve binary wheels for that, not for whatever
 # the build host happens to be.
@@ -24,10 +24,14 @@ build: build-ingest build-process build-admin
 # Always rebuilt rather than tracked as file targets: a directory's mtime
 # doesn't change when a source file inside it is edited, so a file-target
 # version would silently ship stale code.
+# One package, two Lambdas: handler.py (Telegram) and whatsapp.py are thin
+# adapters over core.py, shipped as a package so `from ingest import core`
+# resolves the same in the Lambda as under pytest.
 build-ingest:
-	rm -rf build/ingest && mkdir -p build/ingest
+	rm -rf build/ingest && mkdir -p build/ingest/ingest
 	$(LAMBDA_PIP) --target build/ingest -r src/ingest/requirements.txt
-	cp src/ingest/handler.py build/ingest/
+	cp src/ingest/__init__.py src/ingest/core.py src/ingest/handler.py \
+		src/ingest/whatsapp.py build/ingest/ingest/
 
 # Shipped as a package (handler = process.handler.handler) rather than
 # flattened, so `from process.phash import ...` resolves identically in
@@ -54,6 +58,18 @@ tf-plan: build
 
 tf-apply: build
 	terraform -chdir=infra/main apply
+
+# The landing page sits behind CachingOptimized (default TTL one day), so an
+# apply alone leaves visitors on the old page until the edge copy expires.
+site-invalidate:
+	aws cloudfront create-invalidation \
+		--distribution-id $$(terraform -chdir=infra/main output -raw site_distribution_id) \
+		--paths '/*'
+
+# WhatsApp's three secrets come from the Meta developer dashboard, not from
+# terraform.tfvars — see "WhatsApp" in infra/README.md.
+whatsapp-secrets:
+	infra/scripts/set-whatsapp-secrets.sh
 
 # Convenience wrapper for the same allowlist row the Admins tab writes —
 # useful for adding the first colleague before anyone has logged in.

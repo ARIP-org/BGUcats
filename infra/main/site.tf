@@ -95,22 +95,59 @@ resource "aws_s3_bucket_policy" "site" {
   })
 }
 
+# Everything under site/ is published, so adding a cat photo is "drop the
+# file in site/cats/ and apply". Content type comes from the extension; an
+# extension missing from this map fails the plan rather than uploading
+# something with the wrong type.
+#
+# Caching is explicit because the default bit us: with no Cache-Control,
+# browsers guess freshness from Last-Modified, and a desktop Chrome kept a
+# weeks-old styles.css under the new HTML. Now HTML always revalidates
+# (cheap: a 304 on the ETag), and pages ask for styles.css?v=<content hash>,
+# so a changed stylesheet is a new URL no browser has cached.
 locals {
+  site_dir = "${path.module}/../../site"
+
+  site_types = {
+    html = { content_type = "text/html; charset=utf-8", cache_control = "no-cache" }
+    css  = { content_type = "text/css; charset=utf-8", cache_control = "public, max-age=31536000, immutable" }
+    svg  = { content_type = "image/svg+xml", cache_control = "public, max-age=86400" }
+    webp = { content_type = "image/webp", cache_control = "public, max-age=86400" }
+    jpg  = { content_type = "image/jpeg", cache_control = "public, max-age=86400" }
+    png  = { content_type = "image/png", cache_control = "public, max-age=86400" }
+  }
+
   site_files = {
-    "index.html" = "text/html; charset=utf-8"
-    "styles.css" = "text/css; charset=utf-8"
-    "hero.webp"  = "image/webp"
+    for f in fileset(local.site_dir, "**") :
+    f => merge(local.site_types[lower(regex("[^.]+$", f))], { ext = lower(regex("[^.]+$", f)) })
+  }
+
+  site_css_version = substr(filemd5("${local.site_dir}/styles.css"), 0, 10)
+
+  # HTML is uploaded as rewritten content rather than straight from disk.
+  site_html = {
+    for f, meta in local.site_files :
+    f => replace(file("${local.site_dir}/${f}"), "href=\"/styles.css\"", "href=\"/styles.css?v=${local.site_css_version}\"")
+    if meta.ext == "html"
   }
 }
 
 resource "aws_s3_object" "site" {
   for_each = local.site_files
 
-  bucket       = aws_s3_bucket.site.id
-  key          = each.key
-  source       = "${path.module}/../../site/${each.key}"
-  content_type = each.value
-  etag         = filemd5("${path.module}/../../site/${each.key}")
+  bucket        = aws_s3_bucket.site.id
+  key           = each.key
+  content_type  = each.value.content_type
+  cache_control = each.value.cache_control
+
+  source  = each.value.ext == "html" ? null : "${local.site_dir}/${each.key}"
+  content = each.value.ext == "html" ? local.site_html[each.key] : null
+  etag    = each.value.ext == "html" ? md5(local.site_html[each.key]) : filemd5("${local.site_dir}/${each.key}")
+}
+
+output "site_distribution_id" {
+  description = "For `make site-invalidate` — the page is cached for up to a day."
+  value       = aws_cloudfront_distribution.site.id
 }
 
 output "site_url" {

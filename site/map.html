@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Where was the cat?</title>
+    <!-- Opened by the bot's "Pick on map" button as a Telegram Mini App.
+         Telegram's own location picker opens wherever the phone is, which
+         is useless for a photo taken on campus and sent from home — this
+         one opens on campus. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+      integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
+      integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --paper: #fffdf8;
+        --ink: #1f1b18;
+        --ink-soft: #5f554d;
+        --ginger: #e07b2f;
+        --ginger-deep: #b55b1b;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: var(--tg-theme-bg-color, #fbf6ec);
+        font: 16px/1.45 system-ui, -apple-system, "Segoe UI", "Noto Sans Hebrew", Arial,
+          sans-serif;
+        color: var(--ink);
+      }
+
+      #map {
+        position: fixed;
+        inset: 0;
+      }
+
+      .hint {
+        position: fixed;
+        z-index: 1000;
+        top: 64px;
+        left: 12px;
+        right: 12px;
+        max-width: 440px;
+        margin: 0 auto;
+        padding: 12px 16px;
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        border-radius: 14px;
+        box-shadow: 3px 3px 0 var(--ink);
+      }
+
+      .hint b {
+        display: block;
+        font-size: 17px;
+      }
+
+      .hint small {
+        color: var(--ink-soft);
+      }
+
+      /* Disabled outside Telegram, and until a pin is placed. */
+      #send {
+        position: fixed;
+        z-index: 1000;
+        bottom: calc(22px + env(safe-area-inset-bottom));
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        min-width: 220px;
+        touch-action: manipulation;
+        padding: 13px 26px;
+        background: var(--ginger);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        border: 2px solid var(--ink);
+        border-radius: 999px;
+        box-shadow: 3px 3px 0 var(--ink);
+        cursor: pointer;
+      }
+
+      #send:disabled {
+        background: #c9bfb3;
+        cursor: default;
+      }
+
+      .recenter {
+        font: 600 13px/1 system-ui, sans-serif;
+        padding: 8px 10px;
+        background: var(--paper);
+        color: var(--ink);
+        border: 2px solid var(--ink) !important;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+
+      .pin {
+        background: none;
+        border: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div class="hint">
+      <b id="hint-title">Tap the map where you saw the cat</b>
+      <small id="hint-body">Drag the pin to adjust. It's saved rounded to about 100 m.</small>
+    </div>
+    <button id="send" type="button" disabled>Send this spot</button>
+
+    <script>
+      const tg = window.Telegram?.WebApp;
+      // Not `tg.initData`: a Mini App opened from a *keyboard* button — which
+      // is how the bot opens this one — gets no initData at all, because its
+      // answer travels back through sendData instead. The platform comes from
+      // the launch URL Telegram adds for every kind of Mini App.
+      const insideTelegram = Boolean(
+        (tg?.platform && tg.platform !== "unknown") || window.TelegramWebviewProxy,
+      );
+
+      const STRINGS = {
+        en: {
+          title: "Tap the map where you saw the cat",
+          body: "Drag the pin to adjust. It's saved rounded to about 100 m.",
+          first: "Tap the map first",
+          send: "Send this spot",
+          campus: "Campus",
+          failed: "Couldn't send from here. In the chat, tap 📎 → Location instead.",
+          outside: "Open this from @bgucatsbot in Telegram to send the spot.",
+        },
+        he: {
+          title: "הקישו על המפה איפה ראיתם את החתול",
+          body: "אפשר לגרור את הסיכה. המיקום נשמר בעיגול של כ-100 מטר.",
+          first: "קודם הקישו על המפה",
+          send: "שליחת המיקום",
+          campus: "לקמפוס",
+          failed: "השליחה מכאן לא הצליחה. בצ'אט הקישו 📎 ← מיקום.",
+          outside: "פתחו את הדף הזה מתוך הבוט בטלגרם כדי לשלוח מיקום.",
+        },
+        ru: {
+          title: "Нажмите на карту там, где видели кота",
+          body: "Метку можно перетащить. Сохраняется с точностью около 100 м.",
+          first: "Сначала нажмите на карту",
+          send: "Отправить это место",
+          campus: "Кампус",
+          failed: "Не получилось отправить. В чате нажмите 📎 → Геопозиция.",
+          outside: "Откройте эту страницу из @bgucatsbot в Telegram.",
+        },
+      };
+      const langCode = (
+        tg?.initDataUnsafe?.user?.language_code ||
+        navigator.language ||
+        "en"
+      ).toLowerCase();
+      const lang = Object.keys(STRINGS).find((code) => langCode.startsWith(code)) || "en";
+      const t = STRINGS[lang];
+      document.documentElement.lang = lang;
+      if (lang === "he") document.documentElement.dir = "rtl";
+      document.title = t.title;
+      document.getElementById("hint-title").textContent = t.title;
+      const hintBody = document.getElementById("hint-body");
+      hintBody.textContent = insideTelegram ? t.body : t.outside;
+
+      // Ben-Gurion University, Marcus Family Campus, Be'er Sheva.
+      const CAMPUS = [31.2631, 34.8022];
+
+      const map = L.map("map", { zoomControl: false }).setView(CAMPUS, 17);
+      L.control.zoom({ position: "topright" }).addTo(map);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+
+      // Back to campus after panning off somewhere.
+      const Recenter = L.Control.extend({
+        onAdd() {
+          const button = L.DomUtil.create("button", "recenter");
+          button.type = "button";
+          button.textContent = t.campus;
+          L.DomEvent.disableClickPropagation(button);
+          button.onclick = () => map.setView(CAMPUS, 17);
+          return button;
+        },
+      });
+      new Recenter({ position: "topleft" }).addTo(map);
+
+      const pinIcon = L.divIcon({
+        className: "pin",
+        iconSize: [44, 52],
+        iconAnchor: [22, 50],
+        html: `<svg viewBox="0 0 44 52" width="44" height="52" aria-hidden="true">
+          <path d="M22 50S4 31 4 20a18 18 0 0 1 36 0c0 11-18 30-18 30Z" fill="#e07b2f"
+            stroke="#1f1b18" stroke-width="3" stroke-linejoin="round"/>
+          <g fill="#1f1b18" transform="translate(12 9) scale(.5)">
+            <path d="M20 21C12 21 7 29 10 34C13 38 17 36 20 36S27 38 30 34C33 29 28 21 20 21Z"/>
+            <ellipse cx="8.5" cy="17" rx="3.8" ry="4.8"/><ellipse cx="15.5" cy="9.5" rx="3.8" ry="5"/>
+            <ellipse cx="24.5" cy="9.5" rx="3.8" ry="5"/><ellipse cx="31.5" cy="17" rx="3.8" ry="4.8"/>
+          </g></svg>`,
+      });
+
+      // Our own button rather than Telegram's MainButton: one code path on
+      // every client, and it can say *why* it isn't ready yet.
+      let marker = null;
+      const sendButton = document.getElementById("send");
+      sendButton.style.display = "block";
+      sendButton.textContent = insideTelegram ? t.first : t.send;
+
+      function place(latlng) {
+        if (marker) {
+          marker.setLatLng(latlng);
+        } else {
+          marker = L.marker(latlng, { icon: pinIcon, draggable: true }).addTo(map);
+        }
+        if (insideTelegram) {
+          sendButton.disabled = false;
+          sendButton.textContent = t.send;
+        }
+        tg?.HapticFeedback?.selectionChanged();
+      }
+
+      function send() {
+        if (!marker || !insideTelegram) return;
+        const { lat, lng } = marker.getLatLng();
+        try {
+          // The bot rounds to ~100 m before storing; five places here just
+          // keeps the payload tidy. Telegram closes the Mini App on success.
+          tg.sendData(
+            JSON.stringify({ lat: Number(lat.toFixed(5)), lon: Number(lng.toFixed(5)) }),
+          );
+        } catch (err) {
+          hintBody.textContent = t.failed;
+        }
+      }
+
+      map.on("click", (e) => place(e.latlng));
+      sendButton.addEventListener("click", send);
+
+      if (insideTelegram) {
+        tg.ready();
+        tg.expand();
+      }
+    </script>
+  </body>
+</html>

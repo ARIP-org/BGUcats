@@ -213,6 +213,7 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/bot-token",
           "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/webhook-secret",
           "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/submitter-hash-salt",
+          "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/whatsapp/*",
         ]
       },
       {

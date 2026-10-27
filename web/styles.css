@@ -288,6 +288,16 @@ textarea:focus {
   font-size: 13px;
 }
 
+a.meta {
+  display: block;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.meta:hover {
+  text-decoration: underline;
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
