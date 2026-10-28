@@ -10,12 +10,13 @@
 // outlive a sign-out), never photos, never other origins (Cognito, Google,
 // S3 uploads).
 
-const CACHE = "bgucats-shell-v1";
+const CACHE = "bgucats-shell-v2";
 const SHELL = [
   "/",
   "/index.html",
   "/app.js",
   "/capture.js",
+  "/install.js",
   "/outbox.js",
   "/charts.js",
   "/styles.css",

@@ -138,6 +138,7 @@ locals {
     "app.js"     = "text/javascript; charset=utf-8"
     "charts.js"  = "text/javascript; charset=utf-8"
     "capture.js" = "text/javascript; charset=utf-8"
+    "install.js" = "text/javascript; charset=utf-8"
     "outbox.js"  = "text/javascript; charset=utf-8"
     "styles.css" = "text/css; charset=utf-8"
     # What makes it installable: "Add to Home Screen" opens it full-screen

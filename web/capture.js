@@ -11,6 +11,10 @@
 //
 // Everything captured goes into the outbox (outbox.js) first and uploads
 // from there; this file never talks to storage itself.
+//
+// While an encounter is open the camera takes the whole screen, like the
+// phone's own camera app. Closing it (✕) only steps back to this screen; the
+// encounter stays open until "Done — next cat".
 
 import { createOutbox, ulid } from "./outbox.js";
 
@@ -45,6 +49,8 @@ export function createCapture(ui) {
   let fix = null; // {lat, lon, accuracyM, at}
   let locationState = "idle"; // idle | finding | ok | denied | unavailable
   let mounted = null; // the elements of the screen while it is showing
+  // Reopening the app mid-encounter goes straight back to the camera.
+  let cameraOpen = !!encounter;
 
   const outbox = createOutbox({ post, onChange: () => mounted && drawStrip() });
 
@@ -81,6 +87,7 @@ export function createCapture(ui) {
       lon: current?.lon,
       accuracyM: current?.accuracyM,
     });
+    cameraOpen = true;
     render();
   }
 
@@ -88,6 +95,7 @@ export function createCapture(ui) {
     stopRecording();
     const finished = encounter;
     encounter = null;
+    cameraOpen = false;
     saveEncounter();
     await outbox.closeEncounter(finished.sessionId);
     toast(
@@ -279,19 +287,30 @@ export function createCapture(ui) {
   // ---- screen -----------------------------------------------------------
 
   async function render() {
-    const main = document.querySelector("#main");
-    const head = sectionHead(
-      "Capture",
-      "Photos and videos go straight to the labeling queue.",
-    );
+    if (encounter && cameraOpen) return renderCamera();
+    leave();
 
-    if (!encounter) {
-      leave();
-      const start = button("Start an encounter", "btn btn-primary btn-lg", startEncounter);
-      mounted = { strip: null };
-      main.replaceChildren(
-        head,
-        el("section", { className: "card capture-start" }, [
+    const main = document.querySelector("#main");
+    const head = sectionHead("Capture", "Every photo and video goes to the cat catalogue.");
+    const strip = el("div", { className: "shot-strip" });
+    mounted = { strip };
+
+    const current = encounter
+      ? el("section", { className: "card capture-start capture-open" }, [
+          el("h3", { textContent: "Encounter in progress" }),
+          el("p", {
+            textContent: `Since ${fmtTime(encounter.startedAt)} · ${plural(encounter.shots.length, "shot")}`,
+          }),
+          strip,
+          el("div", { className: "capture-open-actions" }, [
+            button("Back to the camera", "btn btn-primary btn-lg", () => {
+              cameraOpen = true;
+              render();
+            }),
+            button("Done — next cat", "btn btn-lg", finishEncounter),
+          ]),
+        ])
+      : el("section", { className: "card capture-start" }, [
           el("h3", { textContent: "One encounter = one cat" }),
           el("p", {
             textContent:
@@ -303,25 +322,36 @@ export function createCapture(ui) {
             el("li", { textContent: "A slow 5–10 second video around the cat is the best thing you can send." }),
             el("li", { textContent: "Location is saved rounded to about 100 m." }),
           ]),
-          start,
-        ]),
-        outboxPanel(),
-        await recentPanel(),
-      );
-      drawStrip();
-      return;
-    }
+          button("Start an encounter", "btn btn-primary btn-lg", startEncounter),
+        ]);
 
+    main.replaceChildren(head, current, outboxPanel(), await recentPanel());
+    drawStrip();
+  }
+
+  async function renderCamera() {
+    closeCamera();
     watchLocation();
+
     const video = el("video", { playsInline: true, muted: true, autoplay: true });
     video.setAttribute("playsinline", "");
-    const viewfinder = el("div", { className: "viewfinder" }, [
-      video,
-      el("div", { className: "viewfinder-note", textContent: "Starting the camera…" }),
-    ]);
+    const note = el("div", { className: "camera-note", textContent: "Starting the camera…" });
     const location = el("span", { className: "chip location-chip" });
     const strip = el("div", { className: "shot-strip" });
-    const status = el("p", { className: "meta outbox-line" });
+    const status = el("p", { className: "outbox-line" });
+
+    const close = el("button", {
+      type: "button",
+      className: "camera-close",
+      textContent: "✕",
+      title: "Close the camera — the encounter stays open",
+      attrs: { "aria-label": "Close the camera; the encounter stays open" },
+    });
+    close.onclick = () => {
+      stopRecording();
+      cameraOpen = false;
+      render();
+    };
 
     const shutter = el("button", { type: "button", className: "shutter", attrs: { "aria-label": "Take a photo" } }, [
       el("span", { textContent: "Photo" }),
@@ -344,7 +374,7 @@ export function createCapture(ui) {
       };
     }
     const fallback = el("div", { className: "system-camera" }, [
-      el("span", { className: "meta", textContent: "Or the phone's camera:" }),
+      el("span", { textContent: "Or the phone's camera:" }),
       button("Photo", "btn btn-sm", () => systemPhoto.click()),
       button("Video", "btn btn-sm", () => systemVideo.click()),
       systemPhoto,
@@ -353,35 +383,52 @@ export function createCapture(ui) {
 
     const done = button("Done — next cat", "btn", finishEncounter);
 
-    mounted = { viewfinder, location, strip, status, video };
-    main.replaceChildren(
-      head,
-      el("section", { className: "card encounter" }, [
-        el("header", { className: "card-head encounter-head" }, [
-          el("div", { className: "card-title", textContent: `Encounter since ${fmtTime(encounter.startedAt)}` }),
-          location,
+    const camera = el("div", { className: "camera", attrs: { role: "dialog", "aria-label": "Camera" } }, [
+      video,
+      note,
+      el("div", { className: "camera-top" }, [
+        close,
+        el("div", { className: "camera-title" }, [
+          el("b", { textContent: "Encounter" }),
+          el("span", { textContent: `since ${fmtTime(encounter.startedAt)}` }),
         ]),
-        viewfinder,
-        el("div", { className: "capture-controls" }, [record, shutter, done]),
+        location,
+      ]),
+      el("div", { className: "camera-bottom" }, [
         strip,
         status,
+        el("div", { className: "capture-controls" }, [record, shutter, done]),
         fallback,
       ]),
-    );
+    ]);
+    document.body.append(camera);
+    document.body.classList.add("no-scroll", "camera-open");
+    // The app underneath can't be reached by focus or a screen reader while
+    // the camera covers it.
+    document.querySelector("#app").inert = true;
+
+    mounted = { camera, viewfinder: camera, location, strip, status, video };
     drawLocation();
     drawStrip();
 
     const ok = await startCamera(video);
-    const note = viewfinder.querySelector(".viewfinder-note");
+    if (mounted?.camera !== camera) return; // closed while the camera was starting
     if (ok) {
       note.remove();
     } else {
-      viewfinder.classList.add("no-camera");
+      camera.classList.add("no-camera");
       note.textContent =
         "The in-app camera isn't available here. Use the phone's own camera below — it works the same.";
       shutter.disabled = true;
       record.disabled = true;
     }
+  }
+
+  function closeCamera() {
+    stopCamera();
+    mounted?.camera?.remove();
+    document.body.classList.remove("no-scroll", "camera-open");
+    document.querySelector("#app").inert = false;
   }
 
   function drawLocation() {
@@ -491,16 +538,17 @@ export function createCapture(ui) {
   // Leaving the screen lets go of the camera and GPS — both drain a battery
   // and both show the person an "in use" indicator.
   function leave() {
-    stopCamera();
+    closeCamera();
     stopLocation();
     mounted = null;
   }
 
+  // A phone that locks or switches apps gets its camera back on return.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden" && mounted?.video) {
       stopCamera();
-    } else if (document.visibilityState === "visible" && mounted?.video && encounter) {
-      render();
+    } else if (document.visibilityState === "visible" && mounted?.video && encounter && cameraOpen) {
+      renderCamera();
     }
   });
 

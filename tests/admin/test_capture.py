@@ -212,7 +212,7 @@ def test_complete_flips_to_unlabeled_and_joins_the_queue(app):
     assert photo["GSI2PK"] == "STATUS#unlabeled"
     assert _item(app, f"SESSION#{ENCOUNTER}")["photoCount"] == 1
 
-    queue = _call("GET", "/api/queue", email=HELPER)[1]["sessions"]
+    queue = _call("GET", "/api/queue")[1]["sessions"]
     assert [s["session"]["sessionId"] for s in queue] == [ENCOUNTER]
 
 
@@ -316,7 +316,7 @@ def test_a_late_photo_of_a_labeled_encounter_inherits_the_cat(app):
     _start_upload()
     _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
     _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
-    _call("POST", f"/api/sessions/{ENCOUNTER}/assign", {"catId": cat}, email=HELPER)
+    _call("POST", f"/api/sessions/{ENCOUNTER}/assign", {"catId": cat})
 
     _start_upload(PHOTO_2)
     _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO_2}.jpg", JPEG)
@@ -325,7 +325,7 @@ def test_a_late_photo_of_a_labeled_encounter_inherits_the_cat(app):
     assert data["status"] == "labeled"
     assert _item(app, f"PHOTO#{PHOTO_2}")["catId"] == cat
     assert _item(app, f"CAT#{cat}")["photoCount"] == 2
-    assert _call("GET", "/api/queue", email=HELPER)[1]["sessions"] == []
+    assert _call("GET", "/api/queue")[1]["sessions"] == []
 
 
 def test_my_encounters_show_which_cat_they_became(app):

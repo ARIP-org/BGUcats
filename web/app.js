@@ -4,12 +4,16 @@
 // file" and keeps this readable without a toolchain.
 //
 // Two roles (src/admin/handler.py): admins see everything; collaborators see
-// Capture, the queue and the cats, and can assign a session to a cat that
-// already exists. The API enforces this on every call — hiding a button here
-// is only so nobody is offered an action that would be refused.
+// Capture and the cats. The API enforces this on every call — hiding a button
+// here is only so nobody is offered an action that would be refused.
+//
+// It runs only as an installed app. Opened in a browser tab, it shows the
+// install page instead (install.js) — before any sign-in, so a collaborator
+// never ends up half-using it in a tab that loses its outbox when closed.
 
 import { createCapture } from "./capture.js";
 import { barList, columnChart, formatNumber, funnel, meter } from "./charts.js";
+import { isInstalled, showInstallPage } from "./install.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, kids = []) => {
@@ -264,7 +268,7 @@ const VIEWS = {
   stats: renderStats,
   admins: renderAdmins,
 };
-const ADMIN_VIEWS = new Set(["stats", "admins"]);
+const ADMIN_VIEWS = new Set(["queue", "stats", "admins"]);
 
 // Collaborators open the app to photograph a cat; admins to label.
 const homeView = () => (isAdmin() ? "queue" : "capture");
@@ -280,7 +284,7 @@ const render = guard(async function render() {
   } finally {
     main.classList.remove("loading");
   }
-  refreshBadge().catch(() => {});
+  if (isAdmin()) refreshBadge().catch(() => {});
 });
 
 function sectionHead(title, subtitle, actions = []) {
@@ -363,6 +367,32 @@ function ask({ title, text, fields, ok = "Save" }) {
   });
 }
 
+/**
+ * The app's own "are you sure?" — a sheet like ask(), never the browser's
+ * bare confirm() box. Resolves true only on the confirming button; Cancel,
+ * Esc and a tap on the backdrop all resolve false.
+ */
+function confirmAction({ title, text, ok, danger = true }) {
+  const dialog = $("#ask");
+  const form = el("form", { method: "dialog", className: "sheet-body confirm" });
+  const cancel = el("button", { type: "button", className: "btn btn-ghost", textContent: "Cancel" });
+  cancel.onclick = () => dialog.close();
+  form.append(
+    el("h3", { textContent: title }),
+    text ? el("p", { className: "sheet-text", textContent: text }) : null,
+    el("div", { className: "sheet-actions" }, [
+      cancel,
+      el("button", { className: `btn ${danger ? "btn-danger-solid" : "btn-primary"}`, value: "ok", textContent: ok }),
+    ]),
+  );
+  dialog.replaceChildren(form);
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.onclose = () => resolve(dialog.returnValue === "ok");
+  });
+}
+
 // A click on the dimmed backdrop lands on the <dialog> itself, since all of
 // its content sits inside .sheet-body.
 function closeOnBackdrop(dialog) {
@@ -428,20 +458,28 @@ function sessionCard({ session, photos }, allSessions) {
     if (!merge.value) return;
     const targetSessionId = merge.value;
     merge.value = "";
-    if (!confirm("Move every photo from this session into the other one?")) return;
+    const target = allSessions.find((other) => other.session.sessionId === targetSessionId);
+    const ok = await confirmAction({
+      title: "Merge these sessions?",
+      text:
+        `All ${plural(photos.length, "photo")} move into the session from ` +
+        `${fmtDate(target?.session.startedAt)}. Do this when both are the same cat.`,
+      ok: "Merge",
+      danger: false,
+    });
+    if (!ok) return;
     await post("/sessions/merge", { sourceSessionId: sessionId, targetSessionId });
     toast("Sessions merged");
     render();
   });
 
   const remove = button("Delete", "btn btn-danger", async () => {
-    if (
-      !confirm(
-        `Permanently delete all ${photos.length} photos in this session?\n\n` +
-          "Files are removed from S3 and cannot be recovered.",
-      )
-    )
-      return;
+    const ok = await confirmAction({
+      title: `Delete ${plural(photos.length, "photo")}?`,
+      text: "The whole session is removed from storage for good. This cannot be undone.",
+      ok: "Delete for good",
+    });
+    if (!ok) return;
     await post(`/sessions/${sessionId}/reject`);
     toast(`Deleted ${plural(photos.length, "photo")}`);
     render();
@@ -463,7 +501,7 @@ function sessionCard({ session, photos }, allSessions) {
       el("div", { className: "meta mono session-id", textContent: sessionId }),
     ]),
     el("div", { className: "grid" }, photos.map((p) => thumb(p, photos))),
-    el("footer", { className: "card-actions" }, isAdmin() ? [assign, merge, remove] : [assign]),
+    el("footer", { className: "card-actions" }, [assign, merge, remove]),
   ]);
 }
 
@@ -480,6 +518,13 @@ function locationLink(session) {
     textContent: `📍 ${lat}, ${lon}${locationNote(session)}`,
   });
 }
+
+const confirmDeletePhoto = () =>
+  confirmAction({
+    title: "Delete this photo?",
+    text: "It is removed from storage for good. This cannot be undone.",
+    ok: "Delete for good",
+  });
 
 function locationNote(session) {
   if (session.locationSource === "map") return " · picked on map";
@@ -512,7 +557,7 @@ function thumb(photo, list) {
   });
   kill.onclick = guard(async (event) => {
     event.stopPropagation();
-    if (!confirm("Permanently delete this photo from S3?")) return;
+    if (!(await confirmDeletePhoto())) return;
     await post(`/photos/${photo.photoId}/reject`);
     toast("Photo deleted");
     render();
@@ -544,7 +589,7 @@ function openPicker({ session, photos }) {
   const search = el("input", {
     type: "search",
     className: "picker-search",
-    placeholder: isAdmin() ? "Find a cat, or type a new name" : "Find a cat",
+    placeholder: "Find a cat, or type a new name",
     autocomplete: "off",
     enterKeyHint: "done",
   });
@@ -583,7 +628,7 @@ function openPicker({ session, photos }) {
         return tile;
       });
 
-    if (isAdmin() && query && !state.cats.some((cat) => cat.name.toLowerCase() === needle)) {
+    if (query && !state.cats.some((cat) => cat.name.toLowerCase() === needle)) {
       const make = el("button", { type: "button", className: "pick pick-new" }, [
         el("span", { className: "pick-plus", textContent: "+" }),
         el("span", { className: "pick-name", textContent: `“${query}”` }),
@@ -593,20 +638,11 @@ function openPicker({ session, photos }) {
       tiles.push(make);
     }
 
-    const empty = isAdmin()
-      ? "No cats yet — type a name to create the first one."
-      : "No cat by that name.";
     grid.replaceChildren(
-      ...(tiles.length ? tiles : [el("p", { className: "picker-hint", textContent: empty })]),
+      ...(tiles.length
+        ? tiles
+        : [el("p", { className: "picker-hint", textContent: "No cats yet — type a name to create the first one." })]),
     );
-    if (!isAdmin()) {
-      grid.append(
-        el("p", {
-          className: "picker-hint picker-hint-wide",
-          textContent: "Not one of these? Leave it in the queue — an admin adds new cats.",
-        }),
-      );
-    }
   }
 
   search.oninput = draw;
@@ -728,7 +764,14 @@ async function openCat(catId) {
   });
 
   const remove = button("Delete cat", "btn btn-danger", async () => {
-    if (!confirm(`Delete “${cat.name}”? Its photos must be unassigned first.`)) return;
+    const ok = await confirmAction({
+      title: `Delete “${cat.name}”?`,
+      text: photos.length
+        ? `${plural(photos.length, "photo")} still belong to this cat — the delete will be refused until they are moved or unassigned.`
+        : "The cat has no photos left, so only its name goes.",
+      ok: "Delete cat",
+    });
+    if (!ok) return;
     await api(`/cats/${catId}`, { method: "DELETE" });
     toast("Cat deleted");
     setView("cats");
@@ -1034,8 +1077,12 @@ async function renameLink(row) {
 }
 
 async function removeLink(row) {
-  if (!confirm(`Forget the name and partner numbers for “${row.link.label}”?\n\nVisits already counted stay, under ?src=${row.referral}.`))
-    return;
+  const ok = await confirmAction({
+    title: `Forget “${row.link.label}”?`,
+    text: `Its name and partner numbers go. Visits already counted stay, under ?src=${row.referral}.`,
+    ok: "Forget",
+  });
+  if (!ok) return;
   await api(`/links/${row.referral}`, { method: "DELETE" });
   render();
 }
@@ -1226,8 +1273,7 @@ function table(columns, rows) {
 
 const ROLE_HELP = {
   admin: "Everything: labeling, new cats, merging, deleting, stats and people.",
-  collaborator:
-    "Photographs cats in the app, browses the cats, and labels queue sessions with cats that already exist.",
+  collaborator: "Photographs cats in the app and browses the cats. No labeling, no deleting.",
 };
 
 async function renderAdmins() {
@@ -1269,7 +1315,12 @@ async function renderAdmins() {
       ...[...admins].sort(byRole).map((admin) => {
         const you = admin.email === state.email;
         const remove = button("Remove", "btn btn-sm btn-danger", async () => {
-          if (!confirm(`Remove ${admin.email}? They can no longer sign in.`)) return;
+          const ok = await confirmAction({
+            title: "Remove this person?",
+            text: `${admin.email} will no longer be able to sign in. Photos they sent stay.`,
+            ok: "Remove",
+          });
+          if (!ok) return;
           await api(`/admins/${encodeURIComponent(admin.email)}`, { method: "DELETE" });
           toast("Removed");
           render();
@@ -1280,6 +1331,18 @@ async function renderAdmins() {
         select.disabled = you;
         select.title = you ? "Nobody can change their own role" : "";
         select.onchange = guard(async () => {
+          if (select.value === "admin") {
+            const ok = await confirmAction({
+              title: "Make this person an admin?",
+              text: `${admin.email} will be able to label, merge and delete photos, and manage people.`,
+              ok: "Make admin",
+              danger: false,
+            });
+            if (!ok) {
+              select.value = admin.role;
+              return;
+            }
+          }
           await patch(`/admins/${encodeURIComponent(admin.email)}`, { role: select.value });
           toast(`${admin.email} is now ${select.value === "admin" ? "an admin" : "a collaborator"}`);
           render();
@@ -1392,7 +1455,7 @@ function wireLightbox() {
 
   $("#lightbox-reject").onclick = guard(async () => {
     const photo = lightbox.list[lightbox.index];
-    if (!photo || !confirm("Permanently delete this photo from S3?")) return;
+    if (!photo || !(await confirmDeletePhoto())) return;
     await post(`/photos/${photo.photoId}/reject`);
     toast("Photo deleted");
     lightbox.list = lightbox.list.filter((p) => p !== photo);
@@ -1461,6 +1524,10 @@ function claims(token) {
 }
 
 async function boot() {
+  if (!isInstalled()) {
+    showInstallPage();
+    return;
+  }
   config = await (await fetch("/config.json")).json();
 
   $("#login-button").onclick = guard(login);
@@ -1511,6 +1578,7 @@ if ("serviceWorker" in navigator) {
 }
 
 boot().catch((err) => {
+  if (!isInstalled()) return;
   showLogin();
   toast(err.message, true);
 });

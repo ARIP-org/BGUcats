@@ -1593,9 +1593,11 @@ code {
 
 /* ---------- capture ---------- */
 
-/* The camera is the screen: a wide viewfinder, the three controls under the
-   thumb, then the strip of what was just taken. One column at any width —
-   this is used on a phone, standing next to a cat. */
+/* The start screen is an ordinary page. Once an encounter is open the camera
+   takes the whole screen, like the phone's own camera app: the picture edge
+   to edge, the encounter and location along the top, and the controls under
+   the thumb at the bottom, over soft dark gradients so they read on any
+   picture. The buttons keep the app's paper-and-ink look. */
 
 .capture-start {
   display: grid;
@@ -1623,18 +1625,95 @@ code {
   font-size: 14px;
 }
 
-.encounter {
-  max-width: 720px;
-  margin: 0 auto 18px;
-  overflow: hidden;
+.capture-open .shot-strip {
+  max-width: 100%;
+  padding: 2px 0;
 }
 
-.encounter-head {
+.capture-open-actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 10px;
+}
+
+.camera {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+}
+
+.camera video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-note {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 16px;
+  text-align: center;
+}
+
+.camera-top,
+.camera-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+.camera-top {
+  top: 0;
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  padding-bottom: 28px;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+
+.camera-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  background: rgba(31, 27, 24, 0.45);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.camera-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: auto;
+  line-height: 1.2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.camera-title b {
+  font: 700 26px/1 var(--font-display);
+}
+
+.camera-title span {
+  font-size: 13px;
+  opacity: 0.85;
 }
 
 .chip {
@@ -1644,6 +1723,7 @@ code {
   border: 2px solid var(--ink);
   border-radius: 999px;
   background: var(--card);
+  color: var(--ink);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -1653,52 +1733,32 @@ code {
   background: var(--ginger-wash);
 }
 
-.viewfinder {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  max-width: 100%;
-  background: var(--ink);
-  border-block: 2px solid var(--ink);
-}
-
-.viewfinder video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.viewfinder.no-camera {
-  aspect-ratio: auto;
-  min-height: 140px;
-  background: var(--paper-2);
-}
-
-.viewfinder.no-camera video {
-  display: none;
-}
-
-.viewfinder-note {
-  position: absolute;
-  inset: 0;
+.camera-bottom {
+  bottom: 0;
   display: grid;
-  place-items: center;
-  padding: 20px;
-  color: var(--paper);
-  text-align: center;
+  gap: 10px;
+  padding-top: 48px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.6) 45%);
 }
 
-.no-camera .viewfinder-note {
-  position: static;
-  color: var(--ink-soft);
+.camera .outbox-line {
+  margin: 0;
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
-.viewfinder.flash::after {
+.camera .outbox-line .btn {
+  margin-left: 6px;
+}
+
+.camera.flash::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--paper);
+  background: #fff;
   animation: shutter-flash 0.25s ease-out forwards;
+  pointer-events: none;
 }
 
 @keyframes shutter-flash {
@@ -1710,12 +1770,34 @@ code {
   }
 }
 
+/* No camera (refused, or none in this browser): the phone's own camera
+   becomes the main way in, so its buttons grow. */
+.camera.no-camera {
+  background: var(--ink);
+}
+
+.camera.no-camera video {
+  display: none;
+}
+
+.camera.no-camera .system-camera .btn {
+  min-height: 48px;
+  padding: 0 22px;
+  font-size: 16px;
+}
+
+/* Toasts move to the top while the camera fills the screen, so they never
+   sit on the shutter. */
+.camera-open .toasts {
+  top: calc(76px + env(safe-area-inset-top));
+  bottom: auto;
+}
+
 .capture-controls {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
 }
 
 .capture-controls > .btn {
@@ -1778,14 +1860,17 @@ code {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 0 16px 10px;
+}
+
+.shot-strip:empty {
+  display: none;
 }
 
 .shot {
   position: relative;
   flex: none;
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   border: 2px solid var(--ink);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -1833,16 +1918,12 @@ code {
   background: var(--danger);
 }
 
-.outbox-line {
-  margin: 0;
-  padding: 0 16px 12px;
-}
-
 .outbox-panel {
   margin-bottom: 18px;
 }
 
 .outbox-panel .outbox-line {
+  margin: 0;
   padding: 14px 16px;
 }
 
@@ -1850,9 +1931,241 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 12px 16px 14px;
-  border-top: 2px dashed var(--line-strong);
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+a.btn {
+  text-decoration: none;
+}
+
+/* ---------- confirmations ---------- */
+
+/* Filled red for the one button that cannot be taken back. */
+.btn-danger-solid {
+  border-color: var(--ink);
+  background: var(--danger);
+  color: #fff;
+  box-shadow: var(--lift);
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  background: #9f2e27;
+}
+
+.sheet-body.confirm {
+  gap: 10px;
+}
+
+.sheet-body.confirm .sheet-text {
+  font-size: 15px;
+  max-width: 46ch;
+}
+
+/* ---------- install page ---------- */
+
+/* What a browser tab shows instead of the app. Same paper, ink and ginger
+   as the landing page; reads right-to-left in Hebrew and Arabic. Amatic SC
+   has no Arabic letters, so Arabic headings use Rubik instead. */
+
+.install {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.install-wrap {
+  display: grid;
+  gap: 22px;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.install-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.install-top .brand span {
+  font: 700 32px/1 var(--font-display);
+}
+
+.langs {
+  display: inline-flex;
+  padding: 3px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+
+.langs button {
+  min-width: 38px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: 500 14px/1.7 var(--font-body);
+  cursor: pointer;
+}
+
+.langs button:hover {
+  background: var(--paper-2);
+}
+
+.langs button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.langs button:focus-visible {
+  outline: 2.5px solid var(--ginger);
+  outline-offset: 1px;
+}
+
+.install-hero {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 10px 0 6px;
+}
+
+.install-hero h1 {
+  margin: 0;
+  max-width: 18ch;
+  font: 700 clamp(44px, 9vw, 72px) / 1.02 var(--font-display);
+  text-wrap: balance;
+}
+
+.install-lede {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink-soft);
+  font-size: 17px;
+}
+
+.install-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 18px;
+}
+
+.install-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 20px 22px;
+}
+
+.install-card h2 {
+  margin: 0;
+  font: 700 36px/1 var(--font-display);
+}
+
+.install-card h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.install-what,
+.install-how,
+.install-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-inline-start: 22px;
+}
+
+.install-how li::marker,
+.install-steps li::marker {
+  font-weight: 700;
+  color: var(--ginger-deep);
+}
+
+.install-now {
+  border-width: 3px;
+  box-shadow: var(--lift);
+}
+
+.install-now > .btn {
+  justify-self: start;
+}
+
+.install-platform {
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.install-other summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--ginger-deep);
+}
+
+.install-other[open] summary {
+  margin-bottom: 12px;
+}
+
+.install-other .install-platform + .install-platform {
+  margin-top: 10px;
+}
+
+.install-done {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--good-wash);
+  color: var(--good);
+  font-weight: 500;
+}
+
+.share-icon {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0 0.15em;
+  vertical-align: -0.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.install-invite {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.install[dir="rtl"] .callout {
+  border-left: 0;
+  border-right: 4px solid var(--ginger);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.install:lang(ar) h1,
+.install:lang(ar) h2 {
+  font-family: var(--font-body);
+  letter-spacing: 0;
+}
+
+.install:lang(ar) .install-hero h1 {
+  font-size: clamp(34px, 7vw, 54px);
+  line-height: 1.25;
+}
+
+.install:lang(ar) .install-card h2 {
+  font-size: 26px;
+  line-height: 1.3;
 }
 
 /* ---------- people & roles ---------- */
@@ -1873,10 +2186,6 @@ code {
 .role-help dd {
   margin: 0;
   color: var(--ink-soft);
-}
-
-.picker-hint-wide {
-  grid-column: 1 / -1;
 }
 
 /* An email address is one unbreakable word: on a phone it gets its own

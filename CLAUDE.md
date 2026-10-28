@@ -64,9 +64,9 @@ them: Telegram and WhatsApp keep working unchanged, and the app is a third
 channel (`channel = "app"`) into the same table, bucket and process Lambda.
 
 - **Two roles on the one allowlist item** (`ADMIN#{email}`, field `role`).
-  `admin` = everything. `collaborator` = Capture, browse cats, and assign queue
-  sessions to cats that *already exist*. No deleting, merging, creating or
-  renaming cats, stats, or people. **No role field means admin**, so the
+  `admin` = everything. `collaborator` = Capture and browsing the cats, nothing
+  else: no queue or labeling, no deleting, merging, creating or renaming cats,
+  no stats or people. **No role field means admin**, so the
   Terraform bootstrap item and `make admin-add` keep full access. The API
   enforces this per route (`ROUTES` in `src/admin/handler.py`, last column);
   the UI only hides what would be refused.
@@ -84,6 +84,11 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
 - **Location comes from the phone's GPS at the moment of capture**, with its
   accuracy (`locationSource = "app-gps"`, `locationAccuracyM`), rounded to
   3 decimals like everything else.
+- **Installed app only.** A browser tab gets the install page (web/install.js:
+  what the app is for, how to use it, how to install it — Hebrew, English,
+  Russian, Arabic) instead of the app. It is a front door, not security: the
+  API still checks every call. `?browser` opens the app in a tab anyway, for
+  when the installed app cannot sign in on some phone.
 - **The service worker (web/sw.js) is network-first** and never touches
   `/api/`, photos or other origins — the distribution's no-caching rule still
   means a deploy reaches everyone on their next load.

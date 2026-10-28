@@ -86,43 +86,34 @@ def test_collaborators_cannot_rename_or_delete_a_cat(people):
     assert _call("DELETE", f"/api/cats/{cat}", email=HELPER)[0] == 403
 
 
-def test_collaborators_browse_and_work_the_queue(people):
-    assert _call("GET", "/api/queue", email=HELPER)[0] == 200
+def test_collaborators_browse_the_cats(people):
     assert _call("GET", "/api/cats", email=HELPER)[0] == 200
     assert _call("GET", f"/api/cats/{people['cat']}", email=HELPER)[0] == 200
 
-    status, data = _call(
-        "POST",
-        f"/api/sessions/{SESSION}/assign",
-        {"catId": people["cat"]},
-        email=HELPER,
-    )
-    assert status == 200 and data["assigned"] == 1
-    session = people["table"].get_item(Key={"PK": f"SESSION#{SESSION}", "SK": "META"})
-    assert session["Item"]["labeledBy"] == HELPER
+
+@pytest.mark.parametrize(
+    "method, path, body",
+    [
+        ("GET", "/api/queue", None),
+        ("GET", "/api/stats", None),
+        ("GET", f"/api/sessions/{SESSION}", None),
+        ("POST", f"/api/sessions/{SESSION}/assign", {"catId": "X"}),
+        ("POST", f"/api/sessions/{SESSION}/unassign", None),
+    ],
+)
+def test_labeling_stays_with_admins(people, method, path, body):
+    assert _call(method, path, body, email=HELPER)[0] == 403
 
 
-def test_a_collaborator_can_undo_only_their_own_label(people):
-    cat = people["cat"]
-    _call("POST", f"/api/sessions/{SESSION}/assign", {"catId": cat}, email=HELPER)
-
-    assert (
-        _call("POST", f"/api/sessions/{SESSION}/unassign", email=OTHER_HELPER)[0] == 403
-    )
-    assert _call("POST", f"/api/sessions/{SESSION}/unassign", email=HELPER)[0] == 200
-
-
-def test_a_collaborator_cannot_undo_an_admin_label(people):
-    _call("POST", f"/api/sessions/{SESSION}/assign", {"catId": people["cat"]})
-    assert _call("POST", f"/api/sessions/{SESSION}/unassign", email=HELPER)[0] == 403
-    # Admins can still undo anyone's.
+def test_a_refused_assign_labels_nothing(people):
     _call(
         "POST",
         f"/api/sessions/{SESSION}/assign",
         {"catId": people["cat"]},
         email=HELPER,
     )
-    assert _call("POST", f"/api/sessions/{SESSION}/unassign")[0] == 200
+    session = people["table"].get_item(Key={"PK": f"SESSION#{SESSION}", "SK": "META"})
+    assert "catId" not in session["Item"] or session["Item"]["catId"] is None
 
 
 def test_people_are_added_as_collaborators_unless_said_otherwise(people):

@@ -10,10 +10,10 @@ now and revoking it whenever their token happens to expire.
 
 Two roles, both on the same allowlist item (`ADMIN#{email}`):
   admin         — everything, as before.
-  collaborator  — photographs cats in the app, browses the catalogue, and
-                  works the queue by assigning sessions to cats that already
-                  exist. Nothing destructive or structural: no deleting, no
-                  merging, no creating or renaming cats, no managing people.
+  collaborator  — photographs cats in the app and browses the catalogue.
+                  Labeling stays with admins: no queue, no assigning, and
+                  nothing destructive or structural — no deleting, merging,
+                  creating or renaming cats, no managing people.
 An item with no role is an admin, so every account that existed before roles
 (the Terraform bootstrap item, `make admin-add`) keeps its access unchanged.
 
@@ -634,15 +634,7 @@ def _assign_photo_item(photo, cat_id, email):
     )
 
 
-def _unassign_session(session_id, email, role, **_):
-    """Collaborators may undo only a label they gave themselves — a slip of
-    the thumb is theirs to fix, someone else's decision is an admin's."""
-    if role != ROLE_ADMIN:
-        session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"}).get(
-            "Item"
-        )
-        if not session or session.get("labeledBy") != email:
-            raise ApiError(403, "only the person who labeled this can undo it")
+def _unassign_session(session_id, **_):
     photos = _session_photos(session_id)
     previous = {p.get("catId") for p in photos if p.get("catId")}
     for photo in photos:
@@ -1299,24 +1291,22 @@ EMAIL = r"[^/]+"
 
 ROUTES = (
     ("GET", r"^/api/me$", _get_me, ANYONE),
-    # The queue badge reads this; counts only, nothing a collaborator
-    # cannot already see in the queue itself.
-    ("GET", r"^/api/stats$", _get_stats, ANYONE),
+    ("GET", r"^/api/stats$", _get_stats, ADMINS),
     ("GET", r"^/api/insights$", _get_insights, ADMINS),
     ("POST", r"^/api/links$", _create_link, ADMINS),
     ("PATCH", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _update_link, ADMINS),
     ("DELETE", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _delete_link, ADMINS),
-    ("GET", r"^/api/queue$", _get_queue, ANYONE),
+    ("GET", r"^/api/queue$", _get_queue, ADMINS),
     # Ahead of the /{session_id} patterns: "merge" would otherwise be read
     # as a session id.
     ("POST", r"^/api/sessions/merge$", _merge_sessions, ADMINS),
-    ("GET", rf"^/api/sessions/(?P<session_id>{ID})$", _get_session, ANYONE),
-    ("POST", rf"^/api/sessions/(?P<session_id>{ID})/assign$", _assign_session, ANYONE),
+    ("GET", rf"^/api/sessions/(?P<session_id>{ID})$", _get_session, ADMINS),
+    ("POST", rf"^/api/sessions/(?P<session_id>{ID})/assign$", _assign_session, ADMINS),
     (
         "POST",
         rf"^/api/sessions/(?P<session_id>{ID})/unassign$",
         _unassign_session,
-        ANYONE,
+        ADMINS,
     ),
     ("POST", rf"^/api/sessions/(?P<session_id>{ID})/reject$", _reject_session, ADMINS),
     ("GET", r"^/api/cats$", _get_cats, ANYONE),

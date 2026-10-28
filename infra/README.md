@@ -126,17 +126,20 @@ make admin-add EMAIL=someone@post.bgu.ac.il
 ```
 
 `make admin-add` writes no role, which means admin. People added in the tab
-default to **collaborator** — Capture, browsing cats, and labeling queue
-sessions with existing cats; nothing that deletes, merges, names a cat or
-manages people. Roles can be changed in the tab; nobody can change their own.
+default to **collaborator** — Capture and browsing the cats; no queue or
+labeling, and nothing that deletes, merges, names a cat or manages people. Roles can be changed in the tab; nobody can change their own.
 
 Access is by explicit allowlist, not by email domain. "Anyone with a
 @post.bgu.ac.il address" would be every student at the university.
 
 ## The app (Capture)
 
-The admin URL is installable: open it on a phone, then Share → **Add to Home
-Screen** (iOS) or the install prompt (Android). Phones upload photos and
+The admin URL runs only as an installed app: opened in a browser tab it shows
+an install page (Hebrew, English, Russian, Arabic) explaining the app and how
+to install it — Share → **Add to Home Screen** on iOS, the install button or
+menu on Android, the address-bar install icon in desktop Chrome or Edge.
+`<admin_url>?browser` opens it in a tab anyway, if an installed app ever
+cannot sign in. Phones upload photos and
 videos straight to the media bucket's `raw/` prefix with presigned POSTs,
 which is what the bucket's CORS rule in `s3.tf` is for (one origin, POST
 only). Nothing new runs all the time; the cost is the same per-photo
