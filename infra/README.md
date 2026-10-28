@@ -43,19 +43,3 @@ needing them:
 - **Lambda execution roles**, once `infra/main` has Lambdas, get exactly the
   actions/resource ARNs that function needs (e.g. `s3:PutObject` on the one
   bucket, `dynamodb:PutItem` on the one table) — no wildcards.
-
-## Adding the labelling tool (`bgucats-admin`)
-
-The admin Lambda brings one new secret and one bootstrap change. Order matters:
-
-1. Add `admin_token` to `infra/main/terraform.tfvars` — at least 32 characters,
-   e.g. `openssl rand -hex 32`. Terraform's variable validation refuses anything
-   shorter.
-2. `terraform -chdir=infra/bootstrap apply` — extends the CI role's plan-read
-   policy to the new `/bgucats/admin/token` parameter. Skip this and the next
-   CI `plan` fails refreshing that parameter. (The Lambda, its role and the
-   API routes are already covered by the existing `bgucats-*` grants.)
-3. `make tf-apply` — builds all three Lambda packages and applies `infra/main`.
-4. Open the `admin_url` output on your phone and paste the token once.
-
-The token lives in Terraform state, the same as the three existing secrets.

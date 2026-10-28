@@ -44,28 +44,6 @@ src/            Python Lambda handlers
 tests/          pytest, moto-backed
 ```
 
-## The labelling tool
-
-An admin page at `<api>/admin` for working through what the bot collects:
-a queue of unlabelled sessions, the photos of each, "this is …" / new cat /
-reject, a catalogue showing each cat's coverage against the spec's targets,
-and merging two entries that turn out to be one cat. Usable on a phone.
-
-Try it locally against a fake AWS — photos go through the real ingest and
-process code first, so what you see is what the deployed pipeline produces:
-
-```bash
-make admin-local                                  # synthetic photos
-make admin-local PHOTOS=path/to/encounter/folders # real photos, one folder per encounter
-```
-
-Then open http://127.0.0.1:8000/admin and sign in with `local-dev-token`.
-
-Deploying it needs one new secret, `admin_token`, in `infra/main/terraform.tfvars`
-(see `terraform.tfvars.example`), and — before the next CI run — a re-apply of
-`infra/bootstrap`, so CI's plan role may read the new parameter. See
-`infra/README.md`.
-
 ## AWS
 
 Nothing here requires a VPC — see spec §8.1. Region defaults to `us-east-1`.

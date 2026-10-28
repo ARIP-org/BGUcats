@@ -194,29 +194,7 @@ actual product question.
   exports/{datasetVersion}/images/...
   ```
 - Single DynamoDB table, three GSIs: photos-in-session, labeling queue by
-  status, photos-of-a-cat for export. GSI2 also carries one overloaded
-  partition, `CATALOG`, on Cat items — the catalogue is one Query, not a scan.
-  Do not add a fourth GSI for a listing; overload deliberately and document it
-  in `infra/main/dynamodb.tf`.
-
-## Labelling tool (`src/admin/`)
-
-- **The unit of labelling is the session.** "Sessions 14 and 39 are both
-  Ryzhik" — a few clicks, never per-photo labelling (spec §4.1).
-- **Assignment writes children before the parent:** every photo, then the
-  session's `catId` last. A failure halfway leaves the session in the queue,
-  re-runnable — the same principle as the ingest write order.
-- **Duplicates and rejected photos never enter a cat.** Rejection is
-  reversible; the raw original is write-once and untouched.
-- **Per-cat counts are derived** — recomputed from GSI3 after every write,
-  never incremented, so they cannot drift.
-- **Merge is the cheap fix the open-set threshold depends on.** A false "new
-  cat" costs exactly one merge; keep it one action.
-- **Coverage is shown against §4.2's targets** (≥20 photos, ≥3 sessions).
-  Separate sessions matter most — the phase-1b results measured three captures
-  beating one capture of the same size by ~29 points of top-1.
-- `local.py` is a dev tool that imports the ingest and process handlers. It is
-  excluded from the Lambda package by name in the Makefile; keep it that way.
+  status, photos-of-a-cat for export.
 
 ## Processing rules
 

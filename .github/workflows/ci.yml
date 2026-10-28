@@ -75,8 +75,6 @@ jobs:
           TF_VAR_telegram_bot_token: "ci-plan-placeholder"
           TF_VAR_telegram_webhook_secret: "ci-plan-placeholder"
           TF_VAR_submitter_hash_salt: "ci-plan-placeholder"
-          # 32+ characters: the variable's validation rejects anything shorter.
-          TF_VAR_admin_token: "ci-plan-placeholder-0000000000000000000000"
         run: |
           terraform -chdir=infra/main init -reconfigure
           terraform -chdir=infra/main plan

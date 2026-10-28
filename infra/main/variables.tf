@@ -15,14 +15,3 @@ variable "submitter_hash_salt" {
   type        = string
   sensitive   = true
 }
-
-variable "admin_token" {
-  description = "Bearer token the labelling tool's page sends with every API request."
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(var.admin_token) >= 32
-    error_message = "admin_token must be at least 32 characters; generate one with: openssl rand -hex 32"
-  }
-}
