@@ -290,3 +290,105 @@ class TestFromWildlifeDataset:
         assert summary["policy"] == "none"
         assert summary["eval_grade"] is False
         assert summary["identities"] == 4
+
+
+class TestThinning:
+    def build(self, identities=3, sessions=5, frames=10):
+        from catreid.datasets import SessionPolicy, SourceDataset
+        from catreid.records import PhotoRecord
+
+        records = [
+            PhotoRecord(
+                image_id=f"c{i}_s{s}_f{f}",
+                identity=f"cat{i}",
+                session=f"c{i}_s{s}",
+                path=f"/c{i}_s{s}_f{f}.jpg",
+            )
+            for i in range(identities)
+            for s in range(sessions)
+            for f in range(frames)
+        ]
+        return SourceDataset("x", records, SessionPolicy.VIDEO)
+
+    def test_caps_sessions_per_identity(self):
+        from catreid.datasets import cap_sessions_per_identity
+
+        capped = cap_sessions_per_identity(self.build(), max_sessions=2)
+        per_identity = {}
+        for record in capped.records:
+            per_identity.setdefault(record.identity, set()).add(record.session)
+        assert all(len(s) == 2 for s in per_identity.values())
+
+    def test_every_identity_survives_the_cap(self):
+        from catreid.datasets import cap_sessions_per_identity
+
+        capped = cap_sessions_per_identity(self.build(identities=6), max_sessions=1)
+        assert len({r.identity for r in capped.records}) == 6
+
+    def test_capping_keeps_sessions_whole(self):
+        from catreid.datasets import cap_sessions_per_identity
+
+        capped = cap_sessions_per_identity(self.build(), max_sessions=2)
+        counts = {}
+        for record in capped.records:
+            counts[record.session] = counts.get(record.session, 0) + 1
+        assert all(count == 10 for count in counts.values())
+
+    def test_capping_is_deterministic(self):
+        from catreid.datasets import cap_sessions_per_identity
+
+        first = cap_sessions_per_identity(self.build(), max_sessions=2, seed=5)
+        second = cap_sessions_per_identity(self.build(), max_sessions=2, seed=5)
+        assert [r.image_id for r in first.records] == [
+            r.image_id for r in second.records
+        ]
+
+    def test_thins_frames_within_a_session(self):
+        from catreid.datasets import thin_frames_per_session
+
+        thinned = thin_frames_per_session(self.build(frames=10), max_frames=3)
+        counts = {}
+        for record in thinned.records:
+            counts[record.session] = counts.get(record.session, 0) + 1
+        assert all(count == 3 for count in counts.values())
+
+    def test_thinning_never_drops_a_session(self):
+        from catreid.datasets import thin_frames_per_session
+
+        source = self.build()
+        thinned = thin_frames_per_session(source, max_frames=1)
+        assert {r.session for r in thinned.records} == {
+            r.session for r in source.records
+        }
+
+    def test_thinning_spreads_across_the_capture(self):
+        # Even spacing, not the first N — a burst's first three frames are
+        # the same instant and carry none of the pose variation.
+        from catreid.datasets import thin_frames_per_session
+
+        thinned = thin_frames_per_session(self.build(frames=10), max_frames=3)
+        first_session = min(r.session for r in thinned.records)
+        frames = [r.image_id for r in thinned.records if r.session == first_session]
+        assert frames == ["c0_s0_f0", "c0_s0_f3", "c0_s0_f6"]
+
+    def test_short_sessions_are_left_alone(self):
+        from catreid.datasets import thin_frames_per_session
+
+        thinned = thin_frames_per_session(self.build(frames=2), max_frames=5)
+        assert len(thinned.records) == 3 * 5 * 2
+
+    def test_thinned_source_keeps_its_policy(self):
+        from catreid.datasets import SessionPolicy, thin_frames_per_session
+
+        thinned = thin_frames_per_session(self.build(), max_frames=2)
+        assert thinned.policy is SessionPolicy.VIDEO
+        assert thinned.eval_grade is True
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_rejects_nonsense_limits(self, bad):
+        from catreid.datasets import cap_sessions_per_identity, thin_frames_per_session
+
+        with pytest.raises(SessionPolicyError):
+            cap_sessions_per_identity(self.build(), max_sessions=bad)
+        with pytest.raises(SessionPolicyError):
+            thin_frames_per_session(self.build(), max_frames=bad)

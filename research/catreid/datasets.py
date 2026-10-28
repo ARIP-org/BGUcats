@@ -29,7 +29,7 @@ from enum import Enum
 
 import pandas as pd
 
-from catreid.records import PhotoRecord
+from catreid.records import PhotoRecord, records_by_session
 
 # Mirrors SESSION_IDLE_WINDOW_SECONDS in the ingest handler. One encounter with
 # one cat, whether the photos arrive over Telegram or sit in a public archive.
@@ -231,4 +231,67 @@ def from_wildlife_dataset(dataset, name=None, **kwargs):
 
     return records_from_dataframe(
         dataframe, name=name, policy=policy, path_prefix=prefix, notes=notes, **kwargs
+    )
+
+
+def cap_sessions_per_identity(source, max_sessions, seed=0):
+    """Keep at most N whole sessions per identity.
+
+    Whole sessions, never a sample of images: thinning at the image level
+    would put frames of one capture on both sides of a later split, which is
+    the leak the splitter exists to prevent.
+
+    Capping per identity rather than globally matters on sources where
+    coverage is uneven — a global budget can leave an identity with too few
+    sessions to be enrolled and queried, silently shrinking the eval set.
+    """
+    import random
+
+    if max_sessions < 1:
+        raise SessionPolicyError("max_sessions must be at least 1")
+
+    by_identity = defaultdict(set)
+    for record in source.records:
+        by_identity[record.identity].add(record.session)
+
+    rng = random.Random(seed)
+    keep = set()
+    for identity in sorted(by_identity):
+        session_ids = sorted(by_identity[identity])
+        rng.shuffle(session_ids)
+        keep.update(session_ids[:max_sessions])
+
+    kept = [record for record in source.records if record.session in keep]
+    return SourceDataset(
+        name=source.name, records=kept, policy=source.policy, notes=source.notes
+    )
+
+
+def thin_frames_per_session(source, max_frames):
+    """Keep at most N evenly-spaced frames from each session.
+
+    A 100-frame clip of one animal is a burst: the frames are near-identical
+    and embedding all of them buys almost nothing. Even spacing preserves the
+    pose and lighting spread across the capture, which is the part that
+    carries signal — the same reasoning as the enrollment quality filter
+    keeping the best N of 30-100 frames.
+
+    Safe with respect to splitting because it only ever removes images from
+    within a session; no frame changes which session it belongs to.
+    """
+    if max_frames < 1:
+        raise SessionPolicyError("max_frames must be at least 1")
+
+    grouped = records_by_session(source.records)
+    kept = []
+    for session_id in sorted(grouped):
+        frames = grouped[session_id]
+        if len(frames) <= max_frames:
+            kept.extend(frames)
+            continue
+        step = len(frames) / max_frames
+        kept.extend(frames[int(index * step)] for index in range(max_frames))
+
+    return SourceDataset(
+        name=source.name, records=kept, policy=source.policy, notes=source.notes
     )

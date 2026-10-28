@@ -20,7 +20,11 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from catreid.datasets import from_wildlife_dataset
+from catreid.datasets import (
+    cap_sessions_per_identity,
+    from_wildlife_dataset,
+    thin_frames_per_session,
+)
 from catreid.embed import DEFAULT_VARIANT, cosine_similarity
 from catreid.metrics import QueryOutcome, evaluate_at_threshold, rank_identities
 from catreid.splits import open_set_split
@@ -33,6 +37,7 @@ class RunResult:
     dataset: str
     backbone: str
     session_policy: str
+    gallery_sessions_per_identity: int
     split_summary: dict
     source_summary: dict
     threshold: float
@@ -52,6 +57,7 @@ class RunResult:
             f"dataset              {self.dataset}",
             f"backbone             {self.backbone}",
             f"session policy       {self.session_policy}",
+            f"enrolled sessions    {self.gallery_sessions_per_identity} per identity",
             "",
             f"enrolled identities  {self.split_summary['known_identities']}",
             f"unseen identities    {self.split_summary['unknown_identities']}",
@@ -161,6 +167,7 @@ def run(
         dataset=source.name,
         backbone=embedder.name,
         session_policy=source.policy.value,
+        gallery_sessions_per_identity=gallery_sessions_per_identity,
         split_summary=split.summary(),
         source_summary=source.summary(),
         threshold=scores.threshold,
@@ -195,6 +202,24 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--min-baus", type=float, default=0.9)
     parser.add_argument(
+        "--gallery-sessions",
+        type=int,
+        default=1,
+        help="sessions enrolled per identity — the enrollment-richness axis",
+    )
+    parser.add_argument(
+        "--sessions-per-identity",
+        type=int,
+        default=None,
+        help="keep at most N whole sessions per identity",
+    )
+    parser.add_argument(
+        "--frames-per-session",
+        type=int,
+        default=None,
+        help="keep at most N evenly-spaced frames from each session",
+    )
+    parser.add_argument(
         "--max-images",
         type=int,
         default=None,
@@ -213,6 +238,17 @@ def main(argv=None):
     source = load_source(args.dataset, args.root)
     logger.info("source: %s", source.summary())
 
+    # Capping and thinning both respect session boundaries, so neither can
+    # move a frame across a later split. --max-images is the blunt one.
+    if args.sessions_per_identity:
+        source = cap_sessions_per_identity(
+            source, args.sessions_per_identity, seed=args.seed
+        )
+        logger.info("capped sessions: %s", source.summary())
+    if args.frames_per_session:
+        source = thin_frames_per_session(source, args.frames_per_session)
+        logger.info("thinned frames: %s", source.summary())
+
     if args.max_images:
         source = _subsample(source, args.max_images, args.seed)
         logger.warning(
@@ -228,6 +264,7 @@ def main(argv=None):
         seed=args.seed,
         min_baus=args.min_baus,
         cache_dir=args.cache_dir,
+        gallery_sessions_per_identity=args.gallery_sessions,
     )
 
     print()
