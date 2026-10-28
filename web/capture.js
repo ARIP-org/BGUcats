@@ -373,10 +373,11 @@ export function createCapture(ui) {
         fromSystemCamera(file).catch((err) => toast(err.message, true));
       };
     }
+    // The phone's own camera, offered only when the in-app one cannot start
+    // (refused, or no camera in this browser) — never alongside it.
     const fallback = el("div", { className: "system-camera" }, [
-      el("span", { textContent: "Or the phone's camera:" }),
-      button("Photo", "btn btn-sm", () => systemPhoto.click()),
-      button("Video", "btn btn-sm", () => systemVideo.click()),
+      button("Take a photo", "btn btn-lg", () => systemPhoto.click()),
+      button("Record a video", "btn btn-lg", () => systemVideo.click()),
       systemPhoto,
       systemVideo,
     ]);
@@ -398,7 +399,6 @@ export function createCapture(ui) {
         strip,
         status,
         el("div", { className: "capture-controls" }, [record, shutter, done]),
-        fallback,
       ]),
     ]);
     document.body.append(camera);
@@ -417,10 +417,14 @@ export function createCapture(ui) {
       note.remove();
     } else {
       camera.classList.add("no-camera");
-      note.textContent =
-        "The in-app camera isn't available here. Use the phone's own camera below — it works the same.";
-      shutter.disabled = true;
-      record.disabled = true;
+      note.replaceChildren(
+        el("div", { className: "camera-fallback" }, [
+          el("p", { textContent: "The camera can't start inside the app here. Use the phone's own camera instead — it works the same." }),
+          fallback,
+        ]),
+      );
+      shutter.hidden = true;
+      record.hidden = true;
     }
   }
 
