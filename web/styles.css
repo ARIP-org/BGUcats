@@ -1591,6 +1591,307 @@ code {
 
 /* ---------- narrower desks ---------- */
 
+/* ---------- capture ---------- */
+
+/* The camera is the screen: a wide viewfinder, the three controls under the
+   thumb, then the strip of what was just taken. One column at any width —
+   this is used on a phone, standing next to a cat. */
+
+.capture-start {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+.capture-start h3 {
+  margin: 0;
+  font: 700 34px/1 var(--font-display);
+}
+
+.capture-start p {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--ink-soft);
+}
+
+.capture-tips {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.encounter {
+  max-width: 720px;
+  margin: 0 auto 18px;
+  overflow: hidden;
+}
+
+.encounter-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.chip.warn {
+  border-color: var(--ginger-deep);
+  background: var(--ginger-wash);
+}
+
+.viewfinder {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  max-width: 100%;
+  background: var(--ink);
+  border-block: 2px solid var(--ink);
+}
+
+.viewfinder video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.viewfinder.no-camera {
+  aspect-ratio: auto;
+  min-height: 140px;
+  background: var(--paper-2);
+}
+
+.viewfinder.no-camera video {
+  display: none;
+}
+
+.viewfinder-note {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  color: var(--paper);
+  text-align: center;
+}
+
+.no-camera .viewfinder-note {
+  position: static;
+  color: var(--ink-soft);
+}
+
+.viewfinder.flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  animation: shutter-flash 0.25s ease-out forwards;
+}
+
+@keyframes shutter-flash {
+  from {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.capture-controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.capture-controls > .btn {
+  justify-self: end;
+}
+
+/* The shutter is the one big round thing on the screen. */
+.shutter {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: var(--ginger);
+  box-shadow: var(--lift);
+  color: var(--ink);
+  font: 700 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.shutter:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.record {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: 500 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.record::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  vertical-align: 0;
+}
+
+.record.recording {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}
+
+.shutter:disabled,
+.record:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shot-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 16px 10px;
+}
+
+.shot {
+  position: relative;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--paper-2);
+}
+
+.shot img,
+.shot-blank {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.shot-kind {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  color: var(--paper);
+  font-size: 12px;
+  text-shadow: 0 0 3px var(--ink);
+}
+
+.shot-state {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1px 0;
+  background: rgba(31, 27, 24, 0.72);
+  color: var(--paper);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.shot.sent .shot-state {
+  background: var(--good);
+}
+
+.shot.failed {
+  border-color: var(--danger);
+}
+
+.shot.failed .shot-state {
+  background: var(--danger);
+}
+
+.outbox-line {
+  margin: 0;
+  padding: 0 16px 12px;
+}
+
+.outbox-panel {
+  margin-bottom: 18px;
+}
+
+.outbox-panel .outbox-line {
+  padding: 14px 16px;
+}
+
+.system-camera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 14px;
+  border-top: 2px dashed var(--line-strong);
+}
+
+/* ---------- people & roles ---------- */
+
+.role-help {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0 18px 14px;
+  font-size: 13px;
+}
+
+.role-help dt {
+  font-weight: 700;
+}
+
+.role-help dd {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.picker-hint-wide {
+  grid-column: 1 / -1;
+}
+
+/* An email address is one unbreakable word: on a phone it gets its own
+   line, and the role and Remove sit under it. */
+@media (max-width: 760px) {
+  .row.person {
+    flex-wrap: wrap;
+  }
+
+  .row.person .row-main {
+    flex: 1 0 100%;
+    overflow-wrap: anywhere;
+  }
+}
+
 @media (max-width: 1000px) {
   .panel-row {
     grid-template-columns: 1fr;

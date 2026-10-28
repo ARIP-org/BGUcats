@@ -1,0 +1,341 @@
+"""In-app capture: encounters, presigned uploads, and the spec §10 write order.
+
+The phone's upload to S3 is stood in for by a plain put_object — what these
+tests check is everything the API does on either side of it.
+"""
+
+import base64
+import json
+
+import pytest
+
+import tests.admin.test_handler  # noqa: F401  (sets the env the handler reads)
+from admin import handler
+from tests.admin.test_handler import ADMIN, BUCKET, _call, aws  # noqa: F401
+
+HELPER = "helper@example.com"
+OTHER = "other-helper@example.com"
+ENCOUNTER = "01JBENC0000000000000000000"
+PHOTO = "01JBPHT0000000000000000001"
+PHOTO_2 = "01JBPHT0000000000000000002"
+VIDEO = "01JBVDE0000000000000000001"
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 60
+MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 60
+GPS = {"lat": 31.262_345, "lon": 34.801_987, "accuracyM": 8.4}
+
+
+@pytest.fixture
+def app(aws):  # noqa: F811
+    for email in (HELPER, OTHER):
+        aws["table"].put_item(
+            Item={
+                "PK": f"ADMIN#{email}",
+                "SK": "META",
+                "email": email,
+                "role": "collaborator",
+            }
+        )
+    return aws
+
+
+def _encounter(body=None, email=HELPER, session_id=ENCOUNTER):
+    return _call(
+        "POST", "/api/encounters", {"sessionId": session_id, **(body or {})}, email
+    )
+
+
+def _start_upload(photo_id=PHOTO, content_type="image/jpeg", email=HELPER, **extra):
+    return _call(
+        "POST",
+        f"/api/encounters/{ENCOUNTER}/media",
+        {"photoId": photo_id, "contentType": content_type, **extra},
+        email,
+    )
+
+
+def _phone_uploads(app, key, data):
+    app["s3"].put_object(Bucket=BUCKET, Key=key, Body=data)
+
+
+def _item(app, pk):
+    return app["table"].get_item(Key={"PK": pk, "SK": "META"}).get("Item")
+
+
+def _policy(upload):
+    return json.loads(base64.b64decode(upload["fields"]["policy"]))
+
+
+# ---- encounters ---------------------------------------------------------
+
+
+def test_an_encounter_is_an_app_session(app):
+    status, data = _encounter(GPS)
+    assert status == 200 and data["sessionId"] == ENCOUNTER
+
+    session = _item(app, f"SESSION#{ENCOUNTER}")
+    assert session["channel"] == "app"
+    assert session["explicit"] is True
+    assert session["startedBy"] == HELPER
+    # Rounded to ~100 m like every other location in the table.
+    assert float(session["coarseLat"]) == 31.262
+    assert float(session["coarseLon"]) == 34.802
+    assert session["locationSource"] == "app-gps"
+    assert int(session["locationAccuracyM"]) == 8
+
+
+def test_creating_the_same_encounter_twice_is_a_no_op(app):
+    _encounter()
+    status, _ = _encounter()
+    assert status == 200
+    assert _item(app, f"SESSION#{ENCOUNTER}")["startedBy"] == HELPER
+
+
+def test_nobody_can_claim_someone_elses_encounter_id(app):
+    _encounter()
+    assert _encounter(email=OTHER)[0] == 403
+
+
+def test_encounter_ids_must_be_ulids(app):
+    assert (
+        _call("POST", "/api/encounters", {"sessionId": "../../etc"}, HELPER)[0] == 400
+    )
+    assert _call("POST", "/api/encounters", {}, HELPER)[0] == 400
+
+
+def test_bad_coordinates_are_dropped_not_stored(app):
+    _encounter({"lat": 123.0, "lon": "34.8"})
+    assert "coarseLat" not in _item(app, f"SESSION#{ENCOUNTER}")
+
+
+def test_the_contributor_shows_up_on_the_stats_page(app):
+    _encounter()
+    profile = _item_with_sk(
+        app, f"SUBMITTER#{handler._app_submitter_hash(HELPER)}", "PROFILE"
+    )
+    assert profile["channel"] == "app"
+    assert profile["GSI2PK"] == "ENTITY#SUBMITTER"
+
+
+def _item_with_sk(app, pk, sk):
+    return app["table"].get_item(Key={"PK": pk, "SK": sk}).get("Item")
+
+
+def test_my_encounters_lists_only_mine_newest_first(app):
+    _encounter(session_id="01JBENC0000000000000000001")
+    _encounter(session_id="01JBENC0000000000000000002")
+    _encounter(session_id="01JBENC0000000000000000003", email=OTHER)
+
+    ids = [
+        e["sessionId"]
+        for e in _call("GET", "/api/encounters", email=HELPER)[1]["encounters"]
+    ]
+    assert ids == ["01JBENC0000000000000000002", "01JBENC0000000000000000001"]
+
+
+# ---- uploads ------------------------------------------------------------
+
+
+def test_upload_writes_a_pending_record_first(app):
+    _encounter()
+    status, data = _start_upload(capturedAt="2026-10-28T09:15:00.000Z", **GPS)
+    assert status == 200 and data["done"] is False
+
+    photo = _item(app, f"PHOTO#{PHOTO}")
+    assert photo["status"] == "pending"
+    assert photo["s3RawKey"] is None  # not until the object is confirmed
+    assert photo["uploadKey"] == f"raw/{ENCOUNTER}/{PHOTO}.jpg"
+    assert photo["capturedAt"] == "2026-10-28T09:15:00.000Z"
+    assert float(photo["coarseLat"]) == 31.262
+    # Not in the session grid or the queue while pending.
+    assert "GSI1PK" not in photo and "GSI2PK" not in photo
+
+
+def test_the_upload_url_can_write_exactly_one_object_of_one_kind(app):
+    _encounter()
+    upload = _start_upload()[1]["upload"]
+    assert upload["fields"]["key"] == f"raw/{ENCOUNTER}/{PHOTO}.jpg"
+    conditions = _policy(upload)["conditions"]
+    assert {"Content-Type": "image/jpeg"} in conditions
+    assert ["content-length-range", 1, 20 * 1024 * 1024] in conditions
+    assert {"key": f"raw/{ENCOUNTER}/{PHOTO}.jpg"} in conditions
+
+
+def test_only_jpeg_and_phone_video_are_accepted(app):
+    _encounter()
+    assert _start_upload(content_type="image/heic")[0] == 400
+    assert _start_upload(content_type="text/html")[0] == 400
+    assert _start_upload(VIDEO, "video/mp4")[0] == 200
+    assert _start_upload("01JBVDE0000000000000000002", "video/webm")[0] == 200
+    status, data = _start_upload("01JBVDE0000000000000000003", "video/quicktime")
+    assert status == 200 and data["upload"]["fields"]["key"].endswith(".mov")
+
+
+def test_nobody_else_can_upload_into_my_encounter(app):
+    _encounter()
+    assert _start_upload(email=OTHER)[0] == 403
+    assert _start_upload(email=ADMIN)[0] == 403
+
+
+def test_uploads_need_an_app_encounter(app):
+    # A Telegram session cannot be written into from the app.
+    app["table"].put_item(
+        Item={
+            "PK": f"SESSION#{ENCOUNTER}",
+            "SK": "META",
+            "sessionId": ENCOUNTER,
+            "channel": "telegram",
+        }
+    )
+    assert _start_upload()[0] == 404
+
+
+def test_complete_refuses_until_the_object_is_in_storage(app):
+    _encounter()
+    _start_upload()
+    status, _ = _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    assert status == 409
+    assert _item(app, f"PHOTO#{PHOTO}")["status"] == "pending"
+
+
+def test_complete_flips_to_unlabeled_and_joins_the_queue(app):
+    _encounter()
+    _start_upload(**GPS)
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+
+    status, data = _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    assert status == 200 and data["status"] == "unlabeled"
+
+    photo = _item(app, f"PHOTO#{PHOTO}")
+    assert photo["s3RawKey"] == f"raw/{ENCOUNTER}/{PHOTO}.jpg"
+    assert photo["GSI1PK"] == f"SESSION#{ENCOUNTER}"
+    assert photo["GSI2PK"] == "STATUS#unlabeled"
+    assert _item(app, f"SESSION#{ENCOUNTER}")["photoCount"] == 1
+
+    queue = _call("GET", "/api/queue", email=HELPER)[1]["sessions"]
+    assert [s["session"]["sessionId"] for s in queue] == [ENCOUNTER]
+
+
+def test_the_first_located_photo_pins_an_unlocated_encounter(app):
+    _encounter()  # no GPS fix yet when it opened
+    _start_upload(**GPS)
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+
+    session = _item(app, f"SESSION#{ENCOUNTER}")
+    assert float(session["coarseLat"]) == 31.262
+    assert int(session["locationAccuracyM"]) == 8
+
+
+def test_an_encounter_location_is_not_overwritten_by_later_photos(app):
+    _encounter({"lat": 31.0, "lon": 34.0})
+    _start_upload(**GPS)
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    assert float(_item(app, f"SESSION#{ENCOUNTER}")["coarseLat"]) == 31.0
+
+
+def test_bytes_that_are_not_what_was_declared_are_deleted(app):
+    _encounter()
+    _start_upload()
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", b"<html>not a photo</html>")
+
+    status, _ = _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    assert status == 400
+    assert _item(app, f"PHOTO#{PHOTO}") is None
+    versions = app["s3"].list_object_versions(Bucket=BUCKET, Prefix=f"raw/{ENCOUNTER}/")
+    assert not versions.get("Versions")
+
+
+def test_videos_are_recognised_by_their_bytes(app):
+    _encounter()
+    _start_upload(VIDEO, "video/mp4", durationSeconds=9.73)
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{VIDEO}.mp4", MP4)
+    status, data = _call("POST", f"/api/photos/{VIDEO}/complete", email=HELPER)
+    assert status == 200 and data["status"] == "unlabeled"
+    video = _item(app, f"PHOTO#{VIDEO}")
+    assert video["mediaType"] == "video"
+    assert float(video["durationSeconds"]) == 9.7
+
+
+def test_a_duplicate_verdict_from_processing_is_kept(app):
+    # The process Lambda can beat the phone's complete call to the record.
+    _encounter()
+    _start_upload()
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    app["table"].update_item(
+        Key={"PK": f"PHOTO#{PHOTO}", "SK": "META"},
+        UpdateExpression="SET #s = :d, GSI2PK = :g",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={":d": "duplicate", ":g": "STATUS#duplicate"},
+    )
+
+    status, data = _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    assert status == 200 and data["status"] == "duplicate"
+    photo = _item(app, f"PHOTO#{PHOTO}")
+    assert photo["GSI2PK"] == "STATUS#duplicate"
+    # Still visible in its own session, like a bot duplicate.
+    assert photo["GSI1PK"] == f"SESSION#{ENCOUNTER}"
+
+
+def test_retrying_a_finished_upload_tells_the_outbox_to_stop(app):
+    _encounter()
+    _start_upload()
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+
+    status, data = _start_upload()
+    assert status == 200 and data["done"] is True and "upload" not in data
+    status, data = _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    assert status == 200 and data["status"] == "unlabeled"
+
+
+def test_retrying_a_pending_upload_issues_a_fresh_url(app):
+    _encounter()
+    _start_upload()
+    status, data = _start_upload()
+    assert status == 200 and data["done"] is False and data["upload"]
+
+
+def test_a_retry_cannot_switch_the_file_type(app):
+    _encounter()
+    _start_upload()
+    assert _start_upload(content_type="video/mp4")[0] == 409
+
+
+def test_nobody_else_can_complete_my_upload(app):
+    _encounter()
+    _start_upload()
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    assert _call("POST", f"/api/photos/{PHOTO}/complete", email=OTHER)[0] == 403
+
+
+def test_a_late_photo_of_a_labeled_encounter_inherits_the_cat(app):
+    cat = _call("POST", "/api/cats", {"name": "Ryzhik"})[1]["catId"]
+    _encounter()
+    _start_upload()
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    _call("POST", f"/api/sessions/{ENCOUNTER}/assign", {"catId": cat}, email=HELPER)
+
+    _start_upload(PHOTO_2)
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO_2}.jpg", JPEG)
+    _, data = _call("POST", f"/api/photos/{PHOTO_2}/complete", email=HELPER)
+
+    assert data["status"] == "labeled"
+    assert _item(app, f"PHOTO#{PHOTO_2}")["catId"] == cat
+    assert _item(app, f"CAT#{cat}")["photoCount"] == 2
+    assert _call("GET", "/api/queue", email=HELPER)[1]["sessions"] == []
+
+
+def test_my_encounters_show_which_cat_they_became(app):
+    cat = _call("POST", "/api/cats", {"name": "Ryzhik"})[1]["catId"]
+    _encounter()
+    _start_upload()
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)
+    _call("POST", f"/api/sessions/{ENCOUNTER}/assign", {"catId": cat})
+
+    [encounter] = _call("GET", "/api/encounters", email=HELPER)[1]["encounters"]
+    assert encounter["catName"] == "Ryzhik"
+    assert encounter["photoCount"] == 1

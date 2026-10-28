@@ -5,7 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#fbf6ec" />
-    <title>BGU cats · labeling desk</title>
+    <title>BGU cats</title>
+    <!-- Installable: "Add to Home Screen" opens it full-screen with its own
+         icon. iOS still reads the apple-* tags rather than the manifest. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="BGU cats" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -140,6 +148,10 @@
         </symbol>
 
         <!-- Navigation icons: plain strokes, no wobble — they're controls. -->
+        <symbol id="i-capture" viewBox="0 0 24 24">
+          <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+          <circle cx="12" cy="13" r="3.6" />
+        </symbol>
         <symbol id="i-queue" viewBox="0 0 24 24">
           <path d="M4 7h16M4 12h16M4 17h10" />
         </symbol>
@@ -164,9 +176,9 @@
       <div class="login-card">
         <svg class="doodle login-mark" aria-hidden="true"><use href="#cat-midnight" /></svg>
         <h1>BGU cats</h1>
-        <p>The labeling desk — where campus cat photos get their names.</p>
+        <p>Photograph campus cats, and give their photos names.</p>
         <button id="login-button" class="btn btn-primary btn-lg">Sign in with Google</button>
-        <p class="login-note">Admin accounts only.</p>
+        <p class="login-note">Invited accounts only.</p>
       </div>
       <div class="lineup" aria-hidden="true">
         <svg class="doodle"><use href="#cat-ginger" /></svg>
@@ -181,12 +193,16 @@
         <div class="brand">
           <svg class="doodle brand-mark" aria-hidden="true"><use href="#cat-midnight" /></svg>
           <span>BGU cats</span>
-          <small>labeling desk</small>
+          <small id="brand-role">labeling desk</small>
         </div>
 
         <!-- One nav for both layouts: inline in the header on a desk, a
              tab bar along the bottom edge on a phone (styles.css). -->
         <nav class="tabs" aria-label="Sections">
+          <button class="tab" data-view="capture">
+            <svg class="tab-icon" aria-hidden="true"><use href="#i-capture" /></svg>
+            <span>Capture</span>
+          </button>
           <button class="tab" data-view="queue">
             <svg class="tab-icon" aria-hidden="true"><use href="#i-queue" /></svg>
             <span>Queue</span>
@@ -202,7 +218,7 @@
           </button>
           <button class="tab" data-view="admins">
             <svg class="tab-icon" aria-hidden="true"><use href="#i-admins" /></svg>
-            <span>Admins</span>
+            <span>People</span>
           </button>
         </nav>
 

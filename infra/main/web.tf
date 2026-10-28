@@ -137,7 +137,18 @@ locals {
     "index.html" = "text/html; charset=utf-8"
     "app.js"     = "text/javascript; charset=utf-8"
     "charts.js"  = "text/javascript; charset=utf-8"
+    "capture.js" = "text/javascript; charset=utf-8"
+    "outbox.js"  = "text/javascript; charset=utf-8"
     "styles.css" = "text/css; charset=utf-8"
+    # What makes it installable: "Add to Home Screen" opens it full-screen
+    # with its own icon. The service worker caches the app shell only —
+    # never /api/, never photos (web/sw.js).
+    "manifest.webmanifest" = "application/manifest+json"
+    "sw.js"                = "text/javascript; charset=utf-8"
+    "icon.svg"             = "image/svg+xml"
+    "icon-192.png"         = "image/png"
+    "icon-512.png"         = "image/png"
+    "apple-touch-icon.png" = "image/png"
   }
 }
 

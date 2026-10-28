@@ -119,14 +119,28 @@ the funnel. The poster's QR carries `?src=poster` (`make poster`).
 `bootstrap_admin_email` seeds the first row so the tool can be opened at all;
 Terraform owns that one row and will restore it if it is ever deleted, so you
 cannot lock yourself out. Everyone else is added either in the tool's
-**Admins** tab or with:
+**People** tab, as an admin or a collaborator, or with:
 
 ```bash
 make admin-add EMAIL=someone@post.bgu.ac.il
 ```
 
+`make admin-add` writes no role, which means admin. People added in the tab
+default to **collaborator** — Capture, browsing cats, and labeling queue
+sessions with existing cats; nothing that deletes, merges, names a cat or
+manages people. Roles can be changed in the tab; nobody can change their own.
+
 Access is by explicit allowlist, not by email domain. "Anyone with a
 @post.bgu.ac.il address" would be every student at the university.
+
+## The app (Capture)
+
+The admin URL is installable: open it on a phone, then Share → **Add to Home
+Screen** (iOS) or the install prompt (Android). Phones upload photos and
+videos straight to the media bucket's `raw/` prefix with presigned POSTs,
+which is what the bucket's CORS rule in `s3.tf` is for (one origin, POST
+only). Nothing new runs all the time; the cost is the same per-photo
+Lambda, S3 and DynamoDB usage the bots already incur.
 
 ## Naming and tagging
 

@@ -21,6 +21,11 @@
 #   PK = LINK#{slug}, SK = META — a tracked link's name, and the partner's
 #     own numbers for it, typed in from their dashboard.
 #
+# And one for the PWA's Capture screen:
+#   Session items opened in the app (channel "app") carry
+#   GSI2PK = ENTITY#ENCOUNTER, GSI2SK = {email}#{startedAt}, so "my recent
+#   encounters" is one begins_with Query. Bot sessions are not in it.
+#
 # hash_key/range_key are deprecated in favor of key_schema as of provider
 # ~6.29, but key_schema has several open upstream bugs around perpetual
 # drift and forced GSI replacement as of ~6.61 — staying on the

@@ -55,6 +55,22 @@ resource "aws_s3_bucket_lifecycle_configuration" "media" {
   }
 }
 
+# The PWA's camera uploads go from the phone straight to raw/ (presigned
+# POST, see src/admin/handler.py), so the browser needs the bucket to answer
+# its CORS preflight. One origin — the admin app's own CloudFront address —
+# and POST only: nothing here makes the bucket readable or listable from a
+# browser, and every write still needs a policy the API signed.
+resource "aws_s3_bucket_cors_configuration" "media" {
+  bucket = aws_s3_bucket.media.id
+
+  cors_rule {
+    allowed_origins = ["https://${aws_cloudfront_distribution.web.domain_name}"]
+    allowed_methods = ["POST"]
+    allowed_headers = ["*"]
+    max_age_seconds = 3600
+  }
+}
+
 output "media_bucket" {
   value = aws_s3_bucket.media.id
 }

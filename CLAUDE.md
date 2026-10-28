@@ -25,7 +25,8 @@ human picks from. Each confirmation is a labeled training example.
 
 ## Current phase: 1 — collection and labeling infrastructure
 
-Telegram bot ingestion, S3 + DynamoDB, async processing, admin labeling tool.
+Telegram and WhatsApp bot ingestion, the installable app's Capture screen,
+S3 + DynamoDB, async processing, admin labeling tool.
 **No machine learning of any kind.**
 
 | Phase | Status | Scope |
@@ -54,6 +55,38 @@ Telegram bot ingestion, S3 + DynamoDB, async processing, admin labeling tool.
   gets climbed.
 - **Prefer boring, inspectable choices.** Portfolio project; every decision
   should be explainable in an interview.
+
+## The app (web/) — labeling desk and Capture, one PWA
+
+The admin tool is installable ("Add to Home Screen") and is also how invited
+collaborators photograph cats. It **complements** the bots, never replaces
+them: Telegram and WhatsApp keep working unchanged, and the app is a third
+channel (`channel = "app"`) into the same table, bucket and process Lambda.
+
+- **Two roles on the one allowlist item** (`ADMIN#{email}`, field `role`).
+  `admin` = everything. `collaborator` = Capture, browse cats, and assign queue
+  sessions to cats that *already exist*. No deleting, merging, creating or
+  renaming cats, stats, or people. **No role field means admin**, so the
+  Terraform bootstrap item and `make admin-add` keep full access. The API
+  enforces this per route (`ROUTES` in `src/admin/handler.py`, last column);
+  the UI only hides what would be refused.
+- **An encounter is a Session opened deliberately** ("Start an encounter" …
+  "Done"), so it is an identity cluster by construction.
+- **Same write order as the bots, split across calls:** record as `pending`
+  (`POST /api/encounters/{id}/media`) → the phone uploads to
+  `raw/{sessionId}/{photoId}.{ext}` with a presigned POST that pins key, type
+  and size → `POST /api/photos/{id}/complete` confirms the object and sniffs
+  its magic bytes before flipping to `unlabeled`. The status flip is
+  conditional on `pending`, so a duplicate verdict from the process Lambda
+  is never overwritten.
+- **IDs are ULIDs minted on the phone**, so the offline outbox (web/outbox.js)
+  can retry anything and land on the same records.
+- **Location comes from the phone's GPS at the moment of capture**, with its
+  accuracy (`locationSource = "app-gps"`, `locationAccuracyM`), rounded to
+  3 decimals like everything else.
+- **The service worker (web/sw.js) is network-first** and never touches
+  `/api/`, photos or other origins — the distribution's no-caching rule still
+  means a deploy reaches everyone on their next load.
 
 ## Data model essentials
 

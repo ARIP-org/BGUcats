@@ -72,6 +72,16 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
         Resource = "${aws_s3_bucket.media.arn}/*"
       },
       {
+        Sid    = "SignAppUploads"
+        Effect = "Allow"
+        # The PWA uploads straight to raw/ with a presigned POST this role
+        # signs; the POST is only as good as the signer's own PutObject.
+        # raw/ only — the app can never write a derivative or an export.
+        # The policy in the POST pins the exact key, type and size.
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.media.arn}/raw/*"
+      },
+      {
         Sid    = "ListVersionsToDelete"
         Effect = "Allow"
         Action = [

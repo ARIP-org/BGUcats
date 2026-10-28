@@ -1,4 +1,5 @@
-"""Admin labeling API — queue, session grid, merge, reject (spec §7, §10).
+"""Admin labeling API — queue, session grid, merge, reject (spec §7, §10),
+and in-app capture for the collaborators who photograph cats from the PWA.
 
 Sits behind an API Gateway JWT authorizer bound to the Cognito user pool, so
 every request arriving here already carries a cryptographically verified
@@ -7,13 +8,24 @@ an admin, so `_caller_email` is re-checked against the DynamoDB allowlist on
 every single call. That is the difference between revoking someone's access
 now and revoking it whenever their token happens to expire.
 
+Two roles, both on the same allowlist item (`ADMIN#{email}`):
+  admin         — everything, as before.
+  collaborator  — photographs cats in the app, browses the catalogue, and
+                  works the queue by assigning sessions to cats that already
+                  exist. Nothing destructive or structural: no deleting, no
+                  merging, no creating or renaming cats, no managing people.
+An item with no role is an admin, so every account that existed before roles
+(the Terraform bootstrap item, `make admin-add`) keeps its access unchanged.
+
 Routing is done here rather than as one API Gateway route per endpoint: a
 single ANY /api/{proxy+} route keeps the Terraform to one resource and puts
 the whole surface of the API in one readable table (ROUTES, below).
 """
 
+import hashlib
 import json
 import logging
+import math
 import os
 import re
 from datetime import datetime, timezone
@@ -59,6 +71,49 @@ PARTNER_MAX = 10**9
 
 BATCH_GET_LIMIT = 100
 
+ROLE_ADMIN = "admin"
+ROLE_COLLABORATOR = "collaborator"
+ROLES = (ROLE_ADMIN, ROLE_COLLABORATOR)
+
+# Who may call a route (see ROUTES).
+ANYONE = "anyone"  # any allowlisted person, collaborators included
+ADMINS = "admins"
+
+# In-app capture. The phone uploads straight to S3 with a presigned POST —
+# API Gateway caps a body at 10 MB and a synchronous Lambda at 6 MB, and a
+# video would not fit through either. The POST policy pins the exact key,
+# the content type and a size ceiling, so the URL can write one object of
+# one kind and nothing else.
+APP_CHANNEL = "app"
+UPLOAD_URL_TTL_SECONDS = 3600
+# Same ceiling as the chat bots for photos (ingest.core.MAX_FILE_SIZE_BYTES).
+# The app records video at 720p, about 3 MB for ten seconds; the ceiling is
+# for a phone that ignores the requested resolution.
+MAX_UPLOAD_BYTES = {"photo": 20 * 1024 * 1024, "video": 60 * 1024 * 1024}
+UPLOAD_TYPES = {
+    "image/jpeg": ("jpg", "photo"),
+    "video/mp4": ("mp4", "video"),
+    "video/webm": ("webm", "video"),
+    # iOS, when the system camera is used instead of the in-app one. Still an
+    # ISO base media file, so the "ftyp" check below covers it.
+    "video/quicktime": ("mov", "video"),
+}
+# Magic bytes, read back from the uploaded object itself — the declared
+# content type is the phone's claim, the bytes are the fact (spec §8.5).
+# MP4 carries "ftyp" at offset 4, not 0.
+JPEG_SIGNATURE = b"\xff\xd8\xff"
+WEBM_SIGNATURE = b"\x1a\x45\xdf\xa3"
+# The IDs are minted on the phone so that a retried upload from its offline
+# outbox lands on the same records instead of creating new ones — the same
+# "idempotent on the ULID" rule the bots follow (spec §10). A ULID is 26
+# Crockford base32 characters.
+ULID_PATTERN = r"[0-9A-HJKMNP-TV-Z]{26}"
+# ~110 m, as everywhere else (ingest.core.COORDINATE_DECIMALS): territory,
+# not the spot the contributor was standing on.
+COORDINATE_DECIMALS = 3
+MAX_ACCURACY_METRES = 100_000
+RECENT_ENCOUNTERS = 30
+
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 s3 = boto3.client("s3")
@@ -81,10 +136,15 @@ def handler(event, context):
 
     try:
         email = _caller_email(event)
-        _require_admin(email)
-        handler_fn, params = _match_route(method, path)
+        role = _require_member(email)
+        handler_fn, params, access = _match_route(method, path)
+        if access == ADMINS and role != ROLE_ADMIN:
+            logger.warning("collaborator=%s refused %s %s", email, method, path)
+            raise ApiError(403, "only admins can do this")
         body = _parse_body(event)
-        result = handler_fn(email=email, body=body, query=_query(event), **params)
+        result = handler_fn(
+            email=email, role=role, body=body, query=_query(event), **params
+        )
         return _response(200, result)
     except ApiError as exc:
         return _response(exc.status, {"error": exc.message})
@@ -107,11 +167,17 @@ def _caller_email(event):
     return email
 
 
-def _require_admin(email):
+def _require_member(email):
+    """The caller's role, or 403 if they are not on the allowlist at all."""
     item = table.get_item(Key={"PK": f"ADMIN#{email}", "SK": "META"}).get("Item")
     if not item:
         logger.warning("rejected non-admin caller=%s", email)
         raise ApiError(403, "not an admin")
+    return _role_of(item)
+
+
+def _role_of(item):
+    return item.get("role") if item.get("role") in ROLES else ROLE_ADMIN
 
 
 def _parse_body(event):
@@ -150,8 +216,8 @@ def _json_default(value):
 # --------------------------------------------------------------------------
 
 
-def _get_me(email, **_):
-    return {"email": email}
+def _get_me(email, role, **_):
+    return {"email": email, "role": role}
 
 
 def _get_stats(**_):
@@ -568,7 +634,15 @@ def _assign_photo_item(photo, cat_id, email):
     )
 
 
-def _unassign_session(session_id, **_):
+def _unassign_session(session_id, email, role, **_):
+    """Collaborators may undo only a label they gave themselves — a slip of
+    the thumb is theirs to fix, someone else's decision is an admin's."""
+    if role != ROLE_ADMIN:
+        session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"}).get(
+            "Item"
+        )
+        if not session or session.get("labeledBy") != email:
+            raise ApiError(403, "only the person who labeled this can undo it")
     photos = _session_photos(session_id)
     previous = {p.get("catId") for p in photos if p.get("catId")}
     for photo in photos:
@@ -744,24 +818,62 @@ def _get_admins(**_):
     return {"admins": [_clean(a) for a in admins]}
 
 
+def _get_admins_with_roles(**_):
+    return {"admins": [{**a, "role": _role_of(a)} for a in _get_admins()["admins"]]}
+
+
 def _add_admin(body, email, **_):
+    """Least privilege by default: a person added without a role is a
+    collaborator. Making someone an admin is always an explicit choice."""
     new_email = _required_string(body, "email", maximum=254).lower()
     if "@" not in new_email:
         raise ApiError(400, "not an email address")
+    role = _role_param(body, default=ROLE_COLLABORATOR)
+    if new_email == email:
+        raise ApiError(409, "you are already on the list")
     now = _now_iso()
     table.put_item(
         Item={
             "PK": f"ADMIN#{new_email}",
             "SK": "META",
             "email": new_email,
+            "role": role,
             "addedAt": now,
             "addedBy": email,
             "GSI2PK": "ENTITY#ADMIN",
             "GSI2SK": new_email,
         }
     )
-    logger.info("admin added=%s by=%s", new_email, email)
-    return {"email": new_email}
+    logger.info("person added=%s role=%s by=%s", new_email, role, email)
+    return {"email": new_email, "role": role}
+
+
+def _set_role(admin_email, body, email, **_):
+    """Nobody changes their own role: an admin demoting themselves could
+    leave the tool with no admin at all."""
+    target = admin_email.lower()
+    if target == email:
+        raise ApiError(409, "you cannot change your own role")
+    role = _role_param(body)
+    try:
+        table.update_item(
+            Key={"PK": f"ADMIN#{target}", "SK": "META"},
+            UpdateExpression="SET #role = :role, roleSetAt = :now, roleSetBy = :by",
+            ExpressionAttributeNames={"#role": "role"},
+            ExpressionAttributeValues={":role": role, ":now": _now_iso(), ":by": email},
+            ConditionExpression="attribute_exists(PK)",
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        raise ApiError(404, "no such person")
+    logger.info("role of %s set to %s by=%s", target, role, email)
+    return {"email": target, "role": role}
+
+
+def _role_param(body, default=None):
+    role = body.get("role") or default
+    if role not in ROLES:
+        raise ApiError(400, "role must be admin or collaborator")
+    return role
 
 
 def _remove_admin(admin_email, email, **_):
@@ -771,6 +883,342 @@ def _remove_admin(admin_email, email, **_):
     table.delete_item(Key={"PK": f"ADMIN#{target}", "SK": "META"})
     logger.info("admin removed=%s by=%s", target, email)
     return {"removed": target}
+
+
+# --------------------------------------------------------------------------
+# In-app capture — the PWA's third channel next to Telegram and WhatsApp
+# --------------------------------------------------------------------------
+#
+# An encounter is a Session with channel "app": one cat, one sitting, opened
+# deliberately with "New encounter", so it is an identity cluster by
+# construction rather than by a ten-minute idle guess.
+#
+# Each photo or video follows the spec §10 write order, split across two
+# calls because the bytes travel from the phone to S3 directly:
+#   1. POST .../media     record written as `pending`, presigned POST returned
+#   2. phone -> S3        raw/{sessionId}/{photoId}.{ext}, which fires the
+#                         process Lambda exactly as a bot upload does
+#   3. POST .../complete  object confirmed in S3 and its bytes sniffed, then
+#                         the record flips to `unlabeled`
+# A phone that dies between 2 and 3 leaves a `pending` record over a real
+# object — the harmless direction — and its outbox calls 3 again on the next
+# launch. Never the reverse: nothing is marked ready that S3 does not hold.
+
+
+def _app_submitter_hash(email):
+    """Stable per-person ID for the stats page's contributor table.
+
+    Unsalted, unlike the bots' hashes: those protect anonymous members of
+    the public, while every app user is a named person on the allowlist
+    whose email already appears in labeledBy and addedBy. The "app:" prefix
+    keeps the namespace apart from Telegram and WhatsApp IDs.
+    """
+    return hashlib.sha256(f"app:{email}".encode()).hexdigest()
+
+
+def _create_encounter(body, email, **_):
+    session_id = _ulid_param(body, "sessionId")
+    now = _now_iso()
+    item = {
+        "PK": f"SESSION#{session_id}",
+        "SK": "META",
+        "sessionId": session_id,
+        "submitterHash": _app_submitter_hash(email),
+        "source": APP_CHANNEL,
+        "channel": APP_CHANNEL,
+        "startedAt": now,
+        "lastPhotoAt": now,
+        "photoCount": 0,
+        "catId": None,
+        "notes": None,
+        "explicit": True,
+        "startedBy": email,
+        # GSI2 overload: a collaborator's own encounters, newest last, for
+        # the Capture screen. See infra/main/dynamodb.tf.
+        "GSI2PK": "ENTITY#ENCOUNTER",
+        "GSI2SK": f"{email}#{now}",
+    }
+    item.update(_location_fields(body))
+    try:
+        table.put_item(Item=item, ConditionExpression="attribute_not_exists(PK)")
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        # A retry from the outbox after a lost response. Same person: the
+        # encounter is already there, which is the outcome they wanted.
+        existing = _require_encounter(session_id, email)
+        return {"sessionId": session_id, "startedAt": existing.get("startedAt")}
+    _record_app_contributor(email)
+    return {"sessionId": session_id, "startedAt": now}
+
+
+def _get_encounters(email, **_):
+    items = table.query(
+        IndexName="GSI2",
+        KeyConditionExpression=Key("GSI2PK").eq("ENTITY#ENCOUNTER")
+        & Key("GSI2SK").begins_with(f"{email}#"),
+        ScanIndexForward=False,
+        Limit=RECENT_ENCOUNTERS,
+    )["Items"]
+    names = {c["catId"]: c["name"] for c in _entities("CAT")}
+    return {
+        "encounters": [
+            {**_clean(item), "catName": names.get(item.get("catId"))} for item in items
+        ]
+    }
+
+
+def _create_upload(session_id, body, email, **_):
+    session = _require_encounter(session_id, email)
+    photo_id = _ulid_param(body, "photoId")
+    content_type = body.get("contentType")
+    if content_type not in UPLOAD_TYPES:
+        raise ApiError(
+            400, "contentType must be a JPEG photo or an MP4, WebM or MOV video"
+        )
+    ext, kind = UPLOAD_TYPES[content_type]
+    key = f"raw/{session_id}/{photo_id}.{ext}"
+
+    item = {
+        "PK": f"PHOTO#{photo_id}",
+        "SK": "META",
+        "photoId": photo_id,
+        "sessionId": session_id,
+        "source": APP_CHANNEL,
+        "channel": APP_CHANNEL,
+        "submitterHash": session["submitterHash"],
+        "submittedBy": email,
+        "s3RawKey": None,
+        "sha256": None,
+        "phash": None,
+        "width": None,
+        "height": None,
+        "mime": content_type,
+        "mediaType": kind,
+        "capturedAt": _iso_param(body, "capturedAt"),
+        "coarseLat": None,
+        "coarseLon": None,
+        "status": "pending",
+        "catId": None,
+        "createdAt": _now_iso(),
+        "uploadKey": key,
+    }
+    item.update(_location_fields(body))
+    duration = body.get("durationSeconds")
+    if kind == "video" and isinstance(duration, (int, float)) and 0 < duration < 600:
+        item["durationSeconds"] = Decimal(str(round(duration, 1)))
+    try:
+        table.put_item(Item=item, ConditionExpression="attribute_not_exists(PK)")
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        existing = _require_own_photo(photo_id, email)
+        if existing.get("status") != "pending":
+            # Already uploaded and confirmed: tell the outbox to drop it.
+            return {"photoId": photo_id, "done": True}
+        if existing.get("uploadKey") != key:
+            raise ApiError(409, "this photo was started with a different file type")
+
+    upload = s3.generate_presigned_post(
+        Bucket=MEDIA_BUCKET,
+        Key=key,
+        Fields={"Content-Type": content_type},
+        Conditions=[
+            {"Content-Type": content_type},
+            ["content-length-range", 1, MAX_UPLOAD_BYTES[kind]],
+        ],
+        ExpiresIn=UPLOAD_URL_TTL_SECONDS,
+    )
+    return {"photoId": photo_id, "done": False, "upload": upload}
+
+
+def _complete_upload(photo_id, email, **_):
+    photo = _require_own_photo(photo_id, email)
+    if photo.get("s3RawKey"):
+        # Confirmed already; this is the outbox retrying a lost response.
+        return {"photoId": photo_id, "status": photo.get("status")}
+    key = photo["uploadKey"]
+    kind = photo["mediaType"]
+
+    try:
+        head = s3.head_object(Bucket=MEDIA_BUCKET, Key=key)
+    except s3.exceptions.ClientError:
+        raise ApiError(409, "the file has not reached storage yet")
+    start = s3.get_object(Bucket=MEDIA_BUCKET, Key=key, Range="bytes=0-15")["Body"]
+    if head["ContentLength"] > MAX_UPLOAD_BYTES[kind] or not _bytes_match(
+        start.read(), kind
+    ):
+        _delete_all_versions(key)
+        table.delete_item(Key={"PK": f"PHOTO#{photo_id}", "SK": "META"})
+        raise ApiError(400, "the uploaded file is not a photo or video we accept")
+
+    session_id = photo["sessionId"]
+    created_at = photo["createdAt"]
+    # Attach to the session unconditionally, then flip the status only if it
+    # is still `pending`: the process Lambda may have run first and marked an
+    # exact duplicate, and that verdict must not be overwritten.
+    table.update_item(
+        Key={"PK": f"PHOTO#{photo_id}", "SK": "META"},
+        UpdateExpression="SET s3RawKey = :key, GSI1PK = :g1pk, GSI1SK = :created",
+        ExpressionAttributeValues={
+            ":key": key,
+            ":g1pk": f"SESSION#{session_id}",
+            ":created": created_at,
+        },
+    )
+    status = "unlabeled"
+    try:
+        table.update_item(
+            Key={"PK": f"PHOTO#{photo_id}", "SK": "META"},
+            UpdateExpression="SET #status = :status, GSI2PK = :g2pk, GSI2SK = :created",
+            ConditionExpression="#status = :pending",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":status": "unlabeled",
+                ":pending": "pending",
+                ":g2pk": "STATUS#unlabeled",
+                ":created": created_at,
+            },
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        status = _require_photo(photo_id).get("status")
+
+    session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"})["Item"]
+    table.update_item(
+        Key={"PK": f"SESSION#{session_id}", "SK": "META"},
+        UpdateExpression="SET lastPhotoAt = :now",
+        ExpressionAttributeValues={":now": _now_iso()},
+    )
+    _refresh_session_photo_count(session_id)
+    _locate_session_from_photo(session, photo)
+
+    cat_id = session.get("catId")
+    if cat_id and status == "unlabeled":
+        # Someone labeled the encounter while it was still being filmed; a
+        # late photo of the same sitting is the same cat (cf. merge).
+        _assign_photo_item(
+            {**photo, "photoId": photo_id}, cat_id, session.get("labeledBy") or email
+        )
+        _refresh_cat_photo_count(cat_id)
+        status = "labeled"
+    return {"photoId": photo_id, "status": status}
+
+
+def _bytes_match(start, kind):
+    if kind == "photo":
+        return start.startswith(JPEG_SIGNATURE)
+    return start[4:8] == b"ftyp" or start.startswith(WEBM_SIGNATURE)
+
+
+def _locate_session_from_photo(session, photo):
+    """The first located photo pins its encounter, if nothing pinned it yet.
+    The phone often has no GPS fix yet when the encounter opens."""
+    if session.get("coarseLat") is not None or photo.get("coarseLat") is None:
+        return
+    try:
+        table.update_item(
+            Key={"PK": f"SESSION#{session['sessionId']}", "SK": "META"},
+            UpdateExpression=(
+                "SET coarseLat = :lat, coarseLon = :lon, locationSource = :src, "
+                "locationAccuracyM = :acc, locatedAt = :now"
+            ),
+            ConditionExpression="attribute_not_exists(coarseLat) OR coarseLat = :null",
+            ExpressionAttributeValues={
+                ":lat": photo["coarseLat"],
+                ":lon": photo["coarseLon"],
+                ":src": photo.get("locationSource", "app-gps"),
+                ":acc": photo.get("locationAccuracyM"),
+                ":now": _now_iso(),
+                ":null": None,
+            },
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass
+
+
+def _location_fields(body):
+    """Coarse location from the phone's GPS, with the accuracy it reported.
+
+    The fix is taken at the moment of capture — unlike the bots, which
+    accept a pin up to a day later from wherever the person is by then —
+    and the accuracy is kept so recognition can ignore a fix that was
+    hundreds of metres wide.
+    """
+    lat, lon = body.get("lat"), body.get("lon")
+    if not (_is_coordinate(lat, 90) and _is_coordinate(lon, 180)):
+        return {}
+    fields = {
+        "coarseLat": Decimal(str(round(lat, COORDINATE_DECIMALS))),
+        "coarseLon": Decimal(str(round(lon, COORDINATE_DECIMALS))),
+        "locationSource": "app-gps",
+        "locatedAt": _now_iso(),
+    }
+    accuracy = body.get("accuracyM")
+    if _is_coordinate(accuracy, MAX_ACCURACY_METRES) and accuracy >= 0:
+        fields["locationAccuracyM"] = Decimal(str(round(accuracy)))
+    return fields
+
+
+def _is_coordinate(value, limit):
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and -limit <= value <= limit
+    )
+
+
+def _record_app_contributor(email):
+    """Same profile item the bots write (ingest.core.record_contributor),
+    so app collaborators show up on the stats page alongside them."""
+    table.update_item(
+        Key={"PK": f"SUBMITTER#{_app_submitter_hash(email)}", "SK": "PROFILE"},
+        UpdateExpression=(
+            "SET submitterHash = :hash, firstSeenAt = if_not_exists(firstSeenAt, :now), "
+            "#channel = if_not_exists(#channel, :channel), "
+            "GSI2PK = :entity, GSI2SK = if_not_exists(GSI2SK, :now)"
+        ),
+        ExpressionAttributeNames={"#channel": "channel"},
+        ExpressionAttributeValues={
+            ":hash": _app_submitter_hash(email),
+            ":now": _now_iso(),
+            ":channel": APP_CHANNEL,
+            ":entity": "ENTITY#SUBMITTER",
+        },
+    )
+
+
+def _require_encounter(session_id, email):
+    session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"}).get(
+        "Item"
+    )
+    if not session or session.get("channel") != APP_CHANNEL:
+        raise ApiError(404, "no such encounter")
+    if session.get("startedBy") != email:
+        raise ApiError(403, "this encounter belongs to someone else")
+    return session
+
+
+def _require_own_photo(photo_id, email):
+    photo = _require_photo(photo_id)
+    if photo.get("channel") != APP_CHANNEL or photo.get("submittedBy") != email:
+        raise ApiError(403, "this photo belongs to someone else")
+    return photo
+
+
+def _ulid_param(body, field):
+    value = body.get(field)
+    if not isinstance(value, str) or not re.fullmatch(ULID_PATTERN, value):
+        raise ApiError(400, f"{field} must be a ULID")
+    return value
+
+
+def _iso_param(body, field):
+    """A client timestamp, kept only if it parses — it is the phone's clock."""
+    value = body.get(field)
+    if not isinstance(value, str) or len(value) > 40:
+        return None
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -843,46 +1291,65 @@ def _int_param(query, name, default, maximum):
 # --------------------------------------------------------------------------
 
 # Ordered; first match wins. Path segments are captured as named groups and
-# passed to the handler as keyword arguments.
+# passed to the handler as keyword arguments. The last column is who may
+# call it: ANYONE on the allowlist, or ADMINS only. Everything that deletes,
+# merges, names a cat or manages people is ADMINS.
 ID = r"[A-Za-z0-9]+"
 EMAIL = r"[^/]+"
 
 ROUTES = (
-    ("GET", r"^/api/me$", _get_me),
-    ("GET", r"^/api/stats$", _get_stats),
-    ("GET", r"^/api/insights$", _get_insights),
-    ("POST", r"^/api/links$", _create_link),
-    ("PATCH", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _update_link),
-    ("DELETE", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _delete_link),
-    ("GET", r"^/api/queue$", _get_queue),
+    ("GET", r"^/api/me$", _get_me, ANYONE),
+    # The queue badge reads this; counts only, nothing a collaborator
+    # cannot already see in the queue itself.
+    ("GET", r"^/api/stats$", _get_stats, ANYONE),
+    ("GET", r"^/api/insights$", _get_insights, ADMINS),
+    ("POST", r"^/api/links$", _create_link, ADMINS),
+    ("PATCH", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _update_link, ADMINS),
+    ("DELETE", rf"^/api/links/(?P<slug>{LINK_SLUG})$", _delete_link, ADMINS),
+    ("GET", r"^/api/queue$", _get_queue, ANYONE),
     # Ahead of the /{session_id} patterns: "merge" would otherwise be read
     # as a session id.
-    ("POST", r"^/api/sessions/merge$", _merge_sessions),
-    ("GET", rf"^/api/sessions/(?P<session_id>{ID})$", _get_session),
-    ("POST", rf"^/api/sessions/(?P<session_id>{ID})/assign$", _assign_session),
-    ("POST", rf"^/api/sessions/(?P<session_id>{ID})/unassign$", _unassign_session),
-    ("POST", rf"^/api/sessions/(?P<session_id>{ID})/reject$", _reject_session),
-    ("GET", r"^/api/cats$", _get_cats),
-    ("POST", r"^/api/cats$", _create_cat),
-    ("GET", rf"^/api/cats/(?P<cat_id>{ID})$", _get_cat),
-    ("PATCH", rf"^/api/cats/(?P<cat_id>{ID})$", _update_cat),
-    ("DELETE", rf"^/api/cats/(?P<cat_id>{ID})$", _delete_cat),
-    ("POST", rf"^/api/photos/(?P<photo_id>{ID})/assign$", _assign_photo),
-    ("POST", rf"^/api/photos/(?P<photo_id>{ID})/reject$", _reject_photo),
-    ("GET", r"^/api/admins$", _get_admins),
-    ("POST", r"^/api/admins$", _add_admin),
-    ("DELETE", rf"^/api/admins/(?P<admin_email>{EMAIL})$", _remove_admin),
+    ("POST", r"^/api/sessions/merge$", _merge_sessions, ADMINS),
+    ("GET", rf"^/api/sessions/(?P<session_id>{ID})$", _get_session, ANYONE),
+    ("POST", rf"^/api/sessions/(?P<session_id>{ID})/assign$", _assign_session, ANYONE),
+    (
+        "POST",
+        rf"^/api/sessions/(?P<session_id>{ID})/unassign$",
+        _unassign_session,
+        ANYONE,
+    ),
+    ("POST", rf"^/api/sessions/(?P<session_id>{ID})/reject$", _reject_session, ADMINS),
+    ("GET", r"^/api/cats$", _get_cats, ANYONE),
+    ("POST", r"^/api/cats$", _create_cat, ADMINS),
+    ("GET", rf"^/api/cats/(?P<cat_id>{ID})$", _get_cat, ANYONE),
+    ("PATCH", rf"^/api/cats/(?P<cat_id>{ID})$", _update_cat, ADMINS),
+    ("DELETE", rf"^/api/cats/(?P<cat_id>{ID})$", _delete_cat, ADMINS),
+    ("POST", rf"^/api/photos/(?P<photo_id>{ID})/assign$", _assign_photo, ADMINS),
+    ("POST", rf"^/api/photos/(?P<photo_id>{ID})/reject$", _reject_photo, ADMINS),
+    ("POST", rf"^/api/photos/(?P<photo_id>{ID})/complete$", _complete_upload, ANYONE),
+    ("GET", r"^/api/encounters$", _get_encounters, ANYONE),
+    ("POST", r"^/api/encounters$", _create_encounter, ANYONE),
+    (
+        "POST",
+        rf"^/api/encounters/(?P<session_id>{ID})/media$",
+        _create_upload,
+        ANYONE,
+    ),
+    ("GET", r"^/api/admins$", _get_admins_with_roles, ADMINS),
+    ("POST", r"^/api/admins$", _add_admin, ADMINS),
+    ("PATCH", rf"^/api/admins/(?P<admin_email>{EMAIL})$", _set_role, ADMINS),
+    ("DELETE", rf"^/api/admins/(?P<admin_email>{EMAIL})$", _remove_admin, ADMINS),
 )
 
 
 def _match_route(method, path):
     path = path.rstrip("/") or path
     matched_path = False
-    for route_method, pattern, handler_fn in ROUTES:
+    for route_method, pattern, handler_fn, access in ROUTES:
         match = re.match(pattern, path)
         if not match:
             continue
         matched_path = True
         if route_method == method:
-            return handler_fn, match.groupdict()
+            return handler_fn, match.groupdict(), access
     raise ApiError(405 if matched_path else 404, f"no route for {method} {path}")

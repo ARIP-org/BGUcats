@@ -1,7 +1,14 @@
-// Admin labeling tool. No framework and no build step on purpose: the whole
-// client is a few files served straight from S3, which keeps the deploy path
-// to "upload the file" and keeps this readable without a toolchain.
+// Admin labeling tool, and the installable app collaborators photograph cats
+// with. No framework and no build step on purpose: the whole client is a few
+// files served straight from S3, which keeps the deploy path to "upload the
+// file" and keeps this readable without a toolchain.
+//
+// Two roles (src/admin/handler.py): admins see everything; collaborators see
+// Capture, the queue and the cats, and can assign a session to a cat that
+// already exists. The API enforces this on every call — hiding a button here
+// is only so nobody is offered an action that would be refused.
 
+import { createCapture } from "./capture.js";
 import { barList, columnChart, formatNumber, funnel, meter } from "./charts.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -33,7 +40,10 @@ function button(label, className, onClick) {
 }
 
 let config = null;
-let state = { view: "queue", cats: [], email: null };
+let state = { view: "queue", cats: [], email: null, role: null };
+let capture = null;
+
+const isAdmin = () => state.role === "admin";
 
 // --------------------------------------------------------------------------
 // Auth — Cognito hosted UI, authorization code + PKCE
@@ -41,6 +51,10 @@ let state = { view: "queue", cats: [], email: null };
 
 const TOKENS_KEY = "bgucats.tokens";
 const VERIFIER_KEY = "bgucats.pkce";
+// Remembered so the app opens without a connection — under a bush with no
+// signal is exactly where Capture gets used. The API still checks the real
+// role on every call.
+const ROLE_KEY = "bgucats.role";
 
 const b64url = (bytes) =>
   btoa(String.fromCharCode(...bytes))
@@ -76,6 +90,7 @@ async function login() {
 
 function logout() {
   localStorage.removeItem(TOKENS_KEY);
+  localStorage.removeItem(ROLE_KEY);
   const params = new URLSearchParams({
     client_id: config.userPoolClientId,
     logout_uri: config.redirectUri,
@@ -123,7 +138,11 @@ async function idToken() {
       refresh_token: tokens.refreshToken,
     });
     return refreshed.idToken;
-  } catch {
+  } catch (err) {
+    // No connection is not a rejected login: keep the refresh token for when
+    // the phone is back online. The stale token fails its API call, and the
+    // upload outbox simply retries later.
+    if (err instanceof TypeError) return tokens.idToken;
     localStorage.removeItem(TOKENS_KEY);
     return null;
   }
@@ -174,7 +193,13 @@ async function api(path, options = {}) {
     throw new Error("session expired");
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);
+  if (!res.ok) {
+    // The status rides along so the upload outbox can tell "try again"
+    // from "this will never work".
+    throw Object.assign(new Error(data.error || `request failed (${res.status})`), {
+      status: res.status,
+    });
+  }
   return data;
 }
 
@@ -219,6 +244,8 @@ async function refreshCats() {
 }
 
 function setView(view) {
+  if (!VIEWS[view] || (ADMIN_VIEWS.has(view) && !isAdmin())) view = homeView();
+  if (state.view === "capture" && view !== "capture") capture?.leave();
   state.view = view;
   for (const tab of document.querySelectorAll(".tab")) {
     const active = tab.dataset.view === view;
@@ -231,11 +258,16 @@ function setView(view) {
 }
 
 const VIEWS = {
+  capture: () => capture.render(),
   queue: renderQueue,
   cats: renderCats,
   stats: renderStats,
   admins: renderAdmins,
 };
+const ADMIN_VIEWS = new Set(["stats", "admins"]);
+
+// Collaborators open the app to photograph a cat; admins to label.
+const homeView = () => (isAdmin() ? "queue" : "capture");
 
 // A re-render after an action keeps the current page on screen, dimmed,
 // until the new one is ready — no blank flash, no jump to the top.
@@ -418,7 +450,7 @@ function sessionCard({ session, photos }, allSessions) {
   const facts = [
     plural(photos.length, "photo"),
     `via ${channelName(session.channel)}`,
-    session.explicit ? "opened with New cat" : null,
+    session.channel === "app" ? null : session.explicit ? "opened with New cat" : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -431,7 +463,7 @@ function sessionCard({ session, photos }, allSessions) {
       el("div", { className: "meta mono session-id", textContent: sessionId }),
     ]),
     el("div", { className: "grid" }, photos.map((p) => thumb(p, photos))),
-    el("footer", { className: "card-actions" }, [assign, merge, remove]),
+    el("footer", { className: "card-actions" }, isAdmin() ? [assign, merge, remove] : [assign]),
   ]);
 }
 
@@ -445,8 +477,16 @@ function locationLink(session) {
     href: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=18/${lat}/${lon}`,
     target: "_blank",
     rel: "noopener",
-    textContent: `📍 ${lat}, ${lon}${session.locationSource === "map" ? " · picked on map" : ""}`,
+    textContent: `📍 ${lat}, ${lon}${locationNote(session)}`,
   });
+}
+
+function locationNote(session) {
+  if (session.locationSource === "map") return " · picked on map";
+  if (session.locationSource === "app-gps") {
+    return session.locationAccuracyM != null ? ` · phone GPS ±${session.locationAccuracyM} m` : " · phone GPS";
+  }
+  return "";
 }
 
 function thumb(photo, list) {
@@ -477,7 +517,7 @@ function thumb(photo, list) {
     toast("Photo deleted");
     render();
   });
-  node.append(kill);
+  if (isAdmin()) node.append(kill);
 
   node.onclick = () => openLightbox(photo, list);
   return node;
@@ -504,7 +544,7 @@ function openPicker({ session, photos }) {
   const search = el("input", {
     type: "search",
     className: "picker-search",
-    placeholder: "Find a cat, or type a new name",
+    placeholder: isAdmin() ? "Find a cat, or type a new name" : "Find a cat",
     autocomplete: "off",
     enterKeyHint: "done",
   });
@@ -543,7 +583,7 @@ function openPicker({ session, photos }) {
         return tile;
       });
 
-    if (query && !state.cats.some((cat) => cat.name.toLowerCase() === needle)) {
+    if (isAdmin() && query && !state.cats.some((cat) => cat.name.toLowerCase() === needle)) {
       const make = el("button", { type: "button", className: "pick pick-new" }, [
         el("span", { className: "pick-plus", textContent: "+" }),
         el("span", { className: "pick-name", textContent: `“${query}”` }),
@@ -553,11 +593,20 @@ function openPicker({ session, photos }) {
       tiles.push(make);
     }
 
+    const empty = isAdmin()
+      ? "No cats yet — type a name to create the first one."
+      : "No cat by that name.";
     grid.replaceChildren(
-      ...(tiles.length
-        ? tiles
-        : [el("p", { className: "picker-hint", textContent: "No cats yet — type a name to create the first one." })]),
+      ...(tiles.length ? tiles : [el("p", { className: "picker-hint", textContent: empty })]),
     );
+    if (!isAdmin()) {
+      grid.append(
+        el("p", {
+          className: "picker-hint picker-hint-wide",
+          textContent: "Not one of these? Leave it in the queue — an admin adds new cats.",
+        }),
+      );
+    }
   }
 
   search.oninput = draw;
@@ -619,7 +668,7 @@ async function renderCats() {
     render();
   });
 
-  const head = sectionHead("Cats", plural(state.cats.length, "cat") + " known", [create]);
+  const head = sectionHead("Cats", plural(state.cats.length, "cat") + " known", isAdmin() ? [create] : []);
 
   if (!state.cats.length) {
     main.replaceChildren(
@@ -690,7 +739,7 @@ async function openCat(catId) {
   window.scrollTo(0, 0);
   $("#main").replaceChildren(
     back,
-    sectionHead(cat.name, plural(photos.length, "photo"), [rename, remove]),
+    sectionHead(cat.name, plural(photos.length, "photo"), isAdmin() ? [rename, remove] : []),
     photos.length
       ? el("div", { className: "card" }, [
           el("div", { className: "grid" }, photos.map((p) => thumb(p, photos))),
@@ -1175,6 +1224,12 @@ function table(columns, rows) {
 // Admins
 // --------------------------------------------------------------------------
 
+const ROLE_HELP = {
+  admin: "Everything: labeling, new cats, merging, deleting, stats and people.",
+  collaborator:
+    "Photographs cats in the app, browses the cats, and labels queue sessions with cats that already exist.",
+};
+
 async function renderAdmins() {
   const { admins } = await api("/admins");
 
@@ -1185,41 +1240,73 @@ async function renderAdmins() {
     autocomplete: "off",
     attrs: { "aria-label": "Google account email" },
   });
+  const role = roleSelect("collaborator", "Role for the new person");
   const form = el("form", { className: "inline-form" }, [
     input,
-    el("button", { className: "btn btn-primary", textContent: "Add admin" }),
+    role,
+    el("button", { className: "btn btn-primary", textContent: "Add" }),
   ]);
   form.onsubmit = guard(async (event) => {
     event.preventDefault();
     const email = input.value.trim();
-    await post("/admins", { email });
-    toast(`${email} can now sign in`);
+    await post("/admins", { email, role: role.value });
+    toast(`${email} can now sign in as ${role.value === "admin" ? "an admin" : "a collaborator"}`);
     render();
   });
 
+  const byRole = (a, b) => (a.role === b.role ? a.email.localeCompare(b.email) : a.role === "admin" ? -1 : 1);
+
   $("#main").replaceChildren(
-    sectionHead("Admins", "Only these Google accounts can sign in."),
+    sectionHead("People", "Only these Google accounts can sign in."),
     el("div", { className: "card" }, [
       form,
-      ...admins.map((admin) => {
+      el("dl", { className: "role-help" }, [
+        ...["admin", "collaborator"].flatMap((r) => [
+          el("dt", { textContent: r === "admin" ? "Admin" : "Collaborator" }),
+          el("dd", { textContent: ROLE_HELP[r] }),
+        ]),
+      ]),
+      ...[...admins].sort(byRole).map((admin) => {
+        const you = admin.email === state.email;
         const remove = button("Remove", "btn btn-sm btn-danger", async () => {
-          if (!confirm(`Remove ${admin.email}?`)) return;
+          if (!confirm(`Remove ${admin.email}? They can no longer sign in.`)) return;
           await api(`/admins/${encodeURIComponent(admin.email)}`, { method: "DELETE" });
-          toast("Admin removed");
+          toast("Removed");
           render();
         });
-        remove.disabled = admin.email === state.email;
-        return el("div", { className: "row" }, [
+        remove.disabled = you;
+
+        const select = roleSelect(admin.role, `Role of ${admin.email}`);
+        select.disabled = you;
+        select.title = you ? "Nobody can change their own role" : "";
+        select.onchange = guard(async () => {
+          await patch(`/admins/${encodeURIComponent(admin.email)}`, { role: select.value });
+          toast(`${admin.email} is now ${select.value === "admin" ? "an admin" : "a collaborator"}`);
+          render();
+        });
+
+        return el("div", { className: "row person" }, [
           el("span", { className: "row-main", textContent: admin.email }),
-          el("span", {
-            className: "tag",
-            textContent: admin.email === state.email ? "you" : admin.addedAt === "bootstrap" ? "bootstrap" : "added",
-          }),
+          you
+            ? el("span", { className: "tag", textContent: "you" })
+            : admin.addedAt === "bootstrap"
+              ? el("span", { className: "tag", textContent: "bootstrap" })
+              : null,
+          select,
           remove,
         ]);
       }),
     ]),
   );
+}
+
+function roleSelect(value, label) {
+  const select = el("select", { className: "btn btn-select btn-sm", attrs: { "aria-label": label } }, [
+    el("option", { value: "collaborator", textContent: "Collaborator" }),
+    el("option", { value: "admin", textContent: "Admin" }),
+  ]);
+  select.value = value;
+  return select;
 }
 
 // --------------------------------------------------------------------------
@@ -1251,6 +1338,7 @@ function showLightboxPhoto() {
     $("#lightbox-img").src = photo.mediumUrl;
   }
 
+  $("#lightbox-reject").hidden = !isAdmin();
   const many = lightbox.list.length > 1;
   for (const nav of document.querySelectorAll(".lightbox-nav")) nav.hidden = !many;
   $("#lightbox-count").textContent = many ? `${lightbox.index + 1} / ${lightbox.list.length}` : "";
@@ -1333,7 +1421,7 @@ const people = (n) => (n === 1 ? "1 person" : `${formatNumber(n)} people`);
 const byName = (a, b) => a.name.localeCompare(b.name);
 
 function channelName(channel) {
-  return { whatsapp: "WhatsApp", telegram: "Telegram" }[channel] || "Telegram";
+  return { whatsapp: "WhatsApp", telegram: "Telegram", app: "the app" }[channel] || "Telegram";
 }
 
 function fmtDate(iso) {
@@ -1393,10 +1481,33 @@ async function boot() {
   }
 
   state.email = (claims(token).email || "").toLowerCase();
+  // The role is not in the token — it lives on the allowlist item, so a
+  // change takes effect on the next load rather than at token expiry.
+  try {
+    state.role = (await api("/me")).role;
+    localStorage.setItem(ROLE_KEY, state.role);
+  } catch (err) {
+    state.role = localStorage.getItem(ROLE_KEY);
+    if (err.status || !state.role) throw err; // refused, or never signed in here
+  }
+  document.body.dataset.role = state.role;
+  $("#brand-role").textContent = isAdmin() ? "labeling desk" : "collaborator";
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.hidden = ADMIN_VIEWS.has(tab.dataset.view) && !isAdmin();
+  }
+  capture = createCapture({ el, button, toast, api, post, sectionHead, plural, fmtDate, emptyState });
+
   $("#who-email").textContent = state.email;
   $("#login").hidden = true;
   $("#app").hidden = false;
-  setView("queue");
+  setView(capture.hasOpenEncounter() ? "capture" : homeView());
+}
+
+// Installable, and the app shell opens without a connection. sw.js never
+// touches /api/ or photos, and fetches code from the network first, so a
+// deploy still reaches everyone on their next load (web.tf).
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
 boot().catch((err) => {
