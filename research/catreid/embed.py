@@ -77,15 +77,21 @@ def load_megadescriptor(variant=DEFAULT_VARIANT, device=None):
     )
 
 
-def embed_paths(embedder, paths, batch_size=16, progress_every=200):
+def embed_paths(embedder, paths, batch_size=16, progress_every=200, masks=None):
     """Embed images and L2-normalise, so a dot product is cosine similarity.
 
     Normalising here rather than at scoring time means every downstream
     similarity is directly comparable, which is what lets one threshold be
     calibrated and reused.
+
+    With `masks` (path -> boolean mask or None), everything off the animal is
+    filled with neutral grey before embedding. That is the ablation that asks
+    whether the model recognises the animal or its enclosure.
     """
     import torch
     from PIL import Image
+
+    from catreid.foreground import mask_background
 
     paths = list(paths)
     if not paths:
@@ -100,6 +106,10 @@ def embed_paths(embedder, paths, batch_size=16, progress_every=200):
                 # Converted to RGB because a greyscale or palettised source
                 # would otherwise arrive with the wrong channel count.
                 image = Image.open(path).convert("RGB")
+                if masks is not None:
+                    image = Image.fromarray(
+                        mask_background(np.asarray(image), masks.get(path))
+                    )
                 tensors.append(embedder.transform(image))
             batch = torch.stack(tensors).to(embedder.device)
             features = embedder.model(batch)
@@ -113,28 +123,28 @@ def embed_paths(embedder, paths, batch_size=16, progress_every=200):
     return np.concatenate(vectors, axis=0)
 
 
-def embed_records(embedder, records, cache_dir=None, **kwargs):
+def embed_records(embedder, records, cache_dir=None, masks=None, **kwargs):
     """Embed records, reusing a cached matrix when the inputs are unchanged.
 
-    Keyed on the model name and the exact ordered path list, so a cache hit
-    cannot silently correspond to a different split or a different backbone.
+    Keyed on the model name, whether background was masked, and the exact
+    ordered path list, so a cache hit cannot silently correspond to a different
+    split, backbone, or preprocessing.
     """
     paths = [record.path for record in records]
     if cache_dir is None:
-        return embed_paths(embedder, paths, **kwargs)
+        return embed_paths(embedder, paths, masks=masks, **kwargs)
 
+    tag = f"{embedder.name}-bgmasked" if masks is not None else embedder.name
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha256(
-        ("\n".join([embedder.name, *paths])).encode("utf-8")
-    ).hexdigest()[:16]
-    cache_path = cache_dir / f"{embedder.name}-{len(paths)}-{digest}.npy"
+    digest = hashlib.sha256(("\n".join([tag, *paths])).encode("utf-8")).hexdigest()[:16]
+    cache_path = cache_dir / f"{tag}-{len(paths)}-{digest}.npy"
 
     if cache_path.exists():
         logger.info("reusing cached embeddings %s", cache_path.name)
         return np.load(cache_path)
 
-    vectors = embed_paths(embedder, paths, **kwargs)
+    vectors = embed_paths(embedder, paths, masks=masks, **kwargs)
     np.save(cache_path, vectors)
     logger.info("cached embeddings to %s", cache_path.name)
     return vectors
