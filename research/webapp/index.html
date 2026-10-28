@@ -282,6 +282,12 @@
     return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  function fromBase64(text) {
+    const bin = atob(text.trim()); const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
   async function fetchModel(manifest) {
     const cached = await store.get("blobs", "model").catch(() => null);
     if (cached && cached.sha256 === manifest.sha256) return new Uint8Array(cached.bytes);
@@ -291,7 +297,9 @@
       setStatus("", "Downloading the model, once", plural(i + 1, "part") + " of " + manifest.parts.length, offset / manifest.bytes);
       const res = await fetch(part);
       if (!res.ok) throw new Error("model part " + part + " failed to load (" + res.status + ")");
-      const buf = new Uint8Array(await res.arrayBuffer());
+      // Some hosts (claude.ai artifacts) only serve text and known media
+      // types, so the build can ship the chunks as base64 text instead.
+      const buf = manifest.encoding === "base64" ? fromBase64(await res.text()) : new Uint8Array(await res.arrayBuffer());
       out.set(buf, offset); offset += buf.length;
     }
     if (offset !== manifest.bytes) throw new Error("model download was incomplete");
