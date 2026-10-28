@@ -12,6 +12,11 @@
 #   PK = RATE#{submitterHash}#{minuteBucket}, SK = META   — a per-minute
 #     counter, self-expiring via the table's TTL attribute.
 #
+# GSI2 is also overloaded with one extra partition, again instead of a 4th GSI:
+#   GSI2PK = CATALOG, GSI2SK = createdAt   — set on Cat items, so the labelling
+#     tool lists the catalogue with one Query rather than a table scan that
+#     grows with every photo. It never meets the STATUS#… photo partitions.
+#
 # hash_key/range_key are deprecated in favor of key_schema as of provider
 # ~6.29, but key_schema has several open upstream bugs around perpetual
 # drift and forced GSI replacement as of ~6.61 — staying on the

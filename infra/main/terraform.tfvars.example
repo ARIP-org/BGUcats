@@ -15,3 +15,8 @@ telegram_webhook_secret = "replace-with-openssl-rand-hex-32"
 # stored, so the table never holds a raw, reversible user identifier.
 # Generate with: openssl rand -hex 32
 submitter_hash_salt = "replace-with-openssl-rand-hex-32"
+
+# Bearer token for the admin labelling tool at <api>/admin. You paste it into
+# the page once per device. Must be at least 32 characters.
+# Generate with: openssl rand -hex 32
+admin_token = "replace-with-openssl-rand-hex-32-at-least-32-characters"
