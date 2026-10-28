@@ -121,3 +121,87 @@ PYTHONPATH=research python -m catreid.evaluate \
 ```
 
 Raw results land in `research/runs/` as JSON (gitignored).
+
+---
+
+# Round 2 — background check and the local-feature rerank
+
+Same split as the diversity result above: T-224, 3 clips enrolled per
+identity, 270 gallery images, 1,030 test photos (630 enrolled, 400 never
+seen). Every variant below is a paired comparison on identical queries.
+
+## 5. The baseline recognises the animal, not the enclosure
+
+Mask R-CNN found the animal in 1,280 of 1,300 crops, covering on average
+**38.5%** of the image — the rest is rock, grass, water and wall. Filling
+everything off the animal with flat grey and re-embedding:
+
+| | top-1 | top-5 | BAKS | BAUS |
+|---|---|---|---|---|
+| embedding, full crop | 0.622 | 0.948 | 0.362 | 0.902 |
+| embedding, background masked | 0.595 | 0.935 | 0.287 | 0.905 |
+
+A 2.7-point drop in top-1. Most of the signal survives removing three fifths
+of every image, so round 1's diversity finding is about the animal and not an
+artifact of enclosure backgrounds. Some of the drop is imperfect masks clipping
+the animal, so this slightly overstates how much background was helping.
+
+## 6. The rerank barely helps on solid-colour animals — and the guard matters
+
+The addendum's highest-value trick did not deliver here. Where the matches land
+explains why:
+
+| LightGlue matches per shortlisted pair | same animal | different animal |
+|---|---|---|
+| all matches | 8.1 | 4.8 |
+| matches with both ends on the animal | 1.8 | 1.1 |
+
+**78% of all matches land on background.** On the animal itself, the
+difference between the right bear and a wrong one is less than one keypoint.
+White fur gives a keypoint detector almost nothing to work with.
+
+Fusion weight, swept over stored evidence (0.0 = embedding only):
+
+| weight | top-1 animal-only | top-1 unguarded |
+|---|---|---|
+| 0.00 | 0.622 | 0.622 |
+| 0.05 | 0.633 | 0.621 |
+| 0.10 | **0.638** | 0.617 |
+| 0.20 | 0.629 | 0.608 |
+| 0.30 | 0.617 | 0.610 |
+| 0.50 | 0.583 | 0.565 |
+
+- **Unguarded, it never helps at any weight.** Its extra matches are
+  background, and they make things monotonically worse.
+- **Guarded, a light weight gives about +1.6 points of top-1.** That gain is
+  within noise for 9 identities, and the weight was chosen on the same data it
+  is reported on, so the figure is optimistic.
+
+**What this means.** Results on polar bears say nothing about patterned cats:
+the addendum's claim is specifically that *coat patterns* are keypoint-rich,
+and a calico should behave very differently. What it does say is that **for a
+solid-colour animal — a black cat — local-feature matching will not rescue
+recognition.** That is direct support for the addendum's two-stream design:
+for the black cat the signal has to come from aligned face geometry (E_face),
+not coat texture. It also makes the head detector and landmark alignment step a
+higher priority than the rerank for exactly the cats the per-identity breakdown
+says fail most.
+
+## 7. The decision policy in numbers
+
+At the calibrated thresholds (embedding only, accept where 90% of strangers are
+rejected, "new animal" below the median stranger score), across 1,030 test photos:
+
+| enrolled animals (630) | | never-seen animals (400) | |
+|---|---|---|---|
+| answered alone, right | 228 | called new, correctly | 200 |
+| sent to a human, right one offered | 118 | sent to a human ("none of these") | 161 |
+| sent to a human, right one missing | 37 | filed under the wrong animal | 39 |
+| called new by mistake | 185 | | |
+| answered alone, wrong | 62 | | |
+
+101 confident mistakes in 1,030 photos — 62 wrong identities and 39 strangers
+filed under someone. Those are the silent-corruption outcomes the threshold is
+meant to suppress, and on this data it cannot get them near zero without
+sending most photos to a human. Explore the trade-off interactively with
+`python -m catreid.experiment --demo-out <path>`.
