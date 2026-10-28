@@ -1,0 +1,13 @@
+# Research track only (phase 1b). NEVER merged into the root requirements.txt
+# or any src/*/requirements.txt — torch alone is several hundred MB and the
+# Lambda deployment packages have a hard 250MB limit.
+#
+# Install into a separate environment:  pip install -r research/requirements.txt
+
+torch==2.14.1
+torchvision==0.29.1
+timm==1.0.30                 # provides the Swin backbone MegaDescriptor is built on
+wildlife-datasets==1.0.9     # dataset downloaders + metadata, incl. CatIndividualImages
+pandas==3.1.0
+numpy==2.5.2                 # pinned to match the root requirements, so one venv can hold both
+Pillow==12.3.0
