@@ -24,8 +24,10 @@
   /* Marker capitals for headlines — closest Hebrew match to hand lettering.
      Only ever used large: it is thin and narrow by design. */
   --font-display: "Amatic SC", var(--font-body);
-  /* Pen handwriting, for anything "written on" a photo or card. */
-  --font-hand: "Playpen Sans Hebrew", var(--font-body);
+  /* Pen handwriting, for anything "written on" a photo or card. Playpen
+     has no Cyrillic, so Russian falls through to Pangolin, the nearest
+     match; Google Fonts' unicode-range means only Russian readers load it. */
+  --font-hand: "Playpen Sans Hebrew", "Pangolin", var(--font-body);
 
   color-scheme: light;
 }
@@ -121,6 +123,52 @@ body {
 .brand-mark {
   width: 46px;
   height: 38px;
+}
+
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Language switcher: the same ink-and-shadow pill as the bot link, split
+   into three. */
+.langs {
+  display: inline-flex;
+  padding: 3px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.langs[hidden] {
+  display: none;
+}
+
+.langs button {
+  min-width: 38px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: 500 14px/1.7 var(--font-body);
+  cursor: pointer;
+}
+
+.langs button:hover {
+  background: var(--paper-2);
+}
+
+.langs button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.langs button:focus-visible {
+  outline: 2.5px solid var(--ginger);
+  outline-offset: 1px;
 }
 
 .pill {
@@ -268,6 +316,10 @@ h1 .line {
   transform: rotate(-2.5deg);
 }
 
+:root[dir="ltr"] .tilt {
+  transform: rotate(2.5deg);
+}
+
 .polaroid {
   position: relative;
   z-index: 1;
@@ -300,7 +352,7 @@ h1 .line {
 .peek-head,
 .peek-paws {
   position: absolute;
-  left: 15%;
+  inset-inline-end: 15%;
   width: 104px;
 }
 
@@ -340,22 +392,24 @@ h1 .line {
   animation: bob 5s ease-in-out infinite;
 }
 
+/* Placed by inline side, like everything else that sits to one side, so
+   the composition mirrors in English and Russian. */
 .f1 {
   top: 60px;
-  right: -46px;
+  inset-inline-start: -46px;
   rotate: 10deg;
 }
 
 .f2 {
   bottom: 70px;
-  left: -58px;
+  inset-inline-end: -58px;
   rotate: -12deg;
   animation-delay: -1.7s;
 }
 
 .f3 {
   bottom: -54px;
-  right: -14px;
+  inset-inline-start: -14px;
   width: 70px;
   height: 58px;
   rotate: 6deg;
@@ -384,12 +438,18 @@ h1 .line {
   position: absolute;
   width: 24px;
   height: 24px;
-  margin: -12px -12px 0 0;
+  margin-block-start: -12px;
+  margin-inline-start: -12px;
   fill: #8d8177;
   transform: rotate(var(--r));
   opacity: 0;
   animation: step 6.6s linear infinite;
   animation-delay: calc(var(--i) * 0.22s);
+}
+
+/* The angles are computed for a right-to-left walk. */
+:root[dir="ltr"] .trail .paw {
+  transform: rotate(calc(var(--r) * -1));
 }
 
 /* Each print appears, lingers, and fades; staggered delays turn that into a
@@ -439,6 +499,278 @@ section + section,
   margin-top: 40px;
 }
 
+/* ---------- the plan ---------- */
+
+/* What the photos are for. A band of darker paper, so it reads as one
+   idea — the why — before the cards that say what to do now. */
+.plan {
+  background: var(--paper-2);
+  border-radius: 22px;
+  padding: 40px 40px 44px;
+}
+
+.plan-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 48px;
+  align-items: center;
+}
+
+.plan-text h2 {
+  text-wrap: balance;
+}
+
+/* The answer stays in one piece: "You / do." is no answer. */
+.plan-text .underlined {
+  white-space: nowrap;
+}
+
+.plan-text p {
+  margin: 0;
+  max-width: 34em;
+  font-size: 18px;
+  color: #3d342e;
+}
+
+/* The ballot: a page from a notebook, ruled, with a margin line and a
+   photo taped to the corner. Votes are tally marks; the leader is
+   circled in marker. */
+.ballot {
+  justify-self: center;
+  width: min(100%, 350px);
+  margin: 24px 0 0;
+}
+
+.ballot-card {
+  position: relative;
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 16px 20px 20px;
+  padding-inline-start: 50px;
+  box-shadow: 7px 8px 0 rgba(31, 27, 24, 0.12);
+  transform: rotate(1.4deg);
+}
+
+:root[dir="ltr"] .ballot-card {
+  transform: rotate(-1.4deg);
+}
+
+.ballot-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: 34px;
+  border-inline-start: 2px solid rgba(242, 161, 155, 0.85);
+}
+
+.ballot-photo {
+  position: absolute;
+  top: -30px;
+  inset-inline-end: -18px;
+  width: 96px;
+  padding: 6px 6px 16px;
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 4px 5px 0 rgba(31, 27, 24, 0.12);
+  rotate: -7deg;
+}
+
+:root[dir="ltr"] .ballot-photo {
+  rotate: 7deg;
+}
+
+.ballot-photo::before {
+  content: "";
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  width: 54px;
+  height: 18px;
+  margin-left: -27px;
+  background: rgba(232, 214, 178, 0.85);
+  border: 1px solid rgba(31, 27, 24, 0.08);
+  rotate: 4deg;
+}
+
+.ballot-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.ballot-q {
+  margin: 0;
+  padding-inline-end: 80px;
+  min-height: 52px;
+  font: 700 20px/1.3 var(--font-hand);
+}
+
+.ballot-names {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+/* Each row sits on a ruled line. */
+.ballot-names li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.ballot-name {
+  position: relative;
+  margin-inline-end: auto;
+  font: 700 19px/1.3 var(--font-hand);
+}
+
+.lead .ballot-name::after {
+  content: "";
+  position: absolute;
+  inset: -5px -12px;
+  border: 2.5px solid var(--ginger);
+  border-radius: 50%;
+  rotate: -4deg;
+}
+
+.tally {
+  display: flex;
+  gap: 4px;
+}
+
+.tally .doodle {
+  height: 22px;
+}
+
+.tally .t5 {
+  width: 26px;
+}
+
+.tally .t2 {
+  width: 14px;
+}
+
+.ballot-new {
+  font: 500 17px/1.3 var(--font-hand);
+  color: var(--ginger-deep);
+}
+
+.ballot figcaption {
+  margin-top: 16px;
+  text-align: center;
+  font: 500 15px/1.4 var(--font-hand);
+  color: var(--ink-soft);
+}
+
+/* The road from here to names. Stops yet to come are drawn dashed. */
+.road {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+  margin: 44px 0 0;
+  padding: 0;
+}
+
+.stop {
+  position: relative;
+}
+
+.stop-mark {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 2.5px dashed var(--ink-soft);
+  border-radius: 50%;
+  background: var(--card);
+  font: 700 36px/1 var(--font-display);
+  color: var(--ink-soft);
+}
+
+.is-now .stop-mark {
+  border: 2.5px solid var(--ink);
+  background: var(--ginger);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+/* A ring that keeps rippling out of the current stop. */
+.is-now .stop-mark::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border: 2.5px solid var(--ginger);
+  border-radius: 50%;
+  animation: ping 2.6s ease-out infinite;
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+/* The path to the next stop, from this marker to the next one. */
+.stop:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 28px;
+  inset-inline-start: 70px;
+  inset-inline-end: -16px;
+  border-top: 3px dashed var(--ink-soft);
+  opacity: 0.6;
+}
+
+.stop-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 14px 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ginger-deep);
+}
+
+.here {
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--ginger);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.stop h3 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.stop p:last-child {
+  margin: 0;
+  font-size: 16px;
+  color: var(--ink-soft);
+}
+
 /* ---------- steps ---------- */
 
 .steps ol {
@@ -465,7 +797,7 @@ section + section,
   content: counter(step);
   position: absolute;
   top: 16px;
-  left: 18px;
+  inset-inline-end: 18px;
   font: 700 40px/1 var(--font-display);
   color: var(--ginger);
 }
@@ -653,14 +985,14 @@ section + section,
 
 .tips li {
   position: relative;
-  padding-right: 34px;
+  padding-inline-start: 34px;
   color: #d9cfc2;
 }
 
 .tips li::before {
   content: "";
   position: absolute;
-  right: 0;
+  inset-inline-start: 0;
   top: 5px;
   width: 22px;
   height: 22px;
@@ -712,6 +1044,39 @@ footer p {
 
 /* ---------- small screens ---------- */
 
+@media (max-width: 680px) {
+  /* The road turns vertical: markers down the inline-start edge, the path
+     running between them. */
+  .road {
+    grid-template-columns: 1fr;
+    gap: 26px;
+    margin-top: 36px;
+  }
+
+  .stop {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    column-gap: 18px;
+    align-content: start;
+  }
+
+  .stop-mark {
+    grid-row: 1 / span 3;
+  }
+
+  .stop-when {
+    margin-top: 4px;
+  }
+
+  .stop:not(:last-child)::after {
+    top: 68px;
+    bottom: -18px;
+    inset-inline: 28px auto;
+    border-top: 0;
+    border-inline-start: 3px dashed var(--ink-soft);
+  }
+}
+
 @media (max-width: 620px) {
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -744,13 +1109,13 @@ footer p {
   }
 
   .f1 {
-    right: -38px;
+    inset-inline-start: -38px;
     width: 64px;
     height: 52px;
   }
 
   .f2 {
-    left: -40px;
+    inset-inline-end: -40px;
     width: 62px;
     height: 50px;
   }
@@ -776,6 +1141,28 @@ footer p {
     height: 80px;
   }
 
+  .plan {
+    padding: 28px 22px 32px;
+  }
+
+  .plan-intro {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .plan-text {
+    text-align: center;
+  }
+
+  .plan-text p {
+    margin-inline: auto;
+  }
+
+  .ballot {
+    width: min(100%, 320px);
+    margin-top: 30px;
+  }
+
   .tips {
     padding: 26px 22px;
   }
@@ -795,8 +1182,31 @@ footer p {
     padding: 0 16px;
   }
 
+  /* Brand, language switcher and the bot icon still share one line. */
+  .topbar,
+  .topbar-end {
+    gap: 8px;
+  }
+
   .brand {
-    font-size: 28px;
+    gap: 6px;
+    font-size: 26px;
+    white-space: nowrap;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 30px;
+  }
+
+  .langs button {
+    min-width: 0;
+    padding: 2px 8px;
+    font-size: 13px;
+  }
+
+  .pill {
+    padding: 7px 10px;
   }
 
   .pill span {
@@ -842,10 +1252,19 @@ footer p {
   }
 }
 
+/* The smallest phones: the name has to go on one line with the switcher,
+   so the doodle beside it goes. */
+@media (max-width: 359px) {
+  .brand-mark {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .peek-head .eyes,
   .float,
-  .trail .paw {
+  .trail .paw,
+  .is-now .stop-mark::before {
     animation: none;
   }
 
