@@ -55,6 +55,9 @@ const isAdmin = () => state.role === "admin";
 
 const TOKENS_KEY = "bgucats.tokens";
 const VERIFIER_KEY = "bgucats.pkce";
+// A message for the sign-in screen that has to survive a page load: why the
+// last sign-in was turned away, or that the person signed out.
+const LOGIN_NOTE_KEY = "bgucats.loginNote";
 // Remembered so the app opens without a connection — under a bush with no
 // signal is exactly where Capture gets used. The API still checks the real
 // role on every call.
@@ -88,18 +91,32 @@ async function login() {
     // Straight to Google rather than via Cognito's provider chooser — it is
     // the only provider, so the extra page is pure friction.
     identity_provider: "Google",
+    // Google's account chooser, every time. Without it Google silently
+    // reuses whichever account the phone is signed in to, so someone turned
+    // away, or signed out, could never pick a different one. Cognito passes
+    // this on to Google only with managed login (infra/main/cognito.tf).
+    prompt: "select_account",
   });
   location.assign(`https://${config.cognitoDomain}/oauth2/authorize?${params}`);
 }
 
+// Signing out forgets this app's tokens and stays inside the app. There is no
+// trip to Cognito's /logout page: leaving the app's own address is what makes
+// an installed iPhone app show Safari's address bar and toolbar, and nothing
+// is gained by it — the next sign-in asks Google which account to use anyway.
 function logout() {
+  forgetSignIn("Signed out. Choose an account to sign in again.");
+  location.replace("/");
+}
+
+function forgetSignIn(note) {
   localStorage.removeItem(TOKENS_KEY);
   localStorage.removeItem(ROLE_KEY);
-  const params = new URLSearchParams({
-    client_id: config.userPoolClientId,
-    logout_uri: config.redirectUri,
-  });
-  location.assign(`https://${config.cognitoDomain}/logout?${params}`);
+  try {
+    if (note) sessionStorage.setItem(LOGIN_NOTE_KEY, note);
+  } catch {
+    /* the note is a courtesy */
+  }
 }
 
 async function exchangeToken(body) {
@@ -157,8 +174,13 @@ async function consumeCallback() {
   const code = params.get("code");
   if (params.get("error")) {
     // Cognito rejected the sign-up — almost always the pre-sign-up trigger
-    // refusing an email that is not on the allowlist.
-    toast(params.get("error_description") || params.get("error"), true);
+    // refusing an email that is not on the allowlist. Cognito prefixes the
+    // trigger's message with its own plumbing.
+    const reason = (params.get("error_description") || params.get("error"))
+      .replace(/^PreSignUp failed with error\s*/i, "")
+      .trim();
+    forgetSignIn(`${reason} Sign in with a different Google account.`);
+    history.replaceState({}, "", location.pathname);
   }
   if (!code) return;
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
@@ -231,6 +253,15 @@ const guard = (fn) => (...args) =>
     .catch((err) => toast(err.message, true));
 
 function showLogin() {
+  let note = null;
+  try {
+    note = sessionStorage.getItem(LOGIN_NOTE_KEY);
+    sessionStorage.removeItem(LOGIN_NOTE_KEY);
+  } catch {
+    /* no note to show */
+  }
+  $("#login-alert").textContent = note || "";
+  $("#login-alert").hidden = !note;
   $("#login").hidden = false;
   $("#app").hidden = true;
 }
@@ -1554,6 +1585,16 @@ async function boot() {
     state.role = (await api("/me")).role;
     localStorage.setItem(ROLE_KEY, state.role);
   } catch (err) {
+    if (err.status === 403) {
+      // Signed in fine, but not on the list (or taken off it). Forget the
+      // tokens, or every launch would try them again and land here again.
+      forgetSignIn(
+        `${state.email || "This Google account"} is not an admin or collaborator. ` +
+          "Sign in with a different Google account.",
+      );
+      showLogin();
+      return;
+    }
     state.role = localStorage.getItem(ROLE_KEY);
     if (err.status || !state.role) throw err; // refused, or never signed in here
   }

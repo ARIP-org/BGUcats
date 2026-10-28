@@ -41,7 +41,9 @@ def handler(event, context):
 
     if not table.get_item(Key={"PK": f"ADMIN#{email}", "SK": "META"}).get("Item"):
         logger.warning("blocked sign-up for non-allowlisted email=%s", email)
-        raise SignUpBlocked("This Google account is not on the BGUcats admin list.")
+        raise SignUpBlocked(
+            "This Google account is not an admin or collaborator of BGU cats."
+        )
 
     logger.info("allowing sign-up for email=%s", email)
 

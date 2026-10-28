@@ -89,6 +89,11 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   Russian, Arabic) instead of the app. It is a front door, not security: the
   API still checks every call. `?browser` opens the app in a tab anyway, for
   when the installed app cannot sign in on some phone.
+- **Sign-in always shows Google's account chooser** (`prompt=select_account`,
+  which Cognito forwards only with managed login — `managed_login_version = 2`
+  in cognito.tf). Sign-out only forgets the app's tokens and stays in the
+  app; a sign-in that the allowlist refuses forgets its tokens too, so nobody
+  is stuck retrying the wrong account.
 - **The service worker (web/sw.js) is network-first** and never touches
   `/api/`, photos or other origins — the distribution's no-caching rule still
   means a deploy reaches everyone on their next load.

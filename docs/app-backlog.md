@@ -10,6 +10,13 @@ Things decided to leave for later, so they are not lost. Newest first.
   the thumb, and ✕ reads as "cancel", not "step out for a moment". Revisit
   together with the rest of the camera screen. *(Raised 2026-10-28.)*
 
+- **Safari's address bar during sign-in.** An installed iPhone app shows
+  Safari's bar and toolbar whenever it is on someone else's address, and
+  Google sign-in happens on Google's pages, so the bar appears for those few
+  seconds. Sign-out no longer leaves the app, so that is now the only moment
+  it shows, and sign-in is rare: a session lasts 30 days. Avoiding it
+  entirely would need a native app or a sign-in method of our own.
+
 ## Product
 
 - **Translate the app's own screens.** The install page is in Hebrew,

@@ -172,7 +172,7 @@ def _require_member(email):
     item = table.get_item(Key={"PK": f"ADMIN#{email}", "SK": "META"}).get("Item")
     if not item:
         logger.warning("rejected non-admin caller=%s", email)
-        raise ApiError(403, "not an admin")
+        raise ApiError(403, "not an admin or collaborator")
     return _role_of(item)
 
 

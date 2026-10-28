@@ -59,6 +59,13 @@ body {
   padding: 0;
 }
 
+/* No rubber-band bounce on the page itself: in an installed app it drags the
+   whole interface around like a web page. Lists still scroll normally. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
 body {
   min-height: 100vh;
   background: var(--paper);
@@ -132,14 +139,32 @@ a {
 
 /* ---------- login ---------- */
 
+/* Pinned to the screen rather than sized to it: there is nothing to scroll
+   here, and an installed iPhone app would otherwise let the whole card
+   bounce. overflow: auto still rescues a very short landscape screen. */
 .login {
+  position: fixed;
+  inset: 0;
   display: grid;
   place-items: center;
   align-content: center;
   gap: 28px;
-  min-height: 100vh;
-  min-height: 100dvh;
-  padding: 24px 16px;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.login-card .login-alert {
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 2px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-wash);
+  color: var(--ink);
+  font-size: 14px;
+  text-align: start;
+  overflow-wrap: anywhere;
 }
 
 .login-card {
