@@ -7,6 +7,8 @@ Authoritative specs, in order of precedence:
 - `docs/cat-app-design-spec.pdf` (v2 draft) — authoritative for ingest, storage,
   processing and security.
 
+Which branch holds what, and which one is deployed: `docs/branches.md`.
+
 Read both before non-trivial work. This file is the short version of the
 constraints that are easy to violate by reflex.
 
@@ -57,12 +59,20 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 |---|---|---|
 | 1a Collection + labeling infra | CURRENT | ingest, storage, processing, admin labeling |
 | 1b Recognition research track | CURRENT, PARALLEL | public datasets, eval harness, zero-shot baseline |
+| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, blind; replay over labeled sessions |
 | 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights |
 | 3 Fine-tuning on BGU data | CONDITIONAL | only if 1b numbers justify it |
 | 4 Read path + mobile app | DEFERRED | public API, browse UI, voting |
 
 **1b has no dependency on 1a.** It reads public datasets from disk and touches no
 Lambda, no S3 bucket, and no DynamoDB table.
+
+**1c is where they meet**, deliberately small: the 1b model, exported to ONNX,
+runs in the admin's browser inside the labeling desk and is scored against the
+labels admins give anyway. It decides nothing — see "Recognition in the
+labeling desk" below. First BGU numbers (2026-10-29, 19 cats): right cat first
+on 3–5 of 13 sessions, in the top 3 on 9–10 of 13 (`research/FINDINGS.md`,
+round 3).
 
 **The risk, stated once:** the ML track is more fun than the ingest track, and if
 it eats the ingest track there is never any BGU data — the one asset here that
@@ -73,7 +83,9 @@ blocked on someone else.
 
 ### Collection path (spec §10)
 
-- **No browse, identify, voting, or polls in the app yet.** Phase 4.
+- **No browse, identify, voting, or polls in the app yet.** Phase 4. The
+  labeling desk's blind guesses (1c) are an admin measurement, not Identify:
+  no collaborator or visitor ever sees a model output.
 - **Do not attach Lambdas to a VPC.** No NAT gateway, no subnets, no security
   groups. Lambda outside a VPC has full internet access; S3, DynamoDB and the
   Telegram API are all public endpoints. (§8.1)
@@ -130,7 +142,44 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   is stuck retrying the wrong account.
 - **The service worker (web/sw.js) is network-first** and never touches
   `/api/`, photos or other origins — the distribution's no-caching rule still
-  means a deploy reaches everyone on their next load.
+  means a deploy reaches everyone on their next load. The one exception is
+  the content-addressed `/model/{version}/`, cached first (see 1c below).
+
+### Recognition in the labeling desk (1c — web/recognition.js)
+
+- **Blind, always.** The model ranks every known cat for each queue session
+  and the ranking is recorded (`POST /api/sessions/{id}/prediction`) *before*
+  anyone labels it. The admin sees the guess only after choosing, as a toast.
+  Showing it first would anchor the labeler, inflate the measured accuracy
+  and quietly mislabel lookalikes — the labels are training data.
+- **A guess made after the label is not a measurement.** The write is one
+  DynamoDB transaction conditional on the session having no `catId`; the
+  first guess per model version wins (`SESSION#{id}` / `PREDICTION#{version}`,
+  listed through GSI2 `ENTITY#PREDICTION`). A merge counts as a label.
+- **It only ranks.** No auto-accept, no "new cat" verdict, and the manifest
+  ships `"thresholds": null`: on BGU photos the top scores of right guesses,
+  wrong guesses and never-seen cats overlap. Thresholds are earned from the
+  live record, not borrowed from polar bears.
+- **The browser does the ML; the API stays boring.** The API hands out the
+  labeled photos (`GET /api/recognition/gallery`) and stores and joins
+  guesses (`GET /api/recognition/predictions`). No model code under `src/`,
+  no torch near a Lambda. All three routes are ADMINS.
+- **The model is published, not deployed by Terraform.** `make model-export`
+  (research env) then `make model-publish` uploads `model/{version}/` to the
+  admin web bucket — model, and ONNX Runtime Web self-hosted from a
+  sha512-checked npm tarball, never a CDN in a page holding sign-in tokens —
+  and writes `model/manifest.json` last. The version is a hash of the model,
+  so sw.js caches `/model/{version}/` cache-first; the manifest is never cached.
+- **Pixels need CORS.** The media bucket allows GET from the app's own origin
+  only, so a canvas can read a presigned photo. Every read still needs a URL
+  the API signed.
+- **Cost:** ~40 MB per device per model version (29.5 MB int8 model + 10 MB
+  runtime), ~150–250 MB of memory while running, and one embedding per labeled
+  photo per device (~0.4 s each on a laptop, expect 1–2 s on a phone; cached
+  in IndexedDB). AWS cost is cents: storage and CloudFront egress.
+- **Replay** (Stats → Recognition model) re-runs the ranking over labeled
+  sessions, each hidden in turn — split by session, never by photo. Same
+  scoring code as the live record (`summarize` in recognition.js).
 
 ### Research track
 
@@ -276,3 +325,6 @@ API Gateway HTTP API · S3 + DynamoDB on-demand · secrets in SSM Parameter Stor
 
 **Research:** Python 3.12 · PyTorch · timm · wildlife-datasets · kornia. Local
 only; no AWS.
+
+**In the browser:** MegaDescriptor-T-224, int8 ONNX, on ONNX Runtime Web 1.17.3
+(WebAssembly, one thread) — self-hosted under the admin site's `model/`.

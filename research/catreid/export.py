@@ -146,8 +146,17 @@ def main(argv=None):
     parser.add_argument("--dataset", default="PolarBearVidID")
     parser.add_argument("--root", default="research/data/PolarBearVidID")
     parser.add_argument("--agreement-images", type=int, default=40)
+    parser.add_argument(
+        "--no-eval",
+        action="store_true",
+        help="export only; skip the PolarBearVidID checks (no dataset needed)",
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+
+    if args.no_eval:
+        export(args.out, args.variant)
+        return
 
     import onnxruntime as ort
 

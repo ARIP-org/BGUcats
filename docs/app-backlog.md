@@ -2,6 +2,26 @@
 
 Things decided to leave for later, so they are not lost. Newest first.
 
+## Recognition (phase 1c)
+
+- **Thresholds, once the live record earns them.** Today the model only
+  ranks. When Stats → Recognition model shows enough labeled guesses that
+  the "right first" and "never seen" top scores separate, pick an accept and
+  a "new cat" threshold from that record (biased toward "new cat", CLAUDE.md
+  "Open-set") and put them in the manifest. *(Raised 2026-10-29.)*
+- **Show the top 3 in the picker — later, and on purpose.** Guesses are
+  hidden until a session is labeled, so the labels stay unbiased. Revisit
+  only once the numbers are good enough that anchoring costs less than it
+  saves, and keep a blind sample even then.
+- **Videos are not looked at.** A video-only session gets no guess. The
+  Spotter page (research/webapp) already pulls frames from a video in the
+  browser; the same would work here, with CORS on the raw object.
+- **Every device embeds every labeled photo.** Cheap at 225 photos (a few
+  minutes once per phone), less so at thousands. The boring fix is a
+  server-side vector per photo — onnxruntime and the 30 MB model fit in the
+  process Lambda — which is also where the ULID-as-vector-ID of CLAUDE.md
+  was always headed.
+
 ## Design
 
 - **A better way out of the full-screen camera.** Today a round ✕ in the top

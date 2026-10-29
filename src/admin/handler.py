@@ -114,6 +114,14 @@ COORDINATE_DECIMALS = 3
 MAX_ACCURACY_METRES = 100_000
 RECENT_ENCOUNTERS = 30
 
+# A recorded guess keeps a score for every enrolled cat, not just the top
+# few, so a later threshold sweep can be run over it. Well above the ~50
+# campus cats; the cap only bounds the item size.
+MAX_PREDICTION_CATS = 200
+# Sessions merged into sessions merged into ... — followed this far when
+# finding which cat a predicted session became.
+MAX_MERGE_HOPS = 5
+
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 s3 = boto3.client("s3")
@@ -797,6 +805,157 @@ def _reject_session(session_id, **_):
 
 
 # --------------------------------------------------------------------------
+# Recognition — measuring the model on real sessions
+# --------------------------------------------------------------------------
+#
+# The model runs in the admin's browser (web/recognition.js); nothing here
+# touches it. The API does two boring things: hands the browser the labeled
+# photos to build templates from, and keeps a record of what the model
+# guessed for a session *before* a person labeled it. Joining that record
+# with the label the person later gave is the measurement.
+
+
+def _get_recognition_gallery(**_):
+    """Every labeled photo, with a URL to its 1024px derivative.
+
+    The browser embeds each one once per model version and keeps the
+    vectors on the device. Videos have no derivative and are left out.
+    """
+    photos = _status_items("labeled")
+    return {
+        "photos": [
+            {
+                "photoId": p["photoId"],
+                "sessionId": p.get("sessionId"),
+                "catId": p["catId"],
+                "mediumUrl": _presign(f"derived/{p['photoId']}/medium-1024.webp"),
+            }
+            for p in photos
+            if p.get("catId") and p.get("mediaType") != "video"
+        ]
+    }
+
+
+def _record_prediction(session_id, body, email, **_):
+    """What the model guessed for an unlabeled session.
+
+    Refused once the session has a cat: a guess made after the answer is
+    known measures nothing. The first guess per model version wins — a
+    retry, or a second admin opening the same session, cannot overwrite it.
+    """
+    model_version = _required_string(body, "modelVersion", maximum=40)
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", model_version):
+        raise ApiError(400, "modelVersion is not a version string")
+    ranked = body.get("ranked")
+    if not isinstance(ranked, list) or len(ranked) > MAX_PREDICTION_CATS:
+        raise ApiError(400, f"ranked must be a list of at most {MAX_PREDICTION_CATS}")
+    cleaned = []
+    for entry in ranked:
+        cat_id = entry.get("catId") if isinstance(entry, dict) else None
+        score = entry.get("score") if isinstance(entry, dict) else None
+        if not isinstance(cat_id, str) or not re.fullmatch(ID, cat_id):
+            raise ApiError(400, "every ranked entry needs a catId")
+        if not isinstance(score, (int, float)) or not -1.0 <= score <= 1.0:
+            raise ApiError(400, "every score is a cosine similarity in [-1, 1]")
+        cleaned.append({"catId": cat_id, "score": Decimal(str(round(score, 4)))})
+    photo_count = body.get("photoCount")
+    if not isinstance(photo_count, int) or photo_count < 1:
+        raise ApiError(400, "photoCount must be a positive integer")
+
+    session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"}).get(
+        "Item"
+    )
+    if not session:
+        raise ApiError(404, "no such session")
+    if session.get("catId"):
+        raise ApiError(409, "session is already labeled")
+
+    now = _now_iso()
+    item = {
+        "PK": f"SESSION#{session_id}",
+        "SK": f"PREDICTION#{model_version}",
+        "sessionId": session_id,
+        "modelVersion": model_version,
+        "ranked": cleaned,
+        "photoCount": photo_count,
+        "predictedAt": now,
+        "predictedBy": email,
+        "GSI2PK": "ENTITY#PREDICTION",
+        "GSI2SK": now,
+    }
+    # One transaction, so a label landing between the check above and this
+    # write cannot leave a guess that was made after the answer was known.
+    client = table.meta.client
+    try:
+        client.transact_write_items(
+            TransactItems=[
+                {
+                    "ConditionCheck": {
+                        "TableName": table.name,
+                        "Key": {"PK": f"SESSION#{session_id}", "SK": "META"},
+                        "ConditionExpression": "attribute_not_exists(catId)",
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": table.name,
+                        "Item": item,
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+            ]
+        )
+    except client.exceptions.TransactionCanceledException as err:
+        reasons = [r.get("Code") for r in err.response.get("CancellationReasons", [])]
+        if reasons and reasons[0] == "ConditionalCheckFailed":
+            raise ApiError(409, "session is already labeled")
+        return {"sessionId": session_id, "modelVersion": model_version, "new": False}
+    return {"sessionId": session_id, "modelVersion": model_version, "new": True}
+
+
+def _get_predictions(**_):
+    """Every recorded guess, joined with the cat its session ended up as.
+
+    A session merged into another takes the cat of the one it joined —
+    merging is a person saying "same cat". `truthCatId` is null while the
+    session is still unlabeled and for a deleted one: neither is a
+    measurement.
+    """
+    predictions = _entities("PREDICTION")
+    sessions = _batch_get_sessions({p["sessionId"] for p in predictions})
+    for _ in range(MAX_MERGE_HOPS):
+        targets = {
+            s["mergedInto"]
+            for s in sessions.values()
+            if s.get("mergedInto") and s["mergedInto"] not in sessions
+        }
+        if not targets:
+            break
+        sessions.update(_batch_get_sessions(targets))
+
+    def resolve(session_id):
+        session = sessions.get(session_id) or {}
+        for _ in range(MAX_MERGE_HOPS):
+            if not session.get("mergedInto"):
+                break
+            session = sessions.get(session["mergedInto"]) or {}
+        return session
+
+    out = []
+    for p in predictions:
+        session = resolve(p["sessionId"])
+        gone = not session or session.get("rejectedAt")
+        out.append(
+            {
+                **_clean(p),
+                "truthCatId": None if gone else session.get("catId"),
+                "labeledAt": None if gone else session.get("labeledAt"),
+            }
+        )
+    return {"predictions": out}
+
+
+# --------------------------------------------------------------------------
 # Admins
 # --------------------------------------------------------------------------
 
@@ -1324,6 +1483,14 @@ ROUTES = (
         rf"^/api/encounters/(?P<session_id>{ID})/media$",
         _create_upload,
         ANYONE,
+    ),
+    ("GET", r"^/api/recognition/gallery$", _get_recognition_gallery, ADMINS),
+    ("GET", r"^/api/recognition/predictions$", _get_predictions, ADMINS),
+    (
+        "POST",
+        rf"^/api/sessions/(?P<session_id>{ID})/prediction$",
+        _record_prediction,
+        ADMINS,
     ),
     ("GET", r"^/api/admins$", _get_admins_with_roles, ADMINS),
     ("POST", r"^/api/admins$", _add_admin, ADMINS),

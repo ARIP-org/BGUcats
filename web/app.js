@@ -14,6 +14,7 @@
 import { createCapture } from "./capture.js";
 import { barList, columnChart, formatNumber, funnel, meter } from "./charts.js";
 import { isInstalled, showInstallPage } from "./install.js";
+import { createRecognition, scoreRow, summarize } from "./recognition.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, kids = []) => {
@@ -46,6 +47,8 @@ function button(label, className, onClick) {
 let config = null;
 let state = { view: "queue", cats: [], email: null, role: null };
 let capture = null;
+// Admins only: the model that guesses each queue session, blind (recognition.js).
+let recognition = null;
 
 const isAdmin = () => state.role === "admin";
 
@@ -458,12 +461,38 @@ async function renderQueue() {
       "Labeling queue",
       `${plural(sessions.length, "session")} · ${plural(total, "photo")} · oldest first`,
     ),
+    modelStrip(),
     el(
       "div",
       { className: "session-list" },
       sessions.map((s) => sessionCard(s, sessions)),
     ),
   );
+  if (recognition) {
+    recognition.setNames(state.cats);
+    recognition.watchQueue(sessions);
+  }
+}
+
+// One line on what the model is doing. Its guesses never show here: they
+// are revealed only after a session is labeled (openPicker).
+function modelStrip() {
+  if (!recognition) return null;
+  const node = el("div", { className: "model-strip", attrs: { role: "status" } });
+  const paint = (s) => {
+    node.hidden = s.phase === "idle" || s.phase === "unavailable";
+    node.dataset.phase = s.phase;
+    node.replaceChildren(
+      ...[
+        el("span", { className: "model-dot", attrs: { "aria-hidden": "true" } }),
+        el("span", { className: "model-text", textContent: `Model: ${s.detail}` }),
+        s.progress != null ? el("progress", { max: 1, value: s.progress }) : null,
+      ].filter(Boolean),
+    );
+  };
+  paint(recognition.state);
+  const stop = recognition.onChange((s) => (node.isConnected ? paint(s) : stop()));
+  return node;
 }
 
 function sessionCard({ session, photos }, allSessions) {
@@ -626,10 +655,23 @@ function openPicker({ session, photos }) {
   });
   const grid = el("div", { className: "picker-grid" });
 
+  recognition?.prioritize(sessionId);
+
+  // The model's guess for this session was recorded before the picker
+  // opened (or is still being made). It is shown only now, after the
+  // person has chosen, so the label is theirs and not the model's.
+  const revealGuess = (cat, isNew) => {
+    if (!recognition) return;
+    const line = recognition.reveal(sessionId, isNew ? null : cat.catId, cat.name);
+    if (line) toast(line);
+    recognition.learn(sessionId, cat.catId);
+  };
+
   const assignTo = guard(async (cat) => {
     dialog.close();
     await post(`/sessions/${sessionId}/assign`, { catId: cat.catId });
     toast(`${plural(photos.length, "photo")} → ${cat.name}`);
+    revealGuess(cat, false);
     render();
   });
 
@@ -638,6 +680,7 @@ function openPicker({ session, photos }) {
     const cat = await post("/cats", { name });
     await post(`/sessions/${sessionId}/assign`, { catId: cat.catId });
     toast(`New cat “${cat.name}” · ${plural(photos.length, "photo")} labeled`);
+    revealGuess(cat, true);
     render();
   });
 
@@ -846,13 +889,18 @@ const UNLINKABLE = new Set(["direct", "none", "referral", "telegram", "whatsapp"
 const sourceName = (row) => row.link?.label || SOURCE_NAMES[row.referral]?.[0] || row.referral;
 
 async function renderStats() {
-  const data = await api("/insights");
+  const [data, guesses] = await Promise.all([
+    api("/insights"),
+    api("/recognition/predictions").catch(() => null),
+    refreshCats(),
+  ]);
   const s = data.summary;
 
   const refresh = button("Refresh", "btn btn-sm", () => render());
   $("#main").replaceChildren(
     sectionHead("Stats", `Updated ${fmtTime(data.generatedAt)} · days in Israel time`, [refresh]),
     statTiles(s, data.evalMinSessions),
+    guesses ? recognitionPanel(guesses.predictions) : null,
     sourcesPanel(data.referrals),
     activityPanel(data.daily),
     el("div", { className: "panel-row" }, [
@@ -1272,6 +1320,118 @@ function datasetPanel(cats, s, minSessions) {
   );
 }
 
+// ---- the model, measured ----
+
+// Two measurements of the same ranking, read the same way (recognition.js
+// summarize): live guesses recorded before a person labeled the session, and
+// a replay over sessions already labeled, each hidden from the model in turn.
+function recognitionPanel(predictions) {
+  const catName = (id) => state.cats.find((c) => c.catId === id)?.name || "(merged or deleted)";
+
+  // The newest model version only — two versions' guesses are not one number.
+  const latest = predictions.reduce(
+    (a, p) => (!a || p.predictedAt > a.predictedAt ? p : a),
+    null,
+  )?.modelVersion;
+  const current = predictions.filter((p) => p.modelVersion === latest);
+  const measured = current
+    .filter((p) => p.truthCatId)
+    .map((p) => scoreRow({ sessionId: p.sessionId, catId: p.truthCatId, ranked: p.ranked }));
+  const waiting = current.length - measured.length;
+
+  const live = el("div", { className: "model-block" }, [
+    el("h4", { textContent: "Live: guessed before labeling" }),
+    measured.length
+      ? modelResults(summarize(measured), catName)
+      : el("p", {
+          className: "muted",
+          textContent: latest
+            ? "No guessed session has been labeled yet."
+            : "No guesses yet. Open the queue: the model guesses every session there.",
+        }),
+    el("p", {
+      className: "muted small",
+      textContent:
+        (latest ? `Model ${latest}. ` : "") +
+        (waiting ? `${formatNumber(waiting)} ${waiting === 1 ? "guess" : "guesses"} waiting for a label.` : ""),
+    }),
+  ]);
+
+  const replayOut = el("div");
+  const say = (text) => replayOut.replaceChildren(el("p", { className: "muted", textContent: text }));
+  const run = button("Replay on labeled sessions", "btn btn-sm", async () => {
+    run.disabled = true;
+    // Downloading and learning can take minutes the first time; say so.
+    const stop = recognition.onChange((st) => say(`Model: ${st.detail}`));
+    try {
+      say("Loading the model…");
+      const rows = await recognition.replay((done, total) => {
+        stop();
+        say(`Replaying ${done} of ${total} sessions…`);
+      });
+      replayOut.replaceChildren(modelResults(summarize(rows), catName));
+    } catch (err) {
+      replayOut.replaceChildren();
+      throw err;
+    } finally {
+      stop();
+      run.disabled = false;
+    }
+  });
+  const replay = el("div", { className: "model-block" }, [
+    el("h4", { textContent: "Replay: every labeled session, hidden in turn" }),
+    el("p", {
+      className: "muted small",
+      textContent:
+        "Each session is matched against the cat's other sessions and every other cat. " +
+        "The first run downloads the model (about 40 MB, once) and looks at every labeled photo once.",
+    }),
+    run,
+    replayOut,
+  ]);
+
+  return panel(
+    "Recognition model",
+    "The model ranks the known cats for every session in the queue and records that " +
+      "ranking before anyone labels it. Nobody sees it until they have chosen. It only " +
+      "ranks: there is no auto-accept and no “new cat” verdict until these numbers earn one.",
+    [],
+    [live, replay],
+  );
+}
+
+function modelResults(sum, catName) {
+  const pct = (n) => (sum.known ? `${Math.round((n / sum.known) * 100)}%` : "—");
+  const chance = (k) =>
+    sum.candidates ? `chance ≈ ${Math.round(Math.min(1, k / sum.candidates) * 100)}%` : "";
+  const score = (x) => (x == null ? "—" : x.toFixed(2));
+  return el("div", {}, [
+    el("div", { className: "stats-grid model-grid" }, [
+      statTile({ label: "Right cat first", value: pct(sum.top1), note: `${sum.top1} of ${sum.known} · ${chance(1)}` }),
+      statTile({ label: "In the top 3", value: pct(sum.top3), note: `${sum.top3} of ${sum.known} · ${chance(3)}` }),
+      statTile({ label: "In the top 5", value: pct(sum.top5), note: `${sum.top5} of ${sum.known} · ${chance(5)}` }),
+      statTile({
+        label: "Cats it had never seen",
+        value: formatNumber(sum.fresh),
+        note: "sessions of a cat with no other photos; only a threshold could catch these",
+      }),
+    ]),
+    el("p", {
+      className: "muted small",
+      textContent:
+        `Median top score: right ${score(sum.medianTop.right)} · wrong ${score(sum.medianTop.wrong)} · ` +
+        `never-seen ${score(sum.medianTop.fresh)}. While these overlap, no threshold can say ` +
+        "“this is her” or “new cat”.",
+    }),
+    sum.perCat.length
+      ? table(
+          ["Cat", "Sessions", "Right first", "In top 3"],
+          sum.perCat.map((c) => [catName(c.catId), c.sessions, c.top1, c.top3]),
+        )
+      : null,
+  ]);
+}
+
 // A table that turns into labelled stacks on a phone (styles.css): each cell
 // carries its column name for the narrow layout to show.
 function table(columns, rows) {
@@ -1604,6 +1764,7 @@ async function boot() {
     tab.hidden = ADMIN_VIEWS.has(tab.dataset.view) && !isAdmin();
   }
   capture = createCapture({ el, button, toast, api, post, sectionHead, plural, fmtDate, emptyState });
+  if (isAdmin()) recognition = createRecognition({ api, post });
 
   $("#who-email").textContent = state.email;
   $("#login").hidden = true;

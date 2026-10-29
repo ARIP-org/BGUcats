@@ -2526,3 +2526,86 @@ a.btn {
     transition: none;
   }
 }
+
+/* ---------- Recognition model (recognition.js) ---------- */
+
+/* One quiet line above the queue. It never shows a guess — those are
+   revealed only after a session is labeled. */
+.model-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+.model-strip[hidden] {
+  display: none;
+}
+.model-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grey);
+  flex: none;
+}
+.model-strip[data-phase="loading"] .model-dot,
+.model-strip[data-phase="learning"] .model-dot,
+.model-strip[data-phase="guessing"] .model-dot {
+  background: var(--ginger);
+  animation: model-pulse 1.2s ease-in-out infinite;
+}
+.model-strip[data-phase="ready"] .model-dot {
+  background: var(--good);
+}
+.model-strip[data-phase="error"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.model-strip[data-phase="error"] .model-dot {
+  background: var(--danger);
+}
+.model-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.model-strip progress {
+  flex: 1 1 100%;
+  height: 6px;
+  accent-color: var(--chart);
+}
+@keyframes model-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-strip .model-dot {
+    animation: none !important;
+  }
+}
+
+.model-block + .model-block {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1.5px solid var(--line);
+}
+.model-block h4 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+.model-block .btn {
+  margin: 4px 0 10px;
+}
+.model-grid {
+  margin: 8px 0;
+}
+.muted.small,
+.small {
+  font-size: 0.85rem;
+}

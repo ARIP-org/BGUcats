@@ -1,5 +1,6 @@
 .PHONY: fmt lint test build build-ingest build-process build-admin build-beacon \
-	tf-init tf-plan tf-apply site-invalidate whatsapp-secrets admin-add poster
+	tf-init tf-plan tf-apply site-invalidate whatsapp-secrets admin-add poster \
+	model-export model-publish
 
 # Lambda runs Linux x86_64; resolve binary wheels for that, not for whatever
 # the build host happens to be.
@@ -88,3 +89,19 @@ admin-add:
 # override with `make poster URL=https://...` to point it elsewhere.
 poster:
 	python scripts/build_poster.py $(if $(URL),--url $(URL),)
+
+# The recognition model the labeling desk runs in the browser
+# (web/recognition.js). Exporting needs the research environment —
+# research/requirements.txt, never the Lambda one. --no-eval skips the
+# polar-bear accuracy check, which needs that dataset on disk.
+MODEL_ONNX = research/runs/browser/megadescriptor-t-224-int8.onnx
+
+model-export:
+	PYTHONPATH=research python -m catreid.export --out research/runs/browser --no-eval
+
+# Uploads to the admin web bucket under model/{version}/, outside Terraform
+# (the file is built, not committed), manifest last. No CloudFront
+# invalidation needed: the admin distribution caches nothing.
+model-publish:
+	python scripts/publish_model.py --model $(MODEL_ONNX) \
+		--bucket bgucats-admin-web-$$(aws sts get-caller-identity --query Account --output text)

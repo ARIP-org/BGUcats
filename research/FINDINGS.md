@@ -205,3 +205,44 @@ filed under someone. Those are the silent-corruption outcomes the threshold is
 meant to suppress, and on this data it cannot get them near zero without
 sending most photos to a human. Explore the trade-off interactively with
 `python -m catreid.experiment --demo-out <path>`.
+
+---
+
+# Round 3 — first numbers on BGU cats
+
+2026-10-29. The first run on the campus data itself, which the addendum calls
+the only source whose numbers may be quoted — with the caveat that there is
+very little of it yet.
+
+**Data:** every labeled photo in production — 19 cats, 225 photos (videos
+excluded), 26 sessions. Only 6 cats have more than one session, so 13 sessions
+can be queried as a *known* cat; the other 13 belong to a cat with no other
+session and can only test "never seen".
+
+**Protocol:** leave one session out. Each session is hidden from the templates
+in turn and ranked against every other labeled photo; a cat scores the mean,
+over the session's frames, of its best template. Split by session, never by
+photo. Model: MegaDescriptor-T-224 int8 (`mega-t224-int8-0ef194ac39ef`),
+zero-shot, centre crop of the 1024px derivative.
+
+| | top-1 | top-3 | top-5 | chance top-1 / top-3 |
+|---|---|---|---|---|
+| Python (onnxruntime, every frame) | 3 / 13 | 9 / 13 | 11 / 13 | 1/19 ≈ 5% / 16% |
+| Browser (labeling desk replay, 8 frames per session) | 5 / 13 | 10 / 13 | 10 / 13 | same |
+
+The two rows differ by frame sampling and by canvas versus PIL resizing
+(browser vectors agree with Python at mean cosine 0.986, min 0.965). With 13
+queries a difference of two sessions is noise; neither row is "the" number.
+
+**Median top score:** right first ≈ 0.50–0.61, wrong first ≈ 0.42–0.44,
+never-seen cat ≈ 0.41. They overlap. No threshold separates "this is her" from
+"new cat" yet, so the labeling desk ranks and does not decide.
+
+**What it says.** Well above chance — the right cat is in the top three about
+three times in four — and far from auto-accept. That is the shortlist the
+design always expected from v0. What it cannot say yet: anything per cat, or
+anything about thresholds. Both need sessions, which is why the model now
+guesses every queue session blind and the live record accumulates in the
+labeling tool (CLAUDE.md, "Recognition in the labeling desk"). Round 1's
+finding applies directly: most campus cats have one session, and re-encounters
+are what will move these numbers.
