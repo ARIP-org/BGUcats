@@ -34,11 +34,12 @@ Locally, VS Code with the Dev Containers extension opens the same container.
 claude          # authenticate once (browser flow, or set the ANTHROPIC_API_KEY codespace secret)
 pre-commit install   # done automatically by postCreate.sh, but harmless to rerun
 make test       # once tests exist
-make tf-init    # infra/main only; infra/bootstrap is applied once, by hand, see infra/README.md
+aws sso login --profile bgucats-readonly   # read-only AWS, see docs/codespaces.md
 ```
 
 Common commands are wrapped in the `Makefile` (`make fmt`, `make lint`, `make test`,
-`make tf-init`, `make tf-plan`, `make tf-apply`).
+`make tf-init`, `make tf-plan`). There is no apply target: merging to `main`
+deploys (`docs/deploy.md`).
 
 ### Layout
 
@@ -59,5 +60,6 @@ scripts/        poster builder, model publisher
 ## AWS
 
 Nothing here requires a VPC — see spec §8.1. Region defaults to `us-east-1`.
-Credentials come from a Codespaces secret or `aws configure`, never from a
-committed file.
+No long-lived AWS keys exist for this project. GitHub Actions gets short-lived
+credentials through OIDC (`infra/README.md`); a person debugging gets them
+from `aws sso login` (`docs/codespaces.md`).

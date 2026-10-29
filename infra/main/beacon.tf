@@ -17,7 +17,8 @@ data "archive_file" "beacon" {
 }
 
 resource "aws_iam_role" "beacon_lambda" {
-  name = "bgucats-beacon-lambda"
+  name                 = "bgucats-beacon-lambda"
+  permissions_boundary = local.lambda_permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

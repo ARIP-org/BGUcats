@@ -5,7 +5,8 @@
 # other.
 
 resource "aws_iam_role" "whatsapp_lambda" {
-  name = "bgucats-whatsapp-lambda"
+  name                 = "bgucats-whatsapp-lambda"
+  permissions_boundary = local.lambda_permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

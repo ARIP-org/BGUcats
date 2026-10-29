@@ -1,11 +1,20 @@
 .PHONY: fmt lint test build build-ingest build-process build-admin build-beacon \
-	tf-init tf-plan tf-apply site-invalidate whatsapp-secrets admin-add poster \
+	tf-init tf-plan site-invalidate whatsapp-secrets admin-add poster \
 	model-export model-publish
 
 # Lambda runs Linux x86_64; resolve binary wheels for that, not for whatever
 # the build host happens to be.
-LAMBDA_PIP = pip install --quiet \
+LAMBDA_PIP = pip install --quiet --no-compile \
 	--platform manylinux_2_28_x86_64 --only-binary=:all: --python-version 3.12
+
+# The same source must give the same zip, or every push to main redeploys
+# all six Lambdas and nobody can tell a real code change from noise in the
+# plan. archive_file already fixes every entry's date; what varied was the
+# .pyc files pip writes, which carry the build time and pip's random temp
+# directory. So pip compiles nothing, and this compiles each package once:
+# hash-based (no timestamp), with the path the code has on Lambda.
+lambda-compile = python -m compileall -q -j 0 --invalidation-mode checked-hash \
+	-s build/$(1) -p /var/task build/$(1)
 
 fmt:
 	ruff format .
@@ -33,6 +42,7 @@ build-ingest:
 	$(LAMBDA_PIP) --target build/ingest -r src/ingest/requirements.txt
 	cp src/ingest/__init__.py src/ingest/core.py src/ingest/handler.py \
 		src/ingest/whatsapp.py build/ingest/ingest/
+	$(call lambda-compile,ingest)
 
 # Shipped as a package (handler = process.handler.handler) rather than
 # flattened, so `from process.phash import ...` resolves identically in
@@ -42,6 +52,7 @@ build-process:
 	$(LAMBDA_PIP) --target build/process -r src/process/requirements.txt
 	cp src/process/__init__.py src/process/handler.py src/process/phash.py \
 		build/process/process/
+	$(call lambda-compile,process)
 
 # Same package shape as build-process, and for the same reason: the API and
 # the Cognito trigger are two handlers inside one `admin` package.
@@ -50,6 +61,7 @@ build-admin:
 	$(LAMBDA_PIP) --target build/admin -r src/admin/requirements.txt
 	cp src/admin/__init__.py src/admin/handler.py src/admin/insights.py \
 		src/admin/presignup.py build/admin/admin/
+	$(call lambda-compile,admin)
 
 # The landing page's visit counter. Its own package and its own role: the one
 # public endpoint that writes gets the smallest possible zip and grant.
@@ -57,18 +69,21 @@ build-beacon:
 	rm -rf build/beacon && mkdir -p build/beacon/beacon
 	$(LAMBDA_PIP) --target build/beacon -r src/beacon/requirements.txt
 	cp src/beacon/__init__.py src/beacon/handler.py build/beacon/beacon/
+	$(call lambda-compile,beacon)
 
 tf-init:
 	terraform -chdir=infra/main init
 
+# Read-only, for debugging with an SSO session (docs/codespaces.md): no lock,
+# since the read-only role cannot write one, and no apply target at all.
+# Deploys run in GitHub Actions only (.github/workflows/deploy.yml). Needs the
+# TF_VAR_* values in the environment; without them, plan asks for each.
 tf-plan: build
-	terraform -chdir=infra/main plan
-
-tf-apply: build
-	terraform -chdir=infra/main apply
+	terraform -chdir=infra/main plan -lock=false
 
 # The landing page sits behind CachingOptimized (default TTL one day), so an
 # apply alone leaves visitors on the old page until the edge copy expires.
+# deploy.yml runs this after an apply that changed the page.
 site-invalidate:
 	aws cloudfront create-invalidation \
 		--distribution-id $$(terraform -chdir=infra/main output -raw site_distribution_id) \

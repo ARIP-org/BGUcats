@@ -67,10 +67,12 @@ jobs:
           aws-region: us-east-1
 
       - name: plan (infra/main only — bootstrap is applied by hand)
-        # Placeholder secret values: this CI role can only read the
-        # tfstate backend (infra/README.md's incremental-IAM convention),
-        # so it couldn't apply even if it tried. Real values live in a
-        # gitignored terraform.tfvars, applied by hand.
+        # Placeholder secret values: PR runs get no secrets, and this role
+        # can only read (infra/README.md), so it could not apply even if it
+        # tried. The placeholders make every CI plan show the three
+        # aws_ssm_parameter values and the Google identity provider as
+        # changing. That is expected here; the deploy run's plan uses the
+        # real values from the production environment (deploy.yml).
         env:
           TF_VAR_telegram_bot_token: "ci-plan-placeholder"
           TF_VAR_telegram_webhook_secret: "ci-plan-placeholder"

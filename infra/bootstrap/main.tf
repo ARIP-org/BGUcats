@@ -1,7 +1,9 @@
 # This root module creates the Terraform backend (S3 state bucket + DynamoDB
-# lock table) that every other root module uses. It can't depend on that
-# backend itself, so it deliberately keeps local state and is applied once,
-# by hand — never by CI. See infra/README.md.
+# lock table) that every other root module uses, the GitHub Actions roles,
+# and the permissions boundary for infra/main's roles. It can't depend on
+# that backend itself, so it keeps local state (imports.tf), and it is
+# applied by the owner, by hand, with an SSO admin session: never by CI, and
+# never by the deploy role it creates. See infra/README.md.
 
 terraform {
   required_version = ">= 1.9"

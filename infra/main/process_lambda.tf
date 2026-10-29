@@ -5,7 +5,8 @@ data "archive_file" "process" {
 }
 
 resource "aws_iam_role" "process_lambda" {
-  name = "bgucats-process-lambda"
+  name                 = "bgucats-process-lambda"
+  permissions_boundary = local.lambda_permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

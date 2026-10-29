@@ -1,21 +1,43 @@
 # infra/
 
-Two Terraform root modules:
+Two Terraform root modules, applied by different hands:
 
-- **`bootstrap/`** — the state backend (S3 bucket + DynamoDB lock table) and
-  the GitHub Actions OIDC role. Uses local state, since it creates the
-  backend it would otherwise depend on. Applied once, by hand:
+- **`bootstrap/`**: the state backend (S3 bucket + DynamoDB lock table), the
+  GitHub Actions OIDC provider and its two roles, and the permissions
+  boundary for every role in `main/`. Local state, since it creates the
+  backend it would otherwise depend on. **Applied only by the owner**, with an
+  IAM Identity Center admin session, from a checkout of the branch that
+  changes it:
 
   ```bash
+  aws sso login --profile bgucats-admin
+  export AWS_PROFILE=bgucats-admin
   terraform -chdir=infra/bootstrap init
+  terraform -chdir=infra/bootstrap plan     # read it: no destroy, no replace
   terraform -chdir=infra/bootstrap apply
   ```
 
-  Not touched by CI after that beyond `fmt`/`validate`.
+  The original local state was never committed (`*.tfstate` is gitignored)
+  and is not in the codespace. `bootstrap/imports.tf` lets any fresh
+  checkout adopt the existing resources instead. After each apply, keep a
+  copy where the next machine can find it, and fetch it before the next
+  plan:
 
-- **`main/`** — the actual application resources (phase 1: S3 bucket,
-  DynamoDB table, Lambdas, API Gateway, SSM params). Uses the S3 backend
-  `bootstrap/` created. This is what CI runs `plan` against on every PR.
+  ```bash
+  aws s3 cp infra/bootstrap/terraform.tfstate s3://bgucats-tfstate-851725214678/bootstrap/terraform.tfstate
+  aws s3 cp s3://bgucats-tfstate-851725214678/bootstrap/terraform.tfstate infra/bootstrap/
+  ```
+
+  The deploy role cannot read or write that key (only `main/`). CI only runs `fmt` and
+  `validate` on it. Change it **before** the PR that needs it: a new kind
+  of resource in `main/` needs the deploy role to be allowed to create it,
+  and a Lambda that uses a new AWS service needs the boundary widened.
+
+- **`main/`**: the application (buckets, table, Lambdas, API, CloudFront,
+  Cognito, SSM parameters). Uses the S3 backend `bootstrap/` created. CI
+  runs `plan` on every PR; `.github/workflows/deploy.yml` plans and applies
+  it on every push to `main`. **No person applies it.** Runbook:
+  `docs/deploy.md`.
 
 ## Google sign-in
 
@@ -49,7 +71,8 @@ In the [Google Cloud console](https://console.cloud.google.com/):
    origins* empty — the browser never talks to Google directly here — and add
    the `.../oauth2/idpresponse` URL above under **Authorized redirect URIs**.
 5. Copy the client ID and client secret into `terraform.tfvars` as
-   `google_client_id` / `google_client_secret`, then `make tf-apply`.
+   the `production` environment secrets `GOOGLE_CLIENT_ID` /
+   `GOOGLE_CLIENT_SECRET` (`docs/MANUAL_STEPS.md`), and run Deploy.
 
 If the redirect URI is wrong, Google fails with `redirect_uri_mismatch`
 before Cognito is ever reached — compare it character for character with
@@ -65,7 +88,7 @@ and the same labeling queue as Telegram's; records carry `channel =
 
 Terraform creates its three SSM parameters with the value `unset`, and the
 Lambda refuses every request (503) until they are real. The values come
-from Meta, so after `make tf-apply`:
+from Meta, so once the deploy has created them:
 
 1. **[developers.facebook.com](https://developers.facebook.com/apps)** →
    *Create app* → use case *Other* → type *Business*. Add the **WhatsApp**
@@ -92,9 +115,9 @@ WhatsApp app), get its display name approved, and switch the app to *Live*
 — which requires a privacy-policy URL. Conversations the user starts are
 free on the Cloud API; this bot never starts one.
 
-The CI role's read access to `/bgucats/whatsapp/*` is in
-`bootstrap/github_oidc.tf` and needs a `terraform apply` of `bootstrap/`
-from the machine that holds its local state.
+`make whatsapp-secrets` writes to SSM, so it is an owner step with an SSO
+admin session (`AWS_PROFILE=bgucats-admin`). Terraform ignores these
+values, so a deploy never overwrites them.
 
 ## Where contributors come from
 
@@ -122,7 +145,7 @@ cannot lock yourself out. Everyone else is added either in the tool's
 **People** tab, as an admin or a collaborator, or with:
 
 ```bash
-make admin-add EMAIL=someone@post.bgu.ac.il
+AWS_PROFILE=bgucats-admin make admin-add EMAIL=someone@post.bgu.ac.il
 ```
 
 `make admin-add` writes no role, which means admin. People added in the tab
@@ -152,22 +175,56 @@ unrelated project (`schedule-ai-app`) — the prefix and the `Project =
 "bgucats"` default tag (set once, in each root's provider block) are what
 keep the two apart for both cost attribution and blast radius.
 
-## IAM: incremental, not upfront
+## IAM: three kinds of role, no keys
 
-There is no single broad "bgucats-deploy" policy. Permissions are added
-resource-by-resource, in the same commit that adds the Terraform resource
-needing them:
+No IAM user or access key is involved in building or deploying this
+project. Every credential below is short-lived and assumed for one job.
 
-- **Local `terraform apply`** runs under the developer's own AWS admin user.
-  Revisit this once the resource surface is stable enough to make scoping a
-  dedicated deploy role cheap.
-- **The GitHub Actions CI role** (`bgucats-github-actions-ci`, defined in
-  `bootstrap/github_oidc.tf`) starts with exactly the permissions its one
-  job (`terraform plan` against `infra/main`) needs: read the state object,
-  take/release the DynamoDB lock. When CI takes on a new job against a new
-  resource (e.g. an apply-on-merge step for a specific Lambda), extend this
-  role's policy in that same commit — never ahead of time for resources
-  that don't exist yet.
-- **Lambda execution roles**, once `infra/main` has Lambdas, get exactly the
-  actions/resource ARNs that function needs (e.g. `s3:PutObject` on the one
-  bucket, `dynamodb:PutItem` on the one table) — no wildcards.
+| Role | Who assumes it | What it can do | Defined in |
+|---|---|---|---|
+| `bgucats-github-actions-ci` | `ci.yml`, on every PR and push of this repo | read: the state, and every resource `plan` refreshes | `bootstrap/github_oidc.tf` |
+| `bgucats-github-actions-deploy` | `deploy.yml`, only in the `production` environment | plan and apply `main/` | `bootstrap/deploy_role.tf` |
+| `bgucats-*-lambda` (six) | each Lambda | its own function's needs, capped by the boundary | `main/*.tf`, `bootstrap/lambda_boundary.tf` |
+
+**CI (plan only).** Trusts any job of `sasha720709/BGUcats`: a PR from a
+branch needs a real plan too. Read-only, scoped to our resource names, or
+to our IDs where a service has no names in its ARNs. Read-only still means
+it can read the state, and the state holds the secret values in clear
+text. A PR runs its own `ci.yml`, so whoever can push a branch can reach
+them. See "Known gap" in `docs/MANUAL_STEPS.md`.
+
+**Deploy (plan and apply).** Trusts only a `sub` ending in
+`:environment:production`. GitHub only lets `main` deploy to that
+environment, so a PR run can never assume it. Its permissions are derived
+from the resource types in `main/*.tf`, scoped to `bgucats-*` names, or to
+the IDs in `bootstrap/infra_main_names.tf` where AWS assigns IDs
+(API Gateway, CloudFront, Cognito: the account's other project,
+`schedule-ai-app`, has one of each). It cannot:
+
+- delete the data table, a bucket or the user pool, or create a new
+  distribution or API. Those are owner decisions, made in `bootstrap/` first;
+- read the dataset (its only item access is `ADMIN#` keys, for the
+  bootstrap admin row) or write the published model under `model/`;
+- change its own role, the CI role, the boundary or the OIDC provider
+  (explicit denies);
+- create or edit any role unless that role carries the boundary.
+
+**Lambda roles and the boundary.** Each Lambda keeps its own role with
+exactly the actions and ARNs it needs, extended in the same commit as the
+code that needs them, never ahead of time. Every role also carries
+`bgucats-lambda-permissions-boundary`: the union of what the Lambdas use
+(their log groups, the media bucket, the data table, `/bgucats/*`
+parameters). The deploy role can only create or edit a role that has it.
+That is what keeps "the deploy role can write IAM" from meaning "the deploy
+role is an administrator": a role it writes can never do more than the
+boundary allows.
+
+**Changing permissions.** A new resource type in `main/`, or a Lambda that
+needs a new service, is two steps: a `bootstrap/` change applied by the
+owner, then the PR that uses it. The other order fails the deploy with
+`AccessDenied`, which is the guard working.
+
+**People.** IAM Identity Center, not IAM users: a `ReadOnlyAccess`
+permission set for debugging (`docs/codespaces.md`) and an
+`AdministratorAccess` one, with short sessions, for `bootstrap/`, the model
+publish and break-glass only. Setup: `docs/MANUAL_STEPS.md`.
