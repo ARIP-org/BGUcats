@@ -12,6 +12,9 @@ Which branch holds what, and which one is deployed: `docs/branches.md`.
 Read both before non-trivial work. This file is the short version of the
 constraints that are easy to violate by reflex.
 
+**Which branch is deployed, and what lives on each: `docs/branches.md`.**
+Check it before working — several branches are live, stale or research-only.
+
 ## What this project is
 
 A mobile app for identifying, naming, and tracking campus cats — starting with the
