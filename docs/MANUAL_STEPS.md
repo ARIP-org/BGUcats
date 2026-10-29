@@ -31,43 +31,45 @@ Nothing was applied.
 
 ## 1. IAM Identity Center first, so you are never locked out
 
-**One correction to the original plan.** Identity Center can only give
-console and CLI access to an AWS account (permission sets) from an
-*organization* instance, enabled in an AWS Organizations management
-account. In a standalone account like `851725214678` you get an "account
-instance", which cannot do that ([AWS docs, instance comparison
+Identity Center can only give console and CLI access to an AWS account
+(permission sets) from an *organization* instance, enabled in an AWS
+Organizations management account. In a standalone account you get an
+"account instance", which cannot do that ([AWS docs, instance comparison
 table](https://docs.aws.amazon.com/singlesignon/latest/userguide/identity-center-instances.html)).
-So the organization (originally the optional step 7) has to come first.
-Do it the clean way now: a **new** management account, with
-`851725214678` invited as a member. That also avoids making the account
-that runs workloads the management account, which is hard to undo later.
+So the organization comes first. It is created **in `851725214678`
+itself**: that account becomes the organization's management account.
+Nothing moves, and no new account or card is needed.
 
-### 1a. Create the management account and the organization
+What that means, and what it does not:
 
-1. Sign out of AWS. Go to <https://portal.aws.amazon.com/billing/signup>.
-   Use a **new email address** (a Gmail `+` alias works, e.g.
-   `you+aws-org@gmail.com`), name the account `bgucats-org`, and add a
-   payment card. Choose the Basic (free) support plan.
-2. Sign in as that account's root user → *Security credentials* → **Assign
-   MFA device** (authenticator app). Do not create access keys for root.
-3. Console search → **AWS Organizations** → *Create an organization* (all
-   features).
-4. *AWS accounts* → **Add an AWS account** → *Invite an existing AWS account*
-   → account ID `851725214678` → *Send invitation*.
-5. In another browser profile, sign in to `851725214678` as
-   `sasha-bgucats-admin` (console password + MFA) → **AWS Organizations** →
-   *Invitations* → **Accept**.
+- **Nothing moves or changes.** bgucats, schedule-ai-app, IAM, the old keys
+  and the bill all stay exactly where they are. "Creating an
+  organization" puts a container around the account; it does not copy or
+  migrate anything.
+- **This account is the management account for good.** AWS does not let
+  you hand that role to another account later. The only way out is to
+  remove every member and delete the organization.
+- **Service control policies never apply to the management account.** So
+  guardrails like "nobody may create access keys" can only bind member
+  accounts, such as a future staging account, never this one. For one
+  person, IAM Identity Center plus the deploy role's own limits cover that.
+- **New accounts become cheap.** Member accounts are created from the
+  console, billed to this account's card, with no signup. That is how a
+  separate staging account would be made, if you want one.
 
-What changes for `851725214678`: from then on, its bill goes to the new
-account's card (consolidated billing). Any credits or Free Tier the old
-account had move with it, under the organization's rules. Nothing else
-changes: the resources, IAM, the old keys and schedule-ai-app all keep
-working.
+### 1a. Create the organization
+
+1. Sign in to `851725214678` as root, or as `sasha-bgucats-admin` (it has
+   AdministratorAccess, which is enough).
+2. Console search → **AWS Organizations** → **Create an organization**.
+   Leave *all features* on.
+3. AWS emails the account's root address a verification link. Click it.
+   Some organization actions wait for that.
 
 ### 1b. Enable Identity Center and create your user
 
-In the **management** account (`bgucats-org`), region selector at the top
-right = **US East (N. Virginia) us-east-1**:
+Still in `851725214678`, region selector at the top right = **US East
+(N. Virginia) us-east-1**:
 
 1. Console search → **IAM Identity Center** → **Enable** → *Enable with AWS
    Organizations*. Identity source: the default, *Identity Center
@@ -471,7 +473,7 @@ delete: open a `schedule-ai-app` codespace and run
 If it prints `sasha-bgucats-admin`, give it its own credentials first.
 Separately, schedule-ai-app is still on long-lived keys itself, and has a
 committed `terraform/app/terraform.tfvars`. The same OIDC treatment would
-suit it later. Joining the organization in step 1 changes nothing for it.
+suit it later. Creating the organization in step 1 changes nothing for it: it stays in the same account.
 
 **If done early:** before step 1, no admin access remains except root.
 Before step 5 has applied once, nothing proves the pipeline can deploy, and
@@ -481,17 +483,17 @@ fixing it needs admin access (SSO, if step 1 is done).
 
 ## 7. The organization
 
-Done in step 1, for the reason given there: Identity Center access to an
-AWS account needs an organization. Keeping `851725214678` as a **member**,
-with a management account that runs nothing, is AWS's recommended shape.
-The management account is the one account that service control policies
-can never restrict, so it should hold no workloads and be used rarely. It
-needed no migration: inviting an existing account moves billing and
-nothing else.
+Done in step 1: `851725214678` is the management account of a new
+organization, with no members yet. Two things it makes possible later:
 
-Later, if you want: a service control policy on `851725214678` that denies
-`iam:CreateUser` and `iam:CreateAccessKey`, so long-lived keys cannot come
-back by accident.
+- **More accounts without signups:** *AWS Organizations* → *Add an AWS
+  account* → *Create an AWS account* (a name and a new email; a Gmail `+`
+  alias works). A staging environment in its own account is the main
+  reason you might.
+- **Guardrails on those accounts:** a service control policy that denies
+  `iam:CreateUser` and `iam:CreateAccessKey` on member accounts, so
+  long-lived keys cannot come back there. As said in step 1, SCPs never
+  apply to this account itself.
 
 ---
 
