@@ -4,6 +4,9 @@ Authoritative spec: `docs/cat-app-design-spec.pdf` (v2 draft). Read it before
 non-trivial work. This file is the short version of the constraints that are
 easy to violate by reflex.
 
+**Which branch is deployed, and what lives on each: `docs/branches.md`.**
+Check it before working — several branches are live, stale or research-only.
+
 ## What this project is
 
 A mobile app for identifying, naming, and tracking the ~50 cats on the BGU
