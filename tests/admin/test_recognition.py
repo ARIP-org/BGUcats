@@ -81,6 +81,13 @@ def test_a_guess_is_recorded_once_and_a_retry_does_not_overwrite_it(aws):
     assert prediction["truthCatId"] is None
 
 
+def test_a_guess_is_recorded_for_a_session_written_with_a_null_cat(aws):
+    # The bots and the app create sessions with catId = None, not without it.
+    _session(aws, catId=None)
+    status, body = _guess()
+    assert (status, body["new"]) == (200, True)
+
+
 def test_a_guess_after_the_session_is_labeled_is_refused(aws):
     _session(aws, catId=CAT)
     status, _ = _guess()

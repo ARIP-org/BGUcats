@@ -31,6 +31,12 @@ Things decided to leave for later, so they are not lost. Newest first.
 
 ## Recognition (phase 1c)
 
+- **Mark labels made with the guess in view.** Since 2026-10-29 the admin sees
+  the model's guess before labeling. The prediction records when the guess
+  was made, but not whether the labeler had seen it. If anchoring ever
+  becomes a question (thresholds, fine-tuning), record `shownAt` on the
+  prediction when a card or the picker displays it. *(Raised 2026-10-29.)*
+
 - **Thresholds, once the live record earns them.** Today the model only
   ranks. When Stats → Recognition model shows enough labeled guesses that
   the "right first" and "never seen" top scores separate, pick an accept and

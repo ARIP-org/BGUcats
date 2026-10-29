@@ -250,3 +250,47 @@ GETs):**
 **Rollback:** check out the previous commit and run `make tf-apply`. An
 IndexedDB opened at v2 still works with the v1 code: v1 opens without a
 version, ignores the `states` store, and reads every item as queued.
+
+---
+
+## The model's guess in plain sight, and guesses that never recorded (2026-10-29)
+
+**Asked for:** the admin wanted the model's guesses easy to see. Until now
+the guess showed only after labeling, as a toast that disappeared within
+seconds. The admin decided that seeing it first does not sway their
+judgment.
+
+**What changes:**
+
+- **Queue cards** show "Model's guess" between the header and the photos:
+  the top three, each with its cover, rank and cosine similarity. #1 is
+  emphasised. It redraws as the model reaches the session ("getting ready…",
+  "looking at these photos…"). Tapping a guess opens the picker.
+- **The picker** shows the same three above the full list. One tap labels,
+  like any tile.
+- After a label, the verdict toast ("The model's first guess was … ✓")
+  stays for 9 s instead of 3.5 s.
+- **Fix:** `POST /api/sessions/{id}/prediction` refused every real session
+  with 409 "already labeled". Bots and the app write sessions with
+  `catId = null`, a null attribute *exists*, and the transaction's check was
+  `attribute_not_exists(catId)`. It is now `attribute_not_exists(catId) OR
+  attribute_type(catId, :null)`. The test fixture had left `catId` out, which
+  is why the tests never caught it. A new test writes it as null. In
+  production, 0 predictions had been recorded, and the five app sessions
+  labeled at 13:10–13:13 were each refused once (API Gateway 4xx).
+
+**What this means for the numbers:** the model's live record stays honest,
+because each guess is still recorded before the label exists. Labels made
+from now on, though, may lean on the guess. Lookalikes are where that would
+show. Keep this in mind before using these labels to calibrate thresholds or
+to fine-tune.
+
+**Verified, headless (live Lambda GETs, a stub queue of three real
+sessions, phone and desktop widths):** each card shows three guesses and
+the picker matches them. The prediction POST happens before the assign, and
+one tap in the picker labels. Then the toast reads "The model's first guess
+was … too ✓".
+
+**Expected plan:** code updates to `aws_lambda_function.admin` and
+`.admin_presignup` (plus zip noise on the others), and
+`aws_s3_object.web["app.js"]`, `["recognition.js"]`, `["styles.css"]`.

@@ -10,10 +10,12 @@
 //      keep the vectors on this device (IndexedDB). Several templates per
 //      cat, never an average — a frontal and a profile view sit far apart,
 //      and their mean matches neither (CLAUDE.md, "Templates, not centroids").
-//   3. Guess, blind: for each session in the queue, rank every known cat and
-//      record the ranking on the server *before* anyone labels it. Nobody
-//      sees the guess until they have chosen, so the label stays the
-//      person's own and the guess can be scored against it honestly.
+//   3. Guess: for each session in the queue, rank every known cat and
+//      record the ranking on the server *before* anyone labels it, so it
+//      can be scored against the label honestly. The guess is shown on the
+//      session card and in the picker (guessOf) — until 2026-10-29 it was
+//      hidden until after the label; the admin decided it does not sway
+//      their judgment and wanted it in plain sight.
 //   4. Replay: re-run the same ranking over sessions that are already
 //      labeled, each one hidden from the templates in turn — a number on
 //      real cats without waiting for new sessions.
@@ -66,6 +68,7 @@ export function createRecognition({ api, post }) {
   const guesses = new Map(); // sessionId -> { ranked, recorded, late }
   let pending = []; // queue sessions still to guess, in order
   let guessing = null;
+  let current = null; // the session being guessed right now
 
   function set(patch) {
     Object.assign(state, patch);
@@ -417,14 +420,17 @@ export function createRecognition({ api, post }) {
         progress: null,
         detail: `guessing, ${pending.length + 1} session${pending.length ? "s" : ""} to go`,
       });
+      current = next.session.sessionId;
       await guessOne(next).catch((err) => console.warn("guess failed", err));
+      current = null;
+      set({}); // a card waiting on this guess redraws
     }
     set({ phase: "ready", progress: null, detail: readyText() });
   }
 
   function readyText() {
     const cats = new Set(templates.map((t) => t.catId)).size;
-    return `knows ${cats} cats from ${templates.length} photos · guesses stay hidden until you label`;
+    return `knows ${cats} cats from ${templates.length} photos`;
   }
 
   // Called on every queue visit: catch up on the gallery, then guess
@@ -445,6 +451,21 @@ export function createRecognition({ api, post }) {
         guessing = null;
       });
     return guessing;
+  }
+
+  // What the model says about one queue session, for the card and picker:
+  //   ready   — ranked, best first (and whether it was recorded in time)
+  //   skipped — nothing it could look at (video only)
+  //   waiting — in the line, or being looked at now
+  //   none    — the model is not running, or this guess failed
+  function guessOf(sessionId) {
+    const guess = guesses.get(sessionId);
+    if (guess?.skipped) return { status: "skipped", reason: guess.skipped };
+    if (guess?.ranked?.length) return { status: "ready", ranked: guess.ranked, late: !!guess.late };
+    if (current === sessionId || pending.some((s) => s.session.sessionId === sessionId)) {
+      return { status: "waiting", now: current === sessionId };
+    }
+    return { status: "none" };
   }
 
   // The session someone just opened goes to the front of the line.
@@ -624,6 +645,7 @@ export function createRecognition({ api, post }) {
       names = new Map(cats.map((c) => [c.catId, c.name]));
     },
     watchQueue,
+    guessOf,
     prepareForCapture,
     knowsCats: () => templates.length > 0,
     guessShots,

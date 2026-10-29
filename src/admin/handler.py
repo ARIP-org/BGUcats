@@ -921,7 +921,13 @@ def _record_prediction(session_id, body, email, **_):
                     "ConditionCheck": {
                         "TableName": table.name,
                         "Key": {"PK": f"SESSION#{session_id}", "SK": "META"},
-                        "ConditionExpression": "attribute_not_exists(catId)",
+                        # Sessions are written with catId = null (the bots,
+                        # the app, and an unassign), and a null attribute
+                        # exists: attribute_not_exists alone refused every
+                        # real session as "already labeled" until 2026-10-29.
+                        "ConditionExpression": "attribute_not_exists(catId)"
+                        " OR attribute_type(catId, :null)",
+                        "ExpressionAttributeValues": {":null": "NULL"},
                     }
                 },
                 {

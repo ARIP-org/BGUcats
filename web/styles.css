@@ -626,6 +626,100 @@ code {
   }
 }
 
+/* The model's guess on a queue card and atop the picker. */
+.model-guess {
+  margin: 14px 16px 0;
+  padding: 12px;
+  border: 2px solid var(--ginger);
+  border-radius: var(--radius-sm);
+  background: var(--ginger-wash);
+}
+.model-guess[hidden],
+.picker-guess[hidden] {
+  display: none;
+}
+.model-guess[data-status="waiting"],
+.model-guess[data-status="skipped"] {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: transparent;
+}
+.model-guess-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.model-guess-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+.model-guess-picks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 168px));
+  gap: 10px;
+}
+.model-pick .pick-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.model-pick .pick-count {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.model-pick {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 6px 6px 8px;
+  border: 2px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--card);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-pick:hover,
+.model-pick:focus-visible {
+  border-color: var(--ink);
+  box-shadow: var(--lift);
+}
+.model-pick.first {
+  border-color: var(--ginger-deep);
+  border-width: 3px;
+}
+.model-pick img,
+.model-pick .pick-cover-empty {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--paper-2);
+}
+.model-rank {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--card);
+  font-size: 12px;
+  font-weight: 700;
+}
+.model-pick.first .model-rank {
+  background: var(--ginger-deep);
+}
+.picker-guess {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 2px solid var(--ginger);
+  border-radius: var(--radius-sm);
+  background: var(--ginger-wash);
+}
+
 .card-actions {
   display: flex;
   flex-wrap: wrap;

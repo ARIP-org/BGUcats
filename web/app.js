@@ -47,8 +47,9 @@ function button(label, className, onClick) {
 let config = null;
 let state = { view: "queue", cats: [], email: null, role: null };
 let capture = null;
-// The recognition model (recognition.js). Admins: blind guesses for the
-// queue, and the measurements on Stats. Everyone: opt-in guesses in Capture.
+// The recognition model (recognition.js). Admins: a guess on every queue
+// session, recorded before the label, and the measurements on Stats.
+// Everyone: opt-in guesses in Capture.
 let recognition = null;
 
 const isAdmin = () => state.role === "admin";
@@ -390,13 +391,13 @@ async function cachedGet(path, redraw = render) {
 // Chrome
 // --------------------------------------------------------------------------
 
-function toast(message, isError = false) {
+function toast(message, isError = false, ms = isError ? 7000 : 3500) {
   const node = el("div", {
     className: `toast${isError ? " error" : ""}`,
     textContent: message,
   });
   $("#toasts").append(node);
-  setTimeout(() => node.remove(), isError ? 7000 : 3500);
+  setTimeout(() => node.remove(), ms);
 }
 
 const guard = (fn) => (...args) =>
@@ -717,9 +718,71 @@ function sessionCard({ session, photos }, allSessions) {
       locationLink(session),
       el("div", { className: "meta mono session-id", textContent: sessionId }),
     ]),
+    modelGuess(sessionId, () => openPicker({ session, photos })),
     el("div", { className: "grid" }, photos.map((p) => thumb(p, photos))),
     el("footer", { className: "card-actions" }, [assign, merge, remove]),
   ]);
+}
+
+const GUESSES_SHOWN = 3;
+
+// The model's top three for a session, in plain sight on its card. It
+// redraws itself as the model gets to this session. Tapping a guess opens
+// the picker, where one more tap labels — a guess is never a label by
+// itself.
+function modelGuess(sessionId, open) {
+  if (!recognition || !isAdmin()) return null;
+  const node = el("section", { className: "model-guess", attrs: { "aria-live": "polite" } });
+  const draw = () => {
+    const st = recognition.state;
+    const guess = recognition.guessOf(sessionId);
+    node.hidden = st.phase === "idle" || st.phase === "unavailable" || guess.status === "none";
+    if (node.hidden) return node.replaceChildren();
+    node.dataset.status = guess.status;
+    if (guess.status === "skipped") {
+      return node.replaceChildren(el("p", { className: "model-guess-note", textContent: `Model: ${guess.reason}` }));
+    }
+    if (guess.status === "waiting") {
+      const text = guess.now
+        ? "Model is looking at these photos…"
+        : st.phase === "guessing"
+          ? "Model will guess this one shortly…"
+          : `Model is getting ready: ${st.detail}`;
+      return node.replaceChildren(el("p", { className: "model-guess-note", textContent: text }));
+    }
+    node.replaceChildren(
+      el("h4", { className: "model-guess-title", textContent: "Model's guess" }),
+      el("div", { className: "model-guess-picks" }, guessTiles(guess.ranked, (cat) => open(cat))),
+    );
+  };
+  draw();
+  const stop = recognition.onChange(() => (node.isConnected ? draw() : stop()));
+  return node;
+}
+
+// Shared by the card and the picker: rank, cover, name, similarity.
+function guessTiles(ranked, onPick, className = "model-pick") {
+  const byId = new Map(state.cats.map((c) => [c.catId, c]));
+  return ranked
+    .filter((r) => byId.has(r.catId))
+    .slice(0, GUESSES_SHOWN)
+    .map((r, i) => {
+      const cat = byId.get(r.catId);
+      const tile = el("button", { type: "button", className: `${className}${i === 0 ? " first" : ""}` }, [
+        el("span", { className: "model-rank", textContent: `#${i + 1}` }),
+        // Not lazy: three small covers, and they are the point of the panel.
+        cat.coverUrl
+          ? el("img", { src: cat.coverUrl, alt: "" })
+          : el("span", { className: "pick-cover-empty" }, [doodle("cat-grump")]),
+        el("span", { className: "pick-name", textContent: cat.name }),
+        // Cosine similarity, not a probability: comparable between cats of
+        // one session, not a promise.
+        el("span", { className: "pick-count", textContent: `similarity ${r.score.toFixed(2)}` }),
+      ]);
+      tile.title = `${cat.name} · cosine similarity ${r.score.toFixed(3)}`;
+      tile.onclick = () => onPick(cat);
+      return tile;
+    });
 }
 
 // The pin the submitter sent from the bot, already rounded to ~100 m. Two
@@ -814,13 +877,11 @@ function openPicker({ session, photos }) {
 
   recognition?.prioritize(sessionId);
 
-  // The model's guess for this session was recorded before the picker
-  // opened (or is still being made). It is shown only now, after the
-  // person has chosen, so the label is theirs and not the model's.
+  // After the label: how the model did, said long enough to read.
   const revealGuess = (cat, isNew) => {
     if (!recognition) return;
     const line = recognition.reveal(sessionId, isNew ? null : cat.catId, cat.name);
-    if (line) toast(line);
+    if (line) toast(line, false, 9000);
     recognition.learn(sessionId, cat.catId);
   };
 
@@ -876,6 +937,29 @@ function openPicker({ session, photos }) {
     );
   }
 
+  // The model's three, above the full list: one tap labels, like any tile.
+  const pickerGuess = el("div", { className: "picker-guess", attrs: { "aria-live": "polite" } });
+  function drawGuess() {
+    const guess = recognition && isAdmin() ? recognition.guessOf(sessionId) : { status: "none" };
+    pickerGuess.hidden = guess.status === "none";
+    if (guess.status === "ready") {
+      pickerGuess.replaceChildren(
+        el("h4", { className: "model-guess-title", textContent: "Model's guess" }),
+        el("div", { className: "model-guess-picks" }, guessTiles(guess.ranked, assignTo, "pick model-pick")),
+      );
+    } else if (guess.status === "waiting") {
+      pickerGuess.replaceChildren(
+        el("p", { className: "model-guess-note", textContent: "Model is looking at these photos — its guess appears here." }),
+      );
+    } else if (guess.status === "skipped") {
+      pickerGuess.replaceChildren(el("p", { className: "model-guess-note", textContent: `Model: ${guess.reason}` }));
+    } else {
+      pickerGuess.replaceChildren();
+    }
+  }
+  const stopGuess = recognition?.onChange(() => drawGuess());
+  dialog.addEventListener("close", () => stopGuess?.(), { once: true });
+
   search.oninput = draw;
   search.onkeydown = (event) => {
     if (event.key !== "Enter") return;
@@ -905,11 +989,13 @@ function openPicker({ session, photos }) {
         close,
       ]),
       preview,
+      pickerGuess,
       search,
       grid,
     ]),
   );
   draw();
+  drawGuess();
   dialog.showModal();
   // On a phone, focusing the field would throw the keyboard over the cats.
   if (matchMedia("(hover: hover)").matches) search.focus();

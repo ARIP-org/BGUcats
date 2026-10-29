@@ -59,7 +59,7 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 |---|---|---|
 | 1a Collection + labeling infra | CURRENT | ingest, storage, processing, admin labeling |
 | 1b Recognition research track | CURRENT, PARALLEL | public datasets, eval harness, zero-shot baseline |
-| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, blind; replay over labeled sessions; opt-in "Is it one of these?" in Capture |
+| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; opt-in "Is it one of these?" in Capture |
 | 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights |
 | 3 Fine-tuning on BGU data | CONDITIONAL | only if 1b numbers justify it |
 | 4 Read path + mobile app | DEFERRED | public API, browse UI, voting |
@@ -68,7 +68,7 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 Lambda, no S3 bucket, and no DynamoDB table.
 
 **1c is where they meet**, deliberately small: the 1b model, exported to ONNX,
-runs in the browser — blind in the labeling desk, opt-in in Capture — and is
+runs in the browser — on every card in the labeling desk, opt-in in Capture — and is
 scored against the labels admins give anyway. It decides nothing — see
 "Recognition in the app" below. First BGU numbers (2026-10-29, 19 cats): right cat first
 on 3–5 of 13 sessions, in the top 3 on 9–10 of 13 (`research/FINDINGS.md`,
@@ -167,7 +167,7 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
 
 ### Recognition in the app (1c — web/recognition.js)
 
-Two uses of one model, kept apart on purpose. The admin's blind guess
+Two uses of one model, kept apart on purpose. The admin-side guess
 measures **the model**. The contributor's answer, scored against the
 admin's label, measures **the product loop** ("pick from 3"), and earns its
 place by what only a person next to the cat can do: take a better photo
@@ -175,13 +175,20 @@ when unsure, and come back to cats already met.
 
 #### In the labeling desk (admins)
 
-- **Blind, always.** The model ranks every known cat for each queue session
-  and the ranking is recorded (`POST /api/sessions/{id}/prediction`) *before*
-  anyone labels it. The admin sees the guess only after choosing, as a toast.
-  Showing it first would anchor the labeler, inflate the measured accuracy
-  and quietly mislabel lookalikes — the labels are training data.
+- **Shown, and recorded first.** The model ranks every known cat for each
+  queue session and the ranking is recorded (`POST /api/sessions/{id}/prediction`)
+  *before* anyone labels it. Its top three are shown on the session card
+  ("Model's guess", with cosine similarity) and at the top of the picker,
+  where one tap labels. Until 2026-10-29 the guess was hidden until after
+  the label, to keep labels independent of it. The admin decided it does
+  not sway their judgment and wanted it in plain sight. The model's score
+  is still honest, because its guess is fixed before the label. Labels made
+  since then are no longer independent of the guess. Tapping a guess on the
+  card only opens the picker: a guess is never a label by itself.
 - **A guess made after the label is not a measurement.** The write is one
-  DynamoDB transaction conditional on the session having no `catId`; the
+  DynamoDB transaction conditional on the session having no `catId` — absent
+  *or null*: every session is written with `catId = null`, and until
+  2026-10-29 `attribute_not_exists` alone refused all of them as labeled; the
   first guess per model version wins (`SESSION#{id}` / `PREDICTION#{version}`,
   listed through GSI2 `ENTITY#PREDICTION`). A merge counts as a label.
 - **It only ranks.** No auto-accept, no "new cat" verdict, and the manifest
@@ -236,7 +243,7 @@ when unsure, and come back to cats already met.
 - **The answer is kept apart from the label.** It rides in the outbox with its
   encounter (`POST /api/encounters/{id}/pick`, own encounter only, latest
   answer wins, item `SESSION#{id}` / `PICK`). The labeling desk never reads
-  it, so the admin labels blind to both the model and the contributor. The
+  it, so the admin labels without seeing the contributor's answer. The
   contributor later sees "you were right ✓" in their recent encounters.
 - **The reward is the re-encounter.** A picked cat shows "encounter #N with
   this cat" — re-encounters are what research/FINDINGS.md found matter most.
