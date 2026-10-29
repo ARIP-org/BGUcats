@@ -7,13 +7,14 @@ Authoritative specs, in order of precedence:
 - `docs/cat-app-design-spec.pdf` (v2 draft) — authoritative for ingest, storage,
   processing and security.
 
-Which branch holds what, and which one is deployed: `docs/branches.md`.
-
 Read both before non-trivial work. This file is the short version of the
 constraints that are easy to violate by reflex.
 
-**Which branch is deployed, and what lives on each: `docs/branches.md`.**
-Check it before working — several branches are live, stale or research-only.
+The addendum supersedes the spec's "no machine learning of any kind" in
+phase 1: a frozen recognition model runs in the browser today (1c below). It
+ranks; it never decides.
+
+**`main` is production.** How changes reach it: "Workflow" below.
 
 ## What this project is
 
@@ -60,11 +61,11 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 
 | Phase | Status | Scope |
 |---|---|---|
-| 1a Collection + labeling infra | CURRENT | ingest, storage, processing, admin labeling |
-| 1b Recognition research track | CURRENT, PARALLEL | public datasets, eval harness, zero-shot baseline |
-| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; "Who did you meet?" after each encounter in Capture |
-| 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights |
-| 3 Fine-tuning on BGU data | CONDITIONAL | only if 1b numbers justify it |
+| 1a Collection + labeling infra | LIVE | ingest, storage, processing, admin labeling, Capture |
+| 1b Recognition research track | ROUNDS 1–2 DONE, PARALLEL | public datasets, eval harness, zero-shot baseline. Finding: enrollment diversity, not backbone size, is the lever (`research/FINDINGS.md`) |
+| 1c Measure on BGU data | LIVE since 2026-10-29 | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; "Who did you meet?" after each encounter in Capture. No guess was recorded before the 2026-10-29 null-`catId` fix. Shared vectors appear after an admin first opens the Queue |
+| 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights. Re-encounters of known cats are what move the numbers |
+| 3 Fine-tuning on BGU data | CONDITIONAL | only if 1c numbers justify it |
 | 4 Read path + mobile app | DEFERRED | public API, browse UI, voting |
 
 **1b has no dependency on 1a.** It reads public datasets from disk and touches no
@@ -81,6 +82,30 @@ round 3).
 it eats the ingest track there is never any BGU data — the one asset here that
 cannot be downloaded. 1a stays the priority; 1b is what happens when 1a is
 blocked on someone else.
+
+## Workflow
+
+- **`main` is production.** What is on `main` is what runs in AWS. There are
+  no long-lived feature or "preprod" branches. The old stack
+  (`admin-labeling-tool` → `app-preprod` → `recognition-labeling`) was merged
+  into `main` on 2026-10-29 and survives as `rollback/*` tags only.
+- **Work on a short-lived branch**, one change per branch, and open a pull
+  request to `main`. CI runs lint, tests and `terraform plan` on it. The owner
+  reads the plan and merges.
+- **Merging is deploying.** A push to `main` runs `.github/workflows/deploy.yml`,
+  which plans and applies `infra/main` under a GitHub OIDC role. Runbook,
+  post-deploy checks and rollback: `docs/deploy.md`.
+- **Never deploy by hand and never push to `main`.** No `terraform apply`,
+  `make tf-apply`, `make site-invalidate` or AWS write calls from a codespace
+  or a Claude session. The codespace holds no AWS credentials; read-only
+  debugging goes through `aws sso login` (`docs/codespaces.md`).
+- **Two exceptions, both owner-only:** `infra/bootstrap` (the state backend and
+  the GitHub roles; it cannot deploy itself) and `make model-publish` (needs
+  torch, so it is not in CI). Both are in `docs/deploy.md`.
+- **Rollback is `git revert`** of the merge commit, merged like any change.
+- **Update the docs in the same PR** as the change: `docs/deploy.md` when the
+  deploy changes, `docs/app-backlog.md`, `research/FINDINGS.md`, and this
+  file when a constraint or a phase changes.
 
 ## Hard constraints
 
@@ -409,12 +434,18 @@ actual product question.
   Dataset" is scraped from neko-jirushi.com with unclear licensing — a cautionary
   example, not a source.
 - Commit cat photos, datasets, exports, model weights, or `.tfvars` — see `.gitignore`.
+- Push to `main`, apply Terraform, or call AWS with write intent from a session.
+  See "Workflow".
 
 ## Stack
 
 **Collection:** Python 3.12 (Pillow, imagehash) · Terraform · Lambda, no VPC ·
 API Gateway HTTP API · S3 + DynamoDB on-demand · secrets in SSM Parameter Store
 (SecureString).
+
+**Delivery:** GitHub Actions. CI assumes a plan-only OIDC role on every PR;
+deploys assume a separate OIDC role that only jobs in the `production`
+environment can get. No long-lived AWS keys anywhere (`infra/README.md`).
 
 **Research:** Python 3.12 · PyTorch · timm · wildlife-datasets · kornia. Local
 only; no AWS.

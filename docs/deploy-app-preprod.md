@@ -1,3 +1,6 @@
+> **Historical.** The runbook for the 2026-10-28 deploy, run by hand. Deploys
+> now go through a pull request to `main`: see `docs/deploy.md`.
+
 # Deploying `app-preprod` — the installable app, roles and Capture
 
 A runbook for one deploy: it is written for whoever runs it next, by hand

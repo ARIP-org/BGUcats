@@ -1,49 +1,109 @@
-# Deploying `recognition-labeling` — the model in the labeling desk
+# Deploying
 
-A runbook for one deploy, written for whoever runs it next, by hand or with
-Claude Code in the codespace.
+`main` is production. Every change reaches AWS the same way:
 
-## What is being deployed
-
-`recognition-labeling` is `app-preprod` (what production runs today) plus:
-
-- **research/** merged in from the research branch — never deployed, it only
-  rides along in the repo.
-- **The model in the labeling desk** (phase 1c, CLAUDE.md "Recognition in the
-  labeling desk"): when an admin opens the Queue, the browser downloads the
-  model once (~40 MB), learns the labeled cats, and records a ranked guess for
-  each queue session before anyone labels it. The guess is revealed only
-  after labeling. Stats gains a "Recognition model" panel: the live record,
-  and a replay over labeled sessions.
-- **Cat guesses in Capture**, opt-in for everyone who uses Capture: after a
-  photo the phone asks "Is it one of these?" with three cats, plus "None of
-  these" and "Not sure". The answer goes through the outbox and is kept
-  apart from the label (the labeling desk never shows it). Stats shows
-  these answers scored against the admins' labels.
-- **Shared vectors**: an admin's browser uploads the vectors it computes, so
-  contributors' phones download ~1 MB of templates instead of embedding
-  every labeled photo.
-- **API routes**: `GET /api/recognition/gallery`,
-  `GET /api/recognition/predictions`, `POST /api/sessions/{id}/prediction`,
-  `POST /api/recognition/vectors` (admins); `GET /api/recognition/vectors`
-  and `POST /api/encounters/{id}/pick` (any member, own encounter only).
-  New items are `SESSION#{id}` / `PREDICTION#{version}`, `SESSION#{id}` /
-  `PICK` and `PHOTO#{id}` / `VECTOR#{version}`; nothing existing is
-  rewritten. Deleting a photo now also deletes its vectors.
-
-The bots, the process Lambda, the landing page and the data model are not
-changed.
-
-## 1. Check out and test
-
-```bash
-git fetch origin && git checkout recognition-labeling && git pull
-make lint && make test
+```
+short-lived branch → pull request → CI (ruff, pytest, terraform plan)
+  → the owner reads the plan and merges → push to main
+  → .github/workflows/deploy.yml (environment "production", OIDC deploy role)
+  → terraform plan → terraform apply → CloudFront invalidation if the landing page changed
 ```
 
-## 2. Build and publish the model
+Nobody runs `make tf-apply` by hand any more, and no machine holds an AWS
+access key. The roles, and why there are three of them: `infra/README.md`.
+The owner's one-time setup: `docs/MANUAL_STEPS.md`.
 
-The export needs the research environment, never the root one:
+## What the deploy job does
+
+`deploy.yml` runs on every push to `main`, and by hand from the Actions tab
+(*Deploy → Run workflow*). One run at a time (`concurrency: deploy-production`),
+and a run that has started is never cancelled: a half-finished apply is worse
+than a late one.
+
+1. `make lint && make test`: the same checks as CI, again on the merged code.
+2. `make build`: the Lambda zips.
+3. `terraform plan -out=tfplan` on `infra/main`, with the secrets from the
+   `production` environment as `TF_VAR_*`.
+4. `terraform apply tfplan`: exactly the plan above, nothing recomputed.
+5. If the plan changed any `aws_s3_object.site[...]`: `make site-invalidate`.
+   The landing page is cached for up to a day; the admin app is not cached,
+   so it never needs this.
+
+`workflow_dispatch` has a `plan_only` input that stops after step 3. It is
+how the pipeline was proven against live state before its first apply.
+
+## Reading the plan
+
+The plan is in the CI run of every PR (job `terraform`) and again in the
+deploy run. Read it before merging.
+
+**Stop, and do not merge, if the plan shows:**
+
+- anything to **destroy** or **replace** (`-/+`, `must be replaced`). The
+  deploy role cannot delete the data table, the buckets or the user pool
+  anyway, so such an apply fails halfway.
+- a change to an `aws_ssm_parameter` or to the Google identity provider
+  when the PR did not mean to rotate a secret. It means a `production`
+  environment secret differs from the live value, and the apply would
+  overwrite the live one.
+- anything under `model/` in the admin web bucket (Terraform never owns it).
+
+**Normal:**
+
+- `aws_lambda_function.*` updated in place when its source changed. The
+  admin API and the Cognito trigger share one zip, so they change together.
+  The ingest and WhatsApp Lambdas also share one.
+- `aws_s3_object.web[...]` / `aws_s3_object.site[...]` for the files the PR
+  touched.
+
+## Post-deploy checks
+
+On a phone with the installed app, signed in as an admin, unless a step
+says otherwise:
+
+1. The Actions run is green, and the apply summary has the same numbers as
+   the plan.
+2. **Telegram:** send the bot a photo. It answers "Got it!", and the photo
+   shows up in the Queue within a minute (process Lambda).
+3. **Queue:** the model strip ends at "knows N cats from M photos". Label
+   one session. The toast says what the model had guessed.
+4. **Capture, as a collaborator:** start an encounter, take a photo of a
+   known cat, Done. "Who did you meet?" shows three cats within a few
+   seconds. Answer it.
+5. **Stats:** "Uploads that never arrived" reads 0. Stats → Recognition
+   model shows the session from step 3.
+6. **Landing page**, if it changed: the public URL shows the new version
+   (`terraform -chdir=infra/main output site_url`).
+
+If a model or photo fetch fails, check the media bucket's CORS rule first
+(`s3.tf`).
+
+## Rollback
+
+```bash
+git revert -m 1 <merge-commit>     # on a branch, then a PR like any other
+```
+
+Merge the PR and the pipeline deploys the previous state. There is no
+second path. What a revert does not undo:
+
+- **Data.** Items and photos written by the newer code stay. Every change so
+  far has been additive (new item types, new GSI2 entries), so the older
+  code ignores them. Say in the PR if a change is not.
+- **The model** under `model/` in the admin web bucket, which Terraform does
+  not own. The older app simply doesn't load it.
+- **Browser state.** IndexedDB stores stay at the version the newer app
+  opened. Say in the PR if a change bumps a store and the old code cannot
+  read it.
+
+## The two things the pipeline does not do
+
+Both are owner-only, with an IAM Identity Center admin session
+(`aws sso login --profile bgucats-admin`, see `docs/codespaces.md`).
+
+**Publishing the recognition model.** The export needs torch, which has no
+place in CI, and a new model is rare. The export needs the research
+environment, never the root one:
 
 ```bash
 python -m venv ~/.venvs/research && . ~/.venvs/research/bin/activate
@@ -51,77 +111,23 @@ pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install timm==1.0.30 onnx==1.23.2 onnxruntime==1.31.1 onnxscript==0.7.2 Pillow numpy
 make model-export
 deactivate
+AWS_PROFILE=bgucats-admin make model-publish
 ```
 
-Then, with the normal environment:
+It prints the manifest and "a device downloads about 39.7 MB". Publish the
+model before merging the code that loads it: nothing reads `model/` until
+then, and the manifest is written last.
 
-```bash
-make model-publish
-```
+**`infra/bootstrap`** (the state backend and the GitHub roles). It cannot be
+deployed by the role it creates. `infra/README.md` has the commands.
 
-It prints the manifest and "a device downloads about 39.7 MB". Publishing
-first is safe: nothing loads `model/` until the new app.js is deployed.
-The objects are outside Terraform on purpose (built, not committed).
+## History
 
-## 3. Plan, and read it
+Notes from the hand-run deploys of 2026-10-29, kept for what they explain
+about the code. Their `make tf-apply` and `git checkout` steps are
+historical: today the same change would be a PR.
 
-```bash
-make tf-plan
-```
-
-Expected, and nothing else:
-
-| Resource | Change |
-|---|---|
-| `aws_s3_bucket_cors_configuration.media` | update in place: `allowed_methods` gains `GET` (the canvas must read a photo's pixels) |
-| `aws_s3_object.web["recognition.js"]` | create |
-| `aws_s3_object.web["app.js"]`, `["capture.js"]`, `["outbox.js"]`, `["sw.js"]`, `["styles.css"]` | update in place |
-| `aws_lambda_function.admin`, `aws_lambda_function.admin_presignup` | update in place: new code (they share one zip) |
-
-Other Lambdas may show a code update from a rebuilt zip of identical source;
-harmless (see the memory note on non-reproducible zips).
-
-**Stop if the plan shows anything to destroy or replace**, or touches
-`model/` objects, Cognito, SSM, the DynamoDB table, CloudFront or API Gateway.
-
-## 4. Apply and check
-
-```bash
-make tf-apply
-```
-
-On a phone with the installed app, as an admin:
-
-1. Queue: a dashed line says "Model: downloading the model …", then
-   "learning the cats …", then "knows N cats from M photos". The first time
-   takes a few minutes; later visits are instant.
-2. Label a session: a second toast says what the model had guessed.
-3. Stats → Recognition model: the live record shows that session; "Replay on
-   labeled sessions" gives the leave-one-session-out numbers.
-
-4. **Share the vectors:** that first Queue visit also uploads the vectors
-   ("sharing what it learned …"). Until an admin has done this once,
-   contributors' guesses stay hidden — their phones have nothing to match.
-5. As a collaborator (or in Capture as an admin): accept "Let the app guess
-   the cat?", start an encounter, take a photo of a known cat. "Is it one of
-   these?" appears within a few seconds; answer it. Stats → Recognition model
-   → "Contributors" shows it once the encounter is labeled.
-
-If the strip says "model fetch failed" or a photo fetch fails, check the
-media bucket CORS rule first.
-
-## Rollback
-
-```bash
-git checkout app-preprod && make tf-apply
-```
-
-The `model/` objects and the prediction items can stay: nothing in
-`app-preprod` reads them.
-
----
-
-## Follow-up: uploads that never arrived (2026-10-29)
+### Follow-up: uploads that never arrived (2026-10-29)
 
 A small change on the same branch, deployed with the same commands
 (`make lint && make test`, `make tf-plan`, `make tf-apply`). No model
@@ -186,9 +192,8 @@ were opened and closed without a photo, and one is still a bot's
 
 The follow-up above was deployed on 2026-10-29, together with the fix below.
 
----
 
-## Fix: Capture uploads stalled, and the model could not write (2026-10-29)
+### Fix: Capture uploads stalled, and the model could not write (2026-10-29)
 
 Deployed on 2026-10-29 (`make lint && make test`, plan, apply). The plan was
 11 in-place updates: the admin role's policy, every Lambda's code (only
@@ -251,9 +256,8 @@ GETs):**
 IndexedDB opened at v2 still works with the v1 code: v1 opens without a
 version, ignores the `states` store, and reads every item as queued.
 
----
 
-## The model's guess in plain sight, and guesses that never recorded (2026-10-29)
+### The model's guess in plain sight, and guesses that never recorded (2026-10-29)
 
 **Asked for:** the admin wanted the model's guesses easy to see. Until now
 the guess showed only after labeling, as a toast that disappeared within
@@ -295,9 +299,8 @@ was … too ✓".
 `.admin_presignup` (plus zip noise on the others), and
 `aws_s3_object.web["app.js"]`, `["recognition.js"]`, `["styles.css"]`.
 
----
 
-## "Who did you meet?" after each encounter, and uploads that keep going (2026-10-29)
+### "Who did you meet?" after each encounter, and uploads that keep going (2026-10-29)
 
 **Asked for:** collaborators should see the model's guess for every
 encounter and say which cat it was. The design should be good enough for

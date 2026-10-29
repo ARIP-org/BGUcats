@@ -4,16 +4,17 @@ Identifying, naming, and tracking the ~50 cats of the BGU campus.
 
 Design spec: [`docs/cat-app-design-spec.pdf`](docs/cat-app-design-spec.pdf).
 Constraints digest for agents and humans: [`CLAUDE.md`](CLAUDE.md).
-Which branch holds what, and which one is deployed: [`docs/branches.md`](docs/branches.md).
 Working in the codespace from your own machine: [`docs/codespaces.md`](docs/codespaces.md).
 
 **Current phase: 1 — collection and labeling.** Alongside it, a recognition
-research track (`research/`, phase 1b) and, on branch `recognition-labeling`,
-the first model measured on campus data, running in the browser: it guesses
-every labeling-queue session and shows its top three on the card for admins,
-and after each encounter in Capture asks "Who did you meet?" with its
-best three guesses (phase 1c). See `CLAUDE.md` → Phases, and
-`docs/branches.md` for what lives on which branch.
+research track (`research/`, phase 1b) and the first model measured on campus
+data, running in the browser: it guesses every labeling-queue session and
+shows its top three on the card for admins, and after each encounter in
+Capture asks "Who did you meet?" with its best three guesses (phase 1c). See
+`CLAUDE.md` → Phases.
+
+`main` is production: changes go through a pull request, and merging deploys
+(`docs/deploy.md`).
 
 The cat-names voting app is the phase 4 read path, and is deliberately out of
 scope until there is a labeled dataset to build it on — see spec §2 for why the
