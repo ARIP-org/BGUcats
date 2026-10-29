@@ -66,6 +66,7 @@ const LOGIN_NOTE_KEY = "bgucats.loginNote";
 // signal is exactly where Capture gets used. The API still checks the real
 // role on every call.
 const ROLE_KEY = "bgucats.role";
+const API_TIMEOUT_MS = 35_000;
 
 const b64url = (bytes) =>
   btoa(String.fromCharCode(...bytes))
@@ -210,6 +211,10 @@ async function api(path, options = {}) {
     throw new Error("not signed in");
   }
   const res = await fetch(`/api${path}`, {
+    // A request that hangs on a weak signal would hold up whatever waits on
+    // it — the upload outbox included — until the app is closed. API Gateway
+    // gives up at 30 s anyway.
+    signal: AbortSignal.timeout?.(API_TIMEOUT_MS),
     ...options,
     headers: {
       authorization: `Bearer ${token}`,
@@ -230,13 +235,156 @@ async function api(path, options = {}) {
       status: res.status,
     });
   }
-  return data;
+  if (options.method && options.method !== "GET" && !PASSIVE_WRITES.test(path)) forgetResponses();
+  return keepPhotoUrls(data);
 }
 
 const post = (path, body) =>
   api(path, { method: "POST", body: JSON.stringify(body || {}) });
 const patch = (path, body) =>
   api(path, { method: "PATCH", body: JSON.stringify(body || {}) });
+
+// --------------------------------------------------------------------------
+// Caching — so switching screens does not fetch everything again
+// --------------------------------------------------------------------------
+
+// Photo URLs are presigned, so every response signs the same photo afresh,
+// and a new URL is a cache miss: every screen used to download every photo
+// again. The first URL seen for each object is reused until shortly before
+// it expires (kept across launches), and S3 serves it with a long
+// Cache-Control (handler._presign), so a photo downloads about once an hour.
+const URLS_KEY = "bgucats.photoUrls";
+const URL_MARGIN_MS = 5 * 60 * 1000;
+const photoUrls = loadPhotoUrls(); // object URL without query -> { url, expiresAt }
+let savePhotoUrlsTimer = null;
+
+function loadPhotoUrls() {
+  try {
+    const now = Date.now();
+    return new Map(
+      Object.entries(JSON.parse(localStorage.getItem(URLS_KEY)) || {}).filter(
+        ([, v]) => v.expiresAt - now > URL_MARGIN_MS,
+      ),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+function savePhotoUrls() {
+  clearTimeout(savePhotoUrlsTimer);
+  savePhotoUrlsTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(URLS_KEY, JSON.stringify(Object.fromEntries(photoUrls)));
+    } catch {
+      /* this launch still has them in memory */
+    }
+  }, 1000);
+}
+
+// When a presigned URL stops working. SigV2 (what boto3 signs with in
+// us-east-1) says so outright; SigV4 gives the signing time and lifetime.
+function urlExpiry(url) {
+  const q = url.searchParams;
+  if (q.get("Expires")) return Number(q.get("Expires")) * 1000;
+  const date = q.get("X-Amz-Date")?.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (!date || !q.get("X-Amz-Expires")) return null;
+  const [, y, mo, d, h, mi, se] = date;
+  return Date.parse(`${y}-${mo}-${d}T${h}:${mi}:${se}Z`) + Number(q.get("X-Amz-Expires")) * 1000;
+}
+
+function stablePhotoUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return value;
+  }
+  const expiresAt = urlExpiry(url);
+  if (!expiresAt) return value;
+  const key = url.origin + url.pathname;
+  const known = photoUrls.get(key);
+  if (known && known.expiresAt - Date.now() > URL_MARGIN_MS) return known.url;
+  photoUrls.set(key, { url: value, expiresAt });
+  savePhotoUrls();
+  return value;
+}
+
+// Every "...Url" field in a response: thumbUrl, mediumUrl, coverUrl, videoUrl.
+function keepPhotoUrls(data) {
+  if (Array.isArray(data)) {
+    for (const item of data) keepPhotoUrls(item);
+  } else if (data && typeof data === "object") {
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === "string" && key.endsWith("Url") && value.startsWith("https://")) {
+        data[key] = stablePhotoUrl(value);
+      } else if (value && typeof value === "object") {
+        keepPhotoUrls(value);
+      }
+    }
+  }
+  return data;
+}
+
+// A kept URL that fails anyway (the signing credentials ran out first) is
+// forgotten, so the next screen uses the fresh one.
+document.addEventListener(
+  "error",
+  (event) => {
+    const src = event.target?.currentSrc || event.target?.src;
+    if (!src || !(event.target instanceof HTMLImageElement || event.target instanceof HTMLVideoElement)) return;
+    try {
+      const url = new URL(src);
+      if (photoUrls.get(url.origin + url.pathname)?.url === src) {
+        photoUrls.delete(url.origin + url.pathname);
+        savePhotoUrls();
+      }
+    } catch {
+      /* not one of ours */
+    }
+  },
+  true,
+);
+
+// Screens: a GET answered in the last few seconds is reused as is; an older
+// one is shown at once and refreshed behind it, and the screen redraws only
+// if something changed. Anything the person does (label, merge, rename…)
+// drops the lot, so an action is never followed by a stale screen.
+const FRESH_MS = 15 * 1000;
+const responses = new Map(); // path -> { data, text, at }
+// Writes that change nothing a screen shows: the model's bookkeeping and
+// the upload outbox, which would otherwise empty the cache every second.
+const PASSIVE_WRITES = /\/(prediction|vectors|media|complete|pick)$|^\/encounters$/;
+
+function forgetResponses() {
+  responses.clear();
+}
+
+// Signatures differ on every response; what is shown does not.
+const comparable = (data) => JSON.stringify(data).replace(/\?[^"]*Signature=[^"]*/g, "");
+
+// Bumped whenever a different screen is drawn, so a late refresh redraws
+// only the screen it was fetched for.
+let screen = 0;
+
+async function cachedGet(path, redraw = render) {
+  const hit = responses.get(path);
+  if (hit && Date.now() - hit.at < FRESH_MS) return hit.data;
+  if (hit) {
+    const shown = screen;
+    api(path)
+      .then((data) => {
+        const text = comparable(data);
+        responses.set(path, { data, text, at: Date.now() });
+        if (text !== hit.text && screen === shown) redraw();
+      })
+      .catch(() => {});
+    return hit.data;
+  }
+  const data = await api(path);
+  responses.set(path, { data, text: comparable(data), at: Date.now() });
+  return data;
+}
 
 // --------------------------------------------------------------------------
 // Chrome
@@ -271,7 +419,7 @@ function showLogin() {
 }
 
 async function refreshBadge() {
-  const { photos } = await api("/stats");
+  const { photos } = await cachedGet("/stats");
   const badge = $("#queue-badge");
   badge.hidden = !photos.unlabeled;
   badge.textContent = photos.unlabeled > 99 ? "99+" : photos.unlabeled;
@@ -279,7 +427,7 @@ async function refreshBadge() {
 }
 
 async function refreshCats() {
-  state.cats = (await api("/cats")).cats;
+  state.cats = (await cachedGet("/cats")).cats;
 }
 
 function setView(view) {
@@ -311,6 +459,7 @@ const homeView = () => (isAdmin() ? "queue" : "capture");
 // A re-render after an action keeps the current page on screen, dimmed,
 // until the new one is ready — no blank flash, no jump to the top.
 const render = guard(async function render() {
+  screen += 1;
   const main = $("#main");
   if (main.childElementCount) main.classList.add("loading");
   else main.replaceChildren(el("div", { className: "spinner", textContent: "Loading…" }));
@@ -441,18 +590,25 @@ function closeOnBackdrop(dialog) {
 // --------------------------------------------------------------------------
 
 async function renderQueue() {
-  const [{ sessions }] = await Promise.all([api("/queue"), refreshCats()]);
+  const [{ sessions }] = await Promise.all([cachedGet("/queue"), refreshCats()]);
   const main = $("#main");
 
   if (!sessions.length) {
     main.replaceChildren(
       sectionHead("Labeling queue"),
+      modelStrip(),
       emptyState(
         "cat-fluff",
         "All caught up",
         "Every photo has a cat. New ones land here as the bots receive them.",
       ),
     );
+    // Nothing to guess, but the model still learns the labeled cats and
+    // shares their vectors — Capture's guesses on every phone depend on it.
+    if (recognition) {
+      recognition.setNames(state.cats);
+      recognition.watchQueue([]);
+    }
     return;
   }
 
@@ -823,8 +979,9 @@ async function renderCats() {
   main.replaceChildren(head, filter, grid);
 }
 
-async function openCat(catId) {
-  const { cat, photos } = await api(`/cats/${catId}`);
+async function openCat(catId, { redrawn = false } = {}) {
+  screen += 1;
+  const { cat, photos } = await cachedGet(`/cats/${catId}`, guard(() => openCat(catId, { redrawn: true })));
 
   const rename = button("Rename", "btn", async () => {
     const answer = await ask({
@@ -854,7 +1011,7 @@ async function openCat(catId) {
 
   const back = button("← All cats", "btn btn-ghost back", () => setView("cats"));
 
-  window.scrollTo(0, 0);
+  if (!redrawn) window.scrollTo(0, 0);
   $("#main").replaceChildren(
     back,
     sectionHead(cat.name, plural(photos.length, "photo"), isAdmin() ? [rename, remove] : []),
@@ -891,13 +1048,16 @@ const sourceName = (row) => row.link?.label || SOURCE_NAMES[row.referral]?.[0] |
 
 async function renderStats() {
   const [data, guesses] = await Promise.all([
-    api("/insights"),
-    api("/recognition/predictions").catch(() => null),
+    cachedGet("/insights"),
+    cachedGet("/recognition/predictions").catch(() => null),
     refreshCats(),
   ]);
   const s = data.summary;
 
-  const refresh = button("Refresh", "btn btn-sm", () => render());
+  const refresh = button("Refresh", "btn btn-sm", () => {
+    forgetResponses();
+    render();
+  });
   $("#main").replaceChildren(
     sectionHead("Stats", `Updated ${fmtTime(data.generatedAt)} · days in Israel time`, [refresh]),
     statTiles(s, data.evalMinSessions),
@@ -906,7 +1066,7 @@ async function renderStats() {
     activityPanel(data.daily),
     el("div", { className: "panel-row" }, [
       contributorsPanel(data.contributors, data.channels, s),
-      healthPanel(s),
+      healthPanel(s, data.stalled),
     ]),
     datasetPanel(data.cats, s, data.evalMinSessions),
   );
@@ -1257,7 +1417,7 @@ function contributorsPanel(c, channels, s) {
   );
 }
 
-function healthPanel(s) {
+function healthPanel(s, stalled = { count: 0, items: [] }) {
   const perSession = s.sessions ? (s.media / s.sessions).toFixed(1) : "0";
   const rows = [
     ["Sessions with a location", `${formatNumber(s.sessionsWithLocation)} of ${formatNumber(s.sessions)}`, meter(s.sessionsWithLocation, s.sessions)],
@@ -1265,19 +1425,38 @@ function healthPanel(s) {
     ["Videos", formatNumber(s.videos), null],
     ["Duplicates caught", formatNumber(s.duplicates), null],
     ["Started the bot, sent nothing yet", formatNumber(Math.max(0, s.people - s.contributors)), null],
+    ["Uploads that never arrived", formatNumber(stalled.count), null],
   ];
   return panel(
     "Bot health",
     "How the collection side is behaving.",
     [],
-    el(
-      "dl",
-      { className: "facts" },
-      rows.map(([label, value, gauge]) =>
-        el("div", {}, [el("dt", { textContent: label }), el("dd", {}, [value, gauge])]),
+    [
+      el(
+        "dl",
+        { className: "facts" },
+        rows.map(([label, value, gauge]) =>
+          el("div", {}, [el("dt", { textContent: label }), el("dd", {}, [value, gauge])]),
+        ),
       ),
-    ),
+      stalled.count ? stalledList(stalled) : null,
+    ],
   );
+}
+
+// Records written as `pending` whose file was never confirmed, an hour or
+// more ago (spec §10 write order). The bots have already asked the sender
+// to try again; this is so an admin sees that it happened at all.
+function stalledList(stalled) {
+  const shown = stalled.items.map(
+    (item) => `${fmtDate(item.createdAt)} · ${channelName(item.channel)} · photo ${item.photoId}`,
+  );
+  const more = stalled.count - stalled.items.length;
+  if (more > 0) shown.push(`and ${formatNumber(more)} more`);
+  return el("div", { className: "muted small" }, [
+    el("p", { textContent: "Written, but the photo or video never reached storage:" }),
+    el("ul", {}, shown.map((line) => el("li", { textContent: line }))),
+  ]);
 }
 
 // ---- dataset readiness ----
@@ -1533,7 +1712,7 @@ const ROLE_HELP = {
 };
 
 async function renderAdmins() {
-  const { admins } = await api("/admins");
+  const { admins } = await cachedGet("/admins");
 
   const input = el("input", {
     type: "email",
@@ -1834,6 +2013,7 @@ async function boot() {
     button,
     toast,
     api,
+    cachedGet,
     post,
     sectionHead,
     plural,

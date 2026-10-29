@@ -2,6 +2,33 @@
 
 Things decided to leave for later, so they are not lost. Newest first.
 
+## Collection
+
+- **Confirm the Capture stall's trigger on the phone that hit it.** The 2026-10-29
+  fix removes every suspect: no Blob re-write, timeouts, no head-of-line
+  blocking. The exact cause on that phone (most likely Safari refusing to
+  re-store a Blob read from IndexedDB) was inferred, not observed. If it
+  ever recurs, the screen now shows the error: start there. *(Raised 2026-10-29.)*
+- **Twelve empty app encounters from before the fix** (`channel = app`,
+  `photoCount = 0`, 2026-10-28 and 2026-10-29) are still in the table. The API
+  no longer lists them, and new ones are not created. Delete them only if
+  Stats starts counting them. *(Raised 2026-10-29.)*
+- **"The interface is confusing."** Reported along with the stall; no
+  specifics yet. Ask which screens and steps before redesigning anything.
+  *(Raised 2026-10-29.)*
+
+- **No way to dismiss a stalled upload.** Stats → Bot health lists records
+  still `pending` an hour after they were written. Today an admin can only
+  read the list. If it ever grows past a handful, add a "discard" action
+  that deletes the record the way Reject does. *(Raised 2026-10-29.)*
+- **The bots' flip to `unlabeled` is not conditional on `pending`.** The
+  app's `complete` call is, so that a duplicate verdict from the process
+  Lambda is never overwritten. The bots write the S3 object and then flip
+  unconditionally, so if the process Lambda marks a byte-identical re-send
+  `duplicate` in between, the flip undoes it. That needs a sub-second race
+  on a duplicate. It has not been seen in the data, but the fix is the same
+  `ConditionExpression` the app uses. *(Raised 2026-10-29.)*
+
 ## Recognition (phase 1c)
 
 - **Thresholds, once the live record earns them.** Today the model only

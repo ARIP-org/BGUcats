@@ -1,6 +1,6 @@
 """The stats page's arithmetic, on plain lists — no DynamoDB involved."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from admin import insights
 
@@ -182,3 +182,46 @@ def test_location_counts_a_pinned_session_or_exif_gps():
 def test_old_photos_without_a_channel_are_telegram():
     (row,) = _build(_media(2))["channels"]
     assert row == {"channel": "telegram", "contributors": 1, "media": 2}
+
+
+def test_only_uploads_pending_for_over_an_hour_count_as_stalled():
+    pending = [
+        {
+            "photoId": "OLD",
+            "sessionId": "S1",
+            "createdAt": "2026-08-24T20:03:02.956161Z",
+        },
+        {
+            "photoId": "APP",
+            "sessionId": "S2",
+            "channel": "app",
+            "createdAt": (NOW - timedelta(hours=2)).isoformat(),
+        },
+        {
+            "photoId": "FRESH",
+            "sessionId": "S3",
+            "createdAt": (NOW - timedelta(minutes=5)).isoformat(),
+        },
+        {"photoId": "JUNK", "createdAt": None},
+    ]
+    stalled = insights.build(
+        media=[],
+        duplicates=0,
+        sessions={},
+        profiles=[],
+        traffic=[],
+        links=[],
+        cats=[],
+        now=NOW,
+        pending=pending,
+    )["stalled"]
+
+    assert stalled["count"] == 2
+    assert [(i["photoId"], i["channel"]) for i in stalled["items"]] == [
+        ("OLD", "telegram"),  # oldest first; no channel means Telegram
+        ("APP", "app"),
+    ]
+
+
+def test_nothing_stalled_by_default():
+    assert _build()["stalled"] == {"count": 0, "items": []}

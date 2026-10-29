@@ -121,16 +121,42 @@ def _item_with_sk(app, pk, sk):
     return app["table"].get_item(Key={"PK": pk, "SK": sk}).get("Item")
 
 
+def _with_a_photo(app, session_id):
+    app["table"].update_item(
+        Key={"PK": f"SESSION#{session_id}", "SK": "META"},
+        UpdateExpression="SET photoCount = :n",
+        ExpressionAttributeValues={":n": 1},
+    )
+
+
 def test_my_encounters_lists_only_mine_newest_first(app):
-    _encounter(session_id="01JBENC0000000000000000001")
-    _encounter(session_id="01JBENC0000000000000000002")
-    _encounter(session_id="01JBENC0000000000000000003", email=OTHER)
+    for session_id, email in (
+        ("01JBENC0000000000000000001", HELPER),
+        ("01JBENC0000000000000000002", HELPER),
+        ("01JBENC0000000000000000003", OTHER),
+    ):
+        _encounter(session_id=session_id, email=email)
+        _with_a_photo(app, session_id)
 
     ids = [
         e["sessionId"]
         for e in _call("GET", "/api/encounters", email=HELPER)[1]["encounters"]
     ]
     assert ids == ["01JBENC0000000000000000002", "01JBENC0000000000000000001"]
+
+
+def test_my_encounters_leave_out_empty_ones(app):
+    _encounter(session_id="01JBENC0000000000000000001")
+    _with_a_photo(app, "01JBENC0000000000000000001")
+    # Opened and closed with nothing in it, more of them than one page holds.
+    for n in range(handler.RECENT_ENCOUNTERS + 3):
+        _encounter(session_id=f"01JBENC00000000000000001{n:02d}")
+
+    ids = [
+        e["sessionId"]
+        for e in _call("GET", "/api/encounters", email=HELPER)[1]["encounters"]
+    ]
+    assert ids == ["01JBENC0000000000000000001"]
 
 
 # ---- uploads ------------------------------------------------------------
@@ -147,8 +173,11 @@ def test_upload_writes_a_pending_record_first(app):
     assert photo["uploadKey"] == f"raw/{ENCOUNTER}/{PHOTO}.jpg"
     assert photo["capturedAt"] == "2026-10-28T09:15:00.000Z"
     assert float(photo["coarseLat"]) == 31.262
-    # Not in the session grid or the queue while pending.
-    assert "GSI1PK" not in photo and "GSI2PK" not in photo
+    # Not in the session grid or the queue while pending — only on the
+    # status index as pending, so Stats can count an upload that stalls.
+    assert "GSI1PK" not in photo
+    assert photo["GSI2PK"] == "STATUS#pending"
+    assert photo["GSI2SK"] == photo["createdAt"]
 
 
 def test_the_upload_url_can_write_exactly_one_object_of_one_kind(app):

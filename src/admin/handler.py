@@ -47,6 +47,7 @@ MEDIA_BUCKET = os.environ["MEDIA_BUCKET"]
 # Long enough to label a session without the grid going blank mid-review,
 # short enough that a copied URL is useless by the time it leaves a chat.
 PRESIGNED_URL_TTL_SECONDS = 3600
+PHOTO_CACHE_CONTROL = "private, max-age=86400, immutable"
 
 # One page of the queue. Sessions are expanded in full after this many
 # photos are sampled from the queue index, so the real number of photos
@@ -114,6 +115,7 @@ ULID_PATTERN = r"[0-9A-HJKMNP-TV-Z]{26}"
 COORDINATE_DECIMALS = 3
 MAX_ACCURACY_METRES = 100_000
 RECENT_ENCOUNTERS = 30
+ENCOUNTER_PAGES = 5
 
 # A recorded guess keeps a score for every enrolled cat, not just the top
 # few, so a later threshold sweep can be run over it. Well above the ~50
@@ -328,9 +330,17 @@ def _photo_payload(photo):
 
 
 def _presign(key):
+    # Every object here is write-once (raw/ is never mutated, derived/ is
+    # rebuilt only under the same bytes), so the browser may keep it. The
+    # app reuses one URL per photo until it expires (web/app.js,
+    # stablePhotoUrl); without this header it would still ask S3 each time.
     return s3.generate_presigned_url(
         "get_object",
-        Params={"Bucket": MEDIA_BUCKET, "Key": key},
+        Params={
+            "Bucket": MEDIA_BUCKET,
+            "Key": key,
+            "ResponseCacheControl": PHOTO_CACHE_CONTROL,
+        },
         ExpiresIn=PRESIGNED_URL_TTL_SECONDS,
     )
 
@@ -415,6 +425,7 @@ def _get_insights(**_):
     return insights.build(
         media=media,
         duplicates=len(_status_items("duplicate")),
+        pending=_status_items("pending"),
         sessions=_batch_get_sessions(session_ids),
         profiles=_entities("SUBMITTER"),
         traffic=_entities("TRAFFIC"),
@@ -1310,13 +1321,25 @@ def _create_encounter(body, email, **_):
 
 
 def _get_encounters(email, **_):
-    items = table.query(
-        IndexName="GSI2",
-        KeyConditionExpression=Key("GSI2PK").eq("ENTITY#ENCOUNTER")
+    # Only encounters that hold something. One opened and closed with nothing
+    # in it (or whose files are still on the phone — Capture shows those
+    # itself) is not an encounter anyone needs to see. Filtered after the
+    # read, so a run of empty ones costs another page, never a short list.
+    items = []
+    kwargs = {
+        "IndexName": "GSI2",
+        "KeyConditionExpression": Key("GSI2PK").eq("ENTITY#ENCOUNTER")
         & Key("GSI2SK").begins_with(f"{email}#"),
-        ScanIndexForward=False,
-        Limit=RECENT_ENCOUNTERS,
-    )["Items"]
+        "ScanIndexForward": False,
+        "Limit": RECENT_ENCOUNTERS,
+    }
+    for _ in range(ENCOUNTER_PAGES):
+        page = table.query(**kwargs)
+        items += [i for i in page["Items"] if i.get("photoCount")]
+        if len(items) >= RECENT_ENCOUNTERS or "LastEvaluatedKey" not in page:
+            break
+        kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+    items = items[:RECENT_ENCOUNTERS]
     names = {c["catId"]: c["name"] for c in _entities("CAT")}
     picks = _batch_get_picks([item["sessionId"] for item in items])
     out = []
@@ -1357,6 +1380,7 @@ def _create_upload(session_id, body, email, **_):
         )
     ext, kind = UPLOAD_TYPES[content_type]
     key = f"raw/{session_id}/{photo_id}.{ext}"
+    created_at = _now_iso()
 
     item = {
         "PK": f"PHOTO#{photo_id}",
@@ -1379,8 +1403,12 @@ def _create_upload(session_id, body, email, **_):
         "coarseLon": None,
         "status": "pending",
         "catId": None,
-        "createdAt": _now_iso(),
+        "createdAt": created_at,
         "uploadKey": key,
+        # On the status index while pending, like the bots' records, so an
+        # upload that never completes is counted on the Stats page.
+        "GSI2PK": "STATUS#pending",
+        "GSI2SK": created_at,
     }
     item.update(_location_fields(body))
     duration = body.get("durationSeconds")

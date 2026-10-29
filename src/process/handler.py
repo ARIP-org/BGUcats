@@ -62,6 +62,15 @@ def handler(event, context):
 
 def _process_object(key):
     session_id, photo_id, ext = _parse_raw_key(key)
+    # Write order (spec §10) puts the record before the object, so an object
+    # with no record was not sent through a bot or the app — someone copied
+    # it into raw/ by hand. Processing it would upsert a half-built record
+    # (one was, from a diagnostic upload on 2026-08-28) and claim its hash.
+    if "Item" not in table.get_item(
+        Key={"PK": f"PHOTO#{photo_id}", "SK": "META"}, ProjectionExpression="PK"
+    ):
+        logger.warning("no photo record for %s, skipping", key)
+        return
     if ext.lower() in IMAGE_EXTENSIONS:
         _process_image(key, session_id, photo_id)
     else:

@@ -16,7 +16,6 @@ import math
 import os
 import re
 import time
-import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -119,12 +118,16 @@ def ingest_media(
     download failed.
 
     `fetch()` returns (bytes, ext, content_type, media_kind) and raises
-    ValueError or URLError on failure — each adapter supplies its own,
-    since Telegram and WhatsApp hand out files differently.
+    ValueError or OSError on failure — each adapter supplies its own,
+    since Telegram and WhatsApp hand out files differently. OSError covers
+    URLError and also a read that times out mid-response, which urllib
+    raises as a bare TimeoutError: five photos were lost that way on
+    2026-08-24, when Telegram's getFile stalled past the 8-second timeout.
 
     Write order (spec §10): DynamoDB record as `pending`, then S3, then flip
     to `unlabeled`. A failed download leaves the record `pending`, never
-    falsely marked ready.
+    falsely marked ready, and the caller tells the submitter to send it
+    again — Telegram and WhatsApp do not redeliver an acknowledged update.
     """
     photo_id, session_id = resolve_photo_and_session(
         idempotency_key, submitter_hash, media_group_id, channel=channel
@@ -142,7 +145,7 @@ def ingest_media(
 
     try:
         media_bytes, ext, content_type, media_kind = fetch()
-    except (ValueError, urllib.error.URLError) as exc:
+    except (ValueError, OSError) as exc:
         logger.warning("download failed for photo=%s: %s", photo_id, exc)
         return None
 
@@ -215,7 +218,10 @@ def _write_pending_photo(
     photo_id, session_id, submitter_hash, channel, captured_at, created_at
 ):
     # DynamoDB record first, status=pending — spec §10 write order. Only
-    # after the S3 write succeeds does _mark_photo_unlabeled flip it.
+    # after the S3 write succeeds does _mark_photo_unlabeled flip it. The
+    # record is on the status index from the start (STATUS#pending), so one
+    # whose object never landed shows up on the admin Stats page instead of
+    # being invisible to every query.
     table.put_item(
         Item={
             "PK": f"PHOTO#{photo_id}",
@@ -238,6 +244,8 @@ def _write_pending_photo(
             "status": "pending",
             "catId": None,
             "createdAt": created_at,
+            "GSI2PK": "STATUS#pending",
+            "GSI2SK": created_at,
         }
     )
 

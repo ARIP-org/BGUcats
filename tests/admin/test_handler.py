@@ -423,6 +423,8 @@ def test_queue_photos_carry_presigned_derivative_urls(aws):
     # parameter names.
     assert "Signature" in photo["thumbUrl"]
     assert "Expires" in photo["thumbUrl"]
+    # write-once objects: the browser may keep them (the app reuses the URL)
+    assert "response-cache-control=private" in photo["thumbUrl"]
 
 
 def test_cat_list_carries_a_cover_thumbnail(aws):

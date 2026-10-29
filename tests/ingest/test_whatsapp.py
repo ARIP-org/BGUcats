@@ -250,12 +250,27 @@ def test_failed_download_leaves_the_record_pending(
     monkeypatch.setattr(whatsapp, "_download_media", fail)
     _process(_image())
     assert media_store == []
-    assert sent == []
     photos = dynamo_table.scan(
         FilterExpression="begins_with(PK, :p)",
         ExpressionAttributeValues={":p": "PHOTO#"},
     )["Items"]
     assert [p["status"] for p in photos] == ["pending"]
+    # On the status index, so the Stats page can count it.
+    assert photos[0]["GSI2PK"] == "STATUS#pending"
+
+
+def test_failed_download_asks_the_person_to_send_it_again(
+    dynamo_table, sent, media_store, monkeypatch
+):
+    def time_out(token, media_id):
+        # What urllib raises when a response stalls mid-read: not a
+        # URLError, and it used to escape to the catch-all.
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(whatsapp, "_download_media", time_out)
+    _process(_image())
+    assert [m["type"] for m in sent] == ["text"]
+    assert sent[0]["text"]["body"] == whatsapp.FETCH_FAILED_TEXT
 
 
 # --------------------------------------------------------------------------

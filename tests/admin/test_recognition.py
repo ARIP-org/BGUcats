@@ -396,8 +396,9 @@ def test_a_pick_is_joined_with_the_label_and_never_shown_to_the_labeler(aws):
 
     aws["table"].update_item(
         Key={"PK": f"SESSION#{ENCOUNTER}", "SK": "META"},
-        UpdateExpression="SET catId = :c",
-        ExpressionAttributeValues={":c": CAT},
+        # Labeled, so it holds a photo (an empty encounter is not listed).
+        UpdateExpression="SET catId = :c, photoCount = :n",
+        ExpressionAttributeValues={":c": CAT, ":n": 1},
     )
     _, listing = _call("GET", "/api/recognition/predictions")
     [pick] = listing["picks"]

@@ -13,7 +13,6 @@ import base64
 import json
 import logging
 import os
-import urllib.error
 import urllib.request
 
 import boto3
@@ -94,6 +93,10 @@ START_TEXT = (
 )
 
 GOT_IT_TEXT = "Got it! \U0001f431"
+
+FETCH_FAILED_TEXT = (
+    "Sorry, Telegram didn't hand me that one in time. Could you send it again?"
+)
 
 ASK_LOCATION_TEXT = (
     "Where did you see this cat? Tap *Pick on map* and drop a pin, or "
@@ -208,6 +211,9 @@ def _process_update(event, secrets):
         duration_seconds=media.get("duration"),
     )
     if session_id is None:
+        # The record stays `pending` (spec §10) and Telegram will not
+        # redeliver an update we acknowledge, so the person is the retry.
+        _reply(secrets["bot_token"], chat_id, FETCH_FAILED_TEXT)
         return {"statusCode": 200, "body": "ok"}
 
     # One reply per album, not per photo: each photo in a media group is a
@@ -430,5 +436,5 @@ def _telegram_post(bot_token, method, body):
     )
     try:
         urllib.request.urlopen(req, timeout=8)
-    except urllib.error.URLError as exc:
+    except OSError as exc:  # URLError, or a read that timed out
         logger.warning("telegram %s failed: %s", method, exc)

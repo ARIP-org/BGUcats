@@ -45,6 +45,13 @@ CONTRIBUTION_BUCKETS = (
 
 PARTNER_FIELDS = ("partnerViews", "partnerPlays", "partnerClicks")
 
+# A record still `pending` this long after it was written has lost its file:
+# a bot fetch takes seconds, and the app's outbox retries within minutes of
+# the phone coming back online. Write order (spec §10) means the record says
+# so honestly; this is where someone finally gets to read it.
+STALLED_AFTER = timedelta(hours=1)
+STALLED_SHOWN = 10
+
 
 def local_day(iso):
     """The Israel calendar day of an ISO-8601 UTC timestamp, or None."""
@@ -56,11 +63,14 @@ def local_day(iso):
         return None
 
 
-def build(*, media, duplicates, sessions, profiles, traffic, links, cats, now):
+def build(
+    *, media, duplicates, sessions, profiles, traffic, links, cats, now, pending=()
+):
     """Everything the stats page shows, as one JSON-ready dict.
 
     media      photo/video items that count as data (unlabeled + labeled)
     duplicates number of byte-identical re-sends, reported but not counted
+    pending    items still `pending` — written, but their file never confirmed
     sessions   {sessionId: Session item} for every session in `media`
     profiles   SUBMITTER#…/PROFILE items (ingest.core.record_contributor)
     traffic    TRAFFIC# daily counters from the beacon Lambda
@@ -83,7 +93,35 @@ def build(*, media, duplicates, sessions, profiles, traffic, links, cats, now):
         "channels": _channels(contributors),
         "contributors": _contributor_breakdown(contributors, len(media)),
         "cats": _cats(media, cats),
+        "stalled": _stalled(pending, now),
         "evalMinSessions": EVAL_MIN_SESSIONS,
+    }
+
+
+def _stalled(pending, now):
+    """Uploads whose record was written but whose file never arrived, oldest
+    first. Younger ones are still in flight and are left out."""
+    cutoff = now - STALLED_AFTER
+    stalled = []
+    for item in pending:
+        try:
+            created = datetime.fromisoformat(item.get("createdAt") or "")
+        except ValueError:
+            continue
+        if created <= cutoff:
+            stalled.append(item)
+    stalled.sort(key=lambda item: item["createdAt"])
+    return {
+        "count": len(stalled),
+        "items": [
+            {
+                "photoId": item.get("photoId"),
+                "sessionId": item.get("sessionId"),
+                "channel": item.get("channel") or DEFAULT_CHANNEL,
+                "createdAt": item.get("createdAt"),
+            }
+            for item in stalled[:STALLED_SHOWN]
+        ],
     }
 
 

@@ -556,6 +556,9 @@ export function createRecognition({ api, post }) {
   // Load everything a guess needs. Resolves false if no model is published.
   async function prepareForCapture() {
     if (!(await load())) return false;
+    // An admin's browser that already learned the whole gallery (the
+    // Queue) keeps it: the shared copy can only be the same or smaller.
+    if (galleryAt && templates.length) return true;
     await syncShared();
     return true;
   }
@@ -622,6 +625,7 @@ export function createRecognition({ api, post }) {
     },
     watchQueue,
     prepareForCapture,
+    knowsCats: () => templates.length > 0,
     guessShots,
     encountersOf,
     prioritize,

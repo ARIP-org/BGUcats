@@ -99,6 +99,11 @@ blocked on someone else.
 - **Every write is idempotent on the ULID.** Write order: DynamoDB record as
   `pending`, then S3, then flip to `unlabeled`. A record marked ready whose
   object never landed is a silent failure that surfaces months later.
+  A `pending` record sits on GSI2 as `STATUS#pending` from the start, and
+  Stats → Bot health lists any still pending after an hour. A failed or
+  timed-out bot fetch (`OSError`, not just `URLError`) leaves the record
+  pending and asks the sender to send it again; neither platform redelivers
+  an acknowledged update.
 - **The admin labeling tool is in scope for 1a.** Queue view, session grid,
   merge and reject actions. A 2,000-image backlog never gets climbed.
 - **Prefer boring, inspectable choices.** Portfolio project; every decision
@@ -129,6 +134,12 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   is never overwritten.
 - **IDs are ULIDs minted on the phone**, so the offline outbox (web/outbox.js)
   can retry anything and land on the same records.
+- **The outbox writes a photo's bytes once, never again.** Its state lives
+  in its own IndexedDB store, because Safari can refuse to re-store a Blob
+  read back from IndexedDB. Every request has a timeout. One photo's failure
+  never holds up the rest, and the screen says why it is retrying. An
+  encounter reaches the API with its first photo, so empty ones are never
+  written. Before 2026-10-29, 48 photos stalled for an hour without a word.
 - **Location comes from the phone's GPS at the moment of capture**, with its
   accuracy (`locationSource = "app-gps"`, `locationAccuracyM`), rounded to
   3 decimals like everything else.
@@ -146,6 +157,13 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   `/api/`, photos or other origins — the distribution's no-caching rule still
   means a deploy reaches everyone on their next load. The one exception is
   the content-addressed `/model/{version}/`, cached first (see 1c below).
+- **Caching lives in app.js, not the service worker.** Presigned photo URLs
+  carry a long `response-cache-control`, and the app reuses the first URL it
+  saw for each object until just before it expires (`stablePhotoUrl`).
+  Without that, every new signature is a cache miss and every screen
+  downloads every photo again. Screens reuse their GETs for 15 s, then show
+  the last answer at once and redraw only if a refresh changed something
+  (`cachedGet`). Any action clears that memory.
 
 ### Recognition in the app (1c — web/recognition.js)
 
@@ -195,7 +213,10 @@ when unsure, and come back to cats already met.
   `PHOTO#{id}` / `VECTOR#{version}`, listed through GSI2 `VECTOR#{version}`).
   Every phone — and every other admin device — downloads them
   (`GET /api/recognition/vectors`, any member, paged) instead of embedding
-  the gallery: ~4 KB per photo, about 1 MB today.
+  the gallery: ~4 KB per photo, about 1 MB today. The Queue runs the model
+  even when it is empty, so any admin's visit keeps the shared copy current.
+  The admin role needs `BatchWriteItem` for this, and `ConditionCheckItem` for
+  the blind-guess transaction. Both were missing until 2026-10-29.
 - **Same pipeline on both sides.** Gallery and query vectors both come from
   the browser (canvas resize, the same ONNX graph), so they agree; Python
   vectors differ slightly (cosine ~0.986) and are never mixed in.
@@ -333,6 +354,8 @@ actual product question.
 
 - pHash + SHA-256. Near-duplicates are **flagged, not silently dropped** — a
   burst of similar frames is legitimate.
+- An object under `raw/` with no photo record is skipped, not processed:
+  the write order means it did not come through a bot or the app.
 - Derivatives: 256px thumbnail, 1024px medium, WebP.
 - EXIF: extract capture timestamp and GPS into the record, then **strip all EXIF
   from every derivative**. Store location rounded to ~100m — it must not reveal

@@ -27,7 +27,6 @@ import json
 import logging
 import os
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -104,6 +103,10 @@ LOCATION_SAVED_TEXT = (
 NO_SESSION_FOR_LOCATION_TEXT = (
     "I don't have a recent session to pin that to. Send the photos first, "
     "then the location."
+)
+
+FETCH_FAILED_TEXT = (
+    "Sorry, WhatsApp didn't hand me that one in time. Could you send it again?"
 )
 
 PHOTO_REACTION = "\U0001f431"
@@ -264,6 +267,9 @@ def _handle_media(message, submitter_hash, reply, secrets):
         fetch=lambda: _download_media(secrets["access_token"], media_id),
     )
     if session_id is None:
+        # Same as Telegram: the record stays `pending`, the webhook is
+        # acknowledged, and the person is the retry.
+        reply.text(FETCH_FAILED_TEXT)
         return
 
     reply.react(message["id"], PHOTO_REACTION)
@@ -404,7 +410,7 @@ def _graph_post(access_token, path, body):
     )
     try:
         urllib.request.urlopen(request, timeout=8)
-    except urllib.error.URLError as exc:
+    except OSError as exc:  # URLError, or a read that timed out
         # The phone number stays out of the log; the type of message is
         # enough to debug with.
         logger.warning("whatsapp send %s failed: %s", body.get("type"), exc)

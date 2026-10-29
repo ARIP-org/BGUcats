@@ -52,7 +52,9 @@ const VIDEO_TYPES = [
 ];
 
 export function createCapture(ui) {
-  const { el, button, toast, api, post, sectionHead, plural, fmtDate, emptyState, recognition } = ui;
+  const { el, button, toast, cachedGet, post, sectionHead, plural, fmtDate, emptyState, recognition } = ui;
+  // A refreshed list redraws this screen — never the camera over it.
+  const get = (path) => cachedGet(path, () => !cameraOpen && mounted && render());
 
   let encounter = loadEncounter();
   let stream = null;
@@ -99,7 +101,8 @@ export function createCapture(ui) {
     const stop = recognition.onChange(() => drawGuess());
     try {
       const [ready] = await Promise.all([recognition.prepareForCapture(), loadCats()]);
-      guess = { status: ready ? "waiting" : "unavailable" };
+      // "empty": the model is here but no cat has been shared with it yet.
+      guess = { status: !ready ? "unavailable" : recognition.knowsCats() ? "waiting" : "empty" };
     } catch {
       guess = { status: "unavailable" }; // Capture works exactly as before
     } finally {
@@ -110,7 +113,7 @@ export function createCapture(ui) {
   }
 
   async function loadCats() {
-    const list = (await api("/cats")).cats;
+    const list = (await get("/cats")).cats;
     cats = new Map(list.map((c) => [c.catId, c]));
     recognition.setNames(list);
   }
@@ -216,6 +219,11 @@ export function createCapture(ui) {
       );
     }
     if (guess.status === "waiting") return node.replaceChildren(...line("Take a photo and the app will guess who it is."));
+    if (guess.status === "empty") {
+      return node.replaceChildren(
+        ...line("The app doesn't know any cats yet. Guesses start once an admin opens the Queue."),
+      );
+    }
     if (guess.status === "looking") return node.replaceChildren(...line("Looking…"));
 
     const tiles = guess.ranked.slice(0, GUESS_SHOWN).map((r) => {
@@ -676,7 +684,7 @@ export function createCapture(ui) {
   }
 
   async function drawStrip() {
-    const { items } = await outbox.snapshot();
+    const { items, lastError } = await outbox.snapshot();
     const byId = new Map(items.map((i) => [i.photoId, i]));
 
     if (mounted?.strip && encounter) {
@@ -689,7 +697,7 @@ export function createCapture(ui) {
       mounted.strip.hidden = !encounter.shots.length;
     }
     const line = mounted?.status || document.querySelector(".outbox-panel .outbox-line");
-    if (line) line.replaceChildren(...outboxSummary(items));
+    if (line) line.replaceChildren(...outboxSummary(items, lastError));
   }
 
   function shotTile(shot, item) {
@@ -707,7 +715,7 @@ export function createCapture(ui) {
     ]);
   }
 
-  function outboxSummary(items) {
+  function outboxSummary(items, lastError) {
     const waiting = items.filter((i) => i.state !== "failed").length;
     const failed = items.filter((i) => i.state === "failed");
     const parts = [];
@@ -718,6 +726,9 @@ export function createCapture(ui) {
           ? `${plural(waiting, "file")} uploading…`
           : `${plural(waiting, "file")} saved on this phone — they upload when you're back online.`,
       );
+      // Said out loud: a queue that keeps retrying with no reason shown
+      // looks exactly like a slow one.
+      if (navigator.onLine && lastError) parts.push(` Retrying — last try: ${lastError}.`);
     }
     if (failed.length) {
       parts.push(
@@ -737,7 +748,7 @@ export function createCapture(ui) {
   async function recentPanel() {
     let encounters = [];
     try {
-      encounters = (await api("/encounters")).encounters;
+      encounters = (await get("/encounters")).encounters;
     } catch {
       return el("section", { className: "card panel" }, [
         el("p", { className: "muted", textContent: "Your recent encounters show here when you're online." }),

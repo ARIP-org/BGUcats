@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from ingest import core, handler
@@ -619,3 +621,43 @@ def test_photo_first_then_start_still_records_the_link(dynamo_table, telegram_ca
     profile = _profile_for(dynamo_table)
     assert profile["referral"] == "poster"
     assert profile["firstSeenAt"] == first_seen
+
+
+def _photo_update(message_id=7):
+    return {
+        "body": json.dumps(
+            {
+                "message": {
+                    "message_id": message_id,
+                    "chat": {"id": 42},
+                    "from": {"id": 42},
+                    "date": 1787600000,
+                    "photo": [{"file_id": "f-1", "width": 800, "height": 600}],
+                }
+            }
+        )
+    }
+
+
+def test_a_fetch_that_times_out_asks_for_the_photo_again(
+    dynamo_table, telegram_calls, monkeypatch
+):
+    # 2026-08-24: Telegram's getFile stalled, urllib raised a bare
+    # TimeoutError (not a URLError), and five photos vanished silently.
+    def time_out(token, file_id):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(handler, "_download_telegram_file", time_out)
+    response = handler._process_update(_photo_update(), SECRETS)
+
+    assert response["statusCode"] == 200
+    assert [(m, b["text"]) for m, b in telegram_calls] == [
+        ("sendMessage", handler.FETCH_FAILED_TEXT)
+    ]
+    photos = dynamo_table.scan(
+        FilterExpression="begins_with(PK, :p)",
+        ExpressionAttributeValues={":p": "PHOTO#"},
+    )["Items"]
+    assert [(p["status"], p["GSI2PK"]) for p in photos] == [
+        ("pending", "STATUS#pending")
+    ]

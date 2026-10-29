@@ -46,6 +46,12 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
           # The stats page fetches every session in the dataset by ID for
           # its pinned location — a hundred keys per call, not one.
           "dynamodb:BatchGetItem",
+          # Shared recognition vectors arrive 25 per call (batch_writer).
+          "dynamodb:BatchWriteItem",
+          # A blind guess is one transaction whose first step checks the
+          # session is still unlabeled; IAM authorizes each step by its own
+          # action, so ConditionCheck needs this beside PutItem.
+          "dynamodb:ConditionCheckItem",
         ]
         Resource = [
           aws_dynamodb_table.data.arn,

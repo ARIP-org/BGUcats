@@ -21,6 +21,10 @@
 #   PK = LINK#{slug}, SK = META — a tracked link's name, and the partner's
 #     own numbers for it, typed in from their dashboard.
 #
+# Photo items are on GSI2 as STATUS#{status} from the moment they are
+# written, `pending` included, so an upload whose file never arrived is
+# countable (admin Stats, "Uploads that never arrived").
+#
 # And one for the PWA's Capture screen:
 #   Session items opened in the app (channel "app") carry
 #   GSI2PK = ENTITY#ENCOUNTER, GSI2SK = {email}#{startedAt}, so "my recent

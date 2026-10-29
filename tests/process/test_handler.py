@@ -415,3 +415,14 @@ def test_one_bad_object_does_not_stop_the_batch(aws):
         None,
     )
     assert _photo(aws, "PHOTO1")["sha256"]
+
+
+def test_an_object_with_no_photo_record_is_left_alone(aws):
+    # Copied into raw/ by hand rather than sent through a bot or the app:
+    # no record is invented for it, and its hash is not claimed.
+    key = f"raw/{SESSION}/STRAY.mp4"
+    aws["s3"].put_object(Bucket=BUCKET, Key=key, Body=b"diagnostic-bytes")
+    handler._process_object(key)
+
+    items = aws["table"].scan()["Items"]
+    assert items == []
