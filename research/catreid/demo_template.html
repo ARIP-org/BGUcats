@@ -1,0 +1,500 @@
+<title>Watch It Decide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Layout: controls and live outcomes up top, a strip of queries to pick from,
+     then one query explained in full — candidates, scores, matches, verdict. */
+  :root {
+    --bg: #f4f6f7; --surface: #ffffff; --surface-2: #eceff2;
+    --ink: #10161c; --muted: #5a6672; --line: #d9dfe4; --line-strong: #b9c3cb;
+    --accent: #a35c00; --accent-soft: #fdf2e0;
+    --good: #0a6f4c; --good-soft: #dff1e8;
+    --warn: #8f5a00; --warn-soft: #fbeed6; --warn-mid: #e2a33a;
+    --bad: #b3261e; --bad-soft: #fbe6e4;
+    --info: #0d6a6a; --info-soft: #dff0f0;
+    --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1318; --surface: #161d25; --surface-2: #1d262f;
+      --ink: #e7ecf0; --muted: #92a0ac; --line: #27313b; --line-strong: #3a4753;
+      --accent: #f0a830; --accent-soft: #2b2112;
+      --good: #4fd096; --good-soft: #12291f;
+      --warn: #f0b552; --warn-soft: #2b2212; --warn-mid: #b98226;
+      --bad: #ff8a80; --bad-soft: #321816;
+      --info: #4cc4bb; --info-soft: #10292a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1318; --surface: #161d25; --surface-2: #1d262f;
+    --ink: #e7ecf0; --muted: #92a0ac; --line: #27313b; --line-strong: #3a4753;
+    --accent: #f0a830; --accent-soft: #2b2112;
+    --good: #4fd096; --good-soft: #12291f;
+    --warn: #f0b552; --warn-soft: #2b2212; --warn-mid: #b98226;
+    --bad: #ff8a80; --bad-soft: #321816;
+    --info: #4cc4bb; --info-soft: #10292a;
+    color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-sans);
+         font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 980px; margin: 0 auto;
+          padding-left: max(16px, env(safe-area-inset-left, 0px));
+          padding-right: max(16px, env(safe-area-inset-right, 0px));
+          padding-block: 28px 56px; display: grid; gap: 22px; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  p { margin: 0; }
+  .eyebrow { font-family: var(--font-cond); font-weight: 600; font-size: 11.5px;
+             letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: clamp(26px, 7vw, 38px); font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+  .lede { color: var(--muted); max-width: 66ch; }
+  header { display: grid; gap: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .label { font-family: var(--font-cond); font-weight: 600; font-size: 11px;
+           letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* controls */
+  .controls { display: grid; gap: 16px; }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; gap: 3px; flex-wrap: wrap; }
+  .seg button { font: inherit; font-size: 14px; border: 0; background: transparent; color: var(--muted);
+                padding: 8px 12px; border-radius: 7px; cursor: pointer; min-height: 40px; }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600;
+                box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .seg button:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sliders { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .slider { display: grid; gap: 6px; min-width: 0; }
+  .slider .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .slider .row span:first-child { font-size: 14px; font-weight: 600; }
+  .slider .hint { font-size: 12.5px; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--accent); min-height: 32px; }
+  .reset { font: inherit; font-size: 13px; color: var(--accent); background: none; border: 0;
+           padding: 6px 0; cursor: pointer; justify-self: start; text-decoration: underline; }
+
+  /* outcomes */
+  .stats { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .stat { display: grid; gap: 3px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); min-width: 0; }
+  .stat .v { font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: -.02em;
+             font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .stat .d { font-size: 12.5px; color: var(--muted); }
+  .stat.head { background: var(--good-soft); } .stat.head .v { color: var(--good); }
+  .stat.danger .v { color: var(--bad); }
+  .bars { display: grid; gap: 14px; margin-top: 16px; }
+  .bar-row { display: grid; gap: 6px; }
+  .bar-row .top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+  .stack { display: flex; height: 16px; border-radius: 5px; overflow: hidden; gap: 2px; background: var(--surface-2); }
+  .stack span { display: block; height: 100%; min-width: 0; transition: flex-grow .2s; }
+  .legend { display: grid; gap: 4px 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); font-size: 12.5px; }
+  .legend div { display: flex; gap: 7px; align-items: center; min-width: 0; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .legend b { font-family: var(--font-mono); font-weight: 600; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .c-good { background: var(--good); } .c-warn-soft { background: var(--warn-mid); opacity: .55; }
+  .c-warn { background: var(--warn-mid); } .c-info { background: var(--info); } .c-bad { background: var(--bad); }
+
+  /* query strip */
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--surface);
+          color: var(--muted); padding: 6px 11px; border-radius: 999px; cursor: pointer; min-height: 34px; }
+  .chip[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+  .grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .thumb { position: relative; border: 2px solid transparent; border-radius: 9px; padding: 0; background: var(--surface-2);
+           cursor: pointer; overflow: hidden; aspect-ratio: 2 / 1; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb[aria-current="true"] { border-color: var(--accent); }
+  .thumb .dot { position: absolute; left: 5px; top: 5px; font-family: var(--font-cond); font-weight: 600; font-size: 10px;
+                letter-spacing: .05em; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; color: #fff; }
+  .thumb .chg { position: absolute; right: 5px; top: 5px; font-size: 10px; padding: 2px 5px; border-radius: 5px;
+                background: rgba(0,0,0,.6); color: #fff; font-family: var(--font-cond); letter-spacing: .04em; }
+  .v-accept-ok { background: var(--good); } .v-accept-bad { background: var(--bad); }
+  .v-pick { background: var(--warn-mid); color: #1a1205 !important; } .v-new { background: var(--info); }
+
+  /* detail */
+  .detail { display: grid; gap: 16px; }
+  .detail-top { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; }
+  @media (max-width: 680px) { .detail-top { grid-template-columns: 1fr; } }
+  .query img { width: 100%; border-radius: 10px; display: block; aspect-ratio: 2 / 1; object-fit: cover; }
+  .query .cap { margin-top: 8px; font-size: 13.5px; color: var(--muted); }
+  .query .cap b { color: var(--ink); }
+  .verdict { border-radius: 12px; padding: 16px; display: grid; gap: 6px; border: 1px solid; }
+  .verdict h3 { font-size: 21px; letter-spacing: -.01em; }
+  .verdict p { font-size: 14px; }
+  .verdict.accept-ok { background: var(--good-soft); border-color: var(--good); } .verdict.accept-ok h3 { color: var(--good); }
+  .verdict.accept-bad { background: var(--bad-soft); border-color: var(--bad); } .verdict.accept-bad h3 { color: var(--bad); }
+  .verdict.pick { background: var(--warn-soft); border-color: var(--warn-mid); } .verdict.pick h3 { color: var(--warn); }
+  .verdict.new { background: var(--info-soft); border-color: var(--info); } .verdict.new h3 { color: var(--info); }
+  .verdict .judge { font-size: 13px; font-weight: 600; }
+  .cands { display: grid; gap: 8px; }
+  .cand { display: grid; grid-template-columns: 22px 92px minmax(0, 1fr); gap: 10px; align-items: center;
+          padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+  .cand.truth { border-color: var(--good); box-shadow: inset 0 0 0 1px var(--good); }
+  .cand.offered { background: var(--surface-2); }
+  .cand .rk { font-family: var(--font-mono); font-size: 12px; color: var(--muted); text-align: center; }
+  .cand img { width: 92px; height: 46px; object-fit: cover; border-radius: 6px; display: block; }
+  .cand .body { display: grid; gap: 4px; min-width: 0; }
+  .cand .name { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-weight: 600; font-size: 14.5px; }
+  .tag { font-family: var(--font-cond); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+         padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+  .tag.truth { background: var(--good-soft); color: var(--good); }
+  .tag.offer { background: var(--warn-soft); color: var(--warn); }
+  .meter { position: relative; height: 8px; background: var(--surface-2); border-radius: 4px; }
+  .meter .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--ink); opacity: .75; }
+  .meter .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; }
+  .meter .tick.a { background: var(--good); } .meter .tick.n { background: var(--info); }
+  .cand .nums { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  .viz img { width: 100%; border-radius: 10px; display: block; }
+  .viz .cap { font-size: 13.5px; color: var(--muted); margin-top: 8px; }
+  .viz .cap b { color: var(--ink); }
+  .swatch { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+  .explain { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .explain div { display: grid; gap: 4px; }
+  .explain b { font-size: 14.5px; }
+  .explain p { font-size: 13.5px; color: var(--muted); }
+  footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow" id="eyebrow">BGUcats · recognition demo</p>
+    <h1>Watch it decide</h1>
+    <p class="lede">
+      Pick a photo below and see what the system does with it: which animals it thinks it
+      might be, how sure it is, and what it decides. Move the sliders to change how cautious
+      it is — the counts update across every test photo, not just the one on screen.
+    </p>
+  </header>
+
+  <section class="card controls" aria-label="Settings">
+    <div style="display:grid;gap:8px">
+      <span class="label">How it compares photos</span>
+      <div class="seg" role="group" aria-label="Comparison method">
+        <button id="mode-embedding" aria-pressed="false">Overall look only</button>
+        <button id="mode-rerank" aria-pressed="false">Look + matching details</button>
+      </div>
+      <p class="hint" id="mode-hint" style="font-size:13px;color:var(--muted)"></p>
+    </div>
+    <div class="sliders">
+      <div class="slider">
+        <div class="row"><span>Answer on its own above</span><span class="mono" id="accept-val"></span></div>
+        <input type="range" id="accept" min="0" max="1" step="0.001" aria-describedby="accept-hint">
+        <span class="hint" id="accept-hint">Higher = fewer confident mistakes, more photos sent to you.</span>
+      </div>
+      <div class="slider">
+        <div class="row"><span>Call it a new animal below</span><span class="mono" id="new-val"></span></div>
+        <input type="range" id="new" min="0" max="1" step="0.001" aria-describedby="new-hint">
+        <span class="hint" id="new-hint">In between, it asks you to pick from its top 3.</span>
+      </div>
+    </div>
+    <button class="reset" id="reset">Reset to the calibrated settings</button>
+  </section>
+
+  <section class="card" aria-label="Outcomes across every test photo">
+    <span class="label">Across all <span id="n-total"></span> test photos</span>
+    <div class="stats" style="margin-top:10px">
+      <div class="stat head"><span class="v" id="s-auto"></span><span class="d">of enrolled animals answered on its own — and right</span></div>
+      <div class="stat danger"><span class="v" id="s-silent"></span><span class="d">confident mistakes — filed under the wrong animal</span></div>
+      <div class="stat"><span class="v" id="s-pick"></span><span class="d">sent to you to pick — right one offered <span id="s-pickuse"></span></span></div>
+      <div class="stat"><span class="v" id="s-caught"></span><span class="d">of never-seen animals kept out of the gallery</span></div>
+    </div>
+    <div class="bars">
+      <div class="bar-row">
+        <div class="top"><span>Enrolled animals <span class="mono" id="n-known" style="color:var(--muted)"></span></span></div>
+        <div class="stack" id="bar-known"></div>
+      </div>
+      <div class="bar-row">
+        <div class="top"><span>Never-seen animals <span class="mono" id="n-unknown" style="color:var(--muted)"></span></span></div>
+        <div class="stack" id="bar-unknown"></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </section>
+
+  <section aria-label="Choose a photo">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+      <h2 style="font-size:19px">Choose a photo</h2>
+      <span style="font-size:12.5px;color:var(--muted)" id="strip-note"></span>
+    </div>
+    <div class="filters" role="group" aria-label="Filter photos" id="filters"></div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="card detail" aria-live="polite" id="detail"></section>
+
+  <section class="card" aria-label="How it works">
+    <span class="label">How it decides</span>
+    <div class="explain" style="margin-top:10px">
+      <div><b>1 · Overall look</b><p>A model trained to tell individual animals apart turns each photo into a fingerprint. Photos of the same animal should have similar fingerprints.</p></div>
+      <div><b>2 · Matching details</b><p>For the closest candidates, it pairs up small distinctive points between the two photos. Only points on the animal count — points on rocks or grass are ignored.</p></div>
+      <div><b>3 · Decide</b><p>Very sure: it answers. Unsure: it shows you its top 3 and you pick, or tap "none of these". Nothing close: it says this looks like a new animal.</p></div>
+    </div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const DATA = /*__DEMO_DATA__*/null;
+(function () {
+  "use strict";
+  if (!DATA) { document.getElementById("detail").textContent = "No data was exported into this page."; return; }
+
+  const M = DATA.meta, NAMES = DATA.names, IMG = DATA.images, K = M.pick_k;
+  const MODE_TEXT = {
+    embedding: "Compares each photo's overall fingerprint only.",
+    rerank: "Also pairs up small details between photos — counting only points that land on the animal."
+  };
+  const SEG = {
+    known: [
+      ["accepted_correct", "c-good", "Answered on its own — right"],
+      ["pick_has_answer", "c-warn-soft", "Sent to you — right one offered"],
+      ["pick_missing_answer", "c-warn", "Sent to you — right one not in top 3"],
+      ["new_but_known", "c-info", "Called new by mistake — one merge to fix"],
+      ["accepted_wrong_identity", "c-bad", "Answered on its own — WRONG"]
+    ],
+    unknown: [
+      ["new_correct", "c-good", "Correctly called a new animal"],
+      ["pick_stranger", "c-warn-soft", "Sent to you — you'd tap “none of these”"],
+      ["accepted_stranger", "c-bad", "Filed under an animal it isn't"]
+    ]
+  };
+
+  const state = { mode: M.default_mode || "rerank", filter: "all", sel: 0, th: {} };
+  for (const m of Object.keys(DATA.modes)) state.th[m] = Object.assign({}, DATA.modes[m].thresholds);
+
+  // ---- decision policy: mirrors catreid/decision.py ----
+  function decide(score, a, n) { return score >= a ? "accept" : score >= n ? "pick" : "new"; }
+  function classify(row, a, n) {
+    const top = row.top, action = decide(top[0][1], a, n), truth = row.t;
+    const names = top.map(function (c) { return NAMES[c[0]]; });
+    if (action === "accept") {
+      if (!row.k) return "accepted_stranger";
+      return names[0] === truth ? "accepted_correct" : "accepted_wrong_identity";
+    }
+    if (action === "pick") {
+      if (!row.k) return "pick_stranger";
+      return names.slice(0, K).indexOf(truth) >= 0 ? "pick_has_answer" : "pick_missing_answer";
+    }
+    return row.k ? "new_but_known" : "new_correct";
+  }
+
+  function scoreRange(mode) {
+    let lo = Infinity, hi = -Infinity;
+    for (const r of DATA.modes[mode].rows) { const s = r.top[0][1]; if (s < lo) lo = s; if (s > hi) hi = s; }
+    return [lo, hi];
+  }
+  const pct = function (x) { return isFinite(x) ? Math.round(x * 100) + "%" : "—"; };
+
+  // ---- controls ----
+  const $ = function (id) { return document.getElementById(id); };
+  const acc = $("accept"), nw = $("new");
+  function syncSliders() {
+    const r = scoreRange(state.mode), t = state.th[state.mode];
+    for (const s of [acc, nw]) { s.min = r[0].toFixed(3); s.max = r[1].toFixed(3); }
+    acc.value = t.accept; nw.value = t.new;
+    $("accept-val").textContent = (+t.accept).toFixed(3);
+    $("new-val").textContent = (+t.new).toFixed(3);
+  }
+  acc.addEventListener("input", function () {
+    const t = state.th[state.mode]; t.accept = +acc.value;
+    if (t.new > t.accept) t.new = t.accept;
+    syncSliders(); renderAll(false);
+  });
+  nw.addEventListener("input", function () {
+    const t = state.th[state.mode]; t.new = +nw.value;
+    if (t.new > t.accept) t.accept = t.new;
+    syncSliders(); renderAll(false);
+  });
+  $("reset").addEventListener("click", function () {
+    state.th[state.mode] = Object.assign({}, DATA.modes[state.mode].thresholds);
+    syncSliders(); renderAll(false);
+  });
+  for (const m of ["embedding", "rerank"]) {
+    $("mode-" + m).addEventListener("click", function () { state.mode = m; syncSliders(); renderAll(true); });
+  }
+
+  // ---- outcomes across every query ----
+  function renderStats() {
+    const rows = DATA.modes[state.mode].rows, t = state.th[state.mode];
+    const c = {}; let known = 0;
+    for (const k of SEG.known.concat(SEG.unknown)) c[k[0]] = 0;
+    for (const r of rows) { c[classify(r, t.accept, t.new)]++; if (r.k) known++; }
+    const unknown = rows.length - known;
+    const silent = c.accepted_wrong_identity + c.accepted_stranger;
+    const picked = c.pick_has_answer + c.pick_missing_answer + c.pick_stranger;
+    $("n-total").textContent = rows.length.toLocaleString();
+    $("n-known").textContent = "· " + known;
+    $("n-unknown").textContent = "· " + unknown;
+    $("s-auto").textContent = pct(c.accepted_correct / known);
+    $("s-silent").textContent = silent;
+    $("s-pick").textContent = pct(picked / rows.length);
+    const offered = c.pick_has_answer + c.pick_missing_answer;
+    $("s-pickuse").textContent = offered ? "(" + pct(c.pick_has_answer / offered) + " of the time)" : "";
+    $("s-caught").textContent = pct((c.new_correct + c.pick_stranger) / unknown);
+    const fill = function (el, segs, total) {
+      el.innerHTML = "";
+      for (const s of segs) {
+        const span = document.createElement("span");
+        span.className = s[1]; span.style.flexGrow = c[s[0]];
+        span.title = s[2] + ": " + c[s[0]];
+        el.appendChild(span);
+      }
+      el.setAttribute("aria-label", segs.map(function (s) { return s[2] + " " + c[s[0]]; }).join(", "));
+    };
+    fill($("bar-known"), SEG.known, known);
+    fill($("bar-unknown"), SEG.unknown, unknown);
+    const lg = $("legend"); lg.innerHTML = "";
+    for (const s of SEG.known.concat(SEG.unknown)) {
+      const d = document.createElement("div");
+      d.innerHTML = '<i class="' + s[1] + '"></i><span></span><b></b>';
+      d.children[1].textContent = s[2]; d.children[2].textContent = c[s[0]];
+      lg.appendChild(d);
+    }
+  }
+
+  // ---- query strip ----
+  const FILTERS = [
+    ["all", "All"], ["known", "Enrolled animals"], ["unknown", "Never-seen animals"],
+    ["changed", "Details changed the answer"]
+  ];
+  function changed(s) { return s.modes.embedding.cands[0].i !== s.modes.rerank.cands[0].i; }
+  function sampleVerdict(s) {
+    const row = DATA.modes[state.mode].rows[s.q], t = state.th[state.mode];
+    return { action: decide(row.top[0][1], t.accept, t.new), outcome: classify(row, t.accept, t.new), row: row };
+  }
+  function renderFilters() {
+    const el = $("filters"); el.innerHTML = "";
+    for (const f of FILTERS) {
+      const b = document.createElement("button");
+      b.className = "chip"; b.textContent = f[1];
+      b.setAttribute("aria-pressed", String(state.filter === f[0]));
+      b.addEventListener("click", function () { state.filter = f[0]; renderFilters(); renderGrid(); });
+      el.appendChild(b);
+    }
+  }
+  function visible() {
+    return DATA.samples.map(function (s, i) { return [s, i]; }).filter(function (p) {
+      const s = p[0], row = DATA.modes.embedding.rows[s.q];
+      if (state.filter === "known") return row.k;
+      if (state.filter === "unknown") return !row.k;
+      if (state.filter === "changed") return changed(s);
+      return true;
+    });
+  }
+  function renderGrid() {
+    const el = $("grid"); el.innerHTML = "";
+    const list = visible();
+    $("strip-note").textContent = list.length + " of " + DATA.samples.length + " sample photos";
+    for (const p of list) {
+      const s = p[0], i = p[1], v = sampleVerdict(s);
+      const b = document.createElement("button");
+      b.className = "thumb";
+      b.setAttribute("aria-current", String(i === state.sel));
+      const cls = v.action === "accept" ? (v.outcome === "accepted_correct" ? "v-accept-ok" : "v-accept-bad")
+                : v.action === "pick" ? "v-pick" : "v-new";
+      const word = v.action === "accept" ? (v.outcome === "accepted_correct" ? "right" : "wrong")
+                 : v.action === "pick" ? "asks you" : "new";
+      b.setAttribute("aria-label", "Photo " + (i + 1) + ", decision: " + word);
+      b.innerHTML = '<img alt="" loading="lazy"><span class="dot ' + cls + '"></span>' +
+                    (changed(s) ? '<span class="chg">changed</span>' : "");
+      b.querySelector("img").src = IMG[s.img];
+      b.querySelector(".dot").textContent = word;
+      b.addEventListener("click", function () {
+        state.sel = i; renderGrid(); renderDetail();
+        $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      el.appendChild(b);
+    }
+  }
+
+  // ---- one query, explained ----
+  function renderDetail() {
+    const s = DATA.samples[state.sel], m = s.modes[state.mode], v = sampleVerdict(s);
+    const t = state.th[state.mode], r = scoreRange(state.mode), row = v.row;
+    const span = r[1] - r[0] || 1, pos = function (x) { return Math.max(0, Math.min(100, (x - r[0]) / span * 100)); };
+    const truthText = row.k ? "Actually <b></b> — enrolled" : "Actually an animal it has <b>never seen</b>";
+    const top = NAMES[m.cands[0].i];
+    let vcls, vh, vp, judge;
+    if (v.action === "accept") {
+      vh = "“This is " + top + ".”";
+      vp = "Sure enough to answer without asking.";
+      if (v.outcome === "accepted_correct") { vcls = "accept-ok"; judge = "✓ Right — and it didn't need you."; }
+      else { vcls = "accept-bad"; judge = "✗ Wrong, and confident about it. This is the mistake the settings are tuned to avoid."; }
+    } else if (v.action === "pick") {
+      vcls = "pick"; vh = "“Is it one of these?”";
+      vp = "Not sure enough to answer. It shows you its top " + K + " and a “none of these” button.";
+      judge = v.outcome === "pick_has_answer" ? "✓ The right animal is in the three — one tap, and that tap labels a photo."
+            : v.outcome === "pick_stranger" ? "✓ You'd tap “none of these”. Cost: one look."
+            : "✗ The right animal isn't in its top 3 — you'd have to search.";
+    } else {
+      vcls = "new"; vh = "“Looks like an animal we haven't met.”";
+      vp = "Nothing in the gallery is close. It offers to enrol it.";
+      judge = v.outcome === "new_correct" ? "✓ Right — it really is new."
+            : "✗ Actually enrolled. Cost: one merge later — the safe kind of mistake.";
+    }
+    const el = $("detail");
+    el.innerHTML =
+      '<div class="detail-top">' +
+        '<div class="query"><span class="label">The photo</span><img alt="Query photo" style="margin-top:8px"><p class="cap"></p></div>' +
+        '<div class="verdict ' + vcls + '"><span class="label">What it decides</span><h3></h3><p class="vp"></p><p class="judge"></p></div>' +
+      '</div>' +
+      '<div><span class="label">Its top candidates</span>' +
+        '<p style="font-size:12.5px;color:var(--muted);margin:4px 0 10px">Bar = how close the match is. ' +
+        '<span class="swatch" style="background:var(--good)"></span>answer-alone line &nbsp; ' +
+        '<span class="swatch" style="background:var(--info)"></span>new-animal line</p>' +
+        '<div class="cands"></div></div>' +
+      '<div class="viz"><span class="label">Matching details against its top candidate</span>' +
+        '<img alt="" style="margin-top:8px"><p class="cap"></p></div>';
+    el.querySelector(".query img").src = IMG[s.img];
+    const cap = el.querySelector(".query .cap");
+    cap.innerHTML = truthText; if (row.k) cap.querySelector("b").textContent = row.t;
+    el.querySelector(".verdict h3").textContent = vh;
+    el.querySelector(".verdict .vp").textContent = vp;
+    el.querySelector(".verdict .judge").textContent = judge;
+    const list = el.querySelector(".cands");
+    m.cands.forEach(function (c, idx) {
+      const name = NAMES[c.i], isTruth = row.k && name === row.t;
+      const offered = v.action === "pick" && idx < K;
+      const d = document.createElement("div");
+      d.className = "cand" + (isTruth ? " truth" : "") + (offered ? " offered" : "");
+      d.innerHTML = '<span class="rk">' + (idx + 1) + '</span><img alt="">' +
+        '<div class="body"><div class="name"><span></span>' +
+        (isTruth ? '<span class="tag truth">actual</span>' : "") +
+        (offered ? '<span class="tag offer">offered</span>' : "") + '</div>' +
+        '<div class="meter"><span class="fill"></span><span class="tick a"></span><span class="tick n"></span></div>' +
+        '<div class="nums mono"></div></div>';
+      d.querySelector("img").src = IMG[c.img];
+      d.querySelector(".name span").textContent = name;
+      d.querySelector(".fill").style.width = pos(c.s) + "%";
+      d.querySelector(".tick.a").style.left = pos(t.accept) + "%";
+      d.querySelector(".tick.n").style.left = pos(t.new) + "%";
+      let nums = "score " + c.s.toFixed(3) + " · look " + c.cos.toFixed(3);
+      if (c.m_animal !== null) nums += " · " + c.m_animal + " detail matches on the animal (" + c.m_all + " total)";
+      if (state.mode === "embedding") nums = "score " + c.s.toFixed(3) + " (overall look)";
+      d.querySelector(".nums").textContent = nums;
+      list.appendChild(d);
+    });
+    el.querySelector(".viz img").src = m.viz;
+    el.querySelector(".viz img").alt = "Query photo beside its top candidate, with matched points connected by lines.";
+    const vc = el.querySelector(".viz .cap");
+    vc.innerHTML = '<span class="swatch" style="background:#ffc440"></span><b></b> on the animal — these count. ' +
+      '<span class="swatch" style="background:#78828c"></span><span></span> landed on background and are ignored. ' +
+      'Darkened areas are not the animal.';
+    vc.querySelector("b").textContent = m.viz_counted + " matches";
+    vc.querySelector("span:nth-of-type(3)").textContent = (m.viz_all - m.viz_counted) + " others";
+  }
+
+  function renderAll(full) {
+    for (const mm of ["embedding", "rerank"]) $("mode-" + mm).setAttribute("aria-pressed", String(state.mode === mm));
+    $("mode-hint").textContent = MODE_TEXT[state.mode];
+    renderStats(); renderGrid(); renderDetail();
+  }
+
+  $("eyebrow").textContent = "BGUcats · recognition demo · " + M.dataset;
+  $("footer").innerHTML = "";
+  for (const line of M.footer) { const p = document.createElement("p"); p.textContent = line; $("footer").appendChild(p); }
+  renderFilters(); syncSliders(); renderAll(true);
+})();
+</script>

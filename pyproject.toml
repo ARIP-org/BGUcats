@@ -1,2 +1,11 @@
+[tool.ruff]
+# Ruff's default source roots are "." and "src", which is why `process` and
+# `ingest` already sort as first-party. `research` holds the phase-1b package
+# and needs saying explicitly.
+src = ["src", "research"]
+
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+# `research` is on the path so the phase-1b package imports as `catreid.*`
+# without being installed. It shares the test run with src/ but shares no code:
+# research/ imports nothing from src/ (CLAUDE.md, "Research track").
+pythonpath = ["src", "research"]
