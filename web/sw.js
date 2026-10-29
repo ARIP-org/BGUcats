@@ -17,6 +17,14 @@
 // every launch would download the model again. /model/manifest.json, which
 // says which version to load, is not cached: a new model still reaches
 // everyone on their next load.
+//
+// And one job beyond caching: Background Sync (Chrome on Android). When the
+// app is left with photos still waiting, outbox.js registers the "outbox"
+// tag, and the browser wakes this worker to upload them, after the app is
+// closed too, as soon as there is a signal. It does the same three steps as
+// outbox.js (record, S3, confirm) on the same IndexedDB queue and the same
+// ULIDs, so a photo the app and the worker both send lands once. Safari has
+// no Background Sync: on an iPhone, uploads move only while the app is open.
 
 const CACHE = "bgucats-shell-v3";
 const MODEL_CACHE = "bgucats-model";
@@ -102,4 +110,174 @@ async function modelFile(request, path, version) {
     }
   }
   return response;
+}
+
+// --------------------------------------------------------------------------
+// Background Sync: the outbox, uploaded while the app is closed
+// --------------------------------------------------------------------------
+
+const SYNC_TAG = "outbox"; // outbox.js SYNC_TAG
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === SYNC_TAG) event.waitUntil(uploadOutbox());
+});
+
+// Rejecting tells the browser to try again later (it backs off by itself).
+async function uploadOutbox() {
+  // The app on screen uploads by itself; two senders only waste the signal.
+  const windows = await self.clients.matchAll({ type: "window" });
+  if (windows.some((w) => w.visibilityState === "visible")) return;
+
+  const db = await openExisting("bgucats-outbox");
+  if (!db || !db.objectStoreNames.contains("states")) return; // nothing queued, or an older app
+  try {
+    const token = await workerToken();
+    if (!token) return; // signed out: nothing can be sent
+    const api = (path, body) => apiPost(token, path, body);
+
+    let left = 0;
+    const states = new Map((await getAll(db, "states")).map((r) => [r.photoId, r]));
+    const items = (await getAll(db, "items")).filter((i) => {
+      const row = states.get(i.photoId);
+      return row ? row.state !== "failed" : i.state !== "failed";
+    });
+    const encounters = new Map((await getAll(db, "encounters")).map((e) => [e.sessionId, e]));
+
+    for (const item of items.sort((a, b) => a.photoId.localeCompare(b.photoId))) {
+      const encounter = encounters.get(item.sessionId);
+      if (encounter?.failed) continue;
+      if (encounter && !encounter.created) {
+        const res = await api("/encounters", {
+          sessionId: encounter.sessionId,
+          lat: encounter.lat,
+          lon: encounter.lon,
+          accuracyM: encounter.accuracyM,
+        });
+        if (!res.ok) {
+          left += 1;
+          continue;
+        }
+        encounter.created = true;
+        await patchRecord(db, "encounters", encounter.sessionId, { created: true });
+      }
+      if (!(await sendItem(db, api, item))) left += 1;
+    }
+    if (left) throw new Error(`${left} still waiting`);
+  } finally {
+    db.close();
+  }
+}
+
+// One photo: true when it is done with (uploaded, or refused for good).
+async function sendItem(db, api, item) {
+  const start = await api(`/encounters/${item.sessionId}/media`, {
+    photoId: item.photoId,
+    contentType: item.contentType,
+    capturedAt: item.capturedAt,
+    lat: item.lat,
+    lon: item.lon,
+    accuracyM: item.accuracyM,
+    durationSeconds: item.durationSeconds,
+  });
+  if (permanent(start.status)) return failItem(db, item, start.error);
+  if (!start.ok) return false;
+  if (!start.data.done) {
+    const form = new FormData();
+    for (const [name, value] of Object.entries(start.data.upload.fields)) form.append(name, value);
+    form.append("file", item.blob); // must be the last field
+    const res = await fetch(start.data.upload.url, { method: "POST", body: form }).catch(() => null);
+    if (!res) return false;
+    if (res.status >= 400 && res.status < 500) return failItem(db, item, `storage refused the upload (${res.status})`);
+    if (!res.ok) return false;
+  }
+  const done = await api(`/photos/${item.photoId}/complete`, {});
+  if (permanent(done.status) && done.status !== 409) return failItem(db, item, done.error);
+  if (!done.ok && done.status !== 409) return false;
+  await deleteRecord(db, "items", item.photoId);
+  await deleteRecord(db, "states", item.photoId);
+  return true;
+}
+
+async function failItem(db, item, error) {
+  await putRecord(db, "states", { photoId: item.photoId, state: "failed", error: error || "refused" });
+  return true;
+}
+
+const permanent = (status) => [400, 403, 404, 409].includes(status);
+
+async function apiPost(token, path, body) {
+  try {
+    const res = await fetch(`/api${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data, error: data.error };
+  } catch {
+    return { ok: false, status: 0, data: {} }; // no connection: try later
+  }
+}
+
+// The app's sign-in, copied to IndexedDB by app.js (saveTokens). Refreshed
+// here with the refresh token when it has expired.
+async function workerToken() {
+  const auth = await openExisting("bgucats-auth");
+  if (!auth) return null;
+  try {
+    const tokens = (await getAll(auth, "tokens"))[0];
+    if (!tokens) return null;
+    if (Date.now() < tokens.expiresAt) return tokens.idToken;
+    if (!tokens.refreshToken) return null;
+    const config = await (await fetch("/config.json")).json();
+    const res = await fetch(`https://${config.cognitoDomain}/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: config.userPoolClientId,
+        grant_type: "refresh_token",
+        refresh_token: tokens.refreshToken,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const fresh = {
+      idToken: data.id_token,
+      refreshToken: data.refresh_token || tokens.refreshToken,
+      expiresAt: Date.now() + (data.expires_in - 60) * 1000,
+    };
+    await putRecord(auth, "tokens", fresh, "current");
+    return fresh.idToken;
+  } finally {
+    auth.close();
+  }
+}
+
+// Opens a database only if the app already made it: creating one here would
+// leave it at a version the app's own upgrade then skips.
+function openExisting(name) {
+  return new Promise((resolve) => {
+    const open = indexedDB.open(name);
+    open.onupgradeneeded = () => open.transaction.abort();
+    open.onsuccess = () => resolve(open.result);
+    open.onerror = () => resolve(null);
+  });
+}
+
+function request(db, store, mode, fn) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, mode);
+    const req = fn(tx.objectStore(store));
+    tx.oncomplete = () => resolve(req.result);
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  });
+}
+
+const getAll = (db, store) => request(db, store, "readonly", (s) => s.getAll());
+const putRecord = (db, store, value, key) => request(db, store, "readwrite", (s) => (key ? s.put(value, key) : s.put(value)));
+const deleteRecord = (db, store, key) => request(db, store, "readwrite", (s) => s.delete(key));
+
+async function patchRecord(db, store, key, patch) {
+  const latest = await request(db, store, "readonly", (s) => s.get(key));
+  if (latest) await putRecord(db, store, { ...latest, ...patch });
 }

@@ -1353,11 +1353,15 @@ def _get_encounters(email, **_):
         entry = {**_clean(item), "catName": names.get(item.get("catId"))}
         pick = picks.get(item["sessionId"])
         if pick:
-            # Their own answer, so the screen can say whether it held up.
+            # Their own answer and the model's first guess, so the screen
+            # can say how each held up against the label.
+            model_cat = (pick.get("ranked") or [{}])[0].get("catId")
             entry["pick"] = {
                 "choice": pick["choice"],
                 "catId": pick.get("catId"),
                 "catName": names.get(pick.get("catId")),
+                "modelCatId": model_cat,
+                "modelCatName": names.get(model_cat),
             }
         out.append(entry)
     return {"encounters": out}

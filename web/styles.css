@@ -2715,82 +2715,6 @@ a.btn {
 
 /* A card on the dark camera overlay: the paper colours, so the cats' faces
    read clearly over any viewfinder. */
-.guess {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 2px solid var(--ink);
-  border-radius: var(--radius-sm);
-  background: var(--card);
-  color: var(--ink);
-  box-shadow: var(--lift);
-}
-.guess[hidden] {
-  display: none;
-}
-.guess-line {
-  margin: 0;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.guess-line .guess-change {
-  flex: none;
-}
-.guess progress {
-  width: 100%;
-  height: 6px;
-  accent-color: var(--chart);
-}
-.guess-picks {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-.guess-pick {
-  display: grid;
-  gap: 4px;
-  padding: 4px;
-  border: 2px solid var(--ink);
-  border-radius: var(--radius-sm);
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-  cursor: pointer;
-  min-width: 0;
-}
-.guess-pick:active {
-  transform: translate(1px, 1px);
-}
-.guess-pick img,
-.guess-blank {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  background: var(--paper-2);
-  font-size: 22px;
-}
-.guess-name {
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.guess-other {
-  display: flex;
-  gap: 8px;
-}
-.guess-other .btn {
-  flex: 1;
-}
-
 .guess-offer h3 {
   margin: 0 0 6px;
 }
@@ -2807,4 +2731,130 @@ a.btn {
 .pick-right {
   color: var(--good);
   font-weight: 500;
+}
+.pick-wrong {
+  color: var(--danger);
+}
+
+/* ---------- capture: the encounter's result ---------- */
+
+.result-photos .shot-strip {
+  padding: 0;
+}
+.result-photos .outbox-line {
+  margin: 10px 0 0;
+}
+.result {
+  display: grid;
+  gap: 12px;
+}
+.result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.result-title {
+  margin: 0;
+  font-size: 20px;
+}
+.result > .meta {
+  margin: -6px 0 0;
+}
+.result-wait {
+  margin: 0;
+  font-weight: 500;
+}
+.result-wait::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--ginger);
+  animation: model-pulse 1.2s ease-in-out infinite;
+}
+.result progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--chart);
+}
+/* Bigger than on a queue card: this is the whole question. */
+.result-picks {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.result-picks .pick-name {
+  font-size: 15px;
+}
+.result-choices,
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.result-choices .btn {
+  flex: 1 1 auto;
+}
+.result-actions {
+  align-items: center;
+  margin-top: 4px;
+}
+.result-done {
+  display: grid;
+  gap: 10px;
+}
+.result-cat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.result-cat img,
+.result-cat .pick-cover-empty {
+  width: 96px;
+  height: 96px;
+  flex: none;
+  object-fit: cover;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper-2);
+}
+.result-cat p {
+  margin: 0;
+}
+.result-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.result-name {
+  margin: 0;
+  font: 700 34px/1.05 var(--font-display);
+}
+.result-model {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+.result-model.agree {
+  background: var(--good-wash);
+  color: var(--good);
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .result-wait::before {
+    animation: none;
+  }
+}
+
+.encounter-row {
+  flex-wrap: wrap;
+}
+.verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: var(--ink-soft);
 }

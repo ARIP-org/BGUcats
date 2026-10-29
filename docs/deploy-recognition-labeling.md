@@ -294,3 +294,60 @@ was … too ✓".
 **Expected plan:** code updates to `aws_lambda_function.admin` and
 `.admin_presignup` (plus zip noise on the others), and
 `aws_s3_object.web["app.js"]`, `["recognition.js"]`, `["styles.css"]`.
+
+---
+
+## "Who did you meet?" after each encounter, and uploads that keep going (2026-10-29)
+
+**Asked for:** collaborators should see the model's guess for every
+encounter and say which cat it was. The design should be good enough for
+the early version of the real app. Uploads must not slow down, and should
+keep going when the phone is locked or the app is closed, if a PWA can do
+that.
+
+**What changes:**
+
+- **Capture's result screen.** "Done" opens "Who did you meet?" instead of
+  closing the encounter. It shows the photos with their upload state and
+  asks "Is it one of these?" over the model's three. The other choices are
+  "Another cat…" (every cat, the model's order first, with a filter), "A cat
+  that isn't here", "Not sure", "Take more photos" and "Skip". After an
+  answer: "You said X · Encounter #N with this cat", whether the model
+  agreed, then "Next cat" (straight into a new encounter) or "Finish".
+  Admins get the same screen with similarity scores. The ranking is
+  computed in the background while shooting and kept with the encounter, so
+  a reload returns to the result screen.
+- **Guesses are on by default.** The model downloads in the background from
+  the first Capture visit. Only a data-saver phone is asked first.
+- **Your recent encounters** shows "you: X ✓/✗" and "model: Y ✓/✗" against
+  the label (`GET /api/encounters` adds `modelCatId` and `modelCatName` to
+  `pick`).
+- **Uploads:** three at a time. The screen is kept awake while files wait
+  (Wake Lock). **Background Sync** (Chrome on Android): the outbox registers
+  it with every photo and when the app is hidden, and sw.js uploads the
+  queue with the app closed. The tokens are copied to IndexedDB
+  `bgucats-auth` for it. Capture says which of these applies ("You can leave
+  the app…" or "Keep the app open…").
+
+**The iPhone limit, stated plainly:** Safari has no Background Sync or
+background upload API, and suspends a hidden web app within seconds. On an
+iPhone, uploads move only while the app is open on screen. The app keeps the
+screen from locking while files wait, and tells the person to keep it open.
+A native app would be the only way past this.
+
+**Verified, headless (live Lambda GETs as a collaborator, stub writes):**
+- 4 photos of one cat, then Done: "Is it one of these?" was up within a
+  second, #1 was right, and the answer recorded "Encounter #7 · The model
+  thought so too ✓".
+- "Another cat…" listed all 22 cats, and the filter worked. A reload on the
+  result screen came back to it with the guess.
+- Offline, the guess still came (the model is cached).
+- In full Chromium, 3 photos taken offline uploaded through the service
+  worker 1 s after the signal came back, with no page open. Chrome's
+  stripped-down headless shell never fires Background Sync, so a test there
+  proves nothing.
+
+**Expected plan:** code updates to `aws_lambda_function.admin`,
+`.admin_presignup` (plus zip noise), and `aws_s3_object.web["app.js"]`,
+`["capture.js"]`, `["outbox.js"]`, `["sw.js"]`, `["styles.css"]`,
+`["recognition.js"]` if changed.

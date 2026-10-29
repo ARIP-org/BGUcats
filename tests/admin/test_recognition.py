@@ -420,6 +420,9 @@ def test_a_pick_is_joined_with_the_label_and_never_shown_to_the_labeler(aws):
         "choice": "cat",
         "catId": OTHER_CAT,
         "catName": "Ryzhik",
+        # the model's first guess, from the ranking shown to them
+        "modelCatId": CAT,
+        "modelCatName": "Mitzi",
     }
     assert mine["encounters"][0]["catName"] == "Mitzi"
 

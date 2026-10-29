@@ -16,13 +16,15 @@
 // phone's own camera app. Closing it (✕) only steps back to this screen; the
 // encounter stays open until "Done — next cat".
 //
-// Cat guesses (opt-in, recognition.js): after a photo, the phone runs the
-// model on it and asks "Is it one of these?" with its top three. The point
-// is the moment, not the label: the person is still next to the cat, so an
-// unsure guess can turn into a better photo, and a known cat's encounter
-// count rewards coming back to cats already met — the re-encounters that
-// research/FINDINGS.md found matter most. The answer rides in the outbox
-// and is kept apart from the label; the labeling desk never shows it.
+// Cat guesses (recognition.js, on unless turned off): while the person
+// shoots, the phone runs the model on each photo in the background. "Done"
+// then opens the encounter's result: "Who did you meet?", the model's top
+// three, and the person's answer. The encounter stays open until they
+// answer, so an unsure guess can still turn into a better photo ("Take more
+// photos"), and a known cat's encounter count rewards coming back to cats
+// already met — the re-encounters research/FINDINGS.md found matter most.
+// The answer rides in the outbox and is kept apart from the label. None of
+// this waits on, or holds up, an upload.
 
 import { createOutbox, ulid } from "./outbox.js";
 
@@ -38,10 +40,12 @@ const VIDEO_MAX_SECONDS = 10;
 const VIDEO_BITS_PER_SECOND = 2_500_000;
 const MAX_FILE_BYTES = { photo: 20 * 1024 * 1024, video: 60 * 1024 * 1024 };
 const THUMB_PX = 160;
-// "on" or "off"; unset means not asked yet. The model is ~40 MB, so it is
-// never downloaded without the person saying yes.
+// "on" or "off"; unset means on — except on a phone asking to save data,
+// which is asked first, since the model is ~40 MB (downloaded once).
 const GUESSES_KEY = "bgucats.guesses";
 const GUESS_SHOWN = 3;
+// Kept with the encounter, so a reload on the result screen still has it.
+const GUESS_KEPT = 200;
 
 const VIDEO_TYPES = [
   "video/mp4;codecs=avc1",
@@ -52,9 +56,10 @@ const VIDEO_TYPES = [
 ];
 
 export function createCapture(ui) {
-  const { el, button, toast, cachedGet, post, sectionHead, plural, fmtDate, emptyState, recognition } = ui;
-  // A refreshed list redraws this screen — never the camera over it.
-  const get = (path) => cachedGet(path, () => !cameraOpen && mounted && render());
+  const { el, button, toast, cachedGet, post, sectionHead, plural, fmtDate, emptyState, recognition, isAdmin } = ui;
+  // A refreshed list redraws the start screen — never the camera or the
+  // result screen over it.
+  const get = (path) => cachedGet(path, () => !cameraOpen && !inReview() && mounted && render());
 
   let encounter = loadEncounter();
   let stream = null;
@@ -63,8 +68,10 @@ export function createCapture(ui) {
   let fix = null; // {lat, lon, accuracyM, at}
   let locationState = "idle"; // idle | finding | ok | denied | unavailable
   let mounted = null; // the elements of the screen while it is showing
-  // Reopening the app mid-encounter goes straight back to the camera.
-  let cameraOpen = !!encounter;
+  // Reopening the app mid-encounter goes straight back to where it was:
+  // the camera, or the result screen ("review") after Done.
+  let cameraOpen = !!encounter && encounter.stage !== "review";
+  const inReview = () => encounter?.stage === "review";
 
   const outbox = createOutbox({ post, onChange: () => mounted && drawStrip() });
 
@@ -78,7 +85,12 @@ export function createCapture(ui) {
   let guessRun = null;
   let guessAgain = false;
 
-  const guessesOn = () => !!recognition && readSetting() === "on";
+  const savingData = () => !!navigator.connection?.saveData;
+  const guessesOn = () => {
+    if (!recognition) return false;
+    const setting = readSetting();
+    return setting === "on" || (setting === null && !savingData());
+  };
   function readSetting() {
     try {
       return localStorage.getItem(GUESSES_KEY);
@@ -120,14 +132,20 @@ export function createCapture(ui) {
 
   // Re-guess after every photo, one run at a time.
   function updateGuess() {
-    if (!guessesOn() || !encounter || !["waiting", "ready", "looking"].includes(guess.status)) return;
+    if (!guessesOn() || !encounter || !["waiting", "ready", "looking", "nophotos"].includes(guess.status)) return;
     if (guessRun) {
       guessAgain = true;
       return;
     }
+    const forEncounter = encounter;
     guessRun = (async () => {
-      const shots = encounter.shots.filter((s) => s.kind === "photo" && shotBlobs.has(s.photoId));
-      if (!shots.length) return;
+      await restoreBlobs();
+      const shots = forEncounter.shots.filter((s) => s.kind === "photo" && shotBlobs.has(s.photoId));
+      if (!shots.length) {
+        // Reopened after its photos left the phone: the kept guess stands.
+        guess = forEncounter.guess ? { status: "ready", ...forEncounter.guess } : { status: "nophotos" };
+        return;
+      }
       if (guess.status !== "ready") {
         guess = { status: "looking" };
         drawGuess();
@@ -139,6 +157,13 @@ export function createCapture(ui) {
         guess = { status: "unavailable" };
       } else {
         guess = { status: "ready", ...result };
+        if (encounter === forEncounter) {
+          encounter.guess = {
+            ranked: result.ranked.slice(0, GUESS_KEPT).map((r) => ({ catId: r.catId, score: r.score })),
+            photoCount: result.photoCount,
+          };
+          saveEncounter();
+        }
       }
     })()
       .catch(() => {
@@ -152,6 +177,17 @@ export function createCapture(ui) {
           updateGuess();
         }
       });
+  }
+
+  // After a reload the photos may only be in the outbox now.
+  async function restoreBlobs() {
+    if (!encounter) return;
+    const missing = encounter.shots.filter((s) => s.kind === "photo" && !shotBlobs.has(s.photoId));
+    if (!missing.length) return;
+    const { items } = await outbox.snapshot();
+    for (const item of items) {
+      if (item.blob && missing.some((s) => s.photoId === item.photoId)) shotBlobs.set(item.photoId, item.blob);
+    }
   }
 
   async function answer(choice, catId = null) {
@@ -175,76 +211,199 @@ export function createCapture(ui) {
   function changeAnswer() {
     if (!encounter) return;
     delete encounter.pick;
+    choosingOther = false;
     saveEncounter();
     drawGuess();
   }
 
+  // ---- the result screen ("Who did you meet?") ---------------------------
+
+  let choosingOther = false; // the full list of cats is open
+  let otherFilter = "";
+
   const catName = (id) => cats?.get(id)?.name || "this cat";
 
-  function guessPanel() {
-    const node = el("div", { className: "guess", attrs: { "aria-live": "polite" } });
-    return node;
+  function cover(catId) {
+    const url = cats?.get(catId)?.coverUrl;
+    return url ? el("img", { src: url, alt: "" }) : el("span", { className: "pick-cover-empty", textContent: "?" });
   }
 
   function drawGuess() {
     const node = mounted?.guess;
-    if (!node) return;
-    node.hidden = !guessesOn() || guess.status === "idle" || guess.status === "unavailable";
-    if (node.hidden) return node.replaceChildren();
-
-    const line = (text, kids = []) => [
-      el("p", { className: "guess-line" }, [el("span", { textContent: text }), ...kids]),
-    ];
-    const picked = encounter?.pick;
-
-    if (picked) {
-      const again = button("Change", "btn btn-sm guess-change", changeAnswer);
-      if (picked.choice === "cat") {
-        const n = recognition.encountersOf(picked.catId) + 1;
-        return node.replaceChildren(
-          ...line(`You said ${catName(picked.catId)} · encounter #${n} with this cat`, [again]),
-        );
-      }
-      if (picked.choice === "none") {
-        return node.replaceChildren(...line("A cat we haven't met? An admin will name it.", [again]));
-      }
-      return node.replaceChildren(...line("Thanks. A photo of the face helps the most.", [again]));
+    if (!node || !encounter) return;
+    if (encounter.pick) return node.replaceChildren(...answered());
+    if (!guessesOn()) {
+      return node.replaceChildren(
+        ...note("Cat guesses are off, so there is nothing to compare. Your photos upload all the same."),
+      );
     }
-
-    if (guess.status === "preparing") {
+    if (guess.status === "idle" || guess.status === "preparing") {
       const st = recognition.state;
       return node.replaceChildren(
-        ...line(`Getting ready to guess: ${st.detail || "starting"}`),
+        ...note(`Getting the cat guesser ready: ${st.detail || "starting"}`, "result-wait"),
         st.progress != null ? el("progress", { max: 1, value: st.progress }) : "",
       );
     }
-    if (guess.status === "waiting") return node.replaceChildren(...line("Take a photo and the app will guess who it is."));
+    if (guess.status === "waiting" || guess.status === "looking") {
+      return node.replaceChildren(...note("Looking at your photos…", "result-wait"));
+    }
     if (guess.status === "empty") {
       return node.replaceChildren(
-        ...line("The app doesn't know any cats yet. Guesses start once an admin opens the Queue."),
+        ...note("The app doesn't know any cats yet. Guesses start once an admin opens the Queue."),
       );
     }
-    if (guess.status === "looking") return node.replaceChildren(...line("Looking…"));
+    if (guess.status !== "ready") {
+      return node.replaceChildren(
+        ...note("No guess this time. Your photos upload all the same, and an admin will label them."),
+      );
+    }
+    return node.replaceChildren(...(choosingOther ? otherCats() : guesses()));
+  }
 
-    const tiles = guess.ranked.slice(0, GUESS_SHOWN).map((r) => {
-      const cat = cats?.get(r.catId);
-      const tile = el("button", { type: "button", className: "guess-pick" }, [
-        cat?.coverUrl
-          ? el("img", { src: cat.coverUrl, alt: "" })
-          : el("span", { className: "guess-blank", textContent: "?" }),
-        el("span", { className: "guess-name", textContent: catName(r.catId) }),
+  // A message with the two ways on: more photos, or finish without an answer.
+  function note(text, className = "muted") {
+    return [
+      el("p", { className, textContent: text }),
+      el("div", { className: "result-actions" }, [
+        button("Take more photos", "btn btn-lg", backToCamera),
+        button("Finish", "btn btn-ghost", () => finishEncounter()),
+      ]),
+    ];
+  }
+
+  function guesses() {
+    const admin = isAdmin?.();
+    const tiles = guess.ranked.slice(0, GUESS_SHOWN).map((r, i) => {
+      const met = recognition.encountersOf(r.catId);
+      const tile = el("button", { type: "button", className: `model-pick${i === 0 ? " first" : ""}` }, [
+        el("span", { className: "model-rank", textContent: `#${i + 1}` }),
+        cover(r.catId),
+        el("span", { className: "pick-name", textContent: catName(r.catId) }),
+        el("span", {
+          className: "pick-count",
+          // Admins see the score. For everyone else it is a number with no
+          // meaning yet (there are no thresholds), so say something useful.
+          textContent: admin ? `similarity ${r.score.toFixed(2)}` : met ? `met ${met}×` : "new to the app",
+        }),
       ]);
+      tile.title = catName(r.catId);
       tile.onclick = () => answer("cat", r.catId);
       return tile;
     });
-    node.replaceChildren(
-      el("p", { className: "guess-line", textContent: "Is it one of these?" }),
-      el("div", { className: "guess-picks" }, tiles),
-      el("div", { className: "guess-other" }, [
-        button("None of these", "btn btn-sm", () => answer("none")),
-        button("Not sure", "btn btn-sm", () => answer("unsure")),
+    return [
+      el("h3", { className: "result-title", textContent: "Is it one of these?" }),
+      el("p", {
+        className: "meta",
+        textContent: `The model's best guesses from ${plural(guess.photoCount, "photo")}. Tap the right one.`,
+      }),
+      el("div", { className: "model-guess-picks result-picks" }, tiles),
+      el("div", { className: "result-choices" }, [
+        button("Another cat…", "btn", () => {
+          choosingOther = true;
+          otherFilter = "";
+          drawGuess();
+        }),
+        button("A cat that isn't here", "btn", () => answer("none")),
+        button("Not sure", "btn", () => answer("unsure")),
       ]),
+      el("div", { className: "result-actions" }, [
+        button("Take more photos", "btn btn-ghost", backToCamera),
+        button("Skip", "btn btn-ghost", () => finishEncounter()),
+      ]),
+    ];
+  }
+
+  // Every cat, the model's order first, with a name filter.
+  function otherCats() {
+    const order = new Map(guess.ranked.map((r, i) => [r.catId, i]));
+    const all = [...(cats?.values() || [])].sort(
+      (a, b) => (order.get(a.catId) ?? 1e9) - (order.get(b.catId) ?? 1e9) || a.name.localeCompare(b.name),
     );
+    const grid = el("div", { className: "picker-grid" });
+    const fill = () => {
+      const needle = otherFilter.trim().toLowerCase();
+      grid.replaceChildren(
+        ...all
+          .filter((c) => c.name.toLowerCase().includes(needle))
+          .map((c) => {
+            const tile = el("button", { type: "button", className: "pick" }, [
+              cover(c.catId),
+              el("span", { className: "pick-name", textContent: c.name }),
+            ]);
+            tile.onclick = () => answer("cat", c.catId);
+            return tile;
+          }),
+      );
+    };
+    const search = el("input", {
+      type: "search",
+      className: "picker-search",
+      placeholder: "Find a cat by name",
+      autocomplete: "off",
+      value: otherFilter,
+    });
+    search.oninput = () => {
+      otherFilter = search.value;
+      fill();
+    };
+    fill();
+    return [
+      el("div", { className: "result-head" }, [
+        el("h3", { className: "result-title", textContent: "Which cat is it?" }),
+        button("← Back", "btn btn-ghost btn-sm", () => {
+          choosingOther = false;
+          drawGuess();
+        }),
+      ]),
+      search,
+      grid,
+    ];
+  }
+
+  function answered() {
+    const picked = encounter.pick;
+    const modelFirst = guess.ranked?.[0]?.catId ?? encounter.guess?.ranked?.[0]?.catId;
+    let body;
+    if (picked.choice === "cat") {
+      const n = recognition.encountersOf(picked.catId) + 1;
+      const agree = modelFirst === picked.catId;
+      body = [
+        el("div", { className: "result-cat" }, [
+          cover(picked.catId),
+          el("div", {}, [
+            el("p", { className: "result-label", textContent: "You said" }),
+            el("p", { className: "result-name", textContent: catName(picked.catId) }),
+            el("p", { className: "meta", textContent: `Encounter #${n} with this cat` }),
+          ]),
+        ]),
+        modelFirst
+          ? el("p", {
+              className: `result-model${agree ? " agree" : ""}`,
+              textContent: agree
+                ? "The model thought so too ✓"
+                : `The model's first guess was ${catName(modelFirst)}.`,
+            })
+          : null,
+      ];
+    } else if (picked.choice === "none") {
+      body = [
+        el("p", { className: "result-name", textContent: "A cat we haven't met" }),
+        el("p", { className: "meta", textContent: "An admin will give it a name. Thank you!" }),
+      ];
+    } else {
+      body = [
+        el("p", { className: "result-name", textContent: "Not sure — that's fine" }),
+        el("p", { className: "meta", textContent: "An admin will label it. Next time, a photo of the face helps most." }),
+      ];
+    }
+    return [
+      el("div", { className: "result-done" }, body.filter(Boolean)),
+      el("div", { className: "result-actions" }, [
+        button("Next cat", "btn btn-primary btn-lg", () => finishEncounter({ next: true })),
+        button("Finish", "btn btn-lg", () => finishEncounter()),
+        button("Change my answer", "btn btn-ghost btn-sm", changeAnswer),
+      ]),
+    ];
   }
 
   function guessSettingCard() {
@@ -255,7 +414,7 @@ export function createCapture(ui) {
       render();
       if (value === "on") prepareGuesses();
     };
-    if (!setting) {
+    if (!setting && savingData()) {
       return el("section", { className: "card panel guess-offer" }, [
         el("h3", { textContent: "Let the app guess the cat?" }),
         el("p", {
@@ -270,9 +429,12 @@ export function createCapture(ui) {
         ]),
       ]);
     }
+    const on = guessesOn();
     return el("p", { className: "meta guess-setting" }, [
-      setting === "on" ? "Cat guesses are on. " : "Cat guesses are off. ",
-      button(setting === "on" ? "Turn off" : "Turn on", "btn btn-sm btn-ghost", turn(setting === "on" ? "off" : "on")),
+      on
+        ? "After each encounter the app guesses which cat it was (a 40 MB download, once). "
+        : "Cat guesses are off. ",
+      button(on ? "Turn off" : "Turn on", "btn btn-sm btn-ghost", turn(on ? "off" : "on")),
     ]);
   }
 
@@ -313,20 +475,45 @@ export function createCapture(ui) {
     render();
   }
 
-  async function finishEncounter() {
+  // "Done": with photos and guesses on, the result screen first — the
+  // encounter closes when the person answers or finishes there.
+  function done() {
+    stopRecording();
+    if (!encounter.shots.length || !guessesOn()) return finishEncounter();
+    encounter.stage = "review";
+    choosingOther = false;
+    cameraOpen = false;
+    saveEncounter();
+    render();
+    updateGuess(); // picks up a photo taken in the last second
+  }
+
+  function backToCamera() {
+    if (!encounter) return;
+    encounter.stage = "shooting";
+    cameraOpen = true;
+    saveEncounter();
+    render();
+  }
+
+  async function finishEncounter({ next = false } = {}) {
     stopRecording();
     const finished = encounter;
     encounter = null;
     cameraOpen = false;
+    choosingOther = false;
     for (const shot of finished.shots) shotBlobs.delete(shot.photoId);
-    if (guess.status === "ready" || guess.status === "looking") guess = { status: "waiting" };
+    if (guessesOn()) guess = recognition.knowsCats() ? { status: "waiting" } : guess;
     saveEncounter();
     await outbox.closeEncounter(finished.sessionId);
-    toast(
-      finished.shots.length
-        ? `Encounter saved · ${plural(finished.shots.length, "shot")}`
-        : "Encounter closed — nothing was captured",
-    );
+    if (!finished.pick) {
+      toast(
+        finished.shots.length
+          ? `Encounter saved · ${plural(finished.shots.length, "shot")}`
+          : "Encounter closed — nothing was captured",
+      );
+    }
+    if (next) return startEncounter();
     render();
   }
 
@@ -514,7 +701,11 @@ export function createCapture(ui) {
 
   async function render() {
     if (encounter && cameraOpen) return renderCamera();
+    if (inReview()) return renderReview();
     leave();
+    // The model loads in the background from the first visit, so a guess
+    // is ready by the time anyone presses Done.
+    if (guessesOn() && ["idle", "unavailable"].includes(guess.status)) prepareGuesses();
 
     const main = document.querySelector("#main");
     const head = sectionHead("Capture", "Every photo and video goes to the cat catalogue.");
@@ -533,7 +724,7 @@ export function createCapture(ui) {
               cameraOpen = true;
               render();
             }),
-            button("Done — next cat", "btn btn-lg", finishEncounter),
+            button("Done", "btn btn-lg", done),
           ]),
         ])
       : el("section", { className: "card capture-start" }, [
@@ -555,6 +746,28 @@ export function createCapture(ui) {
     drawStrip();
   }
 
+  // After Done: the encounter's photos (still uploading, or not) and the
+  // question. The upload never waits for the answer.
+  function renderReview() {
+    leave();
+    if (guessesOn() && ["idle", "unavailable"].includes(guess.status)) prepareGuesses();
+    const strip = el("div", { className: "shot-strip" });
+    const status = el("p", { className: "meta outbox-line" });
+    const panel = el("section", { className: "card panel result", attrs: { "aria-live": "polite" } });
+    mounted = { strip, status, guess: panel };
+    document.querySelector("#main").replaceChildren(
+      sectionHead(
+        "Who did you meet?",
+        `Encounter at ${fmtTime(encounter.startedAt)} · ${plural(encounter.shots.length, "shot")}`,
+      ),
+      el("section", { className: "card panel result-photos" }, [strip, status]),
+      panel,
+    );
+    window.scrollTo(0, 0);
+    drawStrip();
+    drawGuess();
+  }
+
   async function renderCamera() {
     closeCamera();
     watchLocation();
@@ -565,7 +778,6 @@ export function createCapture(ui) {
     const location = el("span", { className: "chip location-chip" });
     const strip = el("div", { className: "shot-strip" });
     const status = el("p", { className: "outbox-line" });
-    const guessNode = guessPanel();
 
     const close = el("button", {
       type: "button",
@@ -609,7 +821,7 @@ export function createCapture(ui) {
       systemVideo,
     ]);
 
-    const done = button("Done — next cat", "btn", finishEncounter);
+    const doneButton = button("Done", "btn", done);
 
     const camera = el("div", { className: "camera", attrs: { role: "dialog", "aria-label": "Camera" } }, [
       video,
@@ -623,10 +835,9 @@ export function createCapture(ui) {
         location,
       ]),
       el("div", { className: "camera-bottom" }, [
-        guessNode,
         strip,
         status,
-        el("div", { className: "capture-controls" }, [record, shutter, done]),
+        el("div", { className: "capture-controls" }, [record, shutter, doneButton]),
       ]),
     ]);
     document.body.append(camera);
@@ -635,11 +846,10 @@ export function createCapture(ui) {
     // the camera covers it.
     document.querySelector("#app").inert = true;
 
-    mounted = { camera, viewfinder: camera, location, strip, status, video, guess: guessNode };
+    mounted = { camera, viewfinder: camera, location, strip, status, video };
     drawLocation();
     drawStrip();
-    drawGuess();
-    if (guessesOn() && guess.status === "idle") prepareGuesses();
+    if (guessesOn() && ["idle", "unavailable"].includes(guess.status)) prepareGuesses();
 
     const ok = await startCamera(video);
     if (mounted?.camera !== camera) return; // closed while the camera was starting
@@ -729,6 +939,12 @@ export function createCapture(ui) {
       // Said out loud: a queue that keeps retrying with no reason shown
       // looks exactly like a slow one.
       if (navigator.onLine && lastError) parts.push(` Retrying — last try: ${lastError}.`);
+      // What leaving the app does, which differs by phone (sw.js).
+      parts.push(
+        outbox.backgroundSync()
+          ? " You can leave the app — they keep uploading."
+          : " Keep the app open until they're done: this phone pauses uploads when you leave it.",
+      );
     }
     if (failed.length) {
       parts.push(
@@ -760,28 +976,37 @@ export function createCapture(ui) {
     return el("section", { className: "card panel" }, [
       el("header", { className: "panel-head" }, [el("h3", { textContent: "Your recent encounters" })]),
       ...encounters.map((e) =>
-        el("div", { className: "row" }, [
+        el("div", { className: "row encounter-row" }, [
           el("span", { className: "row-main", textContent: fmtDate(e.startedAt) }),
           el("span", { className: "meta", textContent: plural(e.photoCount || 0, "file") }),
           el("span", {
             className: `tag${e.catName ? " good" : ""}`,
             textContent: e.catName || "waiting for a label",
           }),
-          pickNote(e),
+          verdicts(e),
         ]),
       ),
     ]);
   }
 
-  // What they answered, next to what the cat turned out to be.
-  function pickNote(e) {
-    if (e.pick?.choice !== "cat" || !e.pick.catName) return null;
-    if (!e.catName) return el("span", { className: "meta", textContent: `you said ${e.pick.catName}` });
-    const right = e.pick.catId === e.catId;
-    return el("span", {
-      className: `meta${right ? " pick-right" : ""}`,
-      textContent: right ? "you were right ✓" : `you said ${e.pick.catName}`,
-    });
+  // What they said and what the model said, each against the label once
+  // there is one — the result of the encounter.
+  function verdicts(e) {
+    if (!e.pick) return null;
+    const said = (who, catId, name) => {
+      if (!name) return null;
+      const right = e.catId && catId === e.catId;
+      const wrong = e.catId && !right;
+      return el("span", {
+        className: `verdict${right ? " pick-right" : wrong ? " pick-wrong" : ""}`,
+        textContent: `${who}: ${name}${right ? " ✓" : wrong ? " ✗" : ""}`,
+      });
+    };
+    const yours =
+      e.pick.choice === "cat"
+        ? said("you", e.pick.catId, e.pick.catName)
+        : el("span", { className: "verdict", textContent: e.pick.choice === "none" ? "you: a new cat" : "you: not sure" });
+    return el("span", { className: "verdicts" }, [yours, said("model", e.pick.modelCatId, e.pick.modelCatName)].filter(Boolean));
   }
 
   // Leaving the screen lets go of the camera and GPS — both drain a battery

@@ -22,6 +22,13 @@ const BACKOFF_MS = [2_000, 5_000, 15_000, 60_000];
 // A stalled upload on a weak campus signal fails instead of hanging the
 // queue forever. Generous: 20 MB on a slow 3G link is about two minutes.
 const UPLOAD_TIMEOUT_MS = 180_000;
+// Photos in flight at once. Each is three round trips (record, S3,
+// confirm), so on a phone's high-latency link waiting is most of the time;
+// three overlaps it without starving any single upload of bandwidth.
+const PARALLEL_UPLOADS = 3;
+// The service worker's Background Sync tag (sw.js). Chrome on Android
+// wakes the worker with it after the app is closed; Safari has no such API.
+export const SYNC_TAG = "outbox";
 
 // --------------------------------------------------------------------------
 // ULID — 48-bit millisecond time, 80 random bits, Crockford base32
@@ -123,6 +130,11 @@ export function createOutbox({ post, onChange }) {
     await put("items", { ...item, state: "queued", error: null });
     onChange();
     kick();
+    // Registered with every photo, so a phone that is offline now, and
+    // closed before it is back, still gets them uploaded (Background Sync
+    // waits for a signal). While the app is on screen the worker leaves
+    // the work to it.
+    handOver();
   }
 
   // Coalesces calls while a pass is running into exactly one more pass.
@@ -210,27 +222,39 @@ export function createOutbox({ post, onChange }) {
         }
       }
       const encounters = new Map((await all("encounters")).map((e) => [e.sessionId, e]));
-      const items = (await itemsWithState()).sort((a, b) => a.item.photoId.localeCompare(b.item.photoId));
-      for (const { item, state } of items) {
-        if (state === "failed") continue;
-        const encounter = encounters.get(item.sessionId);
-        if (encounter && !encounter.created) continue; // its encounter goes first
-        try {
-          await send(item);
-        } catch (err) {
-          // No connection at all: the rest would fail the same way.
-          if (isOffline(err)) throw err;
-          // Anything else is this photo's problem (a 500, a refused
-          // upload): note it and carry on, so one photo never holds up
-          // the others behind it.
-          lastError = err.message;
-          retryLater = true;
+      const todo = (await itemsWithState())
+        .filter(({ item, state }) => {
+          if (state === "failed") return false;
+          const encounter = encounters.get(item.sessionId);
+          return !encounter || encounter.created; // its encounter goes first
+        })
+        .sort((a, b) => a.item.photoId.localeCompare(b.item.photoId));
+      keepAwake(todo.length > 0);
+      let next = 0;
+      let offline = null;
+      const worker = async () => {
+        while (next < todo.length && !offline) {
+          const { item } = todo[next++];
+          try {
+            await send(item);
+          } catch (err) {
+            // No connection at all: the rest would fail the same way.
+            if (isOffline(err)) offline = err;
+            // Anything else is this photo's problem (a 500, a refused
+            // upload): note it and carry on, so one photo never holds up
+            // the others.
+            lastError = err.message;
+            retryLater = true;
+          }
         }
-      }
+      };
+      await Promise.all(Array.from({ length: PARALLEL_UPLOADS }, worker));
+      if (offline) throw offline;
       await forgetFinishedEncounters();
       if (!retryLater) {
         failures = 0;
         lastError = null;
+        keepAwake(false);
         return;
       }
     } catch (err) {
@@ -370,15 +394,65 @@ export function createOutbox({ post, onChange }) {
     };
   }
 
+  // While photos are waiting and the app is on screen, keep the screen from
+  // locking: on an iPhone a locked screen or another app stops uploads cold
+  // (Safari suspends the page and has no background upload API). The lock
+  // is released by the browser whenever the app is hidden.
+  let wakeLock = null;
+  let wantAwake = false;
+  async function keepAwake(on) {
+    wantAwake = on;
+    try {
+      if (on && !wakeLock && document.visibilityState === "visible" && navigator.wakeLock) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => (wakeLock = null));
+      } else if (!on && wakeLock) {
+        await wakeLock.release();
+      }
+    } catch {
+      /* not supported, or refused (low battery): uploads go on regardless */
+    }
+  }
+
+  // Leaving the app with photos still waiting: ask the service worker to
+  // finish them (Background Sync, where the browser has it — Chrome on
+  // Android). It runs once the app is in the background, or as soon as
+  // there is a signal again, even with the app closed.
+  async function handOver() {
+    try {
+      if (!(await all("items")).length) return;
+      const registration = await navigator.serviceWorker?.ready;
+      await registration?.sync?.register(SYNC_TAG);
+    } catch {
+      /* no Background Sync here: uploads resume when the app is opened */
+    }
+  }
+
   addEventListener("online", kick);
+  addEventListener("offline", handOver);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") kick();
+    if (document.visibilityState === "visible") {
+      kick();
+      if (wantAwake) keepAwake(true);
+    } else {
+      handOver();
+    }
   });
   // Ask the browser not to evict the queue under storage pressure. A
   // refusal is fine — it only matters on a nearly full phone.
   navigator.storage?.persist?.().catch(() => {});
 
-  return { addEncounter, addItem, setPick, closeEncounter, retryFailed, discard, snapshot, kick };
+  return {
+    addEncounter,
+    addItem,
+    setPick,
+    closeEncounter,
+    retryFailed,
+    discard,
+    snapshot,
+    kick,
+    backgroundSync: () => "SyncManager" in window,
+  };
 }
 
 // 400/403/404 will not get better by asking again. 401 is handled by the

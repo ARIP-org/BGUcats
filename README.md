@@ -10,8 +10,8 @@ Working in the codespace from your own machine: [`docs/codespaces.md`](docs/code
 research track (`research/`, phase 1b) and, on branch `recognition-labeling`,
 the first model measured on campus data, running in the browser: it guesses
 every labeling-queue session and shows its top three on the card for admins,
-and asks contributors "Is it
-one of these?" in Capture (phase 1c). See `CLAUDE.md` → Phases, and
+and after each encounter in Capture asks "Who did you meet?" with its
+best three guesses (phase 1c). See `CLAUDE.md` → Phases, and
 `docs/branches.md` for what lives on which branch.
 
 The cat-names voting app is the phase 4 read path, and is deliberately out of

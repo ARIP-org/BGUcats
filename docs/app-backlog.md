@@ -4,6 +4,17 @@ Things decided to leave for later, so they are not lost. Newest first.
 
 ## Collection
 
+- **Uploads on an iPhone with the app closed.** Not possible in a PWA:
+  Safari has no Background Sync or background fetch, and suspends hidden
+  apps. Options if it matters: a native wrapper (Capacitor) using
+  `URLSession` background uploads, or smaller files (downscale before
+  upload) so the open-app window is enough. *(Raised 2026-10-29.)*
+- **An answer with no model guess.** If the model is off or unavailable, the
+  result screen asks nothing, because a pick needs the shown guesses. The
+  person's "which cat" would still be useful on its own. That needs a pick
+  shape without `shown`, and Stats would have to keep those picks apart
+  from the product-loop numbers. *(Raised 2026-10-29.)*
+
 - **Confirm the Capture stall's trigger on the phone that hit it.** The 2026-10-29
   fix removes every suspect: no Blob re-write, timeouts, no head-of-line
   blocking. The exact cause on that phone (most likely Safari refusing to

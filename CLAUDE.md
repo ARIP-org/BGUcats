@@ -59,7 +59,7 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 |---|---|---|
 | 1a Collection + labeling infra | CURRENT | ingest, storage, processing, admin labeling |
 | 1b Recognition research track | CURRENT, PARALLEL | public datasets, eval harness, zero-shot baseline |
-| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; opt-in "Is it one of these?" in Capture |
+| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; "Who did you meet?" after each encounter in Capture |
 | 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights |
 | 3 Fine-tuning on BGU data | CONDITIONAL | only if 1b numbers justify it |
 | 4 Read path + mobile app | DEFERRED | public API, browse UI, voting |
@@ -68,7 +68,7 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 Lambda, no S3 bucket, and no DynamoDB table.
 
 **1c is where they meet**, deliberately small: the 1b model, exported to ONNX,
-runs in the browser — on every card in the labeling desk, opt-in in Capture — and is
+runs in the browser — on every card in the labeling desk, after each encounter in Capture — and is
 scored against the labels admins give anyway. It decides nothing — see
 "Recognition in the app" below. First BGU numbers (2026-10-29, 19 cats): right cat first
 on 3–5 of 13 sessions, in the top 3 on 9–10 of 13 (`research/FINDINGS.md`,
@@ -84,7 +84,7 @@ blocked on someone else.
 ### Collection path (spec §10)
 
 - **No browse, identify, voting, or polls in the app yet.** Phase 4 — with
-  one deliberate early piece: Capture's opt-in cat guesses (1c), shown only
+  one deliberate early piece: Capture's cat guesses after each encounter (1c), shown only
   to signed-in collaborators and admins, never to the public. It is there
   to reward re-encounters and to measure the "pick from 3" loop, not as the
   Identify feature; see "Recognition in the app" below.
@@ -117,7 +117,7 @@ them: Telegram and WhatsApp keep working unchanged, and the app is a third
 channel (`channel = "app"`) into the same table, bucket and process Lambda.
 
 - **Two roles on the one allowlist item** (`ADMIN#{email}`, field `role`).
-  `admin` = everything. `collaborator` = Capture (with opt-in cat guesses)
+  `admin` = everything. `collaborator` = Capture (with the cat guesses)
   and browsing the cats, nothing else: no queue or labeling, no deleting, merging, creating or renaming cats,
   no stats or people. **No role field means admin**, so the
   Terraform bootstrap item and `make admin-add` keep full access. The API
@@ -157,6 +157,15 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   `/api/`, photos or other origins — the distribution's no-caching rule still
   means a deploy reaches everyone on their next load. The one exception is
   the content-addressed `/model/{version}/`, cached first (see 1c below).
+- **Uploads keep going after the app is left, where the browser allows
+  it.** Chrome on Android has Background Sync: the outbox registers it with
+  every photo and when the app is hidden, and the service worker runs the
+  same three steps on the same IndexedDB queue. The app's tokens are copied
+  to IndexedDB (`bgucats-auth`), because a worker has no localStorage. An
+  iPhone has no such API: Safari suspends a hidden app within seconds, so
+  uploads move only while it is open. The app keeps the screen awake while
+  files are waiting (Wake Lock) and says so on screen. Three uploads run at
+  once.
 - **Caching lives in app.js, not the service worker.** Presigned photo URLs
   carry a long `response-cache-control`, and the app reuses the first URL it
   saw for each object until just before it expires (`stablePhotoUrl`).
@@ -230,23 +239,32 @@ when unsure, and come back to cats already met.
 - Deleting a photo deletes its vectors. Vectors are only templates while the
   photo is labeled.
 
-#### In Capture (contributors, opt-in)
+#### In Capture (everyone: contributors and admins)
 
-- **Asked first, never assumed.** The first visit offers "Let the app guess
-  the cat?" with the 40 MB said out loud; "Not now" means nothing is
-  downloaded. Capture works exactly as before without it, and a missing or
-  failed model never blocks an upload.
-- **Three, never one.** After each photo the phone embeds the encounter's own
-  photos (up to 8, never written to disk) and asks "Is it one of these?":
-  three cats with their cover photos, "None of these", "Not sure". The first
-  guess alone is right about one time in three; the three about three in four.
+- **On unless turned off** (since 2026-10-29; it used to be opt-in). The
+  model, about 40 MB, downloads once in the background from the first visit.
+  A phone in data-saver mode is asked first. "Turn off" is on the Capture
+  screen. A missing or failed model never blocks or slows an upload.
+- **Guessed while shooting, asked after Done.** Each photo is embedded in
+  the background as it is taken (up to 8 per encounter; the vectors stay in
+  memory). "Done" opens the encounter's result, "Who did you meet?", with
+  the photos and their upload progress. It asks "Is it one of these?" over
+  three cats with covers and "met N×" (admins see the similarity),
+  "Another cat…" (every cat, the model's order first), "A cat that isn't
+  here", "Not sure", "Take more photos" and "Skip". The encounter stays open
+  until then, so an unsure guess can still become a better photo. The
+  ranking is kept with the encounter, so a reload lands back on the result
+  screen with its guess. The first guess alone is right about one time in
+  three; the three about three in four.
 - **The answer is kept apart from the label.** It rides in the outbox with its
   encounter (`POST /api/encounters/{id}/pick`, own encounter only, latest
   answer wins, item `SESSION#{id}` / `PICK`). The labeling desk never reads
-  it, so the admin labels without seeing the contributor's answer. The
-  contributor later sees "you were right ✓" in their recent encounters.
-- **The reward is the re-encounter.** A picked cat shows "encounter #N with
-  this cat" — re-encounters are what research/FINDINGS.md found matter most.
+  it, so the admin labels without seeing the contributor's answer. "Your
+  recent encounters" later shows "you: X ✓/✗" and "model: Y ✓/✗" against
+  the label.
+- **The reward is the re-encounter.** The answered screen says "Encounter
+  #N with this cat" — re-encounters are what research/FINDINGS.md found
+  matter most. "Next cat" starts the next encounter straight away.
 - **Replay** (Stats → Recognition model) re-runs the ranking over labeled
   sessions, each hidden in turn — split by session, never by photo. Same
   scoring code as the live record (`summarize` in recognition.js).

@@ -116,7 +116,7 @@ function logout() {
 }
 
 function forgetSignIn(note) {
-  localStorage.removeItem(TOKENS_KEY);
+  dropTokens();
   localStorage.removeItem(ROLE_KEY);
   try {
     if (note) sessionStorage.setItem(LOGIN_NOTE_KEY, note);
@@ -142,8 +142,44 @@ async function exchangeToken(body) {
     refreshToken: data.refresh_token || readTokens()?.refreshToken,
     expiresAt: Date.now() + (data.expires_in - 60) * 1000,
   };
-  localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
+  saveTokens(tokens);
   return tokens;
+}
+
+// The tokens live in localStorage for the page, and a copy in IndexedDB for
+// the service worker, which has no localStorage: it uploads a closed app's
+// photos (sw.js, Background Sync) and must sign those requests. Same origin,
+// same exposure as localStorage; dropped together on sign-out.
+const AUTH_DB = "bgucats-auth";
+
+function authStore(mode, fn) {
+  return new Promise((resolve) => {
+    try {
+      const open = indexedDB.open(AUTH_DB, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("tokens");
+      open.onsuccess = () => {
+        const tx = open.result.transaction("tokens", mode);
+        fn(tx.objectStore("tokens"));
+        tx.oncomplete = tx.onerror = () => {
+          open.result.close();
+          resolve();
+        };
+      };
+      open.onerror = () => resolve();
+    } catch {
+      resolve(); // the worker just won't upload in the background
+    }
+  });
+}
+
+function saveTokens(tokens) {
+  localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
+  authStore("readwrite", (store) => store.put(tokens, "current"));
+}
+
+function dropTokens() {
+  localStorage.removeItem(TOKENS_KEY);
+  authStore("readwrite", (store) => store.delete("current"));
 }
 
 function readTokens() {
@@ -170,7 +206,7 @@ async function idToken() {
     // the phone is back online. The stale token fails its API call, and the
     // upload outbox simply retries later.
     if (err instanceof TypeError) return tokens.idToken;
-    localStorage.removeItem(TOKENS_KEY);
+    dropTokens();
     return null;
   }
 }
@@ -224,7 +260,7 @@ async function api(path, options = {}) {
     },
   });
   if (res.status === 401) {
-    localStorage.removeItem(TOKENS_KEY);
+    dropTokens();
     showLogin();
     throw new Error("session expired");
   }
@@ -2069,6 +2105,7 @@ async function boot() {
   }
 
   state.email = (claims(token).email || "").toLowerCase();
+  saveTokens(readTokens()); // the worker's copy, for sign-ins older than it
   // The role is not in the token — it lives on the allowlist item, so a
   // change takes effect on the next load rather than at token expiry.
   try {
@@ -2106,6 +2143,7 @@ async function boot() {
     fmtDate,
     emptyState,
     recognition,
+    isAdmin,
   });
 
   $("#who-email").textContent = state.email;
