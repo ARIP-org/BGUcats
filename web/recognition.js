@@ -17,6 +17,12 @@
 //   4. Replay: re-run the same ranking over sessions that are already
 //      labeled, each one hidden from the templates in turn — a number on
 //      real cats without waiting for new sessions.
+//   5. Share the vectors: what an admin's browser computes is uploaded
+//      (POST /api/recognition/vectors), and every other phone downloads
+//      the templates (~4 KB each) instead of embedding every labeled photo.
+//   6. Guess for a contributor (Capture): embed the phone's own fresh
+//      photos — a handful, a second or two each — and offer the top three.
+//      Their answer is recorded apart from the label (capture.js).
 //
 // It only ranks. There is no "this is Mitzi" and no "new cat" verdict: on
 // BGU photos the scores of right guesses, wrong guesses and never-seen cats
@@ -39,6 +45,8 @@ const PREFETCH = 4;
 // photo already counted, `pending` never finished processing.
 const SKIP_STATUSES = new Set(["duplicate", "pending"]);
 const GALLERY_REFRESH_MS = 60 * 1000;
+// Vectors per upload request (the API's VECTOR_WRITE_BATCH).
+const VECTOR_UPLOAD_BATCH = 25;
 
 export function createRecognition({ api, post }) {
   const listeners = new Set();
@@ -231,7 +239,11 @@ export function createRecognition({ api, post }) {
     // cached copy of that response would be refused here.
     const res = await fetch(url, { mode: "cors", cache: "no-store" });
     if (!res.ok) throw new Error(`photo fetch failed (${res.status})`);
-    const bitmap = await createImageBitmap(await res.blob());
+    return pixelsOfBlob(await res.blob());
+  }
+
+  async function pixelsOfBlob(blob) {
+    const bitmap = await createImageBitmap(blob);
     const size = manifest.inputSize;
     const side = Math.min(bitmap.width, bitmap.height);
     const canvas = document.createElement("canvas");
@@ -305,6 +317,13 @@ export function createRecognition({ api, post }) {
       return Promise.resolve();
     }
     gallerySync ??= (async () => {
+      set({ phase: "learning", progress: null, detail: "fetching what is already known" });
+      // What any admin's browser already computed: no need to do it again.
+      const shared = new Set();
+      for (const t of await fetchShared()) {
+        shared.add(t.photoId);
+        if (!(await readVector(t.photoId))) await writeVector(t.photoId, t.vector);
+      }
       const { photos } = await api("/recognition/gallery");
       set({ phase: "learning", progress: 0, detail: "learning the cats" });
       const vectors = await vectorsFor(photos, (done, total) =>
@@ -314,6 +333,17 @@ export function createRecognition({ api, post }) {
         .filter((p) => vectors.has(p.photoId))
         .map((p) => ({ ...p, vector: vectors.get(p.photoId) }));
       galleryAt = Date.now();
+      // Share what this browser computed, so no other phone has to.
+      const fresh = templates.filter((t) => !shared.has(t.photoId));
+      for (let i = 0; i < fresh.length; i += VECTOR_UPLOAD_BATCH) {
+        set({ detail: `sharing what it learned, ${i} of ${fresh.length} photos`, progress: i / fresh.length });
+        await post("/recognition/vectors", {
+          modelVersion: state.version,
+          vectors: fresh
+            .slice(i, i + VECTOR_UPLOAD_BATCH)
+            .map((t) => ({ photoId: t.photoId, vector: toBase64(t.vector) })),
+        }).catch((err) => console.warn("sharing vectors failed", err));
+      }
     })().finally(() => {
       gallerySync = null;
     });
@@ -457,6 +487,103 @@ export function createRecognition({ api, post }) {
   const nameOf = (catId) => names.get(catId) || "an unnamed cat";
 
   // ------------------------------------------------------------------
+  // Shared templates, and guessing for a contributor
+  // ------------------------------------------------------------------
+
+  async function fetchShared() {
+    const out = [];
+    let after = null;
+    do {
+      const query = `?version=${encodeURIComponent(state.version)}${after ? `&after=${after}` : ""}`;
+      const page = await api(`/recognition/vectors${query}`);
+      for (const t of page.templates) out.push({ ...t, vector: fromBase64(t.vector) });
+      after = page.next;
+    } while (after);
+    return out;
+  }
+
+  // A contributor's phone never embeds the gallery: it downloads the shared
+  // templates (and keeps the last copy, so guessing works with no signal).
+  let sharedAt = 0;
+  let sharedSync = null;
+  function syncShared() {
+    if (sharedAt && Date.now() - sharedAt < GALLERY_REFRESH_MS) return Promise.resolve();
+    sharedSync ??= (async () => {
+      set({ phase: "learning", progress: null, detail: "fetching the cats it knows" });
+      try {
+        templates = await fetchShared();
+        sharedAt = Date.now();
+        storeTemplates(templates);
+      } catch (err) {
+        const cached = await loadTemplates();
+        if (!cached) throw err;
+        templates = cached; // offline: the last copy is good enough
+      }
+      set({ phase: "ready", progress: null, detail: readyText() });
+    })().finally(() => {
+      sharedSync = null;
+    });
+    return sharedSync;
+  }
+
+  async function storeTemplates(list) {
+    const handle = await db();
+    if (!handle) return;
+    try {
+      handle
+        .transaction("vectors", "readwrite")
+        .objectStore("vectors")
+        .put(list, `${state.version}:templates`);
+    } catch {
+      /* only the offline copy is lost */
+    }
+  }
+
+  async function loadTemplates() {
+    const handle = await db();
+    if (!handle) return null;
+    return new Promise((resolve) => {
+      try {
+        const req = handle.transaction("vectors").objectStore("vectors").get(`${state.version}:templates`);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  // Load everything a guess needs. Resolves false if no model is published.
+  async function prepareForCapture() {
+    if (!(await load())) return false;
+    await syncShared();
+    return true;
+  }
+
+  // shots: [{ photoId, blob }] — the encounter's photos, still on the phone.
+  async function guessShots(shots) {
+    if (!session || !templates.length) return null;
+    const frames = spaced(shots, MAX_QUERY_FRAMES);
+    const query = [];
+    for (const shot of frames) {
+      const key = `${state.version}:${shot.photoId}`;
+      let vector = memory.get(key);
+      if (!vector) {
+        vector = await infer(await pixelsOfBlob(shot.blob));
+        memory.set(key, vector); // this encounter only: never written to disk
+      }
+      query.push(vector);
+    }
+    return { ranked: rank(query), photoCount: query.length };
+  }
+
+  // How many separate encounters a cat already has — the number that, per
+  // research/FINDINGS.md, decides how well it is recognised.
+  function encountersOf(catId) {
+    return new Set(templates.filter((t) => t.catId === catId).map((t) => t.sessionId)).size;
+  }
+
+  // ------------------------------------------------------------------
   // Replay: the same ranking over sessions already labeled
   // ------------------------------------------------------------------
 
@@ -494,6 +621,9 @@ export function createRecognition({ api, post }) {
       names = new Map(cats.map((c) => [c.catId, c.name]));
     },
     watchQueue,
+    prepareForCapture,
+    guessShots,
+    encountersOf,
     prioritize,
     reveal,
     learn,
@@ -578,3 +708,19 @@ function spaced(items, n) {
 
 const round4 = (x) => Math.round(x * 10000) / 10000;
 const mb = (bytes) => `${(bytes / 2 ** 20).toFixed(1)} MB`;
+
+function toBase64(floats) {
+  const bytes = new Uint8Array(floats.buffer, floats.byteOffset, floats.byteLength);
+  let text = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(text);
+}
+
+function fromBase64(text) {
+  const raw = atob(text);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return new Float32Array(bytes.buffer);
+}

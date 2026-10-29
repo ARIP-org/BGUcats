@@ -13,14 +13,24 @@ Things decided to leave for later, so they are not lost. Newest first.
   hidden until a session is labeled, so the labels stay unbiased. Revisit
   only once the numbers are good enough that anchoring costs less than it
   saves, and keep a blind sample even then.
-- **Videos are not looked at.** A video-only session gets no guess. The
+- **Videos are not looked at.** A video-only session gets no guess, in the
+  desk or in Capture. The
   Spotter page (research/webapp) already pulls frames from a video in the
   browser; the same would work here, with CORS on the raw object.
-- **Every device embeds every labeled photo.** Cheap at 225 photos (a few
-  minutes once per phone), less so at thousands. The boring fix is a
-  server-side vector per photo — onnxruntime and the 30 MB model fit in the
-  process Lambda — which is also where the ULID-as-vector-ID of CLAUDE.md
-  was always headed.
+- **The shared vectors are downloaded whole.** Every phone fetches every
+  template (~4 KB each, about 1 MB today) on each refresh. At a few
+  thousand photos, fetch only what changed since the last copy, or cap the
+  templates per cat, spread across encounters.
+- **Shared vectors depend on an admin visiting the Queue.** An admin's
+  browser is what embeds new labeled photos and shares them; until one
+  does, contributors' phones don't know a newly labeled cat. If that lag
+  ever matters, embed in the process Lambda instead (onnxruntime and the
+  30 MB model fit there), which is also where the ULID-as-vector-ID of
+  CLAUDE.md was always headed.
+- **Capture's guess hint is always the same.** "Not sure? A photo of the
+  face helps" could become specific once there are thresholds: ask for the
+  face only when the top three are close together.
+- **Translate the guess card.** It is English, like the rest of Capture.
 
 ## Design
 

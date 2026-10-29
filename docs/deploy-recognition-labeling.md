@@ -15,13 +15,24 @@ Claude Code in the codespace.
   each queue session before anyone labels it. The guess is revealed only
   after labeling. Stats gains a "Recognition model" panel: the live record,
   and a replay over labeled sessions.
-- **Three admin-only API routes**: `GET /api/recognition/gallery`,
-  `GET /api/recognition/predictions`, `POST /api/sessions/{id}/prediction`.
-  New items are `SESSION#{id}` / `PREDICTION#{version}`; nothing existing is
-  rewritten.
+- **Cat guesses in Capture**, opt-in for everyone who uses Capture: after a
+  photo the phone asks "Is it one of these?" with three cats, plus "None of
+  these" and "Not sure". The answer goes through the outbox and is kept
+  apart from the label (the labeling desk never shows it). Stats shows
+  these answers scored against the admins' labels.
+- **Shared vectors**: an admin's browser uploads the vectors it computes, so
+  contributors' phones download ~1 MB of templates instead of embedding
+  every labeled photo.
+- **API routes**: `GET /api/recognition/gallery`,
+  `GET /api/recognition/predictions`, `POST /api/sessions/{id}/prediction`,
+  `POST /api/recognition/vectors` (admins); `GET /api/recognition/vectors`
+  and `POST /api/encounters/{id}/pick` (any member, own encounter only).
+  New items are `SESSION#{id}` / `PREDICTION#{version}`, `SESSION#{id}` /
+  `PICK` and `PHOTO#{id}` / `VECTOR#{version}`; nothing existing is
+  rewritten. Deleting a photo now also deletes its vectors.
 
-Collaborators see no change. The bots, the process Lambda, the landing page
-and the data model are not changed.
+The bots, the process Lambda, the landing page and the data model are not
+changed.
 
 ## 1. Check out and test
 
@@ -64,7 +75,7 @@ Expected, and nothing else:
 |---|---|
 | `aws_s3_bucket_cors_configuration.media` | update in place: `allowed_methods` gains `GET` (the canvas must read a photo's pixels) |
 | `aws_s3_object.web["recognition.js"]` | create |
-| `aws_s3_object.web["app.js"]`, `["sw.js"]`, `["styles.css"]` | update in place |
+| `aws_s3_object.web["app.js"]`, `["capture.js"]`, `["outbox.js"]`, `["sw.js"]`, `["styles.css"]` | update in place |
 | `aws_lambda_function.admin`, `aws_lambda_function.admin_presignup` | update in place: new code (they share one zip) |
 
 Other Lambdas may show a code update from a rebuilt zip of identical source;
@@ -87,6 +98,14 @@ On a phone with the installed app, as an admin:
 2. Label a session: a second toast says what the model had guessed.
 3. Stats → Recognition model: the live record shows that session; "Replay on
    labeled sessions" gives the leave-one-session-out numbers.
+
+4. **Share the vectors:** that first Queue visit also uploads the vectors
+   ("sharing what it learned …"). Until an admin has done this once,
+   contributors' guesses stay hidden — their phones have nothing to match.
+5. As a collaborator (or in Capture as an admin): accept "Let the app guess
+   the cat?", start an encounter, take a photo of a known cat. "Is it one of
+   these?" appears within a few seconds; answer it. Stats → Recognition model
+   → "Contributors" shows it once the encounter is labeled.
 
 If the strip says "model fetch failed" or a photo fetch fails, check the
 media bucket CORS rule first.

@@ -47,7 +47,8 @@ function button(label, className, onClick) {
 let config = null;
 let state = { view: "queue", cats: [], email: null, role: null };
 let capture = null;
-// Admins only: the model that guesses each queue session, blind (recognition.js).
+// The recognition model (recognition.js). Admins: blind guesses for the
+// queue, and the measurements on Stats. Everyone: opt-in guesses in Capture.
 let recognition = null;
 
 const isAdmin = () => state.role === "admin";
@@ -477,7 +478,7 @@ async function renderQueue() {
 // One line on what the model is doing. Its guesses never show here: they
 // are revealed only after a session is labeled (openPicker).
 function modelStrip() {
-  if (!recognition) return null;
+  if (!recognition || !isAdmin()) return null;
   const node = el("div", { className: "model-strip", attrs: { role: "status" } });
   const paint = (s) => {
     node.hidden = s.phase === "idle" || s.phase === "unavailable";
@@ -900,7 +901,7 @@ async function renderStats() {
   $("#main").replaceChildren(
     sectionHead("Stats", `Updated ${fmtTime(data.generatedAt)} · days in Israel time`, [refresh]),
     statTiles(s, data.evalMinSessions),
-    guesses ? recognitionPanel(guesses.predictions) : null,
+    guesses ? recognitionPanel(guesses.predictions, guesses.picks) : null,
     sourcesPanel(data.referrals),
     activityPanel(data.daily),
     el("div", { className: "panel-row" }, [
@@ -1325,7 +1326,7 @@ function datasetPanel(cats, s, minSessions) {
 // Two measurements of the same ranking, read the same way (recognition.js
 // summarize): live guesses recorded before a person labeled the session, and
 // a replay over sessions already labeled, each hidden from the model in turn.
-function recognitionPanel(predictions) {
+function recognitionPanel(predictions, picks = []) {
   const catName = (id) => state.cats.find((c) => c.catId === id)?.name || "(merged or deleted)";
 
   // The newest model version only — two versions' guesses are not one number.
@@ -1390,14 +1391,78 @@ function recognitionPanel(predictions) {
     replayOut,
   ]);
 
+  const loop = el("div", { className: "model-block" }, [
+    el("h4", { textContent: "Contributors: the app's guess, their answer" }),
+    picksResults(picks, catName),
+  ]);
+
   return panel(
     "Recognition model",
     "The model ranks the known cats for every session in the queue and records that " +
       "ranking before anyone labels it. Nobody sees it until they have chosen. It only " +
       "ranks: there is no auto-accept and no “new cat” verdict until these numbers earn one.",
     [],
-    [live, replay],
+    [live, loop, replay],
   );
+}
+
+// The product loop: the phone showed its top three, a contributor answered,
+// and an admin later labeled the encounter without seeing either. Scored
+// against that label — the "pick from 3" the public app will run.
+function picksResults(picks, catName) {
+  const scored = picks.filter((p) => p.truthCatId);
+  if (!scored.length) {
+    return el("p", {
+      className: "muted",
+      textContent: picks.length
+        ? `${plural(picks.length, "answer")} waiting for a label.`
+        : "No answers yet. Contributors who turn on cat guesses in Capture answer here.",
+    });
+  }
+  const knownBefore = (p) => p.ranked.some((r) => r.catId === p.truthCatId);
+  const cat = scored.filter((p) => p.choice === "cat");
+  const right = cat.filter((p) => p.catId === p.truthCatId).length;
+  const none = scored.filter((p) => p.choice === "none");
+  const noneRight = none.filter((p) => !p.shown.includes(p.truthCatId)).length;
+  const unsure = scored.filter((p) => p.choice === "unsure").length;
+  const offered = scored.filter((p) => p.shown.includes(p.truthCatId)).length;
+  const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : "—");
+
+  const perCat = new Map();
+  for (const p of cat) {
+    const row = perCat.get(p.truthCatId) || { answers: 0, right: 0 };
+    row.answers += 1;
+    if (p.catId === p.truthCatId) row.right += 1;
+    perCat.set(p.truthCatId, row);
+  }
+  return el("div", {}, [
+    el("div", { className: "stats-grid model-grid" }, [
+      statTile({ label: "Picked a cat, and right", value: pct(right, cat.length), note: `${right} of ${cat.length}` }),
+      statTile({
+        label: "Right cat was offered",
+        value: pct(offered, scored.length),
+        note: `in the three shown, ${offered} of ${scored.length} encounters`,
+      }),
+      statTile({
+        label: "“None of these”",
+        value: formatNumber(none.length),
+        note: `${noneRight} rightly: the cat was not among the three`,
+      }),
+      statTile({ label: "“Not sure”", value: formatNumber(unsure), note: `of ${scored.length} answered encounters` }),
+    ]),
+    el("p", {
+      className: "muted small",
+      textContent:
+        `${scored.filter(knownBefore).length} of ${scored.length} were cats the app already knew. ` +
+        (picks.length > scored.length ? `${picks.length - scored.length} more waiting for a label.` : ""),
+    }),
+    perCat.size
+      ? table(
+          ["Cat", "Answers", "Right"],
+          [...perCat].map(([id, r]) => [catName(id), r.answers, r.right]),
+        )
+      : null,
+  ]);
 }
 
 function modelResults(sum, catName) {
@@ -1763,8 +1828,19 @@ async function boot() {
   for (const tab of document.querySelectorAll(".tab")) {
     tab.hidden = ADMIN_VIEWS.has(tab.dataset.view) && !isAdmin();
   }
-  capture = createCapture({ el, button, toast, api, post, sectionHead, plural, fmtDate, emptyState });
-  if (isAdmin()) recognition = createRecognition({ api, post });
+  recognition = createRecognition({ api, post });
+  capture = createCapture({
+    el,
+    button,
+    toast,
+    api,
+    post,
+    sectionHead,
+    plural,
+    fmtDate,
+    emptyState,
+    recognition,
+  });
 
   $("#who-email").textContent = state.email;
   $("#login").hidden = true;

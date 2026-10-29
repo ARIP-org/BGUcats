@@ -59,7 +59,7 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 |---|---|---|
 | 1a Collection + labeling infra | CURRENT | ingest, storage, processing, admin labeling |
 | 1b Recognition research track | CURRENT, PARALLEL | public datasets, eval harness, zero-shot baseline |
-| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, blind; replay over labeled sessions |
+| 1c Measure on BGU data | CURRENT (branch `recognition-labeling`) | the frozen v0 model guesses every queue session, blind; replay over labeled sessions; opt-in "Is it one of these?" in Capture |
 | 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights |
 | 3 Fine-tuning on BGU data | CONDITIONAL | only if 1b numbers justify it |
 | 4 Read path + mobile app | DEFERRED | public API, browse UI, voting |
@@ -68,9 +68,9 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 Lambda, no S3 bucket, and no DynamoDB table.
 
 **1c is where they meet**, deliberately small: the 1b model, exported to ONNX,
-runs in the admin's browser inside the labeling desk and is scored against the
-labels admins give anyway. It decides nothing — see "Recognition in the
-labeling desk" below. First BGU numbers (2026-10-29, 19 cats): right cat first
+runs in the browser — blind in the labeling desk, opt-in in Capture — and is
+scored against the labels admins give anyway. It decides nothing — see
+"Recognition in the app" below. First BGU numbers (2026-10-29, 19 cats): right cat first
 on 3–5 of 13 sessions, in the top 3 on 9–10 of 13 (`research/FINDINGS.md`,
 round 3).
 
@@ -83,9 +83,11 @@ blocked on someone else.
 
 ### Collection path (spec §10)
 
-- **No browse, identify, voting, or polls in the app yet.** Phase 4. The
-  labeling desk's blind guesses (1c) are an admin measurement, not Identify:
-  no collaborator or visitor ever sees a model output.
+- **No browse, identify, voting, or polls in the app yet.** Phase 4 — with
+  one deliberate early piece: Capture's opt-in cat guesses (1c), shown only
+  to signed-in collaborators and admins, never to the public. It is there
+  to reward re-encounters and to measure the "pick from 3" loop, not as the
+  Identify feature; see "Recognition in the app" below.
 - **Do not attach Lambdas to a VPC.** No NAT gateway, no subnets, no security
   groups. Lambda outside a VPC has full internet access; S3, DynamoDB and the
   Telegram API are all public endpoints. (§8.1)
@@ -110,8 +112,8 @@ them: Telegram and WhatsApp keep working unchanged, and the app is a third
 channel (`channel = "app"`) into the same table, bucket and process Lambda.
 
 - **Two roles on the one allowlist item** (`ADMIN#{email}`, field `role`).
-  `admin` = everything. `collaborator` = Capture and browsing the cats, nothing
-  else: no queue or labeling, no deleting, merging, creating or renaming cats,
+  `admin` = everything. `collaborator` = Capture (with opt-in cat guesses)
+  and browsing the cats, nothing else: no queue or labeling, no deleting, merging, creating or renaming cats,
   no stats or people. **No role field means admin**, so the
   Terraform bootstrap item and `make admin-add` keep full access. The API
   enforces this per route (`ROUTES` in `src/admin/handler.py`, last column);
@@ -145,7 +147,15 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   means a deploy reaches everyone on their next load. The one exception is
   the content-addressed `/model/{version}/`, cached first (see 1c below).
 
-### Recognition in the labeling desk (1c — web/recognition.js)
+### Recognition in the app (1c — web/recognition.js)
+
+Two uses of one model, kept apart on purpose. The admin's blind guess
+measures **the model**. The contributor's answer, scored against the
+admin's label, measures **the product loop** ("pick from 3"), and earns its
+place by what only a person next to the cat can do: take a better photo
+when unsure, and come back to cats already met.
+
+#### In the labeling desk (admins)
 
 - **Blind, always.** The model ranks every known cat for each queue session
   and the ranking is recorded (`POST /api/sessions/{id}/prediction`) *before*
@@ -162,8 +172,9 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   live record, not borrowed from polar bears.
 - **The browser does the ML; the API stays boring.** The API hands out the
   labeled photos (`GET /api/recognition/gallery`) and stores and joins
-  guesses (`GET /api/recognition/predictions`). No model code under `src/`,
-  no torch near a Lambda. All three routes are ADMINS.
+  guesses and contributor answers (`GET /api/recognition/predictions`). No
+  model code under `src/`, no torch near a Lambda. These are ADMINS; the
+  shared-vector read and a contributor's own pick are the only member routes.
 - **The model is published, not deployed by Terraform.** `make model-export`
   (research env) then `make model-publish` uploads `model/{version}/` to the
   admin web bucket — model, and ONNX Runtime Web self-hosted from a
@@ -174,9 +185,40 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
   only, so a canvas can read a presigned photo. Every read still needs a URL
   the API signed.
 - **Cost:** ~40 MB per device per model version (29.5 MB int8 model + 10 MB
-  runtime), ~150–250 MB of memory while running, and one embedding per labeled
-  photo per device (~0.4 s each on a laptop, expect 1–2 s on a phone; cached
-  in IndexedDB). AWS cost is cents: storage and CloudFront egress.
+  runtime), ~150–250 MB of memory while running. AWS cost is cents: storage
+  and CloudFront egress.
+
+#### Shared vectors
+
+- **Embedded once, by an admin's browser.** After learning the labeled photos
+  it uploads their vectors (`POST /api/recognition/vectors`, ADMINS, item
+  `PHOTO#{id}` / `VECTOR#{version}`, listed through GSI2 `VECTOR#{version}`).
+  Every phone — and every other admin device — downloads them
+  (`GET /api/recognition/vectors`, any member, paged) instead of embedding
+  the gallery: ~4 KB per photo, about 1 MB today.
+- **Same pipeline on both sides.** Gallery and query vectors both come from
+  the browser (canvas resize, the same ONNX graph), so they agree; Python
+  vectors differ slightly (cosine ~0.986) and are never mixed in.
+- Deleting a photo deletes its vectors. Vectors are only templates while the
+  photo is labeled.
+
+#### In Capture (contributors, opt-in)
+
+- **Asked first, never assumed.** The first visit offers "Let the app guess
+  the cat?" with the 40 MB said out loud; "Not now" means nothing is
+  downloaded. Capture works exactly as before without it, and a missing or
+  failed model never blocks an upload.
+- **Three, never one.** After each photo the phone embeds the encounter's own
+  photos (up to 8, never written to disk) and asks "Is it one of these?":
+  three cats with their cover photos, "None of these", "Not sure". The first
+  guess alone is right about one time in three; the three about three in four.
+- **The answer is kept apart from the label.** It rides in the outbox with its
+  encounter (`POST /api/encounters/{id}/pick`, own encounter only, latest
+  answer wins, item `SESSION#{id}` / `PICK`). The labeling desk never reads
+  it, so the admin labels blind to both the model and the contributor. The
+  contributor later sees "you were right ✓" in their recent encounters.
+- **The reward is the re-encounter.** A picked cat shows "encounter #N with
+  this cat" — re-encounters are what research/FINDINGS.md found matter most.
 - **Replay** (Stats → Recognition model) re-runs the ranking over labeled
   sessions, each hidden in turn — split by session, never by photo. Same
   scoring code as the live record (`summarize` in recognition.js).

@@ -22,6 +22,7 @@ single ANY /api/{proxy+} route keeps the Terraform to one resource and puts
 the whole surface of the API in one readable table (ROUTES, below).
 """
 
+import base64
 import hashlib
 import json
 import logging
@@ -121,6 +122,15 @@ MAX_PREDICTION_CATS = 200
 # Sessions merged into sessions merged into ... — followed this far when
 # finding which cat a predicted session became.
 MAX_MERGE_HOPS = 5
+# Shared vectors (one per photo per model version), written by admins'
+# browsers and read by every phone that guesses. A page stays well under
+# the 6 MB Lambda response limit: ~4 KB of base64 per 768-float vector.
+VECTOR_WRITE_BATCH = 25
+VECTOR_PAGE = 400
+VECTOR_DIMENSIONS = range(64, 4097)
+# What a contributor can answer when the app shows its three guesses.
+PICK_CHOICES = ("cat", "none", "unsure")
+PICK_SHOWN = 5
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
@@ -763,6 +773,13 @@ def _reject_photo(photo_id, **_):
             _delete_all_versions(key)
 
     table.delete_item(Key={"PK": f"PHOTO#{photo_id}", "SK": "META"})
+    # Its recognition vectors go with it: a deleted photo must not keep
+    # being matched against.
+    for vector in _query_all(
+        KeyConditionExpression=Key("PK").eq(f"PHOTO#{photo_id}")
+        & Key("SK").begins_with("VECTOR#")
+    ):
+        table.delete_item(Key={"PK": vector["PK"], "SK": vector["SK"]})
     sha256 = photo.get("sha256")
     if sha256:
         # Frees the content hash so an intentional re-submission of the same
@@ -914,7 +931,8 @@ def _record_prediction(session_id, body, email, **_):
 
 
 def _get_predictions(**_):
-    """Every recorded guess, joined with the cat its session ended up as.
+    """Every recorded guess — the admins' blind ones and the contributors'
+    picks — joined with the cat its session ended up as.
 
     A session merged into another takes the cat of the one it joined —
     merging is a person saying "same cat". `truthCatId` is null while the
@@ -922,7 +940,8 @@ def _get_predictions(**_):
     measurement.
     """
     predictions = _entities("PREDICTION")
-    sessions = _batch_get_sessions({p["sessionId"] for p in predictions})
+    picks = _entities("PICK")
+    sessions = _batch_get_sessions({p["sessionId"] for p in predictions + picks})
     for _ in range(MAX_MERGE_HOPS):
         targets = {
             s["mergedInto"]
@@ -941,18 +960,207 @@ def _get_predictions(**_):
             session = sessions.get(session["mergedInto"]) or {}
         return session
 
-    out = []
-    for p in predictions:
-        session = resolve(p["sessionId"])
-        gone = not session or session.get("rejectedAt")
-        out.append(
+    def joined(items):
+        out = []
+        for p in items:
+            session = resolve(p["sessionId"])
+            gone = not session or session.get("rejectedAt")
+            out.append(
+                {
+                    **_clean(p),
+                    "truthCatId": None if gone else session.get("catId"),
+                    "labeledAt": None if gone else session.get("labeledAt"),
+                }
+            )
+        return out
+
+    return {"predictions": joined(predictions), "picks": joined(picks)}
+
+
+def _model_version_param(value):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[a-z0-9][a-z0-9.-]{0,39}", value
+    ):
+        raise ApiError(400, "modelVersion is not a version string")
+    return value
+
+
+def _put_vectors(body, email, **_):
+    """Vectors an admin's browser computed for labeled photos.
+
+    Every phone that guesses matches against these instead of downloading
+    and embedding every labeled photo itself — and they come from the same
+    browser pipeline the phones use, so gallery and query agree. Admins
+    only: a vector is trusted data. Rewriting one is harmless (same model,
+    same photo, same vector), so a retry is a no-op in effect.
+    """
+    version = _model_version_param(body.get("modelVersion"))
+    entries = body.get("vectors")
+    if not isinstance(entries, list) or not 0 < len(entries) <= VECTOR_WRITE_BATCH:
+        raise ApiError(400, f"vectors must hold 1 to {VECTOR_WRITE_BATCH} entries")
+    decoded = {}
+    for entry in entries:
+        photo_id = entry.get("photoId") if isinstance(entry, dict) else None
+        if not isinstance(photo_id, str) or not re.fullmatch(ID, photo_id):
+            raise ApiError(400, "every vector needs a photoId")
+        decoded[photo_id] = _decode_vector(entry.get("vector"))
+
+    photos = _batch_get_photos(decoded)
+    now = _now_iso()
+    written = 0
+    with table.batch_writer() as batch:
+        for photo_id, raw in decoded.items():
+            photo = photos.get(photo_id)
+            if not photo or photo.get("status") in UNASSIGNABLE_STATUSES:
+                continue  # deleted, or never a template: skip, don't fail
+            batch.put_item(
+                Item={
+                    "PK": f"PHOTO#{photo_id}",
+                    "SK": f"VECTOR#{version}",
+                    "photoId": photo_id,
+                    "modelVersion": version,
+                    "vector": raw,
+                    "computedAt": now,
+                    "computedBy": email,
+                    "GSI2PK": f"VECTOR#{version}",
+                    "GSI2SK": photo_id,
+                }
+            )
+            written += 1
+    return {"written": written}
+
+
+def _decode_vector(value):
+    """Base64 of little-endian float32s, unit length (the model L2-normalises)."""
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (TypeError, ValueError):
+        raise ApiError(400, "vector must be base64")
+    if len(raw) % 4 or len(raw) // 4 not in VECTOR_DIMENSIONS:
+        raise ApiError(400, "vector has the wrong length")
+    floats = memoryview(raw).cast("f")
+    norm = math.sqrt(sum(x * x for x in floats))
+    if not math.isfinite(norm) or abs(norm - 1) > 0.01:
+        raise ApiError(400, "vector must be unit length")
+    return raw
+
+
+def _batch_get_photos(photo_ids):
+    photos = {}
+    keys = [{"PK": f"PHOTO#{pid}", "SK": "META"} for pid in sorted(photo_ids)]
+    for start in range(0, len(keys), BATCH_GET_LIMIT):
+        request = {table.name: {"Keys": keys[start : start + BATCH_GET_LIMIT]}}
+        while request:
+            response = table.meta.client.batch_get_item(RequestItems=request)
+            for item in response["Responses"].get(table.name, []):
+                photos[item["photoId"]] = item
+            request = response.get("UnprocessedKeys") or None
+    return photos
+
+
+def _get_vectors(query, **_):
+    """The templates a phone matches against: labeled photos that have a
+    vector for this model version, a page at a time.
+
+    Any member may read them — a contributor's phone guesses with them.
+    They are numbers, not photos, and say no more than the cat list does.
+    """
+    version = _model_version_param(query.get("version"))
+    kwargs = {
+        "IndexName": "GSI2",
+        "KeyConditionExpression": Key("GSI2PK").eq(f"VECTOR#{version}"),
+        "Limit": VECTOR_PAGE,
+    }
+    after = query.get("after")
+    if after:
+        if not re.fullmatch(ID, after):
+            raise ApiError(400, "after must be a photo id")
+        kwargs["ExclusiveStartKey"] = {
+            "PK": f"PHOTO#{after}",
+            "SK": f"VECTOR#{version}",
+            "GSI2PK": f"VECTOR#{version}",
+            "GSI2SK": after,
+        }
+    page = table.query(**kwargs)
+    labeled = {p["photoId"]: p for p in _status_items("labeled") if p.get("catId")}
+    templates = []
+    for item in page["Items"]:
+        photo = labeled.get(item["photoId"])
+        if not photo or photo.get("mediaType") == "video":
+            continue
+        templates.append(
             {
-                **_clean(p),
-                "truthCatId": None if gone else session.get("catId"),
-                "labeledAt": None if gone else session.get("labeledAt"),
+                "photoId": item["photoId"],
+                "catId": photo["catId"],
+                "sessionId": photo.get("sessionId"),
+                "vector": base64.b64encode(bytes(item["vector"])).decode(),
             }
         )
-    return {"predictions": out}
+    last = page.get("LastEvaluatedKey")
+    return {"templates": templates, "next": last["GSI2SK"] if last else None}
+
+
+def _record_pick(session_id, body, email, **_):
+    """What a contributor answered when the app showed its guesses.
+
+    Their own encounter only. The latest answer wins — someone may change
+    their mind after a better photo — and it is kept apart from the label:
+    the labeling desk never reads it, so the admin's label stays blind and
+    can score both the model and the contributor.
+    """
+    _require_encounter(session_id, email)
+    version = _model_version_param(body.get("modelVersion"))
+    choice = body.get("choice")
+    if choice not in PICK_CHOICES:
+        raise ApiError(400, "choice must be cat, none or unsure")
+    cat_id = body.get("catId") if choice == "cat" else None
+    if choice == "cat":
+        if not isinstance(cat_id, str) or not re.fullmatch(ID, cat_id):
+            raise ApiError(400, "a cat pick needs a catId")
+        _assert_cat_exists(cat_id)
+    shown = body.get("shown")
+    if (
+        not isinstance(shown, list)
+        or not 0 < len(shown) <= PICK_SHOWN
+        or not all(isinstance(c, str) and re.fullmatch(ID, c) for c in shown)
+    ):
+        raise ApiError(400, f"shown must list 1 to {PICK_SHOWN} cat ids")
+    ranked = body.get("ranked")
+    if not isinstance(ranked, list) or len(ranked) > MAX_PREDICTION_CATS:
+        raise ApiError(400, f"ranked must be a list of at most {MAX_PREDICTION_CATS}")
+    cleaned = []
+    for entry in ranked:
+        rid = entry.get("catId") if isinstance(entry, dict) else None
+        score = entry.get("score") if isinstance(entry, dict) else None
+        if not isinstance(rid, str) or not re.fullmatch(ID, rid):
+            raise ApiError(400, "every ranked entry needs a catId")
+        if not isinstance(score, (int, float)) or not -1.0 <= score <= 1.0:
+            raise ApiError(400, "every score is a cosine similarity in [-1, 1]")
+        cleaned.append({"catId": rid, "score": Decimal(str(round(score, 4)))})
+    photo_count = body.get("photoCount")
+    if not isinstance(photo_count, int) or photo_count < 1:
+        raise ApiError(400, "photoCount must be a positive integer")
+
+    now = _now_iso()
+    table.put_item(
+        Item={
+            "PK": f"SESSION#{session_id}",
+            "SK": "PICK",
+            "sessionId": session_id,
+            "modelVersion": version,
+            "choice": choice,
+            "catId": cat_id,
+            "shown": shown,
+            "ranked": cleaned,
+            "photoCount": photo_count,
+            "pickedAt": _iso_param(body, "pickedAt") or now,
+            "receivedAt": now,
+            "pickedBy": email,
+            "GSI2PK": "ENTITY#PICK",
+            "GSI2SK": session_id,
+        }
+    )
+    return {"sessionId": session_id, "choice": choice}
 
 
 # --------------------------------------------------------------------------
@@ -1110,11 +1318,33 @@ def _get_encounters(email, **_):
         Limit=RECENT_ENCOUNTERS,
     )["Items"]
     names = {c["catId"]: c["name"] for c in _entities("CAT")}
-    return {
-        "encounters": [
-            {**_clean(item), "catName": names.get(item.get("catId"))} for item in items
-        ]
-    }
+    picks = _batch_get_picks([item["sessionId"] for item in items])
+    out = []
+    for item in items:
+        entry = {**_clean(item), "catName": names.get(item.get("catId"))}
+        pick = picks.get(item["sessionId"])
+        if pick:
+            # Their own answer, so the screen can say whether it held up.
+            entry["pick"] = {
+                "choice": pick["choice"],
+                "catId": pick.get("catId"),
+                "catName": names.get(pick.get("catId")),
+            }
+        out.append(entry)
+    return {"encounters": out}
+
+
+def _batch_get_picks(session_ids):
+    picks = {}
+    keys = [{"PK": f"SESSION#{sid}", "SK": "PICK"} for sid in session_ids]
+    for start in range(0, len(keys), BATCH_GET_LIMIT):
+        request = {table.name: {"Keys": keys[start : start + BATCH_GET_LIMIT]}}
+        while request:
+            response = table.meta.client.batch_get_item(RequestItems=request)
+            for item in response["Responses"].get(table.name, []):
+                picks[item["sessionId"]] = item
+            request = response.get("UnprocessedKeys") or None
+    return picks
 
 
 def _create_upload(session_id, body, email, **_):
@@ -1477,6 +1707,12 @@ ROUTES = (
     ("POST", rf"^/api/photos/(?P<photo_id>{ID})/reject$", _reject_photo, ADMINS),
     ("POST", rf"^/api/photos/(?P<photo_id>{ID})/complete$", _complete_upload, ANYONE),
     ("GET", r"^/api/encounters$", _get_encounters, ANYONE),
+    (
+        "POST",
+        rf"^/api/encounters/(?P<session_id>{ID})/pick$",
+        _record_pick,
+        ANYONE,
+    ),
     ("POST", r"^/api/encounters$", _create_encounter, ANYONE),
     (
         "POST",
@@ -1486,6 +1722,8 @@ ROUTES = (
     ),
     ("GET", r"^/api/recognition/gallery$", _get_recognition_gallery, ADMINS),
     ("GET", r"^/api/recognition/predictions$", _get_predictions, ADMINS),
+    ("GET", r"^/api/recognition/vectors$", _get_vectors, ANYONE),
+    ("POST", r"^/api/recognition/vectors$", _put_vectors, ADMINS),
     (
         "POST",
         rf"^/api/sessions/(?P<session_id>{ID})/prediction$",

@@ -243,6 +243,6 @@ three times in four — and far from auto-accept. That is the shortlist the
 design always expected from v0. What it cannot say yet: anything per cat, or
 anything about thresholds. Both need sessions, which is why the model now
 guesses every queue session blind and the live record accumulates in the
-labeling tool (CLAUDE.md, "Recognition in the labeling desk"). Round 1's
+labeling tool (CLAUDE.md, "Recognition in the app"). Round 1's
 finding applies directly: most campus cats have one session, and re-encounters
 are what will move these numbers.

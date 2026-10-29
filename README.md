@@ -8,8 +8,9 @@ Working in the codespace from your own machine: [`docs/codespaces.md`](docs/code
 
 **Current phase: 1 — collection and labeling.** Alongside it, a recognition
 research track (`research/`, phase 1b) and, on branch `recognition-labeling`,
-the first model measured on campus data: it guesses every labeling-queue
-session blind, in the admin's browser (phase 1c). See `CLAUDE.md` → Phases, and
+the first model measured on campus data, running in the browser: it guesses
+every labeling-queue session blind for admins, and asks contributors "Is it
+one of these?" in Capture (phase 1c). See `CLAUDE.md` → Phases, and
 `docs/branches.md` for what lives on which branch.
 
 The cat-names voting app is the phase 4 read path, and is deliberately out of

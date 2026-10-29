@@ -15,6 +15,14 @@
 // While an encounter is open the camera takes the whole screen, like the
 // phone's own camera app. Closing it (✕) only steps back to this screen; the
 // encounter stays open until "Done — next cat".
+//
+// Cat guesses (opt-in, recognition.js): after a photo, the phone runs the
+// model on it and asks "Is it one of these?" with its top three. The point
+// is the moment, not the label: the person is still next to the cat, so an
+// unsure guess can turn into a better photo, and a known cat's encounter
+// count rewards coming back to cats already met — the re-encounters that
+// research/FINDINGS.md found matter most. The answer rides in the outbox
+// and is kept apart from the label; the labeling desk never shows it.
 
 import { createOutbox, ulid } from "./outbox.js";
 
@@ -30,6 +38,10 @@ const VIDEO_MAX_SECONDS = 10;
 const VIDEO_BITS_PER_SECOND = 2_500_000;
 const MAX_FILE_BYTES = { photo: 20 * 1024 * 1024, video: 60 * 1024 * 1024 };
 const THUMB_PX = 160;
+// "on" or "off"; unset means not asked yet. The model is ~40 MB, so it is
+// never downloaded without the person saying yes.
+const GUESSES_KEY = "bgucats.guesses";
+const GUESS_SHOWN = 3;
 
 const VIDEO_TYPES = [
   "video/mp4;codecs=avc1",
@@ -40,7 +52,7 @@ const VIDEO_TYPES = [
 ];
 
 export function createCapture(ui) {
-  const { el, button, toast, api, post, sectionHead, plural, fmtDate, emptyState } = ui;
+  const { el, button, toast, api, post, sectionHead, plural, fmtDate, emptyState, recognition } = ui;
 
   let encounter = loadEncounter();
   let stream = null;
@@ -53,6 +65,208 @@ export function createCapture(ui) {
   let cameraOpen = !!encounter;
 
   const outbox = createOutbox({ post, onChange: () => mounted && drawStrip() });
+
+  // ---- cat guesses --------------------------------------------------------
+
+  // This page's own photos, kept in memory for guessing: the outbox drops a
+  // photo's bytes once it is uploaded.
+  const shotBlobs = new Map();
+  let cats = null; // catId -> { name, coverUrl }
+  let guess = { status: "idle" }; // idle | preparing | waiting | looking | ready | unavailable
+  let guessRun = null;
+  let guessAgain = false;
+
+  const guessesOn = () => !!recognition && readSetting() === "on";
+  function readSetting() {
+    try {
+      return localStorage.getItem(GUESSES_KEY);
+    } catch {
+      return null;
+    }
+  }
+  function writeSetting(value) {
+    try {
+      localStorage.setItem(GUESSES_KEY, value);
+    } catch {
+      /* asked again next time */
+    }
+  }
+
+  async function prepareGuesses() {
+    if (!guessesOn() || guess.status === "preparing") return;
+    guess = { status: "preparing" };
+    drawGuess();
+    const stop = recognition.onChange(() => drawGuess());
+    try {
+      const [ready] = await Promise.all([recognition.prepareForCapture(), loadCats()]);
+      guess = { status: ready ? "waiting" : "unavailable" };
+    } catch {
+      guess = { status: "unavailable" }; // Capture works exactly as before
+    } finally {
+      stop();
+    }
+    drawGuess();
+    if (guess.status === "waiting") updateGuess();
+  }
+
+  async function loadCats() {
+    const list = (await api("/cats")).cats;
+    cats = new Map(list.map((c) => [c.catId, c]));
+    recognition.setNames(list);
+  }
+
+  // Re-guess after every photo, one run at a time.
+  function updateGuess() {
+    if (!guessesOn() || !encounter || !["waiting", "ready", "looking"].includes(guess.status)) return;
+    if (guessRun) {
+      guessAgain = true;
+      return;
+    }
+    guessRun = (async () => {
+      const shots = encounter.shots.filter((s) => s.kind === "photo" && shotBlobs.has(s.photoId));
+      if (!shots.length) return;
+      if (guess.status !== "ready") {
+        guess = { status: "looking" };
+        drawGuess();
+      }
+      const result = await recognition.guessShots(
+        shots.map((s) => ({ photoId: s.photoId, blob: shotBlobs.get(s.photoId) })),
+      );
+      if (!result || !result.ranked.length) {
+        guess = { status: "unavailable" };
+      } else {
+        guess = { status: "ready", ...result };
+      }
+    })()
+      .catch(() => {
+        guess = { status: "unavailable" };
+      })
+      .finally(() => {
+        guessRun = null;
+        drawGuess();
+        if (guessAgain) {
+          guessAgain = false;
+          updateGuess();
+        }
+      });
+  }
+
+  async function answer(choice, catId = null) {
+    if (!encounter || guess.status !== "ready") return;
+    const shown = guess.ranked.slice(0, GUESS_SHOWN).map((r) => r.catId);
+    const pick = {
+      modelVersion: recognition.state.version,
+      choice,
+      catId,
+      shown,
+      ranked: guess.ranked.slice(0, 200).map((r) => ({ catId: r.catId, score: Math.round(r.score * 1e4) / 1e4 })),
+      photoCount: guess.photoCount,
+      pickedAt: new Date().toISOString(),
+    };
+    encounter.pick = { choice, catId };
+    saveEncounter();
+    await outbox.setPick(encounter.sessionId, pick);
+    drawGuess();
+  }
+
+  function changeAnswer() {
+    if (!encounter) return;
+    delete encounter.pick;
+    saveEncounter();
+    drawGuess();
+  }
+
+  const catName = (id) => cats?.get(id)?.name || "this cat";
+
+  function guessPanel() {
+    const node = el("div", { className: "guess", attrs: { "aria-live": "polite" } });
+    return node;
+  }
+
+  function drawGuess() {
+    const node = mounted?.guess;
+    if (!node) return;
+    node.hidden = !guessesOn() || guess.status === "idle" || guess.status === "unavailable";
+    if (node.hidden) return node.replaceChildren();
+
+    const line = (text, kids = []) => [
+      el("p", { className: "guess-line" }, [el("span", { textContent: text }), ...kids]),
+    ];
+    const picked = encounter?.pick;
+
+    if (picked) {
+      const again = button("Change", "btn btn-sm guess-change", changeAnswer);
+      if (picked.choice === "cat") {
+        const n = recognition.encountersOf(picked.catId) + 1;
+        return node.replaceChildren(
+          ...line(`You said ${catName(picked.catId)} · encounter #${n} with this cat`, [again]),
+        );
+      }
+      if (picked.choice === "none") {
+        return node.replaceChildren(...line("A cat we haven't met? An admin will name it.", [again]));
+      }
+      return node.replaceChildren(...line("Thanks. A photo of the face helps the most.", [again]));
+    }
+
+    if (guess.status === "preparing") {
+      const st = recognition.state;
+      return node.replaceChildren(
+        ...line(`Getting ready to guess: ${st.detail || "starting"}`),
+        st.progress != null ? el("progress", { max: 1, value: st.progress }) : "",
+      );
+    }
+    if (guess.status === "waiting") return node.replaceChildren(...line("Take a photo and the app will guess who it is."));
+    if (guess.status === "looking") return node.replaceChildren(...line("Looking…"));
+
+    const tiles = guess.ranked.slice(0, GUESS_SHOWN).map((r) => {
+      const cat = cats?.get(r.catId);
+      const tile = el("button", { type: "button", className: "guess-pick" }, [
+        cat?.coverUrl
+          ? el("img", { src: cat.coverUrl, alt: "" })
+          : el("span", { className: "guess-blank", textContent: "?" }),
+        el("span", { className: "guess-name", textContent: catName(r.catId) }),
+      ]);
+      tile.onclick = () => answer("cat", r.catId);
+      return tile;
+    });
+    node.replaceChildren(
+      el("p", { className: "guess-line", textContent: "Is it one of these?" }),
+      el("div", { className: "guess-picks" }, tiles),
+      el("div", { className: "guess-other" }, [
+        button("None of these", "btn btn-sm", () => answer("none")),
+        button("Not sure", "btn btn-sm", () => answer("unsure")),
+      ]),
+    );
+  }
+
+  function guessSettingCard() {
+    if (!recognition) return null;
+    const setting = readSetting();
+    const turn = (value) => () => {
+      writeSetting(value);
+      render();
+      if (value === "on") prepareGuesses();
+    };
+    if (!setting) {
+      return el("section", { className: "card panel guess-offer" }, [
+        el("h3", { textContent: "Let the app guess the cat?" }),
+        el("p", {
+          textContent:
+            "After a photo it suggests which campus cat this might be, and you say if it's right. " +
+            "It's still learning, so your answer helps. It downloads about 40 MB once, " +
+            "so Wi-Fi is best, and it works without signal after that.",
+        }),
+        el("div", { className: "capture-open-actions" }, [
+          button("Turn on", "btn btn-primary", turn("on")),
+          button("Not now", "btn", turn("off")),
+        ]),
+      ]);
+    }
+    return el("p", { className: "meta guess-setting" }, [
+      setting === "on" ? "Cat guesses are on. " : "Cat guesses are off. ",
+      button(setting === "on" ? "Turn off" : "Turn on", "btn btn-sm btn-ghost", turn(setting === "on" ? "off" : "on")),
+    ]);
+  }
 
   // ---- encounter --------------------------------------------------------
 
@@ -96,6 +310,8 @@ export function createCapture(ui) {
     const finished = encounter;
     encounter = null;
     cameraOpen = false;
+    for (const shot of finished.shots) shotBlobs.delete(shot.photoId);
+    if (guess.status === "ready" || guess.status === "looking") guess = { status: "waiting" };
     saveEncounter();
     await outbox.closeEncounter(finished.sessionId);
     toast(
@@ -249,6 +465,7 @@ export function createCapture(ui) {
     const photoId = ulid();
     encounter.shots.push({ photoId, kind, thumb });
     saveEncounter();
+    if (kind === "photo") shotBlobs.set(photoId, blob);
     await outbox.addItem({
       photoId,
       sessionId: encounter.sessionId,
@@ -261,6 +478,7 @@ export function createCapture(ui) {
       durationSeconds,
     });
     drawStrip();
+    if (kind === "photo") updateGuess();
   }
 
   function thumbOf(source) {
@@ -325,7 +543,7 @@ export function createCapture(ui) {
           button("Start an encounter", "btn btn-primary btn-lg", startEncounter),
         ]);
 
-    main.replaceChildren(head, current, outboxPanel(), await recentPanel());
+    main.replaceChildren(head, guessSettingCard() || "", current, outboxPanel(), await recentPanel());
     drawStrip();
   }
 
@@ -339,6 +557,7 @@ export function createCapture(ui) {
     const location = el("span", { className: "chip location-chip" });
     const strip = el("div", { className: "shot-strip" });
     const status = el("p", { className: "outbox-line" });
+    const guessNode = guessPanel();
 
     const close = el("button", {
       type: "button",
@@ -396,6 +615,7 @@ export function createCapture(ui) {
         location,
       ]),
       el("div", { className: "camera-bottom" }, [
+        guessNode,
         strip,
         status,
         el("div", { className: "capture-controls" }, [record, shutter, done]),
@@ -407,9 +627,11 @@ export function createCapture(ui) {
     // the camera covers it.
     document.querySelector("#app").inert = true;
 
-    mounted = { camera, viewfinder: camera, location, strip, status, video };
+    mounted = { camera, viewfinder: camera, location, strip, status, video, guess: guessNode };
     drawLocation();
     drawStrip();
+    drawGuess();
+    if (guessesOn() && guess.status === "idle") prepareGuesses();
 
     const ok = await startCamera(video);
     if (mounted?.camera !== camera) return; // closed while the camera was starting
@@ -534,9 +756,21 @@ export function createCapture(ui) {
             className: `tag${e.catName ? " good" : ""}`,
             textContent: e.catName || "waiting for a label",
           }),
+          pickNote(e),
         ]),
       ),
     ]);
+  }
+
+  // What they answered, next to what the cat turned out to be.
+  function pickNote(e) {
+    if (e.pick?.choice !== "cat" || !e.pick.catName) return null;
+    if (!e.catName) return el("span", { className: "meta", textContent: `you said ${e.pick.catName}` });
+    const right = e.pick.catId === e.catId;
+    return el("span", {
+      className: `meta${right ? " pick-right" : ""}`,
+      textContent: right ? "you were right ✓" : `you said ${e.pick.catName}`,
+    });
   }
 
   // Leaving the screen lets go of the camera and GPS — both drain a battery

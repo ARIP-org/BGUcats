@@ -138,6 +138,24 @@ export function createOutbox({ post, onChange }) {
         }
         await put("encounters", { ...encounter, created: true });
       }
+      // A contributor's answer to "Is it one of these?" (capture.js). It
+      // follows its encounter, and a re-send simply overwrites the same
+      // answer server side.
+      for (const encounter of await all("encounters")) {
+        if (!encounter.created || !encounter.pick || encounter.pickSent) continue;
+        try {
+          await post(`/encounters/${encounter.sessionId}/pick`, encounter.pick);
+        } catch (err) {
+          if (!isPermanent(err)) throw err;
+          // Refused (say, the cat was merged away meanwhile): the photos
+          // matter, the answer does not — drop it rather than block them.
+        }
+        const latest = (await all("encounters")).find((e) => e.sessionId === encounter.sessionId);
+        // Only if it was not changed again while this one was in flight.
+        if (latest && JSON.stringify(latest.pick) === JSON.stringify(encounter.pick)) {
+          await put("encounters", { ...latest, pickSent: true });
+        }
+      }
       const items = (await all("items")).sort((a, b) => a.photoId.localeCompare(b.photoId));
       for (const item of items) {
         if (item.state === "failed") continue;
@@ -230,10 +248,24 @@ export function createOutbox({ post, onChange }) {
   async function forgetFinishedEncounters() {
     const items = await all("items");
     for (const encounter of await all("encounters")) {
-      if (encounter.created && !encounter.open && !items.some((i) => i.sessionId === encounter.sessionId)) {
+      const pickPending = encounter.pick && !encounter.pickSent;
+      if (
+        encounter.created &&
+        !encounter.open &&
+        !pickPending &&
+        !items.some((i) => i.sessionId === encounter.sessionId)
+      ) {
         await remove("encounters", encounter.sessionId);
       }
     }
+  }
+
+  // The latest answer replaces any earlier one, sent or not.
+  async function setPick(sessionId, pick) {
+    const encounter = (await all("encounters")).find((e) => e.sessionId === sessionId);
+    if (!encounter) return;
+    await put("encounters", { ...encounter, pick, pickSent: false });
+    kick();
   }
 
   async function closeEncounter(sessionId) {
@@ -271,7 +303,7 @@ export function createOutbox({ post, onChange }) {
   // refusal is fine — it only matters on a nearly full phone.
   navigator.storage?.persist?.().catch(() => {});
 
-  return { addEncounter, addItem, closeEncounter, retryFailed, discard, snapshot, kick };
+  return { addEncounter, addItem, setPick, closeEncounter, retryFailed, discard, snapshot, kick };
 }
 
 // 400/403/404 will not get better by asking again. 401 is handled by the
