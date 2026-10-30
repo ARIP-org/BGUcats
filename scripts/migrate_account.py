@@ -3,7 +3,8 @@
     python scripts/migrate_account.py media  [--apply]
     python scripts/migrate_account.py model  [--apply]
     python scripts/migrate_account.py table  [--apply] [--overwrite-prefix ADMIN#]
-    python scripts/migrate_account.py verify [--only table|media|model]
+    python scripts/migrate_account.py ssm    [--apply]
+    python scripts/migrate_account.py verify [--only table|media|model|ssm]
 
 The old account is 851725214678 (now the organization's management
 account), the new one 395591097129 (sasha-bgucats-prod). The runbook, with
@@ -21,9 +22,16 @@ What it copies:
             ULIDs are keys and are kept. GSIs fill themselves from the
             copied attributes. Skipped: RATE# and MGREPLY#, one-hour items
             the table's TTL deletes anyway.
+    ssm     the three /bgucats/whatsapp/* values, into parameters the
+            deploy created as "unset". The other /bgucats/* values come from
+            the production environment's secrets through Terraform; `verify`
+            proves they match (the submitter-hash salt above all: a
+            different salt turns every contributor into a new person).
+            Values are never printed, only "same" or "differ".
     verify  both sides, item by item and object by object: counts per key
             prefix and per GSI2PK (entity type), plus a content hash per
-            item and size + MD5 per object. Exit status 0 only on a match.
+            item, size + MD5 per object, and SSM values compared by digest.
+            Exit status 0 only on a match.
 
 How it protects the dataset:
 
@@ -69,6 +77,16 @@ REGION = "us-east-1"
 TABLE = "bgucats-data"
 MODEL_PREFIX = "model/"
 MODEL_MANIFEST = "model/manifest.json"
+SSM_PATH = "/bgucats/"
+# Written outside Terraform (infra/scripts/set-whatsapp-secrets.sh), so the
+# deploy leaves them "unset" and this copies them. Everything else under
+# SSM_PATH is Terraform's, from the production environment's secrets.
+SSM_COPIED = (
+    "/bgucats/whatsapp/access-token",
+    "/bgucats/whatsapp/app-secret",
+    "/bgucats/whatsapp/verify-token",
+)
+SSM_UNSET = "unset"
 
 # Partition-key prefixes not copied: short-lived items with expiresAt set,
 # deleted by the table's TTL within the hour (src/ingest/core.py).
@@ -102,13 +120,14 @@ class ReadOnly:
         {
             "describe_table",
             "get_item",
+            "get_parameter",
             "get_object",
             "head_object",
             "list_objects_v2",
             "scan",
         }
     )
-    PAGINATORS = frozenset({"list_objects_v2", "scan"})
+    PAGINATORS = frozenset({"get_parameters_by_path", "list_objects_v2", "scan"})
 
     def __init__(self, client):
         self._client = client
@@ -364,6 +383,65 @@ def copy_objects(src, dst, src_bucket, dst_bucket, prefix, apply, last=None):
     return outcomes, conflicts
 
 
+# --- parameters ------------------------------------------------------------
+
+
+def parameter_values(client, path=SSM_PATH):
+    """{name: value}, decrypted. Held in memory only, never printed."""
+    values = {}
+    pages = client.get_paginator("get_parameters_by_path").paginate(
+        Path=path, Recursive=True, WithDecryption=True
+    )
+    for page in pages:
+        for parameter in page["Parameters"]:
+            values[parameter["Name"]] = parameter["Value"]
+    return values
+
+
+def digest(value):
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def compare_parameters(source, dest):
+    """{name: same | differ | missing | extra}, by digest."""
+    result = {}
+    for name in sorted(set(source) | set(dest)):
+        if name not in dest:
+            result[name] = "missing"
+        elif name not in source:
+            result[name] = "extra"
+        else:
+            result[name] = (
+                "same" if digest(source[name]) == digest(dest[name]) else "differ"
+            )
+    return result
+
+
+def copy_parameters(src, dst, apply, names=SSM_COPIED):
+    """Copies names whose dest value is missing or "unset". {name: outcome}."""
+    source = parameter_values(src)
+    dest = parameter_values(dst)
+    outcomes = {}
+    for name in names:
+        if name not in source:
+            outcomes[name] = "not in source"
+        elif name in dest and digest(dest[name]) == digest(source[name]):
+            outcomes[name] = "same"
+        elif name in dest and dest[name] != SSM_UNSET:
+            outcomes[name] = "conflict"
+        elif not apply:
+            outcomes[name] = "would copy"
+        else:
+            dst.put_parameter(
+                Name=name,
+                Value=source[name],
+                Type="SecureString",
+                Overwrite=name in dest,
+            )
+            outcomes[name] = "copied"
+    return outcomes
+
+
 # --- verify ----------------------------------------------------------------
 
 
@@ -580,6 +658,15 @@ def run_verify(args, src, dst):
                 + (f"  attributes: {', '.join(names)}" if names else "")
             )
         status |= bool(problems) or any(e != a for e, a in fill.values())
+    if args.only in (None, "ssm"):
+        result = compare_parameters(
+            parameter_values(ReadOnly(src.client("ssm"))),
+            parameter_values(dst.client("ssm")),
+        )
+        print("\nSSM parameters under /bgucats/ (values compared by digest):")
+        for name, outcome in result.items():
+            print(f"  {outcome:8} {name}")
+        status |= any(outcome != "same" for outcome in result.values())
     buckets = []
     if args.only in (None, "media"):
         buckets.append(("media", media_bucket, ""))
@@ -604,6 +691,21 @@ def run_verify(args, src, dst):
         status |= bool(problems)
     print("\nMATCH" if status == 0 else "\nDIFFERENCES, see above")
     return int(status)
+
+
+def run_ssm(args, src, dst):
+    outcomes = copy_parameters(
+        ReadOnly(src.client("ssm")), dst.client("ssm"), args.apply
+    )
+    print("\nSSM parameters (values never printed):")
+    for name, outcome in outcomes.items():
+        print(f"  {outcome:14} {name}")
+    if "conflict" in outcomes.values():
+        print(
+            "\nA conflict is a real value already in the dest account: left as it is."
+        )
+        return 1
+    return 0
 
 
 def main(argv=None):
@@ -632,8 +734,10 @@ def main(argv=None):
         metavar="PREFIX",
         help="replace dest items under this PK prefix that differ (repeatable)",
     )
+    ssm = sub.add_parser("ssm", help="copy the WhatsApp secrets")
+    ssm.add_argument("--apply", action="store_true", help="write (default: dry run)")
     verify = sub.add_parser("verify", help="compare both accounts")
-    verify.add_argument("--only", choices=["table", "media", "model"])
+    verify.add_argument("--only", choices=["table", "media", "model", "ssm"])
     verify.add_argument(
         "--no-headers", action="store_true", help="skip per-object HEADs"
     )
@@ -644,6 +748,7 @@ def main(argv=None):
         "media": run_media,
         "model": run_model,
         "table": run_table,
+        "ssm": run_ssm,
         "verify": run_verify,
     }
     return run[args.command](args, src, dst)
