@@ -126,8 +126,12 @@ Repo → *Settings* → *Environments* → **New environment** → `production`:
 
 1. *Deployment branches and tags* → **Selected branches and tags** → *Add
    deployment branch or tag rule* → Ref type *Branch* → `main`.
-2. *Required reviewers* → `sasha720709`, and untick *Prevent self-review*.
-   Recommended during the move. Every deploy then waits for your click.
+2. *Required reviewers* is not offered for a private repo on the free
+   plan (the API refuses it), so there is none. What stands between a
+   merge and an apply is the ruleset (5e), the plan in the PR, and
+   `plan_only` until 6d.2.
+
+Done on 2026-10-30, with the variables (5b) and the six secrets (5c).
 
 ### 5b. Variables (the role ARNs, not secrets)
 
