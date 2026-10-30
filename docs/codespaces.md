@@ -122,8 +122,8 @@ enough; it needs the `TF_VAR_*` values in the environment). It is the only
 profile a Claude session may ever be handed, and only when you choose to.
 
 **`bgucats-prod-admin`** is for the owner's manual jobs only: applying
-`infra/bootstrap`, `make model-publish`, and the SSM and table writers
-(`make whatsapp-secrets`, `make admin-add`), always per command
+`infra/bootstrap`, `make model-publish`, and the table writer
+(`make admin-add`), always per command
 (`make model-publish PROFILE=bgucats-prod-admin`), never exported, never
 handed to a Claude session. Its sessions are short on purpose.
 

@@ -512,7 +512,7 @@ def test_location_button_label_as_text_gets_help(dynamo_table, telegram_calls):
 
 
 # --------------------------------------------------------------------------
-# Concurrent opens (bursts with no album ID — every WhatsApp multi-send)
+# Concurrent opens (bursts with no album ID: photos sent one at a time)
 # --------------------------------------------------------------------------
 
 
@@ -525,9 +525,9 @@ def _session_exists(dynamo_table, session_id):
 def test_concurrent_first_photos_join_one_session(dynamo_table):
     # Invocation A already opened a session; B read "no pointer" just before
     # and now tries to open its own.
-    first = core.resolve_or_open_session("hash-burst", None, channel="whatsapp")
+    first = core.resolve_or_open_session("hash-burst", None, channel="telegram")
     second = core._open_session(
-        "hash-burst", None, explicit=False, channel="whatsapp", replacing=None
+        "hash-burst", None, explicit=False, channel="telegram", replacing=None
     )
     assert second == first
     sessions = dynamo_table.scan(
@@ -553,9 +553,9 @@ def test_explicit_open_always_takes_over(dynamo_table):
 
 
 def test_sessions_record_their_channel(dynamo_table):
-    session_id = core.resolve_or_open_session("hash-ch", None, channel="whatsapp")
+    session_id = core.resolve_or_open_session("hash-ch", None, channel="telegram")
     item = dynamo_table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"})
-    assert item["Item"]["channel"] == "whatsapp"
+    assert item["Item"]["channel"] == "telegram"
 
 
 # --------------------------------------------------------------------------

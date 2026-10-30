@@ -2,8 +2,7 @@
 
 The Telegram adapter: validates the request came from Telegram, parses the
 update, downloads files the Telegram way, and replies with Telegram
-keyboards. Sessions, photo records and locations are core.py's job, shared
-with the WhatsApp adapter (whatsapp.py).
+keyboards. Sessions, photo records and locations are core.py's job.
 
 No image processing happens here (see docs/cat-app-design-spec.pdf §5, §10)
 — that's the S3-triggered process Lambda's job.

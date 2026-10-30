@@ -1262,7 +1262,7 @@ def _remove_admin(admin_email, email, **_):
 
 
 # --------------------------------------------------------------------------
-# In-app capture — the PWA's third channel next to Telegram and WhatsApp
+# In-app capture — the PWA's own channel next to the Telegram bot
 # --------------------------------------------------------------------------
 #
 # An encounter is a Session with channel "app": one cat, one sitting, opened
@@ -1287,7 +1287,7 @@ def _app_submitter_hash(email):
     Unsalted, unlike the bots' hashes: those protect anonymous members of
     the public, while every app user is a named person on the allowlist
     whose email already appears in labeledBy and addedBy. The "app:" prefix
-    keeps the namespace apart from Telegram and WhatsApp IDs.
+    keeps the namespace apart from the bots' IDs.
     """
     return hashlib.sha256(f"app:{email}".encode()).hexdigest()
 

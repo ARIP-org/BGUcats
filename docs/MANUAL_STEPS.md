@@ -172,8 +172,7 @@ ghx secret list --env production -R $R     # six names, no values
 If `p` fails with `AccessDenied` on KMS, use `--profile mgmt-admin` in it
 instead. The `tr -d '\n'` matters: with a trailing newline it would be a
 different salt. Step 7's `verify` compares every `/bgucats/*` value in both
-accounts by digest, so a mistake here is caught before cutover. The
-WhatsApp values are not secrets here: step 7 copies them.
+accounts by digest, so a mistake here is caught before cutover.
 
 The Telegram token and the webhook secret belong to the same bot, so the
 bot keeps its name and contributors keep their chats. Only the webhook URL
@@ -348,18 +347,17 @@ migrate media            # dry run: "would copy" per prefix, no writes
 migrate media --apply    # raw/, derived/, exports/; safe to re-run
 migrate model            # dry run
 migrate model --apply    # model/ byte for byte, manifest.json last
-migrate ssm              # dry run
-migrate ssm --apply      # the three WhatsApp secrets, only into "unset" parameters
 migrate verify --only media
 migrate verify --only model
 migrate verify --only ssm
 ```
 
-`verify --only ssm` must show **`same`** for all six `/bgucats/*`
-parameters. A `differ` on the Telegram token, the webhook secret or the salt
-means an environment secret from 5c differs from the old value: set it
-again (5c), run Deploy, and check again. **Do not go on with a differing
-salt.**
+`verify --only ssm` must show **`same`** for the three `/bgucats/*`
+parameters: the Telegram token, the webhook secret and the salt. (The old
+account's `/bgucats/whatsapp/*` are ignored: the WhatsApp bot was removed.)
+A `differ` means an environment secret from 5c differs from the old value:
+set it again (5c), run Deploy, and check again. **Do not go on with a
+differing salt.**
 
 The copied model keeps its version hash, so every stored vector and
 recorded guess stays valid. Re-publishing would keep them valid only if the
@@ -367,7 +365,7 @@ export came out bit-identical, and nothing would tell you if it did not.
 
 ### 7b. The freeze (an evening, about an hour)
 
-Writes to the old account stop, the table is copied once, and the bots move
+Writes to the old account stop, the table is copied once, and the bot moves
 over. Nothing is lost: Telegram holds undelivered updates for 24 hours.
 
 1. **Tell the collaborators** a day ahead. At the start, everyone opens the
@@ -386,10 +384,10 @@ over. Nothing is lost: Telegram holds undelivered updates for 24 hours.
    unset T
    ```
 
-3. **WhatsApp:** while it is on Meta's test number (up to five verified
-   senders), ask those people not to send during the freeze. If it has gone
-   live, stop and work out the switch first: Meta does not queue messages
-   the way Telegram does.
+3. **The old WhatsApp bot** still runs in the old account until 9c, and
+   the new account has none. If its Meta app still exists, delete it now
+   (developers.facebook.com → the app → *App settings* → *Advanced* →
+   *Delete app*), so that nothing lands in the old table after the copy.
 4. **Last media copy:** `migrate media --apply` again. It copies only what
    arrived since 7a, while the table is still empty.
 5. **The table:**
@@ -408,7 +406,7 @@ over. Nothing is lost: Telegram holds undelivered updates for 24 hours.
 6. **Prove it:** `migrate verify`. Expected: **`MATCH`**. Every prefix has
    source = dest, with 0 missing, 0 differ and 0 extra. The GSI2PK table
    shows the same number of cats, sessions per status, predictions, picks
-   and vectors on both sides, and all six SSM parameters are `same`. If only
+   and vectors on both sides, and all three SSM parameters are `same`. If only
    a GSI lags ("catching up?"), wait a minute and run it again. For
    anything else, do not cut over: the old account is untouched, so resume
    Telegram there with the URL from step 2 (see "Way back" below) and find
@@ -431,21 +429,16 @@ so nobody opens the new app before step 8.
 
    The `getWebhookInfo` it prints shows the new `execute-api` URL,
    `pending_update_count` falling to 0, and no `last_error_message`.
-2. **WhatsApp:** Meta dashboard → *WhatsApp* → *Configuration* →
-   *Webhook* → *Edit*. Callback URL from
-   `AWS_PROFILE=bgucats-prod-ro terraform -chdir=infra/main output -raw whatsapp_webhook_url`,
-   verify token unchanged (`migrate ssm` copied it). *Verify and save*, and
-   check that `messages` is still subscribed.
-3. **The app:** on each phone, open `admin_url` from step 6d.5, install it
+2. **The app:** on each phone, open `admin_url` from step 6d.5, install it
    (Share → Add to Home Screen, or the install button), and sign in with
    Google. Keep the old app on the home screen until its queue is empty,
    then delete it.
-4. **Smoke test** (`docs/deploy.md` → "Post-deploy checks"). A Telegram
+3. **Smoke test** (`docs/deploy.md` → "Post-deploy checks"). A Telegram
    photo gets "Got it!" and shows up in the Queue within a minute. A Capture
    encounter as a collaborator shows three cats under "Who did you meet?".
    An admin labels one session. Stats → "Uploads that never arrived" reads
    0. Stats → Recognition model lists the copied predictions.
-5. **The next day:** `migrate verify --only table`. Now `extra` and
+4. **The next day:** `migrate verify --only table`. Now `extra` and
    `differ` are expected (new work in the new account), but **`missing`
    must be 0**. Anything missing landed in the old account after the copy.
    Bring it over media first, then items, both create-only, so nothing in
@@ -456,7 +449,7 @@ so nobody opens the new app before step 8.
 
 The old account is complete and still running. Point Telegram back at it
 (`setWebhook` with the URL written down in 7b.2 and the same
-`secret_token`), switch the WhatsApp URL back, and use the old app. Work
+`secret_token`), and use the old app. Work
 done in the new account in the meantime can be copied back with the same
 script, accounts reversed:
 `--source-profile bgucats-prod-ro --source-account 395591097129 --dest-profile mgmt-admin --dest-account 851725214678`.
@@ -527,7 +520,8 @@ terraform -chdir=infra/main show -no-color destroy.tfplan \
 ```
 
 It must say `data not in the plan` and `0 to add, 0 to change, N to
-destroy`. What it destroys: the Lambdas and their roles, the API, both
+destroy`. What it destroys: the Lambdas (the old WhatsApp bot's too, which
+the code no longer has but the old state does) and their roles, the API, both
 distributions, the user pool with its `bgucats-admin` domain, the site
 bucket, the app's files, the SSM parameters, and the media bucket's CORS
 rule and S3 → Lambda notification.
@@ -654,7 +648,7 @@ Ways to close it, in order of effort:
 1. Make the secrets *write-only* in Terraform (`value_wo` on
    `aws_ssm_parameter`, Terraform ≥ 1.11), so they never enter state. The
    Google client secret needs the same, or to be set outside Terraform the
-   way the WhatsApp secrets are.
+   way the WhatsApp secrets were.
 2. Until then, keep push access to yourself, and read any Claude session's
    PR that edits `.github/workflows/` before its checks run.
 
@@ -671,7 +665,7 @@ Ways to close it, in order of effort:
 - **SSO admin** (`bgucats-prod-admin`, one-hour sessions) only for:
   `infra/bootstrap` (before the PR that needs a wider deploy role or
   boundary), `make model-publish PROFILE=bgucats-prod-admin`,
-  `make whatsapp-secrets` and `make admin-add` with the same `PROFILE`, and
+  `make admin-add` with the same `PROFILE`, and
   break-glass. `mgmt-admin` only for Identity Center, Organizations and
   billing.
 - **Everything else read-only:** `bgucats-prod-ro`. It is the only profile

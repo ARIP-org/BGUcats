@@ -183,7 +183,7 @@ resource "aws_iam_role_policy" "github_actions_deploy_storage" {
   })
 }
 
-# lambda.tf, process_lambda.tf, admin_api.tf, beacon.tf, whatsapp.tf, api.tf.
+# lambda.tf, process_lambda.tf, admin_api.tf, beacon.tf, api.tf.
 resource "aws_iam_role_policy" "github_actions_deploy_compute" {
   name = "bgucats-deploy-compute"
   role = aws_iam_role.github_actions_deploy.id
