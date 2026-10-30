@@ -99,6 +99,13 @@ blocked on someone else.
   `make tf-apply`, `make site-invalidate` or AWS write calls from a codespace
   or a Claude session. The codespace holds no AWS credentials; read-only
   debugging goes through `aws sso login` (`docs/codespaces.md`).
+- **Production has an account of its own,** `sasha-bgucats-prod`
+  (`395591097129`), named in one file: `infra/main/backend/prod.hcl`.
+  `851725214678` is the organization's management account and, once the
+  move in `docs/MANUAL_STEPS.md` is done, runs nothing. Every hand-run AWS
+  command names its SSO profile (`bgucats-prod-ro`, `bgucats-prod-admin`,
+  `mgmt-ro`, `mgmt-admin`); `infra/scripts/aws-guard.sh` refuses the wrong
+  account and leftover access keys.
 - **Two exceptions, both owner-only:** `infra/bootstrap` (the state backend and
   the GitHub roles; it cannot deploy itself) and `make model-publish` (needs
   torch, so it is not in CI). Both are in `docs/deploy.md`.

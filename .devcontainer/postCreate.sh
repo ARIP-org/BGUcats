@@ -45,6 +45,18 @@ else
 fi
 
 echo
+echo "==> AWS"
+# Deploys run in GitHub Actions with OIDC; people use IAM Identity Center.
+# Long-lived keys here would also be visible to every Claude Code session.
+if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+  echo "!! AWS_ACCESS_KEY_ID is set (probably a Codespaces secret)."
+  echo "   Remove it: github.com/settings/codespaces -> Secrets, and the repo's"
+  echo "   Settings -> Secrets and variables -> Codespaces. See docs/codespaces.md."
+else
+  echo "No AWS keys, as intended. For read-only access: aws sso login (docs/codespaces.md)."
+fi
+
+echo
 if [ "$fail" -ne 0 ]; then
   echo "==> Setup finished WITH ERRORS - see above."
 else

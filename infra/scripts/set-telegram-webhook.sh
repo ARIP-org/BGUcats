@@ -8,6 +8,9 @@
 # machine with the right AWS credentials, not just the one that ran apply.
 set -euo pipefail
 
+# The right account and a named profile, or nothing runs.
+"$(dirname "$0")/aws-guard.sh"
+
 BOT_TOKEN=$(aws ssm get-parameter --name /bgucats/telegram/bot-token \
   --with-decryption --query 'Parameter.Value' --output text)
 WEBHOOK_SECRET=$(aws ssm get-parameter --name /bgucats/telegram/webhook-secret \

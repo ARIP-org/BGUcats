@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Writes the WhatsApp bot's three secrets to SSM, then prints what to paste
-# into the Meta dashboard. Run after `make tf-apply` has created the
+# into the Meta dashboard. Run after a deploy has created the
 # parameters (as "unset") and the webhook route — see "WhatsApp" in
 # infra/README.md for where each value comes from.
 #
 # Values are read with `read -s`, so they never land in shell history.
 set -euo pipefail
+
+# The right account and a named profile, or nothing runs.
+"$(dirname "$0")/aws-guard.sh"
 
 put() {
   aws ssm put-parameter --name "$1" --type SecureString --overwrite \

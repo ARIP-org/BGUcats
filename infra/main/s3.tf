@@ -8,6 +8,12 @@ data "aws_caller_identity" "current" {}
 #   exports/{datasetVersion}/images/...
 resource "aws_s3_bucket" "media" {
   bucket = "bgucats-media-${data.aws_caller_identity.current.account_id}"
+
+  # People's photos. A plan that would destroy or replace the bucket fails
+  # instead (and the deploy role is denied DeleteBucket as well).
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_versioning" "media" {

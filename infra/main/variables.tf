@@ -35,7 +35,7 @@ variable "cognito_domain_prefix" {
     before the first apply.
   EOT
   type        = string
-  default     = "bgucats-admin"
+  default     = "bgucats-app"
 }
 
 variable "bootstrap_admin_email" {

@@ -8,7 +8,8 @@ data "archive_file" "admin" {
 }
 
 resource "aws_iam_role" "admin_lambda" {
-  name = "bgucats-admin-lambda"
+  name                 = "bgucats-admin-lambda"
+  permissions_boundary = local.lambda_permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -123,7 +124,8 @@ resource "aws_lambda_function" "admin" {
 # trigger that Google can cause to run should not also be able to delete
 # photos out of S3.
 resource "aws_iam_role" "admin_presignup_lambda" {
-  name = "bgucats-admin-presignup-lambda"
+  name                 = "bgucats-admin-presignup-lambda"
+  permissions_boundary = local.lambda_permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

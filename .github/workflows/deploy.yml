@@ -1,0 +1,130 @@
+name: Deploy
+
+# main is production: every push to it plans and applies infra/main. The
+# runbook (reading a plan, post-deploy checks, rollback) is docs/deploy.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      plan_only:
+        description: "Plan only: stop before apply"
+        type: boolean
+        # Flip to false together with PLAN_ONLY_ON_PUSH below, once a
+        # plan-only run has matched live state (docs/MANUAL_STEPS.md).
+        default: true
+
+# One deploy at a time, and never cancel one that has started: a half-done
+# apply is worse than a late one. A second push waits its turn.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # the OIDC token the deploy role is assumed with
+  contents: read
+
+env:
+  # Push-triggered runs have no inputs, so they read this instead.
+  PLAN_ONLY_ON_PUSH: "true"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # The only thing that lets this job assume the deploy role: the role
+    # trusts `sub = ...:environment:production`, and GitHub lets only main
+    # deploy to this environment. Its secrets are the infra/main variables.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.9"
+          # The wrapper re-prints stdout, which would garble
+          # `terraform output -raw` inside make site-invalidate.
+          terraform_wrapper: false
+
+      - name: Decide whether to apply
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_PLAN_ONLY: ${{ inputs.plan_only }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            plan_only="$INPUT_PLAN_ONLY"
+          else
+            plan_only="$PLAN_ONLY_ON_PUSH"
+          fi
+          echo "plan_only=$plan_only" >> "$GITHUB_OUTPUT"
+          echo "Plan only: $plan_only" >> "$GITHUB_STEP_SUMMARY"
+
+      # Again on the merged code, before anything holds AWS credentials:
+      # the tests use moto and must never reach a real account.
+      - run: pip install -r requirements-dev.txt
+      - run: make lint && make test
+
+      - name: Build Lambda packages
+        run: make build
+
+      # An environment variable of `production`, so only this job sees it.
+      # The role's trust is what actually limits who can assume it.
+      - name: Check the deploy role is configured
+        env:
+          ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE" ]; then
+            echo "::error::Environment variable AWS_DEPLOY_ROLE_ARN is not set on production (docs/MANUAL_STEPS.md)."
+            exit 1
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # The account the role belongs to must be the one the state file is
+      # for. A variable pointing at another account fails here, not halfway
+      # through an apply.
+      - name: Check the account
+        run: infra/scripts/aws-guard.sh
+
+      - name: Plan
+        env:
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_webhook_secret: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          TF_VAR_submitter_hash_salt: ${{ secrets.SUBMITTER_HASH_SALT }}
+          TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
+          TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          TF_VAR_bootstrap_admin_email: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+        run: |
+          terraform -chdir=infra/main init -input=false -backend-config=backend/prod.hcl
+          terraform -chdir=infra/main plan -input=false -out=tfplan
+          terraform -chdir=infra/main show -no-color tfplan | grep -E '^(Plan:|No changes)' >> "$GITHUB_STEP_SUMMARY" || true
+
+      # The landing page is cached at the edge for up to a day, so a change
+      # to it needs an invalidation; the admin app is never cached. The
+      # JSON plan holds sensitive values in clear text, so it goes straight
+      # into jq and only a yes/no comes out.
+      - name: Does the landing page change?
+        id: site
+        run: |
+          changed=$(terraform -chdir=infra/main show -json tfplan | jq '[.resource_changes[]
+            | select(.address | startswith("aws_s3_object.site["))
+            | select(.change.actions != ["no-op"])] | length > 0')
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Landing page changes: $changed" >> "$GITHUB_STEP_SUMMARY"
+
+      # The saved plan, exactly: nothing is recomputed between the plan
+      # above and what is applied.
+      - name: Apply
+        if: steps.mode.outputs.plan_only != 'true'
+        run: terraform -chdir=infra/main apply -input=false tfplan
+
+      - name: Invalidate the landing page
+        if: steps.mode.outputs.plan_only != 'true' && steps.site.outputs.changed == 'true'
+        run: make site-invalidate

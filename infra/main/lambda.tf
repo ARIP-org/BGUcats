@@ -9,7 +9,8 @@ data "archive_file" "ingest" {
 }
 
 resource "aws_iam_role" "ingest_lambda" {
-  name = "bgucats-ingest-lambda"
+  name                 = "bgucats-ingest-lambda"
+  permissions_boundary = local.lambda_permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

@@ -129,13 +129,17 @@ locals {
   # the API that is actually deployed.
   beacon_url = "${aws_apigatewayv2_api.main.api_endpoint}/landing"
 
+  # Link previews (og:image) need an absolute URL, and the page's own
+  # address is whichever distribution serves it.
+  site_url = "https://${aws_cloudfront_distribution.site.domain_name}"
+
   # HTML is uploaded as rewritten content rather than straight from disk.
   site_html = {
     for f, meta in local.site_files :
-    f => replace(
+    f => replace(replace(
       replace(file("${local.site_dir}/${f}"), "href=\"/styles.css\"", "href=\"/styles.css?v=${local.site_css_version}\""),
       "__BEACON_URL__", local.beacon_url,
-    )
+    ), "__SITE_URL__", local.site_url)
     if meta.ext == "html"
   }
 }

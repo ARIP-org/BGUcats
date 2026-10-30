@@ -35,24 +35,36 @@ how the pipeline was proven against live state before its first apply.
 ## Reading the plan
 
 The plan is in the CI run of every PR (job `terraform`) and again in the
-deploy run. Read it before merging.
+deploy run. Read it before merging. CI plans with placeholder secrets, so
+there the three `aws_ssm_parameter` values and
+`aws_cognito_identity_provider.google` always show as changing; ignore
+those in CI only.
 
 **Stop, and do not merge, if the plan shows:**
 
 - anything to **destroy** or **replace** (`-/+`, `must be replaced`). The
   deploy role cannot delete the data table, the buckets or the user pool
-  anyway, so such an apply fails halfway.
-- a change to an `aws_ssm_parameter` or to the Google identity provider
-  when the PR did not mean to rotate a secret. It means a `production`
-  environment secret differs from the live value, and the apply would
-  overwrite the live one.
+  anyway, so such an apply fails halfway. For the table and the media
+  bucket the plan itself fails first (`Instance cannot be destroyed`:
+  `prevent_destroy`).
+- a change that turns off `deletion_protection_enabled` or
+  `point_in_time_recovery` on the table, or a lifecycle rule on the media
+  bucket that expires anything. Those are the ways a deploy could still
+  lose data, and the guards above do not catch them.
+- in the **deploy** run, a change to an `aws_ssm_parameter` or to the
+  Google identity provider when nobody meant to rotate a secret. It means a
+  `production` environment secret differs from the live value, and the
+  apply would overwrite the live one. Run with `plan_only` first after
+  changing a secret.
 - anything under `model/` in the admin web bucket (Terraform never owns it).
 
 **Normal:**
 
-- `aws_lambda_function.*` updated in place when its source changed. The
-  admin API and the Cognito trigger share one zip, so they change together.
-  The ingest and WhatsApp Lambdas also share one.
+- `aws_lambda_function.*` updated in place when its source changed, and
+  only then: `make build` is reproducible, so the same source gives the
+  same zip. The admin API and the Cognito trigger share one zip, so they
+  change together; so do the ingest and WhatsApp Lambdas. A new pip
+  release or dependency version can change every zip once.
 - `aws_s3_object.web[...]` / `aws_s3_object.site[...]` for the files the PR
   touched.
 
@@ -99,7 +111,7 @@ second path. What a revert does not undo:
 ## The two things the pipeline does not do
 
 Both are owner-only, with an IAM Identity Center admin session
-(`aws sso login --profile bgucats-admin`, see `docs/codespaces.md`).
+(`aws sso login --profile bgucats-prod-admin`, see `docs/codespaces.md`).
 
 **Publishing the recognition model.** The export needs torch, which has no
 place in CI, and a new model is rare. The export needs the research
@@ -111,7 +123,7 @@ pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install timm==1.0.30 onnx==1.23.2 onnxruntime==1.31.1 onnxscript==0.7.2 Pillow numpy
 make model-export
 deactivate
-AWS_PROFILE=bgucats-admin make model-publish
+make model-publish PROFILE=bgucats-prod-admin
 ```
 
 It prints the manifest and "a device downloads about 39.7 MB". Publish the

@@ -61,16 +61,29 @@ jobs:
       - name: build Lambda packages
         run: make build
 
+      # The role lives in the production account. Its ARN is a repository
+      # variable, not an environment one: a PR run has no environment.
+      - name: check the CI role is configured
+        env:
+          ROLE: ${{ vars.AWS_CI_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE" ]; then
+            echo "::error::Repository variable AWS_CI_ROLE_ARN is not set (docs/MANUAL_STEPS.md)."
+            exit 1
+          fi
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::851725214678:role/bgucats-github-actions-ci
+          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: plan (infra/main only — bootstrap is applied by hand)
-        # Placeholder secret values: this CI role can only read the
-        # tfstate backend (infra/README.md's incremental-IAM convention),
-        # so it couldn't apply even if it tried. Real values live in a
-        # gitignored terraform.tfvars, applied by hand.
+        # Placeholder secret values: PR runs get no secrets, and this role
+        # can only read (infra/README.md), so it could not apply even if it
+        # tried. The placeholders make every CI plan show the three
+        # aws_ssm_parameter values and the Google identity provider as
+        # changing. That is expected here; the deploy run's plan uses the
+        # real values from the production environment (deploy.yml).
         env:
           TF_VAR_telegram_bot_token: "ci-plan-placeholder"
           TF_VAR_telegram_webhook_secret: "ci-plan-placeholder"
@@ -79,5 +92,5 @@ jobs:
           TF_VAR_google_client_secret: "ci-plan-placeholder"
           TF_VAR_bootstrap_admin_email: "ci-plan-placeholder@example.com"
         run: |
-          terraform -chdir=infra/main init -reconfigure
+          terraform -chdir=infra/main init -reconfigure -backend-config=backend/prod.hcl
           terraform -chdir=infra/main plan

@@ -7,7 +7,8 @@ The dev container ships both forms of Claude Code:
   `devcontainer.json`
 
 Both run *inside* the codespace, so they operate on the codespace's files and
-have the codespace's AWS credentials, Terraform, and Python environment. Running
+use its Terraform and Python environment. The codespace has **no AWS
+credentials** by default: see "AWS access" below. Running
 `claude` on your Windows machine instead would operate on the local clone, which
 is not what you want once real work moves to the container.
 
@@ -63,6 +64,68 @@ Alternative for headless use: set `ANTHROPIC_API_KEY` as a **Codespaces secret**
 (repo Settings → Secrets and variables → Codespaces). Note this bills per token
 separately from a Claude subscription. Never commit the key — `.gitignore`
 covers `.env`, but a codespace secret is the right home for it.
+
+## AWS access
+
+Nothing in the codespace needs AWS to build, lint or test (the tests use
+moto), and deploys run in GitHub Actions (`docs/deploy.md`). So the
+codespace holds no AWS keys, and neither does a Claude Code session in it.
+**Do not add `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` as Codespaces
+secrets.** `postCreate.sh` warns if they are there.
+
+When a person needs to look at AWS (logs, a table item, a read-only plan),
+they sign in through IAM Identity Center and get credentials that expire
+within hours. Four profiles, two per account, set up once per codespace
+(`~/.aws` does not survive a rebuild). One SSO session serves all four:
+
+| Profile | Account | Permission set | For |
+|---|---|---|---|
+| `bgucats-prod-ro` | `395591097129` sasha-bgucats-prod | ReadOnlyAccess | debugging production |
+| `bgucats-prod-admin` | `395591097129` sasha-bgucats-prod | AdministratorAccess | the owner's manual jobs, below |
+| `mgmt-ro` | `851725214678` management | ReadOnlyAccess | billing, the organization; reading the old copy of the data until it is deleted |
+| `mgmt-admin` | `851725214678` management | AdministratorAccess | Identity Center, SCPs, decommissioning |
+
+```bash
+aws configure sso --use-device-code
+#   SSO session name:        bgucats
+#   SSO start URL:           https://<your-portal>.awsapps.com/start  (Identity Center dashboard)
+#   SSO region:              us-east-1
+#   SSO registration scopes: sso:account:access   (the default)
+#   then open the printed URL in your own browser, enter the code, approve,
+#   pick the account and role from the table above
+#   CLI default client Region: us-east-1, output: json
+#   CLI profile name:        bgucats-prod-ro
+# ...and again for each of the other three rows.
+```
+
+Check `~/.aws/config` afterwards: each section header must read
+`[profile bgucats-prod-ro]`. Typing `profile bgucats-prod-ro` at the name
+prompt gives `[profile profile bgucats-prod-ro]`, a profile with a space in
+its name.
+
+`--use-device-code` is there because the codespace has no browser: you
+approve on whatever machine you are typing from. Every later day:
+
+```bash
+aws sso login --sso-session bgucats --use-device-code
+aws sts get-caller-identity --profile bgucats-prod-ro   # .../AWSReservedSSO_ReadOnlyAccess_.../<you>
+```
+
+**Always name the profile.** Make targets that call AWS take
+`PROFILE=...` and refuse to run without it, or while `AWS_ACCESS_KEY_ID`
+is set (environment keys silently win over any profile), or against any
+account but production's (`infra/scripts/aws-guard.sh`).
+
+**`bgucats-prod-ro`** is for debugging: CloudWatch logs, DynamoDB items,
+`make tf-plan PROFILE=bgucats-prod-ro` (it skips the lock, so read-only is
+enough; it needs the `TF_VAR_*` values in the environment). It is the only
+profile a Claude session may ever be handed, and only when you choose to.
+
+**`bgucats-prod-admin`** is for the owner's manual jobs only: applying
+`infra/bootstrap`, `make model-publish`, and the SSM and table writers
+(`make whatsapp-secrets`, `make admin-add`), always per command
+(`make model-publish PROFILE=bgucats-prod-admin`), never exported, never
+handed to a Claude session. Its sessions are short on purpose.
 
 ## Costs
 

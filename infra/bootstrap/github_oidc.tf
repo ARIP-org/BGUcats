@@ -1,6 +1,10 @@
 # Lets GitHub Actions authenticate to AWS via short-lived OIDC-issued
 # credentials instead of long-lived access keys stored as repo secrets.
 #
+# Two roles trust this provider: bgucats-github-actions-ci below (plan only,
+# any branch or PR of this repo) and bgucats-github-actions-deploy in
+# deploy_role.tf (apply, only jobs in the `production` environment).
+#
 # AWS validates GitHub's OIDC tokens against its own trusted CA bundle, not
 # this field, but the API still requires a syntactically valid thumbprint.
 # token.actions.githubusercontent.com now serves a Let's Encrypt chain
@@ -160,23 +164,37 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Resource = "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/bgucats-data"
       },
       {
-        Sid    = "DescribeMediaBucket"
+        # HeadBucket is authorized as s3:ListBucket. Bucket tags are read
+        # through S3 Control's ListTagsForResource since provider 6.x.
+        Sid    = "DescribeAppBuckets"
         Effect = "Allow"
         Action = [
+          "s3:ListBucket",
           "s3:GetBucket*",
           "s3:GetEncryptionConfiguration",
           "s3:GetLifecycleConfiguration",
           "s3:GetReplicationConfiguration",
           "s3:GetAccelerateConfiguration",
+          "s3:ListTagsForResource",
         ]
-        Resource = "arn:aws:s3:::bgucats-media-${data.aws_caller_identity.current.account_id}"
+        Resource = local.app_bucket_arns
+      },
+      {
+        # The landing page and the admin app are Terraform-managed objects,
+        # so plan reads each one back (HeadObject is s3:GetObject). Never the
+        # media bucket: those are people's photos, and Terraform owns none.
+        Sid    = "ReadPublishedObjects"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectTagging",
+        ]
+        Resource = local.published_object_arns
       },
       {
         # bgucats-* rather than one entry per function: read-only, still
         # confined to this project's names, and every new Lambda would
-        # otherwise break CI until this policy was extended by hand. The
-        # account is shared with an unrelated project, so the prefix is
-        # what keeps the blast radius right.
+        # otherwise break CI until this policy was extended by hand.
         Sid    = "DescribeLambdaRoles"
         Effect = "Allow"
         Action = [
@@ -226,28 +244,8 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Resource = "*"
       },
       {
-        # Admin labeling tool: the site bucket CloudFront serves, plus the
-        # three static objects and the generated config.json in it.
-        Sid    = "DescribeWebBucket"
-        Effect = "Allow"
-        Action = [
-          "s3:GetBucket*",
-          "s3:GetEncryptionConfiguration",
-          "s3:GetLifecycleConfiguration",
-          "s3:GetReplicationConfiguration",
-          "s3:GetAccelerateConfiguration",
-          "s3:GetObject",
-          "s3:GetObjectTagging",
-        ]
-        Resource = [
-          "arn:aws:s3:::bgucats-admin-web-${data.aws_caller_identity.current.account_id}",
-          "arn:aws:s3:::bgucats-admin-web-${data.aws_caller_identity.current.account_id}/*",
-        ]
-      },
-      {
-        # Neither CloudFront nor Cognito supports resource-level scoping on
-        # their read APIs — same shape as kms:ListAliases above. Read-only,
-        # and the account's other project owns no distributions or pools.
+        # Read-only, and the account runs nothing else. ListCachePolicies
+        # and DescribeUserPoolDomain have no resource-level scoping at all.
         Sid    = "DescribeCloudFrontAndCognitoForPlan"
         Effect = "Allow"
         Action = [
@@ -262,7 +260,10 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "cognito-idp:DescribeUserPoolClient",
           "cognito-idp:DescribeUserPoolDomain",
           "cognito-idp:DescribeIdentityProvider",
+          "cognito-idp:DescribeManagedLoginBranding",
+          "cognito-idp:DescribeManagedLoginBrandingByClient",
           "cognito-idp:GetUserPoolMfaConfig",
+          "cognito-idp:ListUserPoolClients",
           "cognito-idp:ListTagsForResource",
         ]
         Resource = "*"
