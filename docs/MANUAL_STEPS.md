@@ -372,6 +372,18 @@ export came out bit-identical, and nothing would tell you if it did not.
 Writes to the old account stop, the table is copied once, and the bot moves
 over. Nothing is lost: Telegram holds undelivered updates for 24 hours.
 
+**`scripts/cutover.sh` runs steps 2 and 4–6 below, and 8.1, in one go**,
+after you have done 1 and 3 by hand:
+
+```bash
+cd /workspaces/BGUcats && git checkout main && git pull --ff-only
+aws sso login --profile bgucats-prod-admin --use-device-code && bash scripts/cutover.sh; aws sso logout
+```
+
+Until Telegram has moved to the new account, any failure (or Ctrl-C)
+points it back at the old one, so production is never left paused. The
+steps below are what it does, and how to do them by hand.
+
 1. **Tell the collaborators** a day ahead. At the start, everyone opens the
    old app until Capture shows nothing waiting to upload, then stops using
    it. A photo still queued in an old install would upload to the old
