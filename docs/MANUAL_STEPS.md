@@ -313,6 +313,9 @@ every later bootstrap plan, fetch the state back from that key
    - CloudFront: *"Your account must be verified before you can add new
      CloudFront resources"*. This happens to some new accounts. Open a
      support case (*Account and billing*, free), then re-run.
+
+   **Done on 2026-10-30:** after the fix above, the merge of #8 applied
+   the last resource (`1 added`). The new account has the whole app.
 4. **Plan only once more:** `No changes.` That proves the apply is
    complete and the builds are reproducible.
 5. Note the new addresses (outputs are not secret):
@@ -633,8 +636,11 @@ any made later. AWS's `FullAWSAccess` stays attached: SCPs only take
 permissions away. Check it:
 
 ```bash
-aws iam create-user --user-name scp-test --profile bgucats-prod-admin           # AccessDenied ... service control policy
-aws ec2 describe-vpcs --region eu-west-1 --profile bgucats-prod-ro              # AccessDenied ... service control policy
+# A key for a user that does not exist: denied with the SCP, NoSuchEntity
+# without it. Either way nothing is created (create-user would create one
+# if the SCP were not working).
+aws iam create-access-key --user-name scp-test-no-such-user --profile bgucats-prod-admin   # AccessDenied
+aws ec2 describe-vpcs --region eu-west-1 --profile bgucats-prod-ro              # denied: explicit deny in a service control policy
 aws ec2 describe-vpcs --region us-east-1 --profile bgucats-prod-ro --query 'length(Vpcs)'   # works
 ```
 
