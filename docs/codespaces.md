@@ -75,8 +75,15 @@ secrets.** `postCreate.sh` warns if they are there.
 
 When a person needs to look at AWS (logs, a table item, a read-only plan),
 they sign in through IAM Identity Center and get credentials that expire
-within hours. Two profiles, set up once per codespace (`~/.aws` does not
-survive a rebuild):
+within hours. Four profiles, two per account, set up once per codespace
+(`~/.aws` does not survive a rebuild). One SSO session serves all four:
+
+| Profile | Account | Permission set | For |
+|---|---|---|---|
+| `bgucats-prod-ro` | `395591097129` sasha-bgucats-prod | ReadOnlyAccess | debugging production |
+| `bgucats-prod-admin` | `395591097129` sasha-bgucats-prod | AdministratorAccess | the owner's manual jobs, below |
+| `mgmt-ro` | `851725214678` management | ReadOnlyAccess | billing, the organization; reading the old copy of the data until it is deleted |
+| `mgmt-admin` | `851725214678` management | AdministratorAccess | Identity Center, SCPs, decommissioning |
 
 ```bash
 aws configure sso --use-device-code
@@ -85,31 +92,40 @@ aws configure sso --use-device-code
 #   SSO region:              us-east-1
 #   SSO registration scopes: sso:account:access   (the default)
 #   then open the printed URL in your own browser, enter the code, approve,
-#   pick account 851725214678, role ReadOnlyAccess
+#   pick the account and role from the table above
 #   CLI default client Region: us-east-1, output: json
-#   CLI profile name:        bgucats-readonly
-aws configure sso --use-device-code     # again: same session, role AdministratorAccess
-#   CLI profile name:        bgucats-admin
+#   CLI profile name:        bgucats-prod-ro
+# ...and again for each of the other three rows.
 ```
+
+Check `~/.aws/config` afterwards: each section header must read
+`[profile bgucats-prod-ro]`. Typing `profile bgucats-prod-ro` at the name
+prompt gives `[profile profile bgucats-prod-ro]`, a profile with a space in
+its name.
 
 `--use-device-code` is there because the codespace has no browser: you
 approve on whatever machine you are typing from. Every later day:
 
 ```bash
 aws sso login --sso-session bgucats --use-device-code
-export AWS_PROFILE=bgucats-readonly
-aws sts get-caller-identity       # .../AWSReservedSSO_ReadOnlyAccess_.../<you>
+aws sts get-caller-identity --profile bgucats-prod-ro   # .../AWSReservedSSO_ReadOnlyAccess_.../<you>
 ```
 
-**`bgucats-readonly`** is for debugging: CloudWatch logs, DynamoDB items,
-`make tf-plan` (it skips the lock, so read-only should be enough; it needs the `TF_VAR_*`
-values in the environment).
+**Always name the profile.** Make targets that call AWS take
+`PROFILE=...` and refuse to run without it, or while `AWS_ACCESS_KEY_ID`
+is set (environment keys silently win over any profile), or against any
+account but production's (`infra/scripts/aws-guard.sh`).
 
-**`bgucats-admin`** is for the owner's three manual jobs only: applying
-`infra/bootstrap`, `make model-publish`, and the SSM writers
-(`make whatsapp-secrets`, `make admin-add`). Set it per command
-(`AWS_PROFILE=bgucats-admin make model-publish`) rather than exporting it,
-and never hand it to a Claude session. Its sessions are short on purpose.
+**`bgucats-prod-ro`** is for debugging: CloudWatch logs, DynamoDB items,
+`make tf-plan PROFILE=bgucats-prod-ro` (it skips the lock, so read-only is
+enough; it needs the `TF_VAR_*` values in the environment). It is the only
+profile a Claude session may ever be handed, and only when you choose to.
+
+**`bgucats-prod-admin`** is for the owner's manual jobs only: applying
+`infra/bootstrap`, `make model-publish`, and the SSM and table writers
+(`make whatsapp-secrets`, `make admin-add`), always per command
+(`make model-publish PROFILE=bgucats-prod-admin`), never exported, never
+handed to a Claude session. Its sessions are short on purpose.
 
 ## Costs
 

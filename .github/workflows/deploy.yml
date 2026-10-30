@@ -71,10 +71,27 @@ jobs:
       - name: Build Lambda packages
         run: make build
 
+      # An environment variable of `production`, so only this job sees it.
+      # The role's trust is what actually limits who can assume it.
+      - name: Check the deploy role is configured
+        env:
+          ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE" ]; then
+            echo "::error::Environment variable AWS_DEPLOY_ROLE_ARN is not set on production (docs/MANUAL_STEPS.md)."
+            exit 1
+          fi
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::851725214678:role/bgucats-github-actions-deploy
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
+
+      # The account the role belongs to must be the one the state file is
+      # for. A variable pointing at another account fails here, not halfway
+      # through an apply.
+      - name: Check the account
+        run: infra/scripts/aws-guard.sh
 
       - name: Plan
         env:
@@ -85,7 +102,7 @@ jobs:
           TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           TF_VAR_bootstrap_admin_email: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
         run: |
-          terraform -chdir=infra/main init -input=false
+          terraform -chdir=infra/main init -input=false -backend-config=backend/prod.hcl
           terraform -chdir=infra/main plan -input=false -out=tfplan
           terraform -chdir=infra/main show -no-color tfplan | grep -E '^(Plan:|No changes)' >> "$GITHUB_STEP_SUMMARY" || true
 

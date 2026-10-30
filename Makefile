@@ -71,34 +71,48 @@ build-beacon:
 	cp src/beacon/__init__.py src/beacon/handler.py build/beacon/beacon/
 	$(call lambda-compile,beacon)
 
+# Every target that calls AWS from a person's shell takes the profile by
+# name, PROFILE=bgucats-prod-ro or PROFILE=bgucats-prod-admin, and first runs
+# infra/scripts/aws-guard.sh: no access keys in the environment, and the
+# credentials must be production's account (infra/main/backend/prod.hcl).
+# In GitHub Actions the OIDC role is the environment, and PROFILE is unset.
+AWS_ENV = $(if $(PROFILE),AWS_PROFILE=$(PROFILE))
+aws-guard = $(AWS_ENV) infra/scripts/aws-guard.sh
+
+# Which account's state: backend/<BACKEND>.hcl. There is one, prod.
+BACKEND ?= prod
+
 tf-init:
-	terraform -chdir=infra/main init
+	$(aws-guard)
+	$(AWS_ENV) terraform -chdir=infra/main init -backend-config=backend/$(BACKEND).hcl
 
 # Read-only, for debugging with an SSO session (docs/codespaces.md): no lock,
 # since the read-only role cannot write one, and no apply target at all.
 # Deploys run in GitHub Actions only (.github/workflows/deploy.yml). Needs the
 # TF_VAR_* values in the environment; without them, plan asks for each.
 tf-plan: build
-	terraform -chdir=infra/main plan -lock=false
+	$(aws-guard)
+	$(AWS_ENV) terraform -chdir=infra/main plan -lock=false
 
 # The landing page sits behind CachingOptimized (default TTL one day), so an
 # apply alone leaves visitors on the old page until the edge copy expires.
 # deploy.yml runs this after an apply that changed the page.
 site-invalidate:
-	aws cloudfront create-invalidation \
+	$(aws-guard)
+	$(AWS_ENV) aws cloudfront create-invalidation \
 		--distribution-id $$(terraform -chdir=infra/main output -raw site_distribution_id) \
 		--paths '/*'
 
 # WhatsApp's three secrets come from the Meta developer dashboard, not from
 # terraform.tfvars — see "WhatsApp" in infra/README.md.
 whatsapp-secrets:
-	infra/scripts/set-whatsapp-secrets.sh
+	$(AWS_ENV) infra/scripts/set-whatsapp-secrets.sh
 
 # Convenience wrapper for the same allowlist row the Admins tab writes —
 # useful for adding the first colleague before anyone has logged in.
 admin-add:
 	@test -n "$(EMAIL)" || (echo "usage: make admin-add EMAIL=someone@example.com" && exit 1)
-	infra/scripts/add-admin.sh "$(EMAIL)"
+	$(AWS_ENV) infra/scripts/add-admin.sh "$(EMAIL)"
 
 # Printable A4 recruitment poster. Defaults to the deployed landing page;
 # override with `make poster URL=https://...` to point it elsewhere.
@@ -118,5 +132,6 @@ model-export:
 # (the file is built, not committed), manifest last. No CloudFront
 # invalidation needed: the admin distribution caches nothing.
 model-publish:
-	python scripts/publish_model.py --model $(MODEL_ONNX) \
-		--bucket bgucats-admin-web-$$(aws sts get-caller-identity --query Account --output text)
+	$(aws-guard)
+	$(AWS_ENV) python scripts/publish_model.py --model $(MODEL_ONNX) \
+		--bucket bgucats-admin-web-$$($(AWS_ENV) aws sts get-caller-identity --query Account --output text)

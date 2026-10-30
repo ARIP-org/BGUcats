@@ -7,6 +7,9 @@
 # Values are read with `read -s`, so they never land in shell history.
 set -euo pipefail
 
+# The right account and a named profile, or nothing runs.
+"$(dirname "$0")/aws-guard.sh"
+
 put() {
   aws ssm put-parameter --name "$1" --type SecureString --overwrite \
     --value "$2" >/dev/null

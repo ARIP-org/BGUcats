@@ -8,6 +8,9 @@
 # operational data that changes when people join, not infrastructure.
 set -euo pipefail
 
+# The right account and a named profile, or nothing runs.
+"$(dirname "$0")/aws-guard.sh"
+
 EMAIL=$(echo "${1:?usage: add-admin.sh someone@example.com}" | tr '[:upper:]' '[:lower:]')
 
 case "$EMAIL" in

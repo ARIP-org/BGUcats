@@ -34,7 +34,7 @@ Locally, VS Code with the Dev Containers extension opens the same container.
 claude          # authenticate once (browser flow, or set the ANTHROPIC_API_KEY codespace secret)
 pre-commit install   # done automatically by postCreate.sh, but harmless to rerun
 make test       # once tests exist
-aws sso login --profile bgucats-readonly   # read-only AWS, see docs/codespaces.md
+aws sso login --profile bgucats-prod-ro    # read-only AWS, see docs/codespaces.md
 ```
 
 Common commands are wrapped in the `Makefile` (`make fmt`, `make lint`, `make test`,

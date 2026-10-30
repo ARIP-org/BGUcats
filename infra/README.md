@@ -10,23 +10,22 @@ Two Terraform root modules, applied by different hands:
   changes it:
 
   ```bash
-  aws sso login --profile bgucats-admin
-  export AWS_PROFILE=bgucats-admin
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  aws sso login --profile bgucats-prod-admin
+  export AWS_PROFILE=bgucats-prod-admin
+  infra/scripts/aws-guard.sh                # must say account 395591097129
+  aws s3 cp s3://bgucats-tfstate-395591097129/bootstrap/terraform.tfstate infra/bootstrap/
   terraform -chdir=infra/bootstrap init
-  terraform -chdir=infra/bootstrap plan     # read it: no destroy, no replace
-  terraform -chdir=infra/bootstrap apply
+  terraform -chdir=infra/bootstrap plan -out=bootstrap.tfplan   # read it: no destroy, no replace
+  terraform -chdir=infra/bootstrap apply bootstrap.tfplan
+  aws s3 cp infra/bootstrap/terraform.tfstate s3://bgucats-tfstate-395591097129/bootstrap/terraform.tfstate
+  rm infra/bootstrap/bootstrap.tfplan
   ```
 
-  The original local state was never committed (`*.tfstate` is gitignored)
-  and is not in the codespace. `bootstrap/imports.tf` lets any fresh
-  checkout adopt the existing resources instead. After each apply, keep a
-  copy where the next machine can find it, and fetch it before the next
-  plan:
-
-  ```bash
-  aws s3 cp infra/bootstrap/terraform.tfstate s3://bgucats-tfstate-851725214678/bootstrap/terraform.tfstate
-  aws s3 cp s3://bgucats-tfstate-851725214678/bootstrap/terraform.tfstate infra/bootstrap/
-  ```
+  The state is local (`*.tfstate` is gitignored). The copy in the state
+  bucket is how the next machine finds it: fetch it before every plan, put
+  it back after every apply. The very first apply in an account has nothing
+  to fetch; that one is `docs/MANUAL_STEPS.md`, step 6.
 
   The deploy role cannot read or write that key (only `main/`). CI only runs `fmt` and
   `validate` on it. Change it **before** the PR that needs it: a new kind
@@ -34,7 +33,10 @@ Two Terraform root modules, applied by different hands:
   and a Lambda that uses a new AWS service needs the boundary widened.
 
 - **`main/`**: the application (buckets, table, Lambdas, API, CloudFront,
-  Cognito, SSM parameters). Uses the S3 backend `bootstrap/` created. CI
+  Cognito, SSM parameters). Uses the S3 backend `bootstrap/` created, named
+  per account in `main/backend/prod.hcl`
+  (`terraform -chdir=infra/main init -backend-config=backend/prod.hcl`,
+  or `make tf-init PROFILE=bgucats-prod-ro`). CI
   runs `plan` on every PR; `.github/workflows/deploy.yml` plans and applies
   it on every push to `main`. **No person applies it.** Runbook:
   `docs/deploy.md`.
@@ -49,7 +51,7 @@ The redirect URI Google needs is knowable before the first apply, because we
 choose the Cognito domain prefix ourselves (`var.cognito_domain_prefix`):
 
 ```
-https://bgucats-admin.auth.us-east-1.amazoncognito.com/oauth2/idpresponse
+https://bgucats-app.auth.us-east-1.amazoncognito.com/oauth2/idpresponse
 ```
 
 In the [Google Cloud console](https://console.cloud.google.com/):
@@ -116,7 +118,7 @@ WhatsApp app), get its display name approved, and switch the app to *Live*
 free on the Cloud API; this bot never starts one.
 
 `make whatsapp-secrets` writes to SSM, so it is an owner step with an SSO
-admin session (`AWS_PROFILE=bgucats-admin`). Terraform ignores these
+admin session (`make whatsapp-secrets PROFILE=bgucats-prod-admin`). Terraform ignores these
 values, so a deploy never overwrites them.
 
 ## Where contributors come from
@@ -145,7 +147,7 @@ cannot lock yourself out. Everyone else is added either in the tool's
 **People** tab, as an admin or a collaborator, or with:
 
 ```bash
-AWS_PROFILE=bgucats-admin make admin-add EMAIL=someone@post.bgu.ac.il
+make admin-add PROFILE=bgucats-prod-admin EMAIL=someone@post.bgu.ac.il
 ```
 
 `make admin-add` writes no role, which means admin. People added in the tab
@@ -170,10 +172,13 @@ Lambda, S3 and DynamoDB usage the bots already incur.
 
 ## Naming and tagging
 
-Every resource name is prefixed `bgucats-`. This AWS account also hosts an
-unrelated project (`schedule-ai-app`) — the prefix and the `Project =
-"bgucats"` default tag (set once, in each root's provider block) are what
-keep the two apart for both cost attribution and blast radius.
+Every resource name is prefixed `bgucats-`, and every resource carries the
+`Project = "bgucats"` default tag (set once, in each root's provider
+block). Since 2026-10 the project has an AWS account of its own,
+`sasha-bgucats-prod` (`395591097129`), a member of the organization whose
+management account (`851725214678`) runs nothing. The deploy role's
+account-wide scopes rely on that: nothing else may be deployed into this
+account.
 
 ## IAM: three kinds of role, no keys
 
@@ -197,12 +202,13 @@ them. See "Known gap" in `docs/MANUAL_STEPS.md`.
 `:environment:production`. GitHub only lets `main` deploy to that
 environment, so a PR run can never assume it. Its permissions are derived
 from the resource types in `main/*.tf`, scoped to `bgucats-*` names, or to
-the IDs in `bootstrap/infra_main_names.tf` where AWS assigns IDs
-(API Gateway, CloudFront, Cognito: the account's other project,
-`schedule-ai-app`, has one of each). It cannot:
+the account where AWS assigns IDs (API Gateway, CloudFront, Cognito: see
+`bootstrap/infra_main_names.tf`). It can create everything `main/`
+declares, so it can build an empty account. It cannot:
 
-- delete the data table, a bucket or the user pool, or create a new
-  distribution or API. Those are owner decisions, made in `bootstrap/` first;
+- delete a table, a bucket, the user pool or a distribution, or write or
+  delete anything in the media bucket (explicit denies). Those are owner
+  decisions;
 - read the dataset (its only item access is `ADMIN#` keys, for the
   bootstrap admin row) or write the published model under `model/`;
 - change its own role, the CI role, the boundary or the OIDC provider

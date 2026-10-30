@@ -8,8 +8,10 @@ terraform {
     }
   }
 
+  # Partial configuration: which account's state bucket is a per-account
+  # file, backend/<env>.hcl, passed to init with -backend-config. Nothing
+  # else in this root names an account.
   backend "s3" {
-    bucket         = "bgucats-tfstate-851725214678"
     key            = "main/terraform.tfstate"
     region         = "us-east-1"
     dynamodb_table = "bgucats-tfstate-lock"
