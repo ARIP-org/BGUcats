@@ -30,7 +30,9 @@ than a late one.
    so it never needs this.
 
 `workflow_dispatch` has a `plan_only` input that stops after step 3. It is
-how the pipeline was proven against live state before its first apply.
+how the pipeline was proven before its first apply. Applies have been on
+since 2026-10-30 (`PLAN_ONLY_ON_PUSH: "false"`): every merge to `main`
+applies.
 
 ## Reading the plan
 

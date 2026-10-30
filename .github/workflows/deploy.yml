@@ -10,9 +10,9 @@ on:
       plan_only:
         description: "Plan only: stop before apply"
         type: boolean
-        # Flip to false together with PLAN_ONLY_ON_PUSH below, once a
-        # plan-only run has matched live state (docs/MANUAL_STEPS.md).
-        default: true
+        # Tick it to see what a merge would do without doing it. Applies
+        # were turned on on 2026-10-30 (docs/MANUAL_STEPS.md, 6d.2).
+        default: false
 
 # One deploy at a time, and never cancel one that has started: a half-done
 # apply is worse than a late one. A second push waits its turn.
@@ -26,7 +26,7 @@ permissions:
 
 env:
   # Push-triggered runs have no inputs, so they read this instead.
-  PLAN_ONLY_ON_PUSH: "true"
+  PLAN_ONLY_ON_PUSH: "false"
 
 jobs:
   deploy:
