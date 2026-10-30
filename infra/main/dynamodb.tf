@@ -108,6 +108,21 @@ resource "aws_dynamodb_table" "data" {
     attribute_name = "expiresAt"
     enabled        = true
   }
+
+  # The dataset is the one asset here that cannot be rebuilt or downloaded,
+  # so three separate locks: AWS refuses DeleteTable while protection is on,
+  # Terraform refuses any plan that would destroy or replace the table, and
+  # point-in-time recovery restores any second of the last 35 days into a
+  # new table. PITR costs $0.20 per GB-month; the table is a few MB.
+  deletion_protection_enabled = true
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 output "dynamodb_table_name" {
