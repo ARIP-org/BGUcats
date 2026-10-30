@@ -275,6 +275,10 @@ every later bootstrap plan, fetch the state back from that key
      `...:*`: that matches every PR run.
    - Then delete `.github/workflows/oidc-claims-debug.yml` in a small PR.
 
+   Done on 2026-10-30 without running it: Deploy assumed the role from
+   `production` on its first two runs, which only a matching `sub` allows.
+   The workflow is deleted.
+
 ### 6d. Plan only, then the first apply
 
 1. *Actions* → **Deploy** → *Run workflow*, `plan_only` ticked. Expected:

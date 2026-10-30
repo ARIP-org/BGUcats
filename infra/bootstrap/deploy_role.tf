@@ -44,8 +44,8 @@ data "aws_iam_policy_document" "github_actions_deploy_trust" {
     # "pull_request", so only jobs in `production` match. GitHub lets only
     # `main` deploy to that environment (its deployment-branch rule), and a
     # PR from a fork or a branch can't claim it. The numeric-ID segments are
-    # the same as in the CI role's trust; oidc-claims-debug.yml shows the
-    # real string.
+    # the same as in the CI role's trust. Proven on 2026-10-30: deploy.yml
+    # assumed this role from `production` on its first runs.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
