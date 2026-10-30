@@ -147,9 +147,12 @@ blocked on someone else.
 ## The app (web/) — labeling desk and Capture, one PWA
 
 The admin tool is installable ("Add to Home Screen") and is also how invited
-collaborators photograph cats. It **complements** the bots, never replaces
-them: Telegram and WhatsApp keep working unchanged, and the app is a third
+collaborators photograph cats. It **complements** the Telegram bot, never
+replaces it: the bot keeps working unchanged, and the app is a second
 channel (`channel = "app"`) into the same table, bucket and process Lambda.
+**There is no WhatsApp bot** (removed 2026-10-30, irrelevant to the
+product). Its old sessions and photos stay in the table with
+`channel = "whatsapp"`, and the app still labels them.
 
 - **Two roles on the one allowlist item** (`ADMIN#{email}`, field `role`).
   `admin` = everything. `collaborator` = Capture (with the cat guesses)

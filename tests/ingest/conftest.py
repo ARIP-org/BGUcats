@@ -7,9 +7,6 @@ os.environ.setdefault(
     "TELEGRAM_WEBHOOK_SECRET_PARAM", "/bgucats/telegram/webhook-secret"
 )
 os.environ.setdefault("SUBMITTER_HASH_SALT_PARAM", "/bgucats/submitter-hash-salt")
-os.environ.setdefault("WHATSAPP_ACCESS_TOKEN_PARAM", "/bgucats/whatsapp/access-token")
-os.environ.setdefault("WHATSAPP_APP_SECRET_PARAM", "/bgucats/whatsapp/app-secret")
-os.environ.setdefault("WHATSAPP_VERIFY_TOKEN_PARAM", "/bgucats/whatsapp/verify-token")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 import boto3

@@ -1,10 +1,11 @@
 """The platform-neutral half of ingestion: sessions, photo records, location.
 
-Both chat adapters — handler.py (Telegram) and whatsapp.py — parse their own
-webhook format and talk back in their own API, but everything that touches
-storage goes through here, so the guarantees in spec §10 (write order,
-idempotency on a per-message key, sessions as identity clusters) are written
-once and hold for every channel.
+The chat adapter, handler.py (Telegram), parses its webhook format and
+talks back in its own API, but everything that touches storage goes through
+here, so the guarantees in spec §10 (write order, idempotency on a
+per-message key, sessions as identity clusters) are written once, apart from
+any one platform. A WhatsApp adapter shared it until it was removed on
+2026-10-30; its sessions and photos stay in the table (channel "whatsapp").
 
 No image processing (spec §5, §10): fetch, store, record. The S3 event
 drives the process Lambda.
@@ -90,9 +91,10 @@ def epoch_to_iso(epoch):
 def submitter_hash(salt, user_key):
     """Salted SHA-256 of a platform user ID; the raw ID is never stored.
 
-    Telegram passes its numeric user ID as-is, so hashes match everything
-    recorded before WhatsApp existed. WhatsApp IDs are phone numbers and
-    are passed as "wa:<number>", keeping the two namespaces apart.
+    Telegram passes its numeric user ID as-is. The removed WhatsApp bot
+    passed "wa:<number>", so its submitters' hashes never collide with
+    Telegram's. App users are hashed apart, as "app:<email>" (admin
+    handler).
     """
     return hashlib.sha256((salt + user_key).encode("utf-8")).hexdigest()
 
@@ -118,8 +120,8 @@ def ingest_media(
     download failed.
 
     `fetch()` returns (bytes, ext, content_type, media_kind) and raises
-    ValueError or OSError on failure — each adapter supplies its own,
-    since Telegram and WhatsApp hand out files differently. OSError covers
+    ValueError or OSError on failure — the adapter supplies it, since each
+    platform hands out files its own way. OSError covers
     URLError and also a read that times out mid-response, which urllib
     raises as a bare TimeoutError: five photos were lost that way on
     2026-08-24, when Telegram's getFile stalled past the 8-second timeout.
@@ -127,7 +129,7 @@ def ingest_media(
     Write order (spec §10): DynamoDB record as `pending`, then S3, then flip
     to `unlabeled`. A failed download leaves the record `pending`, never
     falsely marked ready, and the caller tells the submitter to send it
-    again — Telegram and WhatsApp do not redeliver an acknowledged update.
+    again — Telegram does not redeliver an acknowledged update.
     """
     photo_id, session_id = resolve_photo_and_session(
         idempotency_key, submitter_hash, media_group_id, channel=channel
@@ -388,8 +390,8 @@ def _open_session(submitter_hash, media_group_id, explicit, channel, replacing=N
 
     An explicit open ("New cat") always wins. An implicit one only replaces
     the pointer it actually read (`replacing`, or none at all): a burst of
-    photos arrives as concurrent invocations — WhatsApp has no album ID to
-    hold them together — and without that condition each would open its
+    photos sent one at a time arrives as concurrent invocations with no
+    album ID to hold them together, and without that condition each would open its
     own session, splitting one encounter into several. The loser joins the
     winner's session and deletes its own still-empty one.
     """

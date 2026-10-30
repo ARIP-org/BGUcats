@@ -1,4 +1,4 @@
-// Capture — the app's own way in, next to the Telegram and WhatsApp bots.
+// Capture — the app's own way in, next to the Telegram bot.
 //
 // One encounter is one cat in one sitting: "Start an encounter", photograph
 // or film that cat, "Done". That makes every encounter an identity cluster by

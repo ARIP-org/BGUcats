@@ -1,7 +1,6 @@
 # Packaged by `make build-ingest` (pip install -t build/ingest, then copy
 # the ingest package in) so the zip only ever contains what the Lambda
 # actually needs — no Pillow/ImageHash, those belong to the process Lambda.
-# The WhatsApp Lambda (whatsapp.tf) ships the same zip.
 data "archive_file" "ingest" {
   type        = "zip"
   source_dir  = "${path.module}/../../build/ingest"

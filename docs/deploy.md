@@ -63,7 +63,7 @@ those in CI only.
 - `aws_lambda_function.*` updated in place when its source changed, and
   only then: `make build` is reproducible, so the same source gives the
   same zip. The admin API and the Cognito trigger share one zip, so they
-  change together; so do the ingest and WhatsApp Lambdas. A new pip
+  change together. A new pip
   release or dependency version can change every zip once.
 - `aws_s3_object.web[...]` / `aws_s3_object.site[...]` for the files the PR
   touched.
