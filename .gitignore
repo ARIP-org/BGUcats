@@ -11,6 +11,8 @@ venv/
 .terraform/
 *.tfstate
 *.tfstate.*
+# Saved plans can hold secret values in clear text.
+*.tfplan
 *.tfvars
 !*.tfvars.example
 crash.log
