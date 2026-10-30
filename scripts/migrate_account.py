@@ -3,7 +3,6 @@
     python scripts/migrate_account.py media  [--apply]
     python scripts/migrate_account.py model  [--apply]
     python scripts/migrate_account.py table  [--apply] [--overwrite-prefix ADMIN#]
-    python scripts/migrate_account.py ssm    [--apply]
     python scripts/migrate_account.py verify [--only table|media|model|ssm]
 
 The old account is 851725214678 (now the organization's management
@@ -22,16 +21,14 @@ What it copies:
             ULIDs are keys and are kept. GSIs fill themselves from the
             copied attributes. Skipped: RATE# and MGREPLY#, one-hour items
             the table's TTL deletes anyway.
-    ssm     the three /bgucats/whatsapp/* values, into parameters the
-            deploy created as "unset". The other /bgucats/* values come from
-            the production environment's secrets through Terraform; `verify`
-            proves they match (the submitter-hash salt above all: a
-            different salt turns every contributor into a new person).
-            Values are never printed, only "same" or "differ".
     verify  both sides, item by item and object by object: counts per key
             prefix and per GSI2PK (entity type), plus a content hash per
-            item, size + MD5 per object, and SSM values compared by digest.
-            Exit status 0 only on a match.
+            item and size + MD5 per object. Also the /bgucats/* SSM values,
+            compared by digest and never printed: they reach the new account
+            from the production environment's secrets through Terraform, and
+            the submitter-hash salt above all must match (a different salt
+            turns every contributor into a new person). Exit status 0 only
+            on a match.
 
 How it protects the dataset:
 
@@ -78,15 +75,9 @@ TABLE = "bgucats-data"
 MODEL_PREFIX = "model/"
 MODEL_MANIFEST = "model/manifest.json"
 SSM_PATH = "/bgucats/"
-# Written outside Terraform (infra/scripts/set-whatsapp-secrets.sh), so the
-# deploy leaves them "unset" and this copies them. Everything else under
-# SSM_PATH is Terraform's, from the production environment's secrets.
-SSM_COPIED = (
-    "/bgucats/whatsapp/access-token",
-    "/bgucats/whatsapp/app-secret",
-    "/bgucats/whatsapp/verify-token",
-)
-SSM_UNSET = "unset"
+# The WhatsApp bot was removed (2026-10-30). The old account still has its
+# parameters; the new one never gets them, so they are not compared.
+SSM_IGNORED = ("/bgucats/whatsapp/",)
 
 # Partition-key prefixes not copied: short-lived items with expiresAt set,
 # deleted by the table's TTL within the hour (src/ingest/core.py).
@@ -405,7 +396,8 @@ def digest(value):
 def compare_parameters(source, dest):
     """{name: same | differ | missing | extra}, by digest."""
     result = {}
-    for name in sorted(set(source) | set(dest)):
+    names = set(source) | set(dest)
+    for name in sorted(n for n in names if not n.startswith(SSM_IGNORED)):
         if name not in dest:
             result[name] = "missing"
         elif name not in source:
@@ -415,31 +407,6 @@ def compare_parameters(source, dest):
                 "same" if digest(source[name]) == digest(dest[name]) else "differ"
             )
     return result
-
-
-def copy_parameters(src, dst, apply, names=SSM_COPIED):
-    """Copies names whose dest value is missing or "unset". {name: outcome}."""
-    source = parameter_values(src)
-    dest = parameter_values(dst)
-    outcomes = {}
-    for name in names:
-        if name not in source:
-            outcomes[name] = "not in source"
-        elif name in dest and digest(dest[name]) == digest(source[name]):
-            outcomes[name] = "same"
-        elif name in dest and dest[name] != SSM_UNSET:
-            outcomes[name] = "conflict"
-        elif not apply:
-            outcomes[name] = "would copy"
-        else:
-            dst.put_parameter(
-                Name=name,
-                Value=source[name],
-                Type="SecureString",
-                Overwrite=name in dest,
-            )
-            outcomes[name] = "copied"
-    return outcomes
 
 
 # --- verify ----------------------------------------------------------------
@@ -693,21 +660,6 @@ def run_verify(args, src, dst):
     return int(status)
 
 
-def run_ssm(args, src, dst):
-    outcomes = copy_parameters(
-        ReadOnly(src.client("ssm")), dst.client("ssm"), args.apply
-    )
-    print("\nSSM parameters (values never printed):")
-    for name, outcome in outcomes.items():
-        print(f"  {outcome:14} {name}")
-    if "conflict" in outcomes.values():
-        print(
-            "\nA conflict is a real value already in the dest account: left as it is."
-        )
-        return 1
-    return 0
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--source-profile", default="mgmt-ro")
@@ -734,8 +686,6 @@ def main(argv=None):
         metavar="PREFIX",
         help="replace dest items under this PK prefix that differ (repeatable)",
     )
-    ssm = sub.add_parser("ssm", help="copy the WhatsApp secrets")
-    ssm.add_argument("--apply", action="store_true", help="write (default: dry run)")
     verify = sub.add_parser("verify", help="compare both accounts")
     verify.add_argument("--only", choices=["table", "media", "model", "ssm"])
     verify.add_argument(
@@ -748,7 +698,6 @@ def main(argv=None):
         "media": run_media,
         "model": run_model,
         "table": run_table,
-        "ssm": run_ssm,
         "verify": run_verify,
     }
     return run[args.command](args, src, dst)

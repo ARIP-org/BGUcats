@@ -392,41 +392,23 @@ class Prefixed:
 
         return Paginator()
 
-    def put_parameter(self, Name, **kwargs):
-        return self._client.put_parameter(Name=self._root + Name, **kwargs)
-
 
 def _param(ssm, name, value):
     ssm.put_parameter(Name=name, Value=value, Type="SecureString", Overwrite=True)
 
 
-def test_ssm_copies_only_unset_whatsapp_values(ssm):
-    for name in m.SSM_COPIED:
-        _param(ssm, name, f"real-{name}")
+def test_verify_compares_parameters_by_digest_and_ignores_whatsapp(ssm):
+    _param(ssm, "/bgucats/telegram/bot-token", "token")
     _param(ssm, "/bgucats/submitter-hash-salt", "salt")
-    _param(ssm, "/dst/bgucats/whatsapp/access-token", "unset")
-    _param(ssm, "/dst/bgucats/whatsapp/app-secret", "someone-elses")
-    _param(ssm, "/dst/bgucats/submitter-hash-salt", "other-salt")
+    _param(ssm, "/bgucats/whatsapp/app-secret", "left-behind")
+    _param(ssm, "/dst/bgucats/telegram/bot-token", "token")
+    _param(ssm, "/dst/bgucats/submitter-hash-salt", "salt\n")
     src, dst = m.ReadOnly(Prefixed(ssm, "")), Prefixed(ssm, "/dst")
 
-    assert (
-        m.copy_parameters(src, dst, apply=False)["/bgucats/whatsapp/access-token"]
-        == "would copy"
-    )
-    outcomes = m.copy_parameters(src, dst, apply=True)
+    result = m.compare_parameters(m.parameter_values(src), m.parameter_values(dst))
 
-    assert outcomes == {
-        "/bgucats/whatsapp/access-token": "copied",
-        "/bgucats/whatsapp/app-secret": "conflict",
-        "/bgucats/whatsapp/verify-token": "copied",
+    # A trailing newline is a different salt.
+    assert result == {
+        "/bgucats/submitter-hash-salt": "differ",
+        "/bgucats/telegram/bot-token": "same",
     }
-    dest = m.parameter_values(dst)
-    assert (
-        dest["/bgucats/whatsapp/access-token"] == "real-/bgucats/whatsapp/access-token"
-    )
-    assert dest["/bgucats/whatsapp/app-secret"] == "someone-elses"
-    # The salt is never copied here; verify reports it.
-    assert dest["/bgucats/submitter-hash-salt"] == "other-salt"
-    result = m.compare_parameters(m.parameter_values(src), dest)
-    assert result["/bgucats/submitter-hash-salt"] == "differ"
-    assert result["/bgucats/whatsapp/verify-token"] == "same"
