@@ -1,6 +1,8 @@
 # infra/
 
-Two Terraform root modules, applied by different hands:
+Two Terraform root modules, applied by different hands, and `org/`: the
+service control policy for the organization's member accounts, applied by
+the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
 
 - **`bootstrap/`**: the state backend (S3 bucket + DynamoDB lock table), the
   GitHub Actions OIDC provider and its two roles, and the permissions

@@ -80,11 +80,13 @@ AWS_ENV = $(if $(PROFILE),AWS_PROFILE=$(PROFILE))
 aws-guard = $(AWS_ENV) infra/scripts/aws-guard.sh
 
 # Which account's state: backend/<BACKEND>.hcl. There is one, prod.
+# -reconfigure, because a .terraform left over from another backend would
+# otherwise offer to copy that state into this one.
 BACKEND ?= prod
 
 tf-init:
 	$(aws-guard)
-	$(AWS_ENV) terraform -chdir=infra/main init -backend-config=backend/$(BACKEND).hcl
+	$(AWS_ENV) terraform -chdir=infra/main init -reconfigure -backend-config=backend/$(BACKEND).hcl
 
 # Read-only, for debugging with an SSO session (docs/codespaces.md): no lock,
 # since the read-only role cannot write one, and no apply target at all.
@@ -100,7 +102,7 @@ tf-plan: build
 site-invalidate:
 	$(aws-guard)
 	$(AWS_ENV) aws cloudfront create-invalidation \
-		--distribution-id $$(terraform -chdir=infra/main output -raw site_distribution_id) \
+		--distribution-id $$($(AWS_ENV) terraform -chdir=infra/main output -raw site_distribution_id) \
 		--paths '/*'
 
 # WhatsApp's three secrets come from the Meta developer dashboard, not from
