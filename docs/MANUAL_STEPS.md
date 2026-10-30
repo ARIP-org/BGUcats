@@ -306,6 +306,10 @@ every later bootstrap plan, fetch the state back from that key
      some resource needs. Add `X` to the right statement in
      `infra/bootstrap/deploy_role.tf` on a branch, apply bootstrap (6b,
      state fetched back first), merge, and re-run Deploy.
+     **This happened on 2026-10-30:** 88 of 89 resources were created, and
+     the API's `$default` stage stopped on `apigateway:TagResource`, which
+     AWS checks when a resource is created with tags. Fixed by adding it
+     (and `UntagResource`) to the role, applied with bootstrap.
    - CloudFront: *"Your account must be verified before you can add new
      CloudFront resources"*. This happens to some new accounts. Open a
      support case (*Account and billing*, free), then re-run.

@@ -289,7 +289,10 @@ resource "aws_iam_role_policy" "github_actions_deploy_compute" {
       {
         # Our HTTP API and everything under it (routes, integrations, the
         # authorizer, the stage). apigateway:<verb> is the IAM action for
-        # every API Gateway call.
+        # every API Gateway call, except tagging: creating a resource with
+        # tags (the default tags) is also checked as apigateway:TagResource
+        # on that resource. The first apply into the new account stopped on
+        # it at the $default stage (2026-10-30).
         Sid    = "OurHttpApi"
         Effect = "Allow"
         Action = [
@@ -298,6 +301,8 @@ resource "aws_iam_role_policy" "github_actions_deploy_compute" {
           "apigateway:PUT",
           "apigateway:PATCH",
           "apigateway:DELETE",
+          "apigateway:TagResource",
+          "apigateway:UntagResource",
         ]
         # Creating the API is a POST on /apis itself.
         Resource = local.apigateway_arns
