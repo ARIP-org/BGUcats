@@ -13,21 +13,17 @@ the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
 
   ```bash
   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-  aws sso login --profile bgucats-prod-admin
-  export AWS_PROFILE=bgucats-prod-admin
-  infra/scripts/aws-guard.sh                # must say account 395591097129
-  aws s3 cp s3://bgucats-tfstate-395591097129/bootstrap/terraform.tfstate infra/bootstrap/
-  terraform -chdir=infra/bootstrap init
-  terraform -chdir=infra/bootstrap plan -out=bootstrap.tfplan   # read it: no destroy, no replace
-  terraform -chdir=infra/bootstrap apply bootstrap.tfplan
-  aws s3 cp infra/bootstrap/terraform.tfstate s3://bgucats-tfstate-395591097129/bootstrap/terraform.tfstate
-  rm infra/bootstrap/bootstrap.tfplan
+  aws sso login --profile bgucats-prod-admin --use-device-code \
+    && infra/scripts/bootstrap-apply.sh; aws sso logout
   ```
 
-  The state is local (`*.tfstate` is gitignored). The copy in the state
-  bucket is how the next machine finds it: fetch it before every plan, put
-  it back after every apply. The very first apply in an account has nothing
-  to fetch; that one is `docs/MANUAL_STEPS.md`, step 6.
+  `bootstrap-apply.sh` checks the account, uses the newer of the local
+  state and its copy in the state bucket, refuses any destroy or replace,
+  shows the plan and applies it only after you type `yes`, then puts the
+  new state back in the bucket. The state is local (`*.tfstate` is
+  gitignored); the copy in the bucket is how the next machine finds it.
+  The very first apply in an empty account is `docs/MANUAL_STEPS.md`,
+  step 6b.
 
   The deploy role cannot read or write that key (only `main/`). CI only runs `fmt` and
   `validate` on it. Change it **before** the PR that needs it: a new kind
