@@ -20,6 +20,17 @@ resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.main.id
   name        = "$default"
   auto_deploy = true
+
+  # The landing page's beacon is public and unauthenticated (beacon.tf). A
+  # lecture hall opening the page at once is a few requests a second; this
+  # caps a script at roughly a dollar a day of Lambda and DynamoDB. Beacons
+  # over the limit get a 429 and simply aren't counted — under a flood,
+  # undercounting is the right way to fail.
+  route_settings {
+    route_key              = aws_apigatewayv2_route.beacon.route_key
+    throttling_rate_limit  = 10
+    throttling_burst_limit = 30
+  }
 }
 
 resource "aws_lambda_permission" "apigw" {

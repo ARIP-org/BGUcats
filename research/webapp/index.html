@@ -1,0 +1,844 @@
+<title>BGU Cats Spotter</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Rubik:wght@400;500;700&display=swap">
+<style>
+  /* Layout: one column, thumb-reachable. Status strip on top, the two jobs
+     (identify, add) as the first thing on screen, the gallery below.
+     Visual language borrowed from the BGU Cats admin tool on purpose:
+     paper, ink outlines, hard ink shadow, ginger accent. Deliberately one
+     light look, like that tool. */
+  :root {
+    --paper: #fbf6ec; --paper-2: #f3e9d6; --card: #fffdf8; --ink: #1f1b18;
+    --ink-soft: #5f554d; --muted: #6f655c; --line: #e6d9c2; --line-strong: #d3c3a5;
+    --ginger: #e07b2f; --ginger-deep: #b55b1b; --ginger-wash: #fbe8d6;
+    --good: #2f7d4f; --good-wash: #e2f0e5; --warn: #8a5a00; --warn-wash: #fbefd6;
+    --danger: #b8372f; --danger-wash: #fbe4e1; --info: #2c6470; --info-wash: #e1eef0;
+    --radius: 14px; --radius-sm: 9px; --lift: 3px 3px 0 var(--ink);
+    --font-body: "Rubik", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --font-display: "Amatic SC", "Rubik", system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.45 var(--font-body); -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--ginger); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  .wrap { max-width: 720px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; display: grid; gap: 18px; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand svg { width: 40px; height: 40px; flex: none; }
+  .brand b { font-family: var(--font-display); font-size: 34px; line-height: 1; letter-spacing: .5px; }
+  .brand span { display: block; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+  .iconbtn { border: 2px solid var(--ink); background: var(--card); border-radius: 999px; width: 42px; height: 42px; display: grid; place-items: center; cursor: pointer; flex: none; }
+  .iconbtn svg { width: 22px; height: 22px; }
+
+  .status { display: grid; gap: 6px; background: var(--card); border: 2px solid var(--ink); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; }
+  .status .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .bar { height: 8px; border-radius: 4px; background: var(--paper-2); overflow: hidden; border: 1px solid var(--line-strong); }
+  .bar i { display: block; height: 100%; width: 0; background: var(--ginger); transition: width .2s; }
+  .status.ok { border-color: var(--good); }
+  .status.err { border-color: var(--danger); background: var(--danger-wash); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--grey, #cfc7bb); display: inline-block; margin-right: 6px; }
+  .status.ok .dot { background: var(--good); }
+  .status.err .dot { background: var(--danger); }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  h1.display, h2.display { font-family: var(--font-display); font-weight: 700; letter-spacing: .5px; line-height: 1; }
+  h1.display { font-size: 46px; }
+  h2.display { font-size: 34px; }
+  p { margin: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  .jobs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 360px) { .jobs { grid-template-columns: 1fr; } }
+  .job { display: grid; gap: 4px; text-align: left; padding: 16px 14px 14px; border: 2px solid var(--ink); border-radius: var(--radius); background: var(--card); box-shadow: var(--lift); cursor: pointer; min-height: 112px; align-content: start; }
+  .job:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+  .job.primary { background: var(--ginger); }
+  .job svg { width: 30px; height: 30px; margin-bottom: 4px; }
+  .job b { font-size: 18px; }
+  .job span { font-size: 13.5px; color: var(--ink-soft); }
+  .job.primary span { color: var(--ink); }
+  .job:disabled { opacity: .5; cursor: default; }
+
+  .btn { border: 2px solid var(--ink); background: var(--card); border-radius: 999px; padding: 11px 18px; min-height: 48px; font-weight: 500; cursor: pointer; box-shadow: var(--lift); }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+  .btn.primary { background: var(--ginger); font-weight: 700; }
+  .btn.good { background: var(--good-wash); border-color: var(--good); box-shadow: 3px 3px 0 var(--good); }
+  .btn.quiet { box-shadow: none; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); box-shadow: none; }
+  .btn:disabled { opacity: .45; cursor: default; box-shadow: none; transform: none; }
+  .btns { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btns .btn { flex: 1 1 160px; }
+  .link { background: none; border: 0; padding: 6px 0; color: var(--ink-soft); text-decoration: underline; cursor: pointer; font-size: 14px; }
+
+  .card { background: var(--card); border: 2px solid var(--ink); border-radius: var(--radius); padding: 16px; display: grid; gap: 14px; }
+  .card.soft { border-color: var(--line-strong); }
+  .hint { background: var(--ginger-wash); border: 1px dashed var(--ginger-deep); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; }
+  .hint b { color: var(--ginger-deep); }
+
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .catcard { text-align: left; padding: 8px 8px 10px; border: 2px solid var(--ink); border-radius: 12px; background: var(--card); cursor: pointer; display: grid; gap: 6px; }
+  .catcard img, .catcard .ph { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--paper-2); display: block; }
+  .catcard b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .catcard span { font-size: 12.5px; color: var(--muted); }
+  .empty { text-align: center; padding: 22px 12px; border: 2px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); font-size: 15px; }
+  .empty b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }
+
+  .field { display: grid; gap: 6px; }
+  .field label { font-weight: 500; font-size: 14px; }
+  .field input[type=text] { border: 2px solid var(--ink); border-radius: 10px; padding: 11px 12px; min-height: 48px; background: #fff; width: 100%; }
+
+  .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+  .frames img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line-strong); display: block; }
+  .frames img.dropped { opacity: .3; }
+
+  .cropper { position: relative; width: 100%; max-width: 520px; margin: 0 auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .cropper canvas { width: 100%; height: auto; display: block; border-radius: 10px; border: 2px solid var(--ink); }
+  .cropbox { position: absolute; border: 3px solid var(--ginger); border-radius: 8px; box-shadow: 0 0 0 9999px rgba(31, 27, 24, .45); pointer-events: none; }
+  .slider { display: grid; gap: 4px; }
+  .slider input { width: 100%; accent-color: var(--ginger); min-height: 32px; }
+  .slider .row { display: flex; justify-content: space-between; font-size: 14px; }
+
+  .verdict { border-radius: var(--radius); border: 2px solid; padding: 16px; display: grid; gap: 12px; }
+  .verdict.accept { border-color: var(--good); background: var(--good-wash); }
+  .verdict.pick { border-color: var(--warn); background: var(--warn-wash); }
+  .verdict.new { border-color: var(--info); background: var(--info-wash); }
+  .verdict h2 { font-family: var(--font-display); font-size: 38px; line-height: 1; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pair figure { margin: 0; display: grid; gap: 4px; }
+  .pair img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 2px solid var(--ink); background: var(--paper-2); }
+  .pair figcaption { font-size: 12.5px; color: var(--muted); text-align: center; }
+  .cands { display: grid; gap: 8px; }
+  .cand { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; padding: 8px; border: 2px solid var(--ink); border-radius: 12px; background: var(--card); cursor: pointer; text-align: left; }
+  .cand img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+  .cand b { font-size: 16px; }
+  .meter { position: relative; height: 8px; border-radius: 4px; background: var(--paper-2); border: 1px solid var(--line-strong); margin-top: 6px; }
+  .meter > i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--ink); opacity: .8; }
+  .meter .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; }
+  .meter .tick.a { background: var(--good); } .meter .tick.n { background: var(--info); }
+  .scores { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-soft); }
+  .legend { font-size: 12.5px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 4px; }
+
+  .back { background: none; border: 0; padding: 4px 0; font-size: 15px; color: var(--ink-soft); cursor: pointer; justify-self: start; }
+  .sheet-bg { position: fixed; inset: 0; z-index: 30; background: rgba(31, 27, 24, .45); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: var(--paper); width: 100%; max-width: 720px; max-height: 90vh; overflow: auto; border-top: 2px solid var(--ink); border-radius: 18px 18px 0 0;
+    padding: 18px max(16px, env(safe-area-inset-right, 0px)) max(22px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 14px; }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 40; background: var(--ink); color: var(--paper); padding: 11px 16px; border-radius: 12px; font-size: 15px; max-width: calc(100% - 32px); }
+  footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; border-top: 1px solid var(--line-strong); padding-top: 12px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M12 22 L16 6 L27 17 Q32 15 37 17 L48 6 L52 22 Q58 32 52 44 Q44 56 32 56 Q20 56 12 44 Q6 32 12 22Z" fill="#1f1b18"/><circle cx="24" cy="32" r="5.5" fill="#fbf6ec"/><circle cx="40" cy="32" r="5.5" fill="#fbf6ec"/><circle cx="25" cy="33" r="2.4" fill="#1f1b18"/><circle cx="41" cy="33" r="2.4" fill="#1f1b18"/><path d="M29 42 Q32 45 35 42" stroke="#fbf6ec" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <div><b>BGU Cats</b><span>Spotter · prototype</span></div>
+    </div>
+    <button class="iconbtn" id="open-settings" aria-label="Settings and about">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+    </button>
+  </header>
+
+  <section class="status" id="status" aria-live="polite">
+    <div class="row"><span><span class="dot"></span><span id="status-text">Starting…</span></span><span class="small muted" id="status-detail"></span></div>
+    <div class="bar" id="status-bar"><i></i></div>
+  </section>
+
+  <main id="view" aria-live="polite"></main>
+
+  <footer>
+    <p>Everything happens on this device. Photos and videos are never uploaded.</p>
+    <p>Model: MegaDescriptor-T (BVRA, CC BY-NC 4.0), shrunk to 8-bit. Not trained on campus cats.</p>
+  </footer>
+</div>
+
+<input type="file" id="in-photo-camera" accept="image/*" capture="environment" hidden>
+<input type="file" id="in-video-camera" accept="video/*" capture="environment" hidden>
+<input type="file" id="in-photos" accept="image/*" multiple hidden>
+<input type="file" id="in-video" accept="video/*" hidden>
+<div id="overlay"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.wasm.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // Settings that matter, named. Every number here has a reason.
+  // ---------------------------------------------------------------------
+  const SIZE = 224;                 // model input, pixels per side
+  const ENROLL_FRAMES = 12;         // frames taken from an enrolment video
+  const QUERY_FRAMES = 5;           // frames taken from an identify clip ("a burst, not a frame")
+  const NEAR_IDENTICAL = 0.985;     // two frames this alike add nothing: keep one
+  const MAX_TEMPLATES = 150;        // per cat; oldest dropped beyond this
+  const PICK_K = 3;                 // "is it one of these?" shows this many
+  const DB_NAME = "bgucats-spotter";
+
+  const $ = (id) => document.getElementById(id);
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k === "text") el.textContent = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false)
+      el.append(typeof kid === "string" || typeof kid === "number" ? document.createTextNode(String(kid)) : kid);
+    return el;
+  }
+  const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+  const pct = (x) => Math.round(x * 100) + "%";
+  let toastTimer;
+  function toast(msg) {
+    document.querySelectorAll(".toast").forEach((t) => t.remove());
+    const t = h("div", { class: "toast", role: "status", text: msg });
+    document.body.append(t);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 3500);
+  }
+
+  // ---------------------------------------------------------------------
+  // Storage: IndexedDB on this device. Falls back to memory, and says so.
+  // ---------------------------------------------------------------------
+  const store = (() => {
+    let dbp = null, memory = { cats: new Map(), blobs: new Map(), prefs: new Map() }, persistent = true;
+    function open() {
+      if (dbp) return dbp;
+      dbp = new Promise((resolve) => {
+        try {
+          const req = indexedDB.open(DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            for (const s of ["cats", "blobs", "prefs"]) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => { persistent = false; resolve(null); };
+          req.onblocked = () => { persistent = false; resolve(null); };
+        } catch (e) { persistent = false; resolve(null); }
+      });
+      return dbp;
+    }
+    async function tx(name, mode, fn) {
+      const db = await open();
+      if (!db) return fn(null, memory[name]);
+      return new Promise((resolve, reject) => {
+        try {
+          const t = db.transaction(name, mode), s = t.objectStore(name);
+          const out = fn(s, null);
+          t.oncomplete = () => resolve(out && out.result !== undefined ? out.result : out);
+          t.onerror = () => reject(t.error);
+        } catch (e) { persistent = false; resolve(fn(null, memory[name])); }
+      });
+    }
+    return {
+      get persistent() { return persistent; },
+      async get(name, key) { return tx(name, "readonly", (s, m) => (s ? s.get(key) : m.get(key))); },
+      async put(name, key, value) { return tx(name, "readwrite", (s, m) => (s ? s.put(value, key) : m.set(key, value))); },
+      async del(name, key) { return tx(name, "readwrite", (s, m) => (s ? s.delete(key) : m.delete(key))); },
+      async all(name) {
+        const db = await open();
+        if (!db) return [...memory[name].values()];
+        return new Promise((resolve) => {
+          try {
+            const req = db.transaction(name, "readonly").objectStore(name).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => resolve([]);
+          } catch (e) { resolve([...memory[name].values()]); }
+        });
+      },
+      async clear() { for (const n of ["cats", "prefs"]) await tx(n, "readwrite", (s, m) => (s ? s.clear() : m.clear())); }
+    };
+  })();
+
+  // ---------------------------------------------------------------------
+  // The model. Runs here, in WebAssembly, on one thread.
+  // ---------------------------------------------------------------------
+  const engine = { session: null, manifest: null, ready: false, error: null, waiters: [] };
+
+  function setStatus(kind, text, detail, progress) {
+    const s = $("status");
+    s.className = "status" + (kind ? " " + kind : "");
+    $("status-text").textContent = text;
+    $("status-detail").textContent = detail || "";
+    const bar = $("status-bar");
+    bar.hidden = progress == null;
+    if (progress != null) bar.firstElementChild.style.width = Math.round(progress * 100) + "%";
+  }
+
+  function webAssemblyAllowed() {
+    // The smallest valid module. If the page's security policy forbids
+    // compiling WebAssembly, this throws, and nothing else will work.
+    try { new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return true; }
+    catch (e) { return false; }
+  }
+
+  async function sha256Hex(bytes) {
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  function fromBase64(text) {
+    const bin = atob(text.trim()); const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function fetchModel(manifest) {
+    const cached = await store.get("blobs", "model").catch(() => null);
+    if (cached && cached.sha256 === manifest.sha256) return new Uint8Array(cached.bytes);
+    const out = new Uint8Array(manifest.bytes);
+    let offset = 0;
+    for (const [i, part] of manifest.parts.entries()) {
+      setStatus("", "Downloading the model, once", plural(i + 1, "part") + " of " + manifest.parts.length, offset / manifest.bytes);
+      const res = await fetch(part);
+      if (!res.ok) throw new Error("model part " + part + " failed to load (" + res.status + ")");
+      // Some hosts (claude.ai artifacts) only serve text and known media
+      // types, so the build can ship the chunks as base64 text instead.
+      const buf = manifest.encoding === "base64" ? fromBase64(await res.text()) : new Uint8Array(await res.arrayBuffer());
+      out.set(buf, offset); offset += buf.length;
+    }
+    if (offset !== manifest.bytes) throw new Error("model download was incomplete");
+    if (crypto.subtle && (await sha256Hex(out)) !== manifest.sha256) throw new Error("model file is corrupted (checksum mismatch)");
+    store.put("blobs", "model", { sha256: manifest.sha256, bytes: out.buffer }).catch(() => {});
+    return out;
+  }
+
+  async function loadEngine() {
+    try {
+      if (typeof ort === "undefined") throw new Error("the model runtime script could not be loaded");
+      if (!webAssemblyAllowed()) {
+        const e = new Error("This page isn't allowed to run WebAssembly, which the model needs.");
+        e.blocked = true; throw e;
+      }
+      setStatus("", "Getting the model ready…", "", 0);
+      const manifest = engine.manifest = await (await fetch("model/manifest.json")).json();
+      const bytes = await fetchModel(manifest);
+      setStatus("", "Starting the model…", "", 1);
+      ort.env.wasm.wasmPaths = "./";
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.proxy = false;
+      engine.session = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+      // Warm-up, and an honest speed figure for this phone.
+      const t0 = performance.now();
+      await embedPixels(new Float32Array(3 * SIZE * SIZE).fill(0.5));
+      const ms = Math.round(performance.now() - t0);
+      engine.ready = true; engine.msPerImage = ms;
+      setStatus("ok", "Model ready", "≈" + (ms / 1000).toFixed(1) + " s per photo on this device");
+      engine.waiters.splice(0).forEach((w) => w.resolve());
+    } catch (err) {
+      engine.error = err;
+      setStatus("err", err.blocked ? "Can't run here" : "The model didn't load", err.message);
+      engine.waiters.splice(0).forEach((w) => w.reject(err));
+      render();
+    }
+  }
+  function whenReady() {
+    if (engine.ready) return Promise.resolve();
+    if (engine.error) return Promise.reject(engine.error);
+    return new Promise((resolve, reject) => engine.waiters.push({ resolve, reject }));
+  }
+
+  async function embedPixels(chw) {
+    const input = new ort.Tensor("float32", chw, [1, 3, SIZE, SIZE]);
+    const out = await engine.session.run({ image: input });
+    return Float32Array.from(out.embedding.data); // already unit length (inside the model)
+  }
+
+  // ---------------------------------------------------------------------
+  // Pixels: square crop -> 224x224 -> RGB in [0,1], channels first.
+  // Same as research/catreid/export.py preprocess(), which is what the
+  // model's accuracy was checked against.
+  // ---------------------------------------------------------------------
+  function cropCanvas(source, sx, sy, side, out = SIZE) {
+    const c = document.createElement("canvas");
+    c.width = c.height = out;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(source, sx, sy, side, side, 0, 0, out, out);
+    return c;
+  }
+  function centreSquare(w, h) { const side = Math.min(w, h); return { sx: (w - side) / 2, sy: (h - side) / 2, side }; }
+  function toTensor(canvas224) {
+    const { data } = canvas224.getContext("2d").getImageData(0, 0, SIZE, SIZE);
+    const plane = SIZE * SIZE, chw = new Float32Array(3 * plane);
+    for (let i = 0, p = 0; p < plane; p++, i += 4) {
+      chw[p] = data[i] / 255; chw[plane + p] = data[i + 1] / 255; chw[2 * plane + p] = data[i + 2] / 255;
+    }
+    return chw;
+  }
+  const thumbOf = (canvas224, q = 0.72) => cropCanvas(canvas224, 0, 0, SIZE, 112).toDataURL("image/jpeg", q);
+
+  async function bitmapFromFile(file) {
+    try { return await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch (e) {
+      // Older Safari: go through an <img>.
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image(); img.src = url; await img.decode(); return img;
+      } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    }
+  }
+  const dims = (src) => ({ w: src.naturalWidth || src.videoWidth || src.width, h: src.naturalHeight || src.videoHeight || src.height });
+
+  async function framesFromVideo(file, count, onFrame) {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.setAttribute("playsinline", ""); v.preload = "auto"; v.src = url;
+    try {
+      await new Promise((ok, bad) => { v.onloadeddata = ok; v.onerror = () => bad(new Error("this video can't be read on this device")); });
+      // iOS draws black frames from a video that has never played.
+      try { await v.play(); v.pause(); } catch (e) {}
+      const d = isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
+      const frames = [];
+      for (let i = 0; i < count; i++) {
+        const t = Math.min(d - 0.05, Math.max(0, d * (i + 0.5) / count));
+        await new Promise((ok) => {
+          const timer = setTimeout(ok, 2500);
+          v.onseeked = () => { clearTimeout(timer); ok(); };
+          v.currentTime = t;
+        });
+        const { w, h } = dims(v);
+        const sq = centreSquare(w, h);
+        const c = cropCanvas(v, sq.sx, sq.sy, sq.side);
+        frames.push(c);
+        if (onFrame) onFrame(c, i);
+      }
+      return frames;
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  // ---------------------------------------------------------------------
+  // Gallery: cats, each with many templates (one per kept frame).
+  // ---------------------------------------------------------------------
+  let cats = [];
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  async function loadCats() {
+    cats = (await store.all("cats")).map((c) => ({
+      ...c, templates: c.templates.map((t) => ({ ...t, e: new Float32Array(t.e) }))
+    }));
+    cats.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  async function saveCat(cat) {
+    const plain = { ...cat, templates: cat.templates.map((t) => ({ ...t, e: t.e.buffer.slice(0) })) };
+    await store.put("cats", cat.id, plain);
+  }
+  const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+  const sightingsOf = (cat) => new Set(cat.templates.map((t) => t.sighting)).size;
+
+  async function embedFrames(canvases, onEach) {
+    const out = [];
+    for (const [i, c] of canvases.entries()) {
+      const e = await embedPixels(toTensor(c));
+      out.push({ e, canvas: c });
+      if (onEach) onEach(i, canvases.length);
+      await new Promise((r) => setTimeout(r, 0)); // let the progress paint
+    }
+    return out;
+  }
+
+  function keepVaried(embedded) {
+    // A cat that sat still for the whole clip gives many near-identical
+    // frames. They add nothing — the research measured that pose variety,
+    // not frame count, is what helps — so keep one of each.
+    const kept = [];
+    for (const item of embedded) {
+      if (kept.every((k) => dot(k.e, item.e) < NEAR_IDENTICAL)) { item.kept = true; kept.push(item); }
+      else item.kept = false;
+    }
+    return kept;
+  }
+
+  async function addSighting(cat, embedded) {
+    const sighting = uid(), at = new Date().toISOString();
+    const kept = keepVaried(embedded);
+    for (const k of kept) cat.templates.push({ e: k.e, thumb: thumbOf(k.canvas), sighting, at });
+    if (cat.templates.length > MAX_TEMPLATES) cat.templates.splice(0, cat.templates.length - MAX_TEMPLATES);
+    if (!cat.cover && kept[0]) cat.cover = cat.templates[cat.templates.length - kept.length].thumb;
+    await saveCat(cat);
+    return kept.length;
+  }
+
+  // ---------------------------------------------------------------------
+  // Deciding. Each cat's score is its best-matching template — never an
+  // average, which would blend a front view and a side view into neither.
+  // With several query frames, a cat's score is the mean over frames.
+  // ---------------------------------------------------------------------
+  const DEFAULT_T = { accept: 0.59, new: 0.45 };
+  let thresholds = { ...DEFAULT_T };
+
+  function rank(queryEmbeddings) {
+    const rows = cats.map((cat) => {
+      let total = 0, best = null, bestScore = -2;
+      for (const q of queryEmbeddings) {
+        let m = -2, mt = null;
+        for (const t of cat.templates) { const s = dot(q, t.e); if (s > m) { m = s; mt = t; } }
+        total += m;
+        if (m > bestScore) { bestScore = m; best = mt; }
+      }
+      return { cat, score: total / queryEmbeddings.length, template: best };
+    });
+    rows.sort((a, b) => b.score - a.score);
+    return rows;
+  }
+  function decide(top) {
+    if (!top) return "new";
+    if (top.score >= thresholds.accept) return "accept";
+    if (top.score >= thresholds.new) return "pick";
+    return "new";
+  }
+
+  // ---------------------------------------------------------------------
+  // Views
+  // ---------------------------------------------------------------------
+  let route = { name: "home" };
+  function go(name, data) { route = { name, ...(data || {}) }; render(); window.scrollTo(0, 0); }
+
+  function render() {
+    const v = $("view");
+    if (route.name === "home") v.replaceChildren(...homeView());
+    else if (route.name === "cat") v.replaceChildren(...catView(route.id));
+    else if (route.name === "add") v.replaceChildren(...addView());
+  }
+
+  const ICON = {
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="12" cy="12" r="3.5"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
+  };
+  const iconEl = (name) => { const s = h("span"); s.innerHTML = ICON[name]; return s.firstElementChild; };
+
+  function homeView() {
+    const blocked = engine.error && engine.error.blocked;
+    if (blocked) return [blockedCard()];
+    const identify = h("button", { class: "job primary", disabled: !cats.length, onclick: () => openIdentify() },
+      iconEl("eye"), h("b", { text: "Who is this?" }), h("span", { text: cats.length ? "Point the camera at a cat" : "Add a cat first" }));
+    const add = h("button", { class: "job", onclick: () => go("add") },
+      iconEl("plus"), h("b", { text: "Add a cat" }), h("span", { text: "Film it for a few seconds" }));
+    const out = [h("div", { class: "jobs" }, identify, add)];
+    if (cats.length && cats.length < 2) out.push(h("div", { class: "hint" }, h("b", { text: "Tip: " }), "add at least two cats, so it has to tell them apart."));
+    out.push(h("h2", { class: "display", text: cats.length ? "Your cats · " + cats.length : "Your cats" }));
+    if (!cats.length) {
+      out.push(h("div", { class: "empty" }, h("b", { text: "No cats yet" }),
+        "Tap ", h("strong", { text: "Add a cat" }), ", give it a name, and film it for 5–10 seconds while walking around it."));
+    } else {
+      out.push(h("div", { class: "gallery" }, cats.map((c) => {
+        const n = sightingsOf(c);
+        return h("button", { class: "catcard", onclick: () => go("cat", { id: c.id }) },
+          c.cover ? h("img", { src: c.cover, alt: "" }) : h("div", { class: "ph" }),
+          h("b", { text: c.name }),
+          h("span", { text: plural(n, "sighting") + " · " + plural(c.templates.length, "view") }));
+      })));
+    }
+    if (!store.persistent) out.push(h("div", { class: "hint" }, h("b", { text: "Not saved: " }), "this browser isn't letting the page store data, so your cats will be forgotten when you close it."));
+    return out;
+  }
+
+  function blockedCard() {
+    return h("div", { class: "card" },
+      h("h2", { class: "display", text: "This page can't run the model here" }),
+      h("p", { text: "The recognition model runs as WebAssembly inside your browser, and this page's security settings don't allow WebAssembly." }),
+      h("p", { class: "muted small", text: "Nothing is broken on your side. The same app works as a normal web page — ask for the hosted version." }));
+  }
+
+  // ---- add a cat -------------------------------------------------------
+  function addView(existing) {
+    const cat = existing || null;
+    const name = h("input", { type: "text", id: "cat-name", placeholder: "e.g. Ginger by the library", maxlength: "60", autocomplete: "off", value: cat ? cat.name : "" });
+    const err = h("p", { class: "small", style: "color:var(--danger)", hidden: true });
+    const need = () => {
+      if (cat) return cat;
+      const n = name.value.trim();
+      if (!n) { err.hidden = false; err.textContent = "Give the cat a name first — any name, you can change it later."; name.focus(); return null; }
+      return { id: uid(), name: n, createdAt: new Date().toISOString(), templates: [], cover: null };
+    };
+    return [
+      h("button", { class: "back", onclick: () => (cat ? go("cat", { id: cat.id }) : go("home")), text: "← Back" }),
+      h("h1", { class: "display", text: cat ? "Another sighting of " + cat.name : "Add a cat" }),
+      cat ? h("p", { class: "muted", text: "Best on a different day, or in different light, than the last time. That helped recognition more than anything else in testing." })
+          : h("div", { class: "field" }, h("label", { for: "cat-name", text: "Name" }), name),
+      h("div", { class: "card" },
+        h("p", {}, h("b", { text: "Best: film 5–10 seconds" }), " while walking slowly around the cat — head, side, back. Keep it in the middle of the frame."),
+        h("div", { class: "btns" },
+          h("button", { class: "btn primary", onclick: () => { const c = need(); if (c) pick("in-video-camera", (f) => enrol(c, f, "video")); }, text: "Film the cat" }),
+          h("button", { class: "btn", onclick: () => { const c = need(); if (c) pick("in-photos", (f) => enrol(c, f, "photos"), true); }, text: "Choose photos" })),
+        h("button", { class: "link", onclick: () => { const c = need(); if (c) pick("in-video", (f) => enrol(c, f, "video")); }, text: "or pick a video you already have" }),
+        err),
+      h("p", { class: "muted small", text: "There's no cat detector yet, so the middle of each frame is what gets compared. Fill the frame with the cat." })
+    ];
+  }
+
+  function pick(inputId, then, multiple) {
+    const input = $(inputId);
+    input.value = "";
+    input.onchange = () => { const files = [...input.files]; if (files.length) then(multiple ? files : files[0]); };
+    input.click();
+  }
+
+  async function enrol(cat, fileOrFiles, kind) {
+    const frames = h("div", { class: "frames" });
+    const line = h("p", { class: "small muted", text: "Reading…" });
+    const box = h("div", { class: "card" }, h("h2", { class: "display", text: "Learning " + cat.name }), line, frames);
+    $("view").replaceChildren(box);
+    try {
+      let canvases = [];
+      if (kind === "video") {
+        line.textContent = "Taking frames from the video…";
+        canvases = await framesFromVideo(fileOrFiles, ENROLL_FRAMES, (c) => frames.append(h("img", { src: thumbOf(c), alt: "" })));
+      } else {
+        for (const f of fileOrFiles.slice(0, 40)) {
+          const bmp = await bitmapFromFile(f); const { w, h: ht } = dims(bmp); const sq = centreSquare(w, ht);
+          const c = cropCanvas(bmp, sq.sx, sq.sy, sq.side); canvases.push(c);
+          frames.append(h("img", { src: thumbOf(c), alt: "" }));
+        }
+      }
+      line.textContent = "Waiting for the model…";
+      await whenReady();
+      const embedded = await embedFrames(canvases, (i, n) => { line.textContent = "Looking closely: " + (i + 1) + " of " + n; });
+      const before = cats.find((c) => c.id === cat.id) ? null : cat;
+      const kept = await addSighting(cat, embedded);
+      embedded.forEach((item, i) => { if (!item.kept && frames.children[i]) frames.children[i].classList.add("dropped"); });
+      if (before) cats.push(cat), cats.sort((a, b) => a.name.localeCompare(b.name));
+      toast("Learned " + plural(kept, "view") + " of " + cat.name + (embedded.length > kept ? " (" + (embedded.length - kept) + " near-identical skipped)" : ""));
+      go("cat", { id: cat.id });
+    } catch (e) {
+      box.append(h("p", { style: "color:var(--danger)", text: e.message }), h("button", { class: "btn", onclick: () => go("home"), text: "Back" }));
+    }
+  }
+
+  function catView(id) {
+    const cat = cats.find((c) => c.id === id);
+    if (!cat) { go("home"); return []; }
+    const n = sightingsOf(cat);
+    const bySighting = new Map();
+    for (const t of cat.templates) { if (!bySighting.has(t.sighting)) bySighting.set(t.sighting, []); bySighting.get(t.sighting).push(t); }
+    return [
+      h("button", { class: "back", onclick: () => go("home"), text: "← All cats" }),
+      h("h1", { class: "display", text: cat.name }),
+      h("p", { class: "muted", text: plural(n, "sighting") + " · " + plural(cat.templates.length, "view") + " stored" }),
+      n < 3 ? h("div", { class: "hint" }, h("b", { text: n === 1 ? "One sighting so far. " : "Two sightings. " }),
+        "In testing, the same number of photos from 3 separate sightings recognised nearly twice as well as from 1. Add another on a different day.") : null,
+      h("div", { class: "btns" }, h("button", { class: "btn primary", onclick: () => $("view").replaceChildren(...addView(cat)), text: "Add another sighting" })),
+      ...[...bySighting.entries()].reverse().map(([, ts], i, arr) => h("div", { class: "card soft" },
+        h("p", { class: "small muted", text: "Sighting " + (arr.length - i) + " · " + new Date(ts[0].at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + plural(ts.length, "view") }),
+        h("div", { class: "frames" }, ts.map((t) => h("img", { src: t.thumb, alt: "" }))))),
+      h("div", { class: "btns" },
+        h("button", { class: "btn quiet", onclick: () => rename(cat), text: "Rename" }),
+        h("button", { class: "btn danger", onclick: () => remove(cat), text: "Forget this cat" }))
+    ];
+  }
+  async function rename(cat) {
+    const input = h("input", { type: "text", value: cat.name, maxlength: "60" });
+    sheet(h("h2", { class: "display", text: "Rename" }), h("div", { class: "field" }, input),
+      h("div", { class: "btns" }, h("button", { class: "btn primary", onclick: async () => {
+        const n = input.value.trim(); if (!n) return; cat.name = n; await saveCat(cat); closeSheet(); go("cat", { id: cat.id }); }, text: "Save" }),
+        h("button", { class: "btn quiet", onclick: closeSheet, text: "Cancel" })));
+  }
+  async function remove(cat) {
+    sheet(h("h2", { class: "display", text: "Forget " + cat.name + "?" }), h("p", { text: "Removes every stored view of this cat from this phone." }),
+      h("div", { class: "btns" }, h("button", { class: "btn danger", onclick: async () => {
+        await store.del("cats", cat.id); cats = cats.filter((c) => c.id !== cat.id); closeSheet(); go("home"); }, text: "Forget" }),
+        h("button", { class: "btn quiet", onclick: closeSheet, text: "Keep" })));
+  }
+
+  // ---- identify ---------------------------------------------------------
+  function openIdentify() {
+    sheet(h("h2", { class: "display", text: "Who is this?" }),
+      h("p", { class: "muted", text: "A short clip is better than one photo: it compares several frames and averages." }),
+      h("div", { class: "btns" },
+        h("button", { class: "btn primary", onclick: () => { closeSheet(); pick("in-photo-camera", (f) => cropThen(f)); }, text: "Take a photo" }),
+        h("button", { class: "btn", onclick: () => { closeSheet(); pick("in-video-camera", (f) => identifyVideo(f)); }, text: "Film 2 seconds" })),
+      h("div", { class: "btns" },
+        h("button", { class: "link", onclick: () => { closeSheet(); pick("in-photos", (fs) => cropThen(fs[0]), true); }, text: "or choose a photo" }),
+        h("button", { class: "link", onclick: () => { closeSheet(); pick("in-video", (f) => identifyVideo(f)); }, text: "or choose a video" })));
+  }
+
+  async function cropThen(file) {
+    // No cat detector yet: the person points at the cat instead.
+    const bmp = await bitmapFromFile(file);
+    const { w, h: ht } = dims(bmp);
+    const scale = Math.min(1, 900 / Math.max(w, ht));
+    const view = document.createElement("canvas");
+    view.width = Math.round(w * scale); view.height = Math.round(ht * scale);
+    view.getContext("2d").drawImage(bmp, 0, 0, view.width, view.height);
+    let cx = w / 2, cy = ht / 2, frac = 1;
+    const box = h("div", { class: "cropbox" });
+    const holder = h("div", { class: "cropper" }, view, box);
+    const zoom = h("input", { type: "range", min: "30", max: "100", value: "100", id: "crop-zoom", "aria-label": "Crop size" });
+    function clamp() {
+      const side = Math.min(w, ht) * frac;
+      cx = Math.max(side / 2, Math.min(w - side / 2, cx)); cy = Math.max(side / 2, Math.min(ht - side / 2, cy));
+      return side;
+    }
+    function draw() {
+      const side = clamp(), r = view.getBoundingClientRect(), k = r.width / w;
+      Object.assign(box.style, { left: (cx - side / 2) * k + "px", top: (cy - side / 2) * k + "px", width: side * k + "px", height: side * k + "px" });
+    }
+    holder.addEventListener("pointerdown", (e) => {
+      const r = view.getBoundingClientRect(); const k = w / r.width;
+      cx = (e.clientX - r.left) * k; cy = (e.clientY - r.top) * k; draw();
+    });
+    zoom.addEventListener("input", () => { frac = zoom.value / 100; draw(); });
+    $("view").replaceChildren(
+      h("button", { class: "back", onclick: () => go("home"), text: "← Cancel" }),
+      h("h1", { class: "display", text: "Tap the cat" }),
+      h("p", { class: "muted", text: "Put the orange square on the cat, and make it smaller if the cat is small in the photo." }),
+      holder,
+      h("div", { class: "slider" }, h("div", { class: "row" }, h("span", { text: "Square size" }), h("span", { text: "" })), zoom),
+      h("div", { class: "btns" }, h("button", { class: "btn primary", onclick: async () => {
+        const side = clamp(); const c = cropCanvas(bmp, cx - side / 2, cy - side / 2, side);
+        await identify([c]);
+      }, text: "Identify" })));
+    requestAnimationFrame(draw);
+    addEventListener("resize", draw, { once: true });
+  }
+
+  async function identifyVideo(file) {
+    const frames = h("div", { class: "frames" });
+    const line = h("p", { class: "small muted", text: "Taking frames…" });
+    $("view").replaceChildren(h("div", { class: "card" }, h("h2", { class: "display", text: "Looking…" }), line, frames));
+    try {
+      const canvases = await framesFromVideo(file, QUERY_FRAMES, (c) => frames.append(h("img", { src: thumbOf(c), alt: "" })));
+      await identify(canvases, line);
+    } catch (e) { toast(e.message); go("home"); }
+  }
+
+  async function identify(canvases, line) {
+    if (!line) {
+      line = h("p", { class: "small muted", text: "Looking…" });
+      $("view").replaceChildren(h("div", { class: "card" }, h("h2", { class: "display", text: "Looking…" }), line));
+    }
+    try {
+      line.textContent = "Waiting for the model…";
+      await whenReady();
+      const embedded = await embedFrames(canvases, (i, n) => { line.textContent = "Comparing frame " + (i + 1) + " of " + n + "…"; });
+      showResult(embedded);
+    } catch (e) { toast(e.message); go("home"); }
+  }
+
+  function meter(score) {
+    const pos = (x) => Math.max(0, Math.min(100, ((x - 0.2) / 0.7) * 100)); // shown range: 0.2–0.9
+    const m = h("div", { class: "meter" }, h("i"), h("span", { class: "tick a" }), h("span", { class: "tick n" }));
+    m.children[0].style.width = pos(score) + "%";
+    m.children[1].style.left = pos(thresholds.accept) + "%";
+    m.children[2].style.left = pos(thresholds.new) + "%";
+    return m;
+  }
+
+  function showResult(embedded) {
+    const ranked = rank(embedded.map((x) => x.e));
+    const top = ranked[0], action = decide(top);
+    const queryThumb = thumbOf(embedded[0].canvas);
+    const confirm = async (cat) => {
+      const kept = await addSighting(cat, embedded);
+      toast("Thanks — " + cat.name + " now has " + plural(sightingsOf(cat), "sighting") + " (+" + kept + ")");
+      go("cat", { id: cat.id });
+    };
+    const asNew = () => {
+      const name = h("input", { type: "text", placeholder: "A name for this cat", maxlength: "60" });
+      sheet(h("h2", { class: "display", text: "Add as a new cat" }), h("p", { class: "muted", text: "These frames become its first sighting." }),
+        h("div", { class: "field" }, name),
+        h("div", { class: "btns" }, h("button", { class: "btn primary", onclick: async () => {
+          const n = name.value.trim(); if (!n) return;
+          const cat = { id: uid(), name: n, createdAt: new Date().toISOString(), templates: [], cover: null };
+          await addSighting(cat, embedded); cats.push(cat); cats.sort((a, b) => a.name.localeCompare(b.name));
+          closeSheet(); toast("Added " + n); go("cat", { id: cat.id }); }, text: "Add" }),
+          h("button", { class: "btn quiet", onclick: closeSheet, text: "Cancel" })));
+    };
+    const candidate = (r) => h("button", { class: "cand", onclick: () => confirm(r.cat) },
+      h("img", { src: r.template ? r.template.thumb : r.cat.cover, alt: "" }),
+      h("div", {}, h("b", { text: r.cat.name }), meter(r.score), h("div", { class: "scores", text: "match " + r.score.toFixed(3) + " · " + plural(sightingsOf(r.cat), "sighting") })));
+
+    let verdict;
+    if (action === "accept") {
+      verdict = h("div", { class: "verdict accept" },
+        h("h2", { text: "This is " + top.cat.name }),
+        h("div", { class: "pair" },
+          h("figure", {}, h("img", { src: queryThumb, alt: "Your photo" }), h("figcaption", { text: "your photo" })),
+          h("figure", {}, h("img", { src: top.template.thumb, alt: top.cat.name }), h("figcaption", { text: "closest stored view" }))),
+        meter(top.score),
+        h("div", { class: "btns" },
+          h("button", { class: "btn good", onclick: () => confirm(top.cat), text: "Yes, it's " + top.cat.name }),
+          h("button", { class: "btn quiet", onclick: () => showAlternatives(), text: "No" })));
+    } else if (action === "pick") {
+      verdict = h("div", { class: "verdict pick" },
+        h("h2", { text: "Is it one of these?" }),
+        h("p", { class: "small", text: "Not sure enough to say. Tap the right cat — that teaches it." }),
+        h("div", { class: "cands" }, ranked.slice(0, PICK_K).map(candidate)),
+        h("div", { class: "btns" }, h("button", { class: "btn", onclick: asNew, text: "None of these — new cat" })));
+    } else {
+      verdict = h("div", { class: "verdict new" },
+        h("h2", { text: "A cat you haven't added" }),
+        h("p", { class: "small", text: "Nothing you've added looks close enough." }),
+        h("div", { class: "pair" }, h("figure", {}, h("img", { src: queryThumb, alt: "Your photo" }), h("figcaption", { text: "your photo" }))),
+        h("div", { class: "btns" }, h("button", { class: "btn primary", onclick: asNew, text: "Add as a new cat" }),
+          h("button", { class: "btn quiet", onclick: () => showAlternatives(), text: "Show closest anyway" })));
+    }
+    function showAlternatives() {
+      $("view").replaceChildren(
+        h("button", { class: "back", onclick: () => go("home"), text: "← Done" }),
+        h("h2", { class: "display", text: "Closest matches" }),
+        h("div", { class: "cands" }, ranked.slice(0, 5).map(candidate)),
+        h("div", { class: "btns" }, h("button", { class: "btn", onclick: asNew, text: "None — it's a new cat" })));
+    }
+    $("view").replaceChildren(
+      h("button", { class: "back", onclick: () => go("home"), text: "← Done" }),
+      verdict,
+      h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--good)" }), "sure enough to answer"),
+        h("span", {}, h("i", { style: "background:var(--info)" }), "below this: probably a new cat")),
+      h("details", {}, h("summary", { class: "small", text: "All scores" }),
+        h("div", { class: "cands", style: "margin-top:10px" }, ranked.slice(0, 8).map(candidate))));
+  }
+
+  // ---- settings / about --------------------------------------------------
+  function settings() {
+    const a = h("input", { type: "range", min: "0.30", max: "0.90", step: "0.01", value: String(thresholds.accept), id: "t-accept" });
+    const n = h("input", { type: "range", min: "0.20", max: "0.85", step: "0.01", value: String(thresholds.new), id: "t-new" });
+    const av = h("span", { class: "scores", text: thresholds.accept.toFixed(2) }), nv = h("span", { class: "scores", text: thresholds.new.toFixed(2) });
+    const sync = () => {
+      thresholds.accept = +a.value; thresholds.new = Math.min(+n.value, thresholds.accept); n.value = thresholds.new;
+      av.textContent = thresholds.accept.toFixed(2); nv.textContent = thresholds.new.toFixed(2);
+      store.put("prefs", "thresholds", thresholds).catch(() => {});
+    };
+    a.oninput = sync; n.oninput = sync;
+    const m = engine.manifest || {};
+    sheet(h("h2", { class: "display", text: "How it works" }),
+      h("p", { class: "small", text: "When you add a cat, every kept frame is turned into a fingerprint of 768 numbers by a model trained to tell individual animals apart. To identify, your photo gets a fingerprint too, and each cat's score is its single closest stored view." }),
+      h("p", { class: "small muted", text: "Tested on 13 polar bears (a stand-in for plain black cats): the right animal came first about 65% of the time and was in the top 5 about 95% of the time. It has not been measured on cats yet." }),
+      h("h3", { text: "How sure before it answers" }),
+      h("div", { class: "slider" }, h("div", { class: "row" }, h("span", { text: "Answer on its own above" }), av), a),
+      h("div", { class: "slider" }, h("div", { class: "row" }, h("span", { text: "Call it a new cat below" }), nv), n),
+      h("p", { class: "small muted", text: "Starting points calibrated on polar bears (" + (m.thresholdsNote || "8-bit model") + "). With your own cats you may want to move them." }),
+      h("div", { class: "btns" },
+        h("button", { class: "btn quiet", onclick: () => { thresholds = { ...DEFAULT_T, ...(m.thresholds || {}) }; store.put("prefs", "thresholds", thresholds).catch(() => {}); closeSheet(); toast("Reset"); }, text: "Reset" }),
+        h("button", { class: "btn danger", onclick: async () => { await store.clear(); cats = []; closeSheet(); go("home"); toast("Forgot every cat on this device"); }, text: "Forget all cats" })),
+      h("p", { class: "small muted", text: (m.model || "MegaDescriptor-T-224") + " · " + (m.bytes ? (m.bytes / 1048576).toFixed(1) + " MB" : "") + (engine.msPerImage ? " · " + engine.msPerImage + " ms per photo here" : "") }));
+  }
+
+  function sheet(...content) {
+    const box = h("div", { class: "sheet", role: "dialog", "aria-modal": "true", tabindex: "-1" }, ...content);
+    const bg = h("div", { class: "sheet-bg", onclick: (e) => { if (e.target === bg) closeSheet(); } }, box);
+    $("overlay").replaceChildren(bg); box.focus({ preventScroll: true });
+  }
+  function closeSheet() { $("overlay").replaceChildren(); }
+  addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+  $("open-settings").addEventListener("click", settings);
+
+  // ---- boot -----------------------------------------------------------------
+  (async () => {
+    try { await loadCats(); } catch (e) { cats = []; }
+    try {
+      const saved = await store.get("prefs", "thresholds");
+      if (saved && typeof saved.accept === "number") thresholds = saved;
+    } catch (e) {}
+    render();
+    await loadEngine();
+    if (engine.manifest && engine.manifest.thresholds && !(await store.get("prefs", "thresholds").catch(() => null)))
+      thresholds = { ...DEFAULT_T, ...engine.manifest.thresholds };
+    render();
+  })();
+})();
+</script>

@@ -12,6 +12,24 @@
 #   PK = RATE#{submitterHash}#{minuteBucket}, SK = META   — a per-minute
 #     counter, self-expiring via the table's TTL attribute.
 #
+# And three for the admin tool's stats page, all listed through GSI2 the
+# way cats and admins are (GSI2PK = ENTITY#<kind>):
+#   PK = SUBMITTER#{submitterHash}, SK = PROFILE — when someone first showed
+#     up, on which channel, and the tracked link that brought them.
+#   PK = TRAFFIC#{day}#{referral}, SK = META — the landing page's daily
+#     visit and bot-button counters (beacon.tf). No per-visitor items.
+#   PK = LINK#{slug}, SK = META — a tracked link's name, and the partner's
+#     own numbers for it, typed in from their dashboard.
+#
+# Photo items are on GSI2 as STATUS#{status} from the moment they are
+# written, `pending` included, so an upload whose file never arrived is
+# countable (admin Stats, "Uploads that never arrived").
+#
+# And one for the PWA's Capture screen:
+#   Session items opened in the app (channel "app") carry
+#   GSI2PK = ENTITY#ENCOUNTER, GSI2SK = {email}#{startedAt}, so "my recent
+#   encounters" is one begins_with Query. Bot sessions are not in it.
+#
 # hash_key/range_key are deprecated in favor of key_schema as of provider
 # ~6.29, but key_schema has several open upstream bugs around perpetual
 # drift and forced GSI replacement as of ~6.61 — staying on the

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The landing page's "midnight" cat on paper. The cat sits inside the
+       central 80% so Android's maskable crop never clips an ear. -->
+  <rect width="512" height="512" fill="#fbf6ec"/>
+  <g transform="translate(256 262) scale(2.35) translate(-60 -54)" stroke="#1f1b18" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 60C102 84 84 98 60 98C36 98 18 85 16 61C14 43 17 25 23 9Z" fill="#1f1b18"/>
+    <path d="M19 68L-3 62M18 75L-2 79M101 68L123 62M102 75L122 79" fill="none"/>
+    <circle cx="42" cy="57" r="11.5" fill="#fbf6ec" stroke="none"/>
+    <circle cx="78" cy="57" r="11.5" fill="#fbf6ec" stroke="none"/>
+    <circle cx="45" cy="59" r="5.5" fill="#1f1b18" stroke="none"/>
+    <circle cx="81" cy="59" r="5.5" fill="#1f1b18" stroke="none"/>
+    <circle cx="46.5" cy="57" r="1.8" fill="#fbf6ec" stroke="none"/>
+    <circle cx="82.5" cy="57" r="1.8" fill="#fbf6ec" stroke="none"/>
+    <path d="M55 69L65 69L60 75Z" fill="#f2a19b" stroke="none"/>
+    <path d="M60 75C59 80 54 82 50 79M60 75C61 80 66 82 70 79" fill="none" stroke="#fbf6ec"/>
+  </g>
+</svg>

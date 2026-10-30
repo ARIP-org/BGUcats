@@ -55,6 +55,25 @@ resource "aws_s3_bucket_lifecycle_configuration" "media" {
   }
 }
 
+# The PWA's camera uploads go from the phone straight to raw/ (presigned
+# POST, see src/admin/handler.py), so the browser needs the bucket to answer
+# its CORS preflight. GET is for the in-browser recognition model
+# (web/recognition.js), which has to read a photo's pixels: without CORS the
+# canvas is "tainted" and refuses to hand them over. One origin — the admin
+# app's own CloudFront address. CORS only lets that page read a response it
+# was already allowed to fetch: every read and write still needs a URL the
+# API signed, and nothing is listable.
+resource "aws_s3_bucket_cors_configuration" "media" {
+  bucket = aws_s3_bucket.media.id
+
+  cors_rule {
+    allowed_origins = ["https://${aws_cloudfront_distribution.web.domain_name}"]
+    allowed_methods = ["GET", "POST"]
+    allowed_headers = ["*"]
+    max_age_seconds = 3600
+  }
+}
+
 output "media_bucket" {
   value = aws_s3_bucket.media.id
 }

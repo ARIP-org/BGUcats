@@ -148,6 +148,7 @@ def test_records_hashes_and_dimensions(aws):
     assert len(item["phash"]) == 16
     assert (int(item["width"]), int(item["height"])) == (800, 600)
     assert item["processedAt"]
+    assert item["mediaType"] == "photo"
 
 
 def test_a_photo_with_no_exif_is_not_a_failure(aws):
@@ -325,6 +326,59 @@ def test_near_duplicate_search_is_scoped_to_the_session(aws):
     assert "nearDuplicateOf" not in _photo(aws, "PHOTO2")
 
 
+# --- video ---------------------------------------------------------------
+
+
+def _upload_video(aws, photo_id, body, session=SESSION, ext="mp4"):
+    key = f"raw/{session}/{photo_id}.{ext}"
+    aws["s3"].put_object(Bucket=BUCKET, Key=key, Body=body)
+    aws["table"].put_item(
+        Item={
+            "PK": f"PHOTO#{photo_id}",
+            "SK": "META",
+            "photoId": photo_id,
+            "sessionId": session,
+            "status": "unlabeled",
+            "GSI1PK": f"SESSION#{session}",
+            "GSI1SK": "2026-01-01T00:00:00.000000Z",
+        }
+    )
+    return key
+
+
+def test_video_is_hashed_but_gets_no_image_processing(aws):
+    handler._process_object(_upload_video(aws, "VIDEO1", b"fake-mp4-bytes"))
+    item = _photo(aws, "VIDEO1")
+
+    assert len(item["sha256"]) == 64
+    assert item["mediaType"] == "video"
+    assert item["status"] == "unlabeled"
+    assert "phash" not in item
+    assert "width" not in item
+    assert _objects(aws, "derived/VIDEO1/") == []
+
+
+def test_identical_video_bytes_flag_the_second_as_duplicate(aws):
+    body = b"same-video-bytes"
+    handler._process_object(_upload_video(aws, "VIDEO1", body))
+    handler._process_object(_upload_video(aws, "VIDEO2", body))
+
+    assert _photo(aws, "VIDEO1")["status"] == "unlabeled"
+    second = _photo(aws, "VIDEO2")
+    assert second["status"] == "duplicate"
+    assert second["duplicateOf"] == "VIDEO1"
+
+
+def test_reprocessing_the_same_video_is_not_a_duplicate_of_itself(aws):
+    key = _upload_video(aws, "VIDEO1", b"same-video-bytes")
+    handler._process_object(key)
+    handler._process_object(key)
+
+    item = _photo(aws, "VIDEO1")
+    assert item["status"] == "unlabeled"
+    assert "duplicateOf" not in item
+
+
 # --- event plumbing ----------------------------------------------------
 
 
@@ -361,3 +415,14 @@ def test_one_bad_object_does_not_stop_the_batch(aws):
         None,
     )
     assert _photo(aws, "PHOTO1")["sha256"]
+
+
+def test_an_object_with_no_photo_record_is_left_alone(aws):
+    # Copied into raw/ by hand rather than sent through a bot or the app:
+    # no record is invented for it, and its hash is not claimed.
+    key = f"raw/{SESSION}/STRAY.mp4"
+    aws["s3"].put_object(Bucket=BUCKET, Key=key, Body=b"diagnostic-bytes")
+    handler._process_object(key)
+
+    items = aws["table"].scan()["Items"]
+    assert items == []

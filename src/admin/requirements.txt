@@ -1,0 +1,4 @@
+python-ulid==4.0.1
+# The stats page buckets by Israel day; zoneinfo falls back to this package
+# when the runtime image has no system tz database.
+tzdata==2026.5

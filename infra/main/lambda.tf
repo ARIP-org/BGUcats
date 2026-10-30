@@ -1,6 +1,7 @@
 # Packaged by `make build-ingest` (pip install -t build/ingest, then copy
-# handler.py in) so the zip only ever contains what the Lambda actually
-# needs — no Pillow/ImageHash, those belong to the process Lambda.
+# the ingest package in) so the zip only ever contains what the Lambda
+# actually needs — no Pillow/ImageHash, those belong to the process Lambda.
+# The WhatsApp Lambda (whatsapp.tf) ships the same zip.
 data "archive_file" "ingest" {
   type        = "zip"
   source_dir  = "${path.module}/../../build/ingest"
@@ -82,7 +83,7 @@ resource "aws_iam_role_policy" "ingest_lambda_access" {
 resource "aws_lambda_function" "ingest" {
   function_name = "bgucats-ingest"
   role          = aws_iam_role.ingest_lambda.arn
-  handler       = "handler.handler"
+  handler       = "ingest.handler.handler"
   runtime       = "python3.12"
   timeout       = 10
   memory_size   = 256
@@ -97,6 +98,9 @@ resource "aws_lambda_function" "ingest" {
       TELEGRAM_BOT_TOKEN_PARAM      = aws_ssm_parameter.telegram_bot_token.name
       TELEGRAM_WEBHOOK_SECRET_PARAM = aws_ssm_parameter.telegram_webhook_secret.name
       SUBMITTER_HASH_SALT_PARAM     = aws_ssm_parameter.submitter_hash_salt.name
+      # Opened as a Telegram Mini App from the bot's "Pick on map" button.
+      # Telegram only accepts https Mini App URLs, which CloudFront gives us.
+      MAP_PICKER_URL = "https://${aws_cloudfront_distribution.site.domain_name}/map.html"
     }
   }
 }

@@ -1,46 +1,121 @@
 # Campus Cat App — working notes for Claude Code
 
-Authoritative spec: `docs/cat-app-design-spec.pdf` (v2 draft). Read it before
-non-trivial work. This file is the short version of the constraints that are
-easy to violate by reflex.
+Authoritative specs, in order of precedence:
 
-**Which branch is deployed, and what lives on each: `docs/branches.md`.**
-Check it before working — several branches are live, stale or research-only.
+- `docs/recognition-design-addendum.pdf` (accepted 2026-10-28) — **authoritative for
+  recognition.** Amends §10 of the spec and the phase table below.
+- `docs/cat-app-design-spec.pdf` (v2 draft) — authoritative for ingest, storage,
+  processing and security.
+
+Read both before non-trivial work. This file is the short version of the
+constraints that are easy to violate by reflex.
+
+The addendum supersedes the spec's "no machine learning of any kind" in
+phase 1: a frozen recognition model runs in the browser today (1c below). It
+ranks; it never decides.
+
+**`main` is production.** How changes reach it: "Workflow" below.
 
 ## What this project is
 
-A mobile app for identifying, naming, and tracking the ~50 cats on the BGU
-campus. Browse / Identify / Name. Cats are admin-curated; there is no automated
+A mobile app for identifying, naming, and tracking campus cats — starting with the
+~50 on the BGU campus, with an architecture that is deliberately not limited to
+them. Browse / Identify / Name. Cats are admin-curated; there is no automated
 "is this a campus cat" validation.
 
 ## The one thing to understand
 
-Generic image embeddings cluster by **category**, not **individual** — two
-different orange tabbies land closer together than two photos of the same cat
-under different light. Individual recognition needs metric learning, which needs
-many labeled photos per cat, which the app itself has to collect.
+**This is Face ID, for cats.** Not a classifier with one output per cat — a
+detector, an aligner, an embedding network trained with metric learning, cosine
+similarity against an enrolled template, and a threshold with a reject path.
 
-**Every downstream feature is blocked on a data problem, not a code problem.**
-That is why collection is phase 1 and recognition is phase 3.
+The old framing ("a kNN over embeddings with a human picking from a short list"
+*versus* "a model that really recognizes the cat") described one system at two
+confidence levels, not two systems. Only the decision step changes as data
+arrives:
 
-Identify does not need an exact match — it returns a short candidate list a
-human picks from. Each confirmation is a labeled training example.
+| | Face ID | Cats v0 | Cats v2 |
+|---|---|---|---|
+| Enroll | turn your head | pan the camera around the cat | same |
+| Match | embedding vs. template | embedding vs. template | same |
+| Decide | accept, else passcode | accept, else **pick from 3** | accept, else pick from 3 |
 
-## Current phase: 1 — collection and labeling infrastructure
+The architecture shipped next month is the architecture shipped at the end. A
+candidate list is not a placeholder for real recognition; it is real recognition
+at a lower confidence threshold.
 
-Telegram bot ingestion, S3 + DynamoDB, async processing, admin labeling tool.
-**No machine learning of any kind.**
+**Headline metric:** the fraction of queries auto-resolved at k=1 above
+threshold. It starts near zero, ends near one, and every value in between is a
+shippable app.
+
+### What changed from the original spec
+
+The spec assumed recognition had to wait for BGU data. It does not. Public
+cat-identity datasets and animal-specific pretrained models are good enough to
+build and measure the whole recognition path **now**, against real numbers,
+before the first BGU photo is labeled. Generic embeddings (CLIP, ImageNet,
+DINOv2) do cluster by category rather than individual — but models pretrained
+for animal individual discrimination exist, and MegaDescriptor is one.
+
+## Phases
 
 | Phase | Status | Scope |
 |---|---|---|
-| 1 Collection + labeling infra | CURRENT | ingest, storage, processing, admin labeling |
-| 2 Measurement | NEXT | held-out eval set, zero-shot DINOv2 baseline |
-| 3 Fine-tuning | CONDITIONAL | triplet/ArcFace, only if phase 2 numbers justify it |
-| 4 Read path + mobile app | DEFERRED | public API, browse/identify UI, voting |
+| 1a Collection + labeling infra | LIVE | ingest, storage, processing, admin labeling, Capture |
+| 1b Recognition research track | ROUNDS 1–2 DONE, PARALLEL | public datasets, eval harness, zero-shot baseline. Finding: enrollment diversity, not backbone size, is the lever (`research/FINDINGS.md`) |
+| 1c Measure on BGU data | LIVE since 2026-10-29 | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; "Who did you meet?" after each encounter in Capture. No guess was recorded before the 2026-10-29 null-`catId` fix. Shared vectors appear after an admin first opens the Queue |
+| 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights. Re-encounters of known cats are what move the numbers |
+| 3 Fine-tuning on BGU data | CONDITIONAL | only if 1c numbers justify it |
+| 4 Read path + mobile app | DEFERRED | public API, browse UI, voting |
 
-## Hard constraints (spec §10)
+**1b has no dependency on 1a.** It reads public datasets from disk and touches no
+Lambda, no S3 bucket, and no DynamoDB table.
 
-- **Build phase 1 only.** No browse, identify, voting, or polls. No embedding model.
+**1c is where they meet**, deliberately small: the 1b model, exported to ONNX,
+runs in the browser — on every card in the labeling desk, after each encounter in Capture — and is
+scored against the labels admins give anyway. It decides nothing — see
+"Recognition in the app" below. First BGU numbers (2026-10-29, 19 cats): right cat first
+on 3–5 of 13 sessions, in the top 3 on 9–10 of 13 (`research/FINDINGS.md`,
+round 3).
+
+**The risk, stated once:** the ML track is more fun than the ingest track, and if
+it eats the ingest track there is never any BGU data — the one asset here that
+cannot be downloaded. 1a stays the priority; 1b is what happens when 1a is
+blocked on someone else.
+
+## Workflow
+
+- **`main` is production.** What is on `main` is what runs in AWS. There are
+  no long-lived feature or "preprod" branches. The old stack
+  (`admin-labeling-tool` → `app-preprod` → `recognition-labeling`) was merged
+  into `main` on 2026-10-29 and survives as `rollback/*` tags only.
+- **Work on a short-lived branch**, one change per branch, and open a pull
+  request to `main`. CI runs lint, tests and `terraform plan` on it. The owner
+  reads the plan and merges.
+- **Merging is deploying.** A push to `main` runs `.github/workflows/deploy.yml`,
+  which plans and applies `infra/main` under a GitHub OIDC role. Runbook,
+  post-deploy checks and rollback: `docs/deploy.md`.
+- **Never deploy by hand and never push to `main`.** No `terraform apply`,
+  `make tf-apply`, `make site-invalidate` or AWS write calls from a codespace
+  or a Claude session. The codespace holds no AWS credentials; read-only
+  debugging goes through `aws sso login` (`docs/codespaces.md`).
+- **Two exceptions, both owner-only:** `infra/bootstrap` (the state backend and
+  the GitHub roles; it cannot deploy itself) and `make model-publish` (needs
+  torch, so it is not in CI). Both are in `docs/deploy.md`.
+- **Rollback is `git revert`** of the merge commit, merged like any change.
+- **Update the docs in the same PR** as the change: `docs/deploy.md` when the
+  deploy changes, `docs/app-backlog.md`, `research/FINDINGS.md`, and this
+  file when a constraint or a phase changes.
+
+## Hard constraints
+
+### Collection path (spec §10)
+
+- **No browse, identify, voting, or polls in the app yet.** Phase 4 — with
+  one deliberate early piece: Capture's cat guesses after each encounter (1c), shown only
+  to signed-in collaborators and admins, never to the public. It is there
+  to reward re-encounters and to measure the "pick from 3" loop, not as the
+  Identify feature; see "Recognition in the app" below.
 - **Do not attach Lambdas to a VPC.** No NAT gateway, no subnets, no security
   groups. Lambda outside a VPC has full internet access; S3, DynamoDB and the
   Telegram API are all public endpoints. (§8.1)
@@ -52,20 +127,271 @@ Telegram bot ingestion, S3 + DynamoDB, async processing, admin labeling tool.
 - **Every write is idempotent on the ULID.** Write order: DynamoDB record as
   `pending`, then S3, then flip to `unlabeled`. A record marked ready whose
   object never landed is a silent failure that surfaces months later.
-- **The admin labeling tool is in scope for phase 1.** Queue view, session grid,
-  merge and reject actions. Build it in week one — a 2,000-image backlog never
-  gets climbed.
+  A `pending` record sits on GSI2 as `STATUS#pending` from the start, and
+  Stats → Bot health lists any still pending after an hour. A failed or
+  timed-out bot fetch (`OSError`, not just `URLError`) leaves the record
+  pending and asks the sender to send it again; neither platform redelivers
+  an acknowledged update.
+- **The admin labeling tool is in scope for 1a.** Queue view, session grid,
+  merge and reject actions. A 2,000-image backlog never gets climbed.
 - **Prefer boring, inspectable choices.** Portfolio project; every decision
   should be explainable in an interview.
+
+## The app (web/) — labeling desk and Capture, one PWA
+
+The admin tool is installable ("Add to Home Screen") and is also how invited
+collaborators photograph cats. It **complements** the bots, never replaces
+them: Telegram and WhatsApp keep working unchanged, and the app is a third
+channel (`channel = "app"`) into the same table, bucket and process Lambda.
+
+- **Two roles on the one allowlist item** (`ADMIN#{email}`, field `role`).
+  `admin` = everything. `collaborator` = Capture (with the cat guesses)
+  and browsing the cats, nothing else: no queue or labeling, no deleting, merging, creating or renaming cats,
+  no stats or people. **No role field means admin**, so the
+  Terraform bootstrap item and `make admin-add` keep full access. The API
+  enforces this per route (`ROUTES` in `src/admin/handler.py`, last column);
+  the UI only hides what would be refused.
+- **An encounter is a Session opened deliberately** ("Start an encounter" …
+  "Done"), so it is an identity cluster by construction.
+- **Same write order as the bots, split across calls:** record as `pending`
+  (`POST /api/encounters/{id}/media`) → the phone uploads to
+  `raw/{sessionId}/{photoId}.{ext}` with a presigned POST that pins key, type
+  and size → `POST /api/photos/{id}/complete` confirms the object and sniffs
+  its magic bytes before flipping to `unlabeled`. The status flip is
+  conditional on `pending`, so a duplicate verdict from the process Lambda
+  is never overwritten.
+- **IDs are ULIDs minted on the phone**, so the offline outbox (web/outbox.js)
+  can retry anything and land on the same records.
+- **The outbox writes a photo's bytes once, never again.** Its state lives
+  in its own IndexedDB store, because Safari can refuse to re-store a Blob
+  read back from IndexedDB. Every request has a timeout. One photo's failure
+  never holds up the rest, and the screen says why it is retrying. An
+  encounter reaches the API with its first photo, so empty ones are never
+  written. Before 2026-10-29, 48 photos stalled for an hour without a word.
+- **Location comes from the phone's GPS at the moment of capture**, with its
+  accuracy (`locationSource = "app-gps"`, `locationAccuracyM`), rounded to
+  3 decimals like everything else.
+- **Installed app only.** A browser tab gets the install page (web/install.js:
+  what the app is for, how to use it, how to install it — Hebrew, English,
+  Russian, Arabic) instead of the app. It is a front door, not security: the
+  API still checks every call. `?browser` opens the app in a tab anyway, for
+  when the installed app cannot sign in on some phone.
+- **Sign-in always shows Google's account chooser** (`prompt=select_account`,
+  which Cognito forwards only with managed login — `managed_login_version = 2`
+  in cognito.tf). Sign-out only forgets the app's tokens and stays in the
+  app; a sign-in that the allowlist refuses forgets its tokens too, so nobody
+  is stuck retrying the wrong account.
+- **The service worker (web/sw.js) is network-first** and never touches
+  `/api/`, photos or other origins — the distribution's no-caching rule still
+  means a deploy reaches everyone on their next load. The one exception is
+  the content-addressed `/model/{version}/`, cached first (see 1c below).
+- **Uploads keep going after the app is left, where the browser allows
+  it.** Chrome on Android has Background Sync: the outbox registers it with
+  every photo and when the app is hidden, and the service worker runs the
+  same three steps on the same IndexedDB queue. The app's tokens are copied
+  to IndexedDB (`bgucats-auth`), because a worker has no localStorage. An
+  iPhone has no such API: Safari suspends a hidden app within seconds, so
+  uploads move only while it is open. The app keeps the screen awake while
+  files are waiting (Wake Lock) and says so on screen. Three uploads run at
+  once.
+- **Caching lives in app.js, not the service worker.** Presigned photo URLs
+  carry a long `response-cache-control`, and the app reuses the first URL it
+  saw for each object until just before it expires (`stablePhotoUrl`).
+  Without that, every new signature is a cache miss and every screen
+  downloads every photo again. Screens reuse their GETs for 15 s, then show
+  the last answer at once and redraw only if a refresh changed something
+  (`cachedGet`). Any action clears that memory.
+
+### Recognition in the app (1c — web/recognition.js)
+
+Two uses of one model, kept apart on purpose. The admin-side guess
+measures **the model**. The contributor's answer, scored against the
+admin's label, measures **the product loop** ("pick from 3"), and earns its
+place by what only a person next to the cat can do: take a better photo
+when unsure, and come back to cats already met.
+
+#### In the labeling desk (admins)
+
+- **Shown, and recorded first.** The model ranks every known cat for each
+  queue session and the ranking is recorded (`POST /api/sessions/{id}/prediction`)
+  *before* anyone labels it. Its top three are shown on the session card
+  ("Model's guess", with cosine similarity) and at the top of the picker,
+  where one tap labels. Until 2026-10-29 the guess was hidden until after
+  the label, to keep labels independent of it. The admin decided it does
+  not sway their judgment and wanted it in plain sight. The model's score
+  is still honest, because its guess is fixed before the label. Labels made
+  since then are no longer independent of the guess. Tapping a guess on the
+  card only opens the picker: a guess is never a label by itself.
+- **A guess made after the label is not a measurement.** The write is one
+  DynamoDB transaction conditional on the session having no `catId` — absent
+  *or null*: every session is written with `catId = null`, and until
+  2026-10-29 `attribute_not_exists` alone refused all of them as labeled; the
+  first guess per model version wins (`SESSION#{id}` / `PREDICTION#{version}`,
+  listed through GSI2 `ENTITY#PREDICTION`). A merge counts as a label.
+- **It only ranks.** No auto-accept, no "new cat" verdict, and the manifest
+  ships `"thresholds": null`: on BGU photos the top scores of right guesses,
+  wrong guesses and never-seen cats overlap. Thresholds are earned from the
+  live record, not borrowed from polar bears.
+- **The browser does the ML; the API stays boring.** The API hands out the
+  labeled photos (`GET /api/recognition/gallery`) and stores and joins
+  guesses and contributor answers (`GET /api/recognition/predictions`). No
+  model code under `src/`, no torch near a Lambda. These are ADMINS; the
+  shared-vector read and a contributor's own pick are the only member routes.
+- **The model is published, not deployed by Terraform.** `make model-export`
+  (research env) then `make model-publish` uploads `model/{version}/` to the
+  admin web bucket — model, and ONNX Runtime Web self-hosted from a
+  sha512-checked npm tarball, never a CDN in a page holding sign-in tokens —
+  and writes `model/manifest.json` last. The version is a hash of the model,
+  so sw.js caches `/model/{version}/` cache-first; the manifest is never cached.
+- **Pixels need CORS.** The media bucket allows GET from the app's own origin
+  only, so a canvas can read a presigned photo. Every read still needs a URL
+  the API signed.
+- **Cost:** ~40 MB per device per model version (29.5 MB int8 model + 10 MB
+  runtime), ~150–250 MB of memory while running. AWS cost is cents: storage
+  and CloudFront egress.
+
+#### Shared vectors
+
+- **Embedded once, by an admin's browser.** After learning the labeled photos
+  it uploads their vectors (`POST /api/recognition/vectors`, ADMINS, item
+  `PHOTO#{id}` / `VECTOR#{version}`, listed through GSI2 `VECTOR#{version}`).
+  Every phone — and every other admin device — downloads them
+  (`GET /api/recognition/vectors`, any member, paged) instead of embedding
+  the gallery: ~4 KB per photo, about 1 MB today. The Queue runs the model
+  even when it is empty, so any admin's visit keeps the shared copy current.
+  The admin role needs `BatchWriteItem` for this, and `ConditionCheckItem` for
+  the blind-guess transaction. Both were missing until 2026-10-29.
+- **Same pipeline on both sides.** Gallery and query vectors both come from
+  the browser (canvas resize, the same ONNX graph), so they agree; Python
+  vectors differ slightly (cosine ~0.986) and are never mixed in.
+- Deleting a photo deletes its vectors. Vectors are only templates while the
+  photo is labeled.
+
+#### In Capture (everyone: contributors and admins)
+
+- **On unless turned off** (since 2026-10-29; it used to be opt-in). The
+  model, about 40 MB, downloads once in the background from the first visit.
+  A phone in data-saver mode is asked first. "Turn off" is on the Capture
+  screen. A missing or failed model never blocks or slows an upload.
+- **Guessed while shooting, asked after Done.** Each photo is embedded in
+  the background as it is taken (up to 8 per encounter; the vectors stay in
+  memory). "Done" opens the encounter's result, "Who did you meet?", with
+  the photos and their upload progress. It asks "Is it one of these?" over
+  three cats with covers and "met N×" (admins see the similarity),
+  "Another cat…" (every cat, the model's order first), "A cat that isn't
+  here", "Not sure", "Take more photos" and "Skip". The encounter stays open
+  until then, so an unsure guess can still become a better photo. The
+  ranking is kept with the encounter, so a reload lands back on the result
+  screen with its guess. The first guess alone is right about one time in
+  three; the three about three in four.
+- **The answer is kept apart from the label.** It rides in the outbox with its
+  encounter (`POST /api/encounters/{id}/pick`, own encounter only, latest
+  answer wins, item `SESSION#{id}` / `PICK`). The labeling desk never reads
+  it, so the admin labels without seeing the contributor's answer. "Your
+  recent encounters" later shows "you: X ✓/✗" and "model: Y ✓/✗" against
+  the label.
+- **The reward is the re-encounter.** The answered screen says "Encounter
+  #N with this cat" — re-encounters are what research/FINDINGS.md found
+  matter most. "Next cat" starts the next encounter straight away.
+- **Replay** (Stats → Recognition model) re-runs the ranking over labeled
+  sessions, each hidden in turn — split by session, never by photo. Same
+  scoring code as the live record (`summarize` in recognition.js).
+
+### Research track
+
+- **`research/` imports nothing from `src/`.** No boto3, no AWS, no Lambda
+  handler code. It must stay independently reviewable and discardable.
+- **Research dependencies never enter `requirements.txt` or `src/*/requirements.txt`.**
+  Torch alone would blow the 250MB Lambda package limit. `research/requirements.txt`
+  is a separate world.
+- **No softmax classifier over our cats, ever.** It cannot add cat #51, cannot say
+  "I don't know this one", and needs retraining per cat. It would feel like
+  progress and is a dead end. This is permanent, not "for now" — it is also what
+  makes scaling past one campus possible at all.
+- **No depth sensor.** TrueDepth and LiDAR are the tempting analogue to Face ID's
+  IR projector and are a trap: wrong range, wrong subject cooperation, for a cat
+  two metres away under a bush.
+- **No nose-print biometrics in v1.** The published work is thin — one 70-cat,
+  700-image study — and it needs a cooperative close-up we will never get.
+
+## Recognition architecture
+
+```
+query burst (1-2 s of frames)
+  → cat detector (body bbox)
+  → head detector + 48 facial landmarks → align
+  → two embeddings:
+        E_face   aligned head crop   — geometry, facial markings
+        E_coat   body crop           — coat pattern and colour
+  → fused similarity vs. enrolled templates → ANN top-50
+  → local-feature rerank of those 50 only (ALIKED / DISK + LightGlue)
+  → accept / top-k / "new cat"
+```
+
+- **Two streams, because the failure mode is solid-colour cats.** Coat pattern
+  carries nearly all the signal for a calico and nearly none for a black cat;
+  face geometry carries it for the black cat. A single whole-image embedding
+  blends the two *and* picks up the background.
+- **Local-feature reranking is the highest-value trick available, because it
+  needs no labels at all.** Too slow over the whole gallery, so it only ever
+  reranks the ANN top-50.
+- **Templates, not centroids.** Store several embeddings per cat. Frontal and
+  profile views sit far apart in embedding space, and averaging them produces a
+  vector that matches neither.
+- **Enrollment is the Face ID insight:** *record ten seconds panning around the
+  cat.* 30–100 frames, identity guaranteed, pose and light varied, with a free
+  quality filter. This is the session-as-identity-cluster idea extended to UX.
+- **Mirror it on the query side: identify a burst, not a frame.** Embed every
+  frame of a 1–2 second capture and aggregate the ranked lists.
+
+### Three axes, improving independently
+
+| Axis | v0 | Later | Needs BGU data? |
+|---|---|---|---|
+| Embedding quality | zero-shot MegaDescriptor | fine-tuned on BGU + public | yes |
+| Enrollment richness | multi-frame video template | same | no |
+| Decision policy | top-5 human pick | top-1 auto-accept + reject | calibration only |
+
+The right first baseline is **not** zero-shot DINOv2. It is MegaDescriptor-L-384
+plus a local-feature reranker — someone else already paid for the expensive
+pretraining.
+
+## Open-set is the hard requirement
+
+"Is this a cat I know, or a new one?" is harder than ranking, and it is the
+actual product question.
+
+- Score on similarity to the best-matching enrolled template.
+- **Calibrate the threshold on held-out identities, never held-out photos.**
+  Identities the model has never enrolled are the only honest proxy for cat #51.
+- **Report knowns and unknowns separately** — balanced accuracy on each (BAKS and
+  BAUS). An aggregate hides which half is failing.
+- **Bias the threshold toward false "new cat" verdicts.** That costs an admin one
+  merge, and the labeling tool already has a merge action. The opposite error
+  silently corrupts the dataset and surfaces months later.
+
+## Evaluation
+
+- **Split by session, never by photo.** Two frames from one burst are
+  near-identical; one in train and one in test makes reported accuracy fiction.
+- **One listing or one source folder counts as one session.** Every photo in a
+  shelter listing was taken in one sitting, against the same wall, in the same
+  light. Same rule as above, different vocabulary — and the easiest way to
+  accidentally report fiction when using public data.
+- **Open-set from the first run.** Hold out whole identities, not just photos.
+- Report top-1 and top-5 separately, plus a per-cat breakdown — an aggregate
+  hides that every error is a black cat.
+- **Public-data numbers are never reported as the system's accuracy.** Shelter
+  portraits against a studio wall are a different world from a cat under a bench
+  at dusk. Public data validates the machinery; only BGU data measures the product.
 
 ## Data model essentials
 
 - **ULID** is the join key everywhere: DynamoDB PK, S3 key prefix, later the
   vector ID. Chosen over UUIDv4 for lexicographic time-ordering.
-- **Session = one encounter with one cat = a guaranteed identity cluster.** This
-  is the highest-leverage decision in the collection plan. Same submitter within
-  a 10-minute idle window joins the same session; Telegram media groups always
-  map to one session.
+- **Session = one encounter with one cat = a guaranteed identity cluster.** Same
+  submitter within a 10-minute idle window joins the same session; Telegram media
+  groups always map to one session.
 - S3 layout:
   ```
   raw/{sessionId}/{photoId}.{ext}        original, write-once, never mutated
@@ -81,34 +407,48 @@ Telegram bot ingestion, S3 + DynamoDB, async processing, admin labeling tool.
 
 - pHash + SHA-256. Near-duplicates are **flagged, not silently dropped** — a
   burst of similar frames is legitimate.
+- An object under `raw/` with no photo record is skipped, not processed:
+  the write order means it did not come through a bot or the app.
 - Derivatives: 256px thumbnail, 1024px medium, WebP.
 - EXIF: extract capture timestamp and GPS into the record, then **strip all EXIF
   from every derivative**. Store location rounded to ~100m — it must not reveal
   precisely where a contributor was standing.
 
-## Evaluation (built during phase 1, not phase 2)
+## Data sources
 
-**Split by session, never by photo.** Two frames from one burst are
-near-identical; one in train and one in test makes reported accuracy fiction.
-Report top-1 and top-5 recall separately plus a per-cat breakdown — an aggregate
-hides that all errors concentrate on the tabbies.
-
-## Security (§8.5)
-
-- Validate the `X-Telegram-Bot-Api-Secret-Token` header on every webhook call.
-  Without it the endpoint is an open upload to anyone who finds the URL.
-- Cap file size; validate content type by magic bytes, not filename extension.
-- Rate-limit per submitter hash at the Lambda level.
-- Salt the submitter hash, salt in SSM. Storing raw Telegram user IDs makes the
-  table a personal-data store for no benefit.
-
-## Stack
-
-Python 3.12 (Pillow, imagehash) · Terraform · Lambda, no VPC · API Gateway HTTP
-API · S3 + DynamoDB on-demand · secrets in SSM Parameter Store (SecureString).
+| Tier | Source | Role |
+|---|---|---|
+| 1 | CatIndividualImages (509 ids / 13,021 imgs, CC BY 4.0) | best single fit |
+| 1 | HelloStreetCat (69 cats / 2,796 imgs) | closest domain match — uncooperative street cats |
+| 1 | PetFace (257k ids) | has an unseen-individual benchmark; **non-commercial research only**, gated |
+| 1 | WildlifeReID-10k | eval harness, cross-species pretraining |
+| 1 | CatFLW + its detector | the alignment step |
+| 2 | Petfinder / RescueGroups APIs | one listing = one individual with several photos; we ship weights, not photos |
+| 3 | BGU campus | calibrates thresholds, fine-tunes, and is the only source we may quote numbers from |
 
 ## Do not
 
 - Scrape the Instagram/Facebook archives. Meta's terms prohibit it and it is
   awkward to explain in an interview. Contact the community admins instead. (§4.3)
-- Commit cat photos, datasets, exports, or `.tfvars` — see `.gitignore`.
+- Scrape any site whose terms forbid it. The Kaggle "Cat Re-Identification Image
+  Dataset" is scraped from neko-jirushi.com with unclear licensing — a cautionary
+  example, not a source.
+- Commit cat photos, datasets, exports, model weights, or `.tfvars` — see `.gitignore`.
+- Push to `main`, apply Terraform, or call AWS with write intent from a session.
+  See "Workflow".
+
+## Stack
+
+**Collection:** Python 3.12 (Pillow, imagehash) · Terraform · Lambda, no VPC ·
+API Gateway HTTP API · S3 + DynamoDB on-demand · secrets in SSM Parameter Store
+(SecureString).
+
+**Delivery:** GitHub Actions. CI assumes a plan-only OIDC role on every PR;
+deploys assume a separate OIDC role that only jobs in the `production`
+environment can get. No long-lived AWS keys anywhere (`infra/README.md`).
+
+**Research:** Python 3.12 · PyTorch · timm · wildlife-datasets · kornia. Local
+only; no AWS.
+
+**In the browser:** MegaDescriptor-T-224, int8 ONNX, on ONNX Runtime Web 1.17.3
+(WebAssembly, one thread) — self-hosted under the admin site's `model/`.

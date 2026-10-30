@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>חתולי בן-גוריון</title>
+    <meta
+      name="description"
+      content="אנחנו בונים תיעוד אמיתי של החתולים שחיים בקמפוס. שלחו תמונות, ובהמשך תציעו להם שמות ותצביעו."
+    />
+    <meta name="theme-color" content="#fbf6ec" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="חתולי בן-גוריון" />
+    <meta
+      property="og:description"
+      content="שלחו תמונות של חתולי הקמפוס — ואת השמות שלהם תבחרו אתם, בהצבעה."
+    />
+    <!-- Absolute, and JPEG rather than WebP: link previews in WhatsApp
+         groups are how this page actually spreads. -->
+    <meta property="og:image" content="https://d2coegt5ci9g2o.cloudfront.net/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Pangolin&family=Playpen+Sans+Hebrew:wght@500;700&family=Rubik:wght@400;500;700&display=swap"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script>
+      // Pick the language before first paint, so a Russian or English
+      // reader never sees the layout flip from right-to-left. The text
+      // itself is swapped at the end of <body>. Order: an explicit ?lang=
+      // link, then a choice made on this page before, then the browser's
+      // languages, then Hebrew. "iw" is how older Android spells Hebrew.
+      (() => {
+        const pick = (code) => {
+          code = (code || "").toLowerCase();
+          if (code.startsWith("iw")) return "he";
+          return ["he", "en", "ru"].find((lang) => code.startsWith(lang));
+        };
+        let saved = null;
+        try {
+          saved = localStorage.getItem("bgucats.lang");
+        } catch {}
+        const lang =
+          pick(new URLSearchParams(location.search).get("lang")) ||
+          pick(saved) ||
+          (navigator.languages || [navigator.language]).map(pick).find(Boolean) ||
+          "he";
+        document.documentElement.lang = lang;
+        document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
+      })();
+    </script>
+  </head>
+  <body>
+    <!-- Doodle library. Hand-drawn-ish ink cats, used through <use>. Sized
+         0×0 rather than display:none — Chrome drops filters defined inside
+         a display:none SVG. -->
+    <svg class="defs" width="0" height="0" aria-hidden="true">
+      <defs>
+        <filter id="wobble">
+          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" />
+          <feDisplacementMap in="SourceGraphic" scale="2.4" />
+        </filter>
+
+        <path
+          id="head"
+          d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 60C102 84 84 98 60 98C36 98 18 85 16 61C14 43 17 25 23 9Z"
+        />
+        <path id="whiskers" d="M19 68L-3 62M18 75L-2 79M101 68L123 62M102 75L122 79" />
+        <path id="nose" d="M55 69L65 69L60 75Z" />
+        <path id="mouth" d="M60 75C59 80 54 82 50 79M60 75C61 80 66 82 70 79" />
+
+        <!-- midnight: all black, big round eyes -->
+        <symbol id="cat-midnight" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ink" />
+            <use href="#whiskers" />
+            <circle cx="42" cy="57" r="11.5" class="fill-paper" stroke="none" />
+            <circle cx="78" cy="57" r="11.5" class="fill-paper" stroke="none" />
+            <circle cx="45" cy="59" r="5.5" class="fill-ink" stroke="none" />
+            <circle cx="81" cy="59" r="5.5" class="fill-ink" stroke="none" />
+            <circle cx="46.5" cy="57" r="1.8" class="fill-paper" stroke="none" />
+            <circle cx="82.5" cy="57" r="1.8" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-pink" stroke="none" />
+            <use href="#mouth" class="stroke-paper" />
+          </g>
+        </symbol>
+
+        <!-- tuxedo: black with a white muzzle, slit pupils -->
+        <symbol id="cat-tuxedo" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ink" />
+            <use href="#whiskers" />
+            <path
+              d="M40 73C43 63 53 60 60 65C67 60 77 63 80 73C82 87 72 94 60 94C48 94 38 87 40 73Z"
+              class="fill-paper"
+              stroke="none"
+            />
+            <path d="M32 55C37 48 47 48 51 55C47 62 37 62 32 55Z" class="fill-paper" stroke="none" />
+            <path d="M69 55C73 48 83 48 88 55C83 62 73 62 69 55Z" class="fill-paper" stroke="none" />
+            <ellipse cx="42" cy="55" rx="2.4" ry="5.6" class="fill-ink" stroke="none" />
+            <ellipse cx="78" cy="55" rx="2.4" ry="5.6" class="fill-ink" stroke="none" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <!-- ginger: orange tabby with forehead stripes -->
+        <symbol id="cat-ginger" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-ginger" />
+            <use href="#whiskers" />
+            <path d="M52 37L54 47M60 35L60 46M68 37L66 47M18 50L28 53M17 58L27 59M102 50L92 53M103 58L93 59" />
+            <circle cx="42" cy="58" r="6.5" class="fill-ink" stroke="none" />
+            <circle cx="78" cy="58" r="6.5" class="fill-ink" stroke="none" />
+            <circle cx="44" cy="56" r="2" class="fill-paper" stroke="none" />
+            <circle cx="80" cy="56" r="2" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <!-- fluff: white long-hair, asleep -->
+        <symbol id="cat-fluff" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <path
+              d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 104 57L111 63L104 68L109 75L100 79L103 87L92 89C84 97 72 99 60 99C48 99 36 97 28 89L17 87L20 79L11 75L16 68L9 63L16 57C14 43 17 25 23 9Z"
+              class="fill-paper"
+            />
+            <path d="M34 58C38 63 46 63 50 58M70 58C74 63 82 63 86 58" />
+            <ellipse cx="34" cy="71" rx="6" ry="3.5" class="fill-pink" stroke="none" opacity="0.7" />
+            <ellipse cx="86" cy="71" rx="6" ry="3.5" class="fill-pink" stroke="none" opacity="0.7" />
+            <use href="#nose" class="fill-pink" />
+            <use href="#mouth" />
+            <path d="M104 6H113L104 15H113M116 -4H122L116 2H122" class="thin" />
+          </g>
+        </symbol>
+
+        <!-- calico: patches of ginger and ink -->
+        <symbol id="cat-calico" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-paper" stroke="none" />
+            <path
+              d="M23 9C29 17 36 26 42 33C46 32 49 31 52 31C51 42 44 50 34 50C25 50 19 45 17 38C17 28 19 18 23 9Z"
+              class="fill-ginger"
+              stroke="none"
+            />
+            <path
+              d="M98 9C91 17 85 25 78 33C75 32 71 31 68 31C71 40 79 45 90 43C98 41 102 37 104 33C103 24 101 16 98 9Z"
+              class="fill-ink"
+              stroke="none"
+            />
+            <use href="#head" fill="none" />
+            <use href="#whiskers" />
+            <ellipse cx="42" cy="58" rx="4.6" ry="6.4" class="fill-ink" stroke="none" />
+            <ellipse cx="78" cy="58" rx="4.6" ry="6.4" class="fill-ink" stroke="none" />
+            <circle cx="43.5" cy="56" r="1.6" class="fill-paper" stroke="none" />
+            <circle cx="79.5" cy="56" r="1.6" class="fill-paper" stroke="none" />
+            <use href="#nose" class="fill-pink" />
+            <use href="#mouth" />
+          </g>
+        </symbol>
+
+        <!-- grump: grey tabby, unimpressed -->
+        <symbol id="cat-grump" viewBox="-6 0 132 104">
+          <g class="ink-lines">
+            <use href="#head" class="fill-grey" />
+            <use href="#whiskers" />
+            <path d="M54 36L55 45M60 35L60 44M66 36L65 45" />
+            <path d="M33 58H51C51 64 47 67 42 67C37 67 33 64 33 58Z" class="fill-paper" />
+            <path d="M69 58H87C87 64 83 67 78 67C73 67 69 64 69 58Z" class="fill-paper" />
+            <circle cx="42" cy="61" r="3.4" class="fill-ink" stroke="none" />
+            <circle cx="78" cy="61" r="3.4" class="fill-ink" stroke="none" />
+            <path d="M32 50L49 54M88 50L71 54" />
+            <use href="#nose" class="fill-ink" stroke="none" />
+            <path d="M52 82C56 79 64 79 68 82" />
+          </g>
+        </symbol>
+
+        <!-- a cat hooked over an edge: just ears, eyes and two paws -->
+
+        <symbol id="paw" viewBox="0 0 40 40">
+          <path d="M20 21C12 21 7 29 10 34C13 38 17 36 20 36S27 38 30 34C33 29 28 21 20 21Z" />
+          <ellipse cx="8.5" cy="17" rx="3.8" ry="4.8" transform="rotate(-24 8.5 17)" />
+          <ellipse cx="15.5" cy="9.5" rx="3.8" ry="5" transform="rotate(-8 15.5 9.5)" />
+          <ellipse cx="24.5" cy="9.5" rx="3.8" ry="5" transform="rotate(8 24.5 9.5)" />
+          <ellipse cx="31.5" cy="17" rx="3.8" ry="4.8" transform="rotate(24 31.5 17)" />
+        </symbol>
+
+        <!-- tally marks, for the name ballot -->
+        <symbol id="tally-2" viewBox="0 0 16 26">
+          <path d="M4 3V23M11 4V23" class="ink-lines thin" />
+        </symbol>
+        <symbol id="tally-4" viewBox="0 0 30 26">
+          <path d="M4 3V23M11 4V23M18 3V22M25 4V23" class="ink-lines thin" />
+        </symbol>
+        <symbol id="tally-5" viewBox="0 0 30 26">
+          <path d="M4 3V23M11 4V23M18 3V22M25 4V23M1 18L29 7" class="ink-lines thin" />
+        </symbol>
+
+        <symbol id="icon-camera" viewBox="0 0 120 104">
+          <g class="ink-lines">
+            <path
+              d="M20 34H38L45 23H75L82 34H100C104 34 107 37 107 41V84C107 88 104 91 100 91H20C16 91 13 88 13 84V41C13 37 16 34 20 34Z"
+              class="fill-paper"
+            />
+            <circle cx="60" cy="62" r="18" class="fill-ginger" />
+            <circle cx="60" cy="62" r="8" class="fill-ink" stroke="none" />
+            <circle cx="93" cy="45" r="3" class="fill-ink" stroke="none" />
+            <path d="M24 27H34" />
+          </g>
+        </symbol>
+
+        <symbol id="icon-pin" viewBox="0 0 120 104">
+          <g class="ink-lines">
+            <path d="M30 96C42 92 78 92 90 96" class="thin" />
+            <path d="M60 96C60 96 32 66 32 44C32 28 45 15 60 15S88 28 88 44C88 66 60 96 60 96Z" class="fill-ginger" />
+            <g transform="translate(44 26) scale(0.8)" class="fill-ink" stroke="none">
+              <use href="#paw" width="40" height="40" />
+            </g>
+          </g>
+        </symbol>
+
+      </defs>
+    </svg>
+
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="חתולי בן-גוריון — דף הבית" data-i18n-label="brand.label">
+        <svg class="doodle brand-mark" aria-hidden="true"><use href="#cat-midnight" /></svg>
+        <span data-i18n="brand.name">חתולי בן-גוריון</span>
+      </a>
+      <div class="topbar-end">
+        <!-- Hidden until the script below wires it up: without JS the
+             buttons would do nothing. -->
+        <div class="langs" role="group" aria-label="שפה" data-i18n-label="lang.label" hidden>
+          <button type="button" data-lang="he" lang="he" title="עברית" aria-pressed="true">עב</button>
+          <button type="button" data-lang="en" lang="en" title="English" aria-pressed="false">EN</button>
+          <button type="button" data-lang="ru" lang="ru" title="Русский" aria-pressed="false">RU</button>
+        </div>
+        <a class="pill" href="https://t.me/bgucatsbot">
+          <span dir="ltr">@bgucatsbot</span>
+          <svg class="tg" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21.5 4.2 2.9 11.4c-1.3.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.6Zm-4 3.4-8.4 7.6-.3 3.4-1.5-4.8 9.7-6.1c.4-.3.9 0 .5-.1Z" />
+          </svg>
+        </a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-text">
+          <p class="kicker" data-i18n="hero.kicker">אוניברסיטת בן-גוריון · באר שבע</p>
+          <h1>
+            <span class="line" data-i18n="hero.l1">כולם מכירים את חתולי הקמפוס.</span>
+            <span class="line" data-i18n="hero.l2"><span class="underlined">אף אחד לא יודע איך קוראים להם.</span></span>
+          </h1>
+          <p class="lede" data-i18n="hero.lede">
+            בערך חמישים חתולים חיים בקמפוס הזה. יש להם טריטוריות, שגרות ודעות
+            נחרצות מאוד על האוכל שלכם. מה שאין להם זה שמות שכולם מכירים — ואת
+            השמות האלה תבחרו אתם. זה מתחיל בתמונות שלכם.
+          </p>
+
+          <a class="cta" href="https://t.me/bgucatsbot">
+            <svg class="tg" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21.5 4.2 2.9 11.4c-1.3.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.6Zm-4 3.4-8.4 7.6-.3 3.4-1.5-4.8 9.7-6.1c.4-.3.9 0 .5-.1Z" />
+            </svg>
+            <span>
+              <b data-i18n="hero.cta">שלחו תמונה של חתול</b>
+              <small data-i18n="hero.ctaSmall">נפתח בטלגרם אצל <span dir="ltr">@bgucatsbot</span></small>
+            </span>
+          </a>
+        </div>
+
+        <figure class="hero-photo">
+          <!-- One tilted layer so the peeking cat and the frame share a
+               coordinate system: head behind the frame, paws in front of
+               it, which is what makes it read as peeking over the edge. -->
+          <div class="tilt">
+            <svg class="doodle peek-head" viewBox="0 0 120 80" aria-hidden="true">
+              <g class="ink-lines">
+                <path
+                  d="M23 9C29 17 36 26 42 33C53 29 67 29 78 33C85 25 91 17 98 9C103 24 106 42 105 80H15C14 43 17 25 23 9Z"
+                  class="fill-ink"
+                />
+                <g class="eyes">
+                  <circle cx="43" cy="52" r="9.5" class="fill-paper" stroke="none" />
+                  <circle cx="77" cy="52" r="9.5" class="fill-paper" stroke="none" />
+                  <circle cx="44" cy="56" r="4.6" class="fill-ink" stroke="none" />
+                  <circle cx="78" cy="56" r="4.6" class="fill-ink" stroke="none" />
+                </g>
+              </g>
+            </svg>
+            <div class="polaroid">
+              <img
+                src="/cats/ginger.webp"
+                width="750"
+                height="1000"
+                alt="חתול ג'ינג'י-לבן עם עיניים ירוקות, מביט ישר למצלמה מקרוב"
+                data-i18n-alt="hero.alt"
+              />
+              <figcaption data-i18n="hero.caption">צולם בקמפוס. שם: אתם תחליטו.</figcaption>
+            </div>
+            <svg class="doodle peek-paws" viewBox="0 0 120 26" aria-hidden="true">
+              <g class="ink-lines">
+                <path d="M15 20C15 4 37 4 37 20C37 25 15 25 15 20Z M83 20C83 4 105 4 105 20C105 25 83 25 83 20Z" class="fill-ink" />
+                <path d="M22 14V20M30 14V20M90 14V20M98 14V20" class="stroke-paper thin" />
+              </g>
+            </svg>
+          </div>
+          <svg class="doodle float f1" aria-hidden="true"><use href="#cat-tuxedo" /></svg>
+          <svg class="doodle float f2" aria-hidden="true"><use href="#cat-fluff" /></svg>
+          <svg class="doodle float f3" aria-hidden="true"><use href="#cat-calico" /></svg>
+        </figure>
+      </section>
+
+      <div class="trail" aria-hidden="true"></div>
+
+      <!-- What the photos are for. Phase 1 is collection; recognition and
+           naming come later, and the page says so rather than promising
+           a vote that isn't built yet. -->
+      <section class="plan" aria-labelledby="plan-title">
+        <div class="plan-intro">
+          <div class="plan-text">
+            <h2 id="plan-title" data-i18n="plan.title">מי בוחר את השמות? <span class="underlined">אתם.</span></h2>
+            <p data-i18n="plan.body">
+              לא אנחנו, וגם לא אלגוריתם. כל אחד יוכל להציע שם לחתול שהוא מכיר
+              ולהצביע לשמות שהוא אוהב — והשם עם הכי הרבה קולות יישאר. אבל קודם
+              האפליקציה צריכה ללמוד לזהות כל חתול, ובשביל זה היא צריכה תמונות.
+              הרבה תמונות.
+            </p>
+          </div>
+
+          <!-- A mock-up of the name vote, as a page torn from a notebook.
+               Read out as one image: the parts mean nothing on their own. -->
+          <figure class="ballot">
+            <div
+              class="ballot-card"
+              role="img"
+              aria-label="דוגמה להצבעה על שם: הדיקן, 7 קולות; פרופסור, 4; שוקו, 2"
+              data-i18n-label="ballot.label"
+            >
+              <div class="ballot-photo">
+                <img src="/cats/bench.webp" width="541" height="720" loading="lazy" alt="" />
+              </div>
+              <p class="ballot-q" data-i18n="ballot.q">איך נקרא לו?</p>
+              <ol class="ballot-names">
+                <li class="lead">
+                  <span class="ballot-name" data-i18n="ballot.n1">הדיקן</span>
+                  <span class="tally">
+                    <svg class="doodle t5"><use href="#tally-5" /></svg>
+                    <svg class="doodle t2"><use href="#tally-2" /></svg>
+                  </span>
+                </li>
+                <li>
+                  <span class="ballot-name" data-i18n="ballot.n2">פרופסור</span>
+                  <span class="tally"><svg class="doodle t5"><use href="#tally-4" /></svg></span>
+                </li>
+                <li>
+                  <span class="ballot-name" data-i18n="ballot.n3">שוקו</span>
+                  <span class="tally"><svg class="doodle t2"><use href="#tally-2" /></svg></span>
+                </li>
+                <li class="ballot-new" data-i18n="ballot.new">+ ההצעה שלכם</li>
+              </ol>
+            </div>
+            <figcaption data-i18n="ballot.note">ככה זה ייראה בהמשך. קודם — תמונות.</figcaption>
+          </figure>
+        </div>
+
+        <ol class="road">
+          <li class="stop is-now">
+            <span class="stop-mark" aria-hidden="true">1</span>
+            <p class="stop-when">
+              <span data-i18n="road.now">עכשיו</span>
+              <span class="here" data-i18n="road.here">אנחנו כאן</span>
+            </p>
+            <h3 data-i18n="road.1t">אתם שולחים תמונות</h3>
+            <p data-i18n="road.1p">
+              של כל חתול שאתם פוגשים. אנחנו ממיינים אותן ביד, חתול-חתול, עד שלכל
+              אחד יש אלבום משלו.
+            </p>
+          </li>
+          <li class="stop">
+            <span class="stop-mark" aria-hidden="true">2</span>
+            <p class="stop-when" data-i18n="road.next">בהמשך</p>
+            <h3 data-i18n="road.2t">האפליקציה לומדת לזהות</h3>
+            <p data-i18n="road.2p">
+              כשלחתול יש מספיק תמונות, האפליקציה לומדת להבדיל בינו לבין השאר.
+              מצלמים חתול — והיא מציעה מי זה כנראה.
+            </p>
+          </li>
+          <li class="stop">
+            <span class="stop-mark" aria-hidden="true">3</span>
+            <p class="stop-when" data-i18n="road.then">ואז</p>
+            <h3 data-i18n="road.3t">אתם בוחרים שמות</h3>
+            <p data-i18n="road.3p">
+              לכל חתול נפתחת הצבעה: מציעים שמות, מצביעים לאהובים, והשם המוביל
+              נשאר.
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="steps" aria-labelledby="steps-title">
+        <h2 id="steps-title" data-i18n="steps.title">איך עוזרים כבר עכשיו</h2>
+        <ol>
+          <li>
+            <svg class="doodle step-icon" aria-hidden="true"><use href="#cat-ginger" /></svg>
+            <h3 data-i18n="steps.1t">רואים חתול</h3>
+            <p data-i18n="steps.1p">
+              בכל מקום בקמפוס. על ספסל, ישן מתחת לשיח, או נכנס לבניין כאילו הוא
+              משלם שכר לימוד.
+            </p>
+          </li>
+          <li>
+            <svg class="doodle step-icon" aria-hidden="true"><use href="#icon-camera" /></svg>
+            <h3 data-i18n="steps.2t">שולחים תמונות</h3>
+            <p data-i18n="steps.2p">
+              פותחים את הבוט ושולחים כמה שבא לכם. כמה זוויות של אותו חתול שוות
+              הרבה יותר מתמונה מושלמת אחת.
+            </p>
+          </li>
+          <li>
+            <svg class="doodle step-icon" aria-hidden="true"><use href="#icon-pin" /></svg>
+            <h3 data-i18n="steps.3t">מסמנים איפה</h3>
+            <p data-i18n="steps.3p">
+              הבוט ישאל איפה ראיתם אותו. נועצים סיכה במפה — גם אם הצילום היה
+              לפני שעה. המיקום נשמר בעיגול של כ-100 מטר.
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="yearbook" aria-labelledby="yearbook-title">
+        <div class="section-head">
+          <h2 id="yearbook-title" data-i18n="yb.title">ספר המחזור</h2>
+          <p data-i18n="yb.sub">
+            כמה מהדיירים שכבר צילמנו. לרובם עוד אין שם — ואותו תבחרו אתם.
+          </p>
+        </div>
+
+        <!-- Adding a cat: drop a WebP (metadata stripped, ~720px) into
+             site/cats/, copy one <li> below, and `make tf-apply`. -->
+        <ul class="cards">
+          <li class="card">
+            <div class="photo">
+              <img src="/cats/tabby.webp" width="540" height="720" loading="lazy" alt="חתול טאבי חום עם סנטר לבן, מביט במצלמה בחשדנות" data-i18n-alt="tabby.alt" />
+            </div>
+            <p class="name" data-i18n="card.name">שם: <span class="blank">?</span></p>
+            <dl>
+              <dt data-i18n="card.marks">סימנים מזהים</dt>
+              <dd data-i18n="tabby.marks">טאבי חום, סנטר וחזה לבנים, מבט חודר</dd>
+              <dt data-i18n="card.likely">הכי סביר ש…</dt>
+              <dd data-i18n="tabby.likely">יבהה בך עד שתוותר על הסנדוויץ'</dd>
+            </dl>
+          </li>
+          <li class="card">
+            <div class="photo">
+              <img src="/cats/bench.webp" width="541" height="720" loading="lazy" alt="חתול לבן עם ראש טאבי אפור, שוכב על ספסל עץ שחור" data-i18n-alt="bench.alt" />
+            </div>
+            <p class="name" data-i18n="card.name">שם: <span class="blank">?</span></p>
+            <dl>
+              <dt data-i18n="card.marks">סימנים מזהים</dt>
+              <dd data-i18n="bench.marks">לבן, ראש טאבי אפור, עיניים ירוקות</dd>
+              <dt data-i18n="card.likely">הכי סביר ש…</dt>
+              <dd data-i18n="bench.likely">יתפוס את הספסל הכי טוב בקמפוס</dd>
+            </dl>
+          </li>
+          <li class="card">
+            <div class="photo">
+              <img src="/cats/black.webp" width="541" height="720" loading="lazy" alt="חתול שחור ישן על ספה אפורה, כפות קדמיות מתוחות קדימה" data-i18n-alt="black.alt" />
+            </div>
+            <p class="name" data-i18n="card.name">שם: <span class="blank">?</span></p>
+            <dl>
+              <dt data-i18n="card.marks">סימנים מזהים</dt>
+              <dd data-i18n="black.marks">שחור לגמרי. כן, זה הכי קשה לזהות</dd>
+              <dt data-i18n="card.likely">הכי סביר ש…</dt>
+              <dd data-i18n="black.likely">יתפוס כל ספה פנויה, ובמיוחד את שלך</dd>
+            </dl>
+          </li>
+          <li class="card card-next">
+            <a href="https://t.me/bgucatsbot">
+              <svg class="doodle" aria-hidden="true"><use href="#cat-grump" /></svg>
+              <p class="name" data-i18n="next.name">עוד בערך 45 חתולים</p>
+              <p data-i18n="next.p">מחכים לתמונה שלכם. כן, גם זה שמסתכל עליכם עכשיו.</p>
+              <span class="cta cta-small" data-i18n="next.cta">לצלם ולשלוח ←</span>
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <div class="trail" aria-hidden="true"></div>
+
+      <section class="tips" aria-labelledby="tips-title">
+        <h2 id="tips-title" data-i18n="tips.title">איך מצלמים חתול שאפשר לזהות</h2>
+        <ul>
+          <li data-i18n="tips.1"><b>פנים מלפנים.</b> מגובה העיניים שלו, לא מלמעלה.</li>
+          <li data-i18n="tips.2"><b>גם מהצד.</b> הכתמים והפסים הם תעודת הזהות שלו.</li>
+          <li data-i18n="tips.3"><b>כמה תמונות ברצף.</b> זוויות שונות של אותו חתול עוזרות יותר מכל פילטר.</li>
+          <li data-i18n="tips.4"><b>ממרחק מכבד.</b> לא רודפים, לא מרימים. הוא כאן לפניכם.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <div class="lineup" aria-hidden="true">
+        <svg class="doodle"><use href="#cat-ginger" /></svg>
+        <svg class="doodle"><use href="#cat-midnight" /></svg>
+        <svg class="doodle"><use href="#cat-calico" /></svg>
+        <svg class="doodle"><use href="#cat-grump" /></svg>
+        <svg class="doodle"><use href="#cat-tuxedo" /></svg>
+        <svg class="doodle"><use href="#cat-fluff" /></svg>
+      </div>
+      <a class="cta" href="https://t.me/bgucatsbot">
+        <svg class="tg" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21.5 4.2 2.9 11.4c-1.3.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.6Zm-4 3.4-8.4 7.6-.3 3.4-1.5-4.8 9.7-6.1c.4-.3.9 0 .5-.1Z" />
+        </svg>
+        <span><b data-i18n="footer.cta">פתחו את <span dir="ltr">@bgucatsbot</span></b></span>
+      </a>
+      <p data-i18n="footer.note">פרויקט סטודנטים. תהיו נחמדים לחתולים; אל תרימו אותם.</p>
+    </footer>
+
+    <script>
+      // Paw-print trails. Decorative: built here so the wave can follow the
+      // container's width, and absent entirely without JS. Walks the way the
+      // page reads: placed from the inline start, so in English and Russian
+      // the same walk runs left to right (styles.css mirrors the angle).
+      for (const trail of document.querySelectorAll(".trail")) {
+        // One print per ~50px, so a phone gets a walk, not a smudge.
+        const steps = Math.max(8, Math.min(22, Math.round(trail.clientWidth / 50)));
+        for (let i = 0; i < steps; i++) {
+          const t = i / (steps - 1);
+          const side = i % 2 ? 1 : -1;
+          const x = 97 - t * 94;
+          const y = 50 + Math.sin(t * Math.PI * 2.2) * 22 + side * 9;
+          const slope = Math.cos(t * Math.PI * 2.2) * 18;
+          const paw = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          paw.setAttribute("class", "paw");
+          paw.style.cssText = `inset-inline-start:${100 - x}%;top:${y}%;--i:${i};--r:${-90 - slope}deg`;
+          const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+          use.setAttribute("href", "#paw");
+          paw.append(use);
+          trail.append(paw);
+        }
+      }
+    </script>
+    <script>
+      // Hebrew, English, Russian. The page is written in Hebrew; every piece
+      // of text that changes carries data-i18n="key" (data-i18n-alt and
+      // data-i18n-label for attributes), and the other two languages live
+      // here. Hebrew is read back off the page, so it is never written twice
+      // and switching back to it needs no reload. The language itself was
+      // picked by the script in <head>.
+      (() => {
+        const STRINGS = {
+          en: {
+            "meta.title": "BGU Cats",
+            "meta.description":
+              "We're building a real record of the cats that live on campus. Send photos now, and later suggest names for them and vote.",
+            "brand.label": "BGU Cats — home",
+            "brand.name": "BGU Cats",
+            "lang.label": "Language",
+
+            "hero.kicker": "Ben-Gurion University · Be'er Sheva",
+            "hero.l1": "Everyone knows the campus cats.",
+            "hero.l2": '<span class="underlined">Nobody knows their names.</span>',
+            "hero.lede":
+              "About fifty cats live on this campus. They have territories, routines and very firm opinions about your lunch. What they don't have is names everyone knows — and you're the ones who'll pick them. It starts with your photos.",
+            "hero.cta": "Send a cat photo",
+            "hero.ctaSmall": 'Opens <span dir="ltr">@bgucatsbot</span> in Telegram',
+            "hero.caption": "Taken on campus. Name: yours to pick.",
+            "hero.alt": "A ginger-and-white cat with green eyes, looking straight into the camera up close",
+
+            "plan.title": 'Who picks the names? <span class="underlined">You do.</span>',
+            "plan.body":
+              "Not us, and not an algorithm. Anyone will be able to suggest a name for a cat they know and vote for the names they like — the one with the most votes sticks. But first the app has to learn to recognize every cat, and for that it needs photos. Lots of them.",
+            "ballot.label": "An example name vote: The Dean, 7 votes; Professor, 4; Biscuit, 2",
+            "ballot.q": "What do we call this one?",
+            "ballot.n1": "The Dean",
+            "ballot.n2": "Professor",
+            "ballot.n3": "Biscuit",
+            "ballot.new": "+ your idea",
+            "ballot.note": "That part comes later. Photos first.",
+            "road.now": "Now",
+            "road.here": "We're here",
+            "road.next": "Next",
+            "road.then": "Then",
+            "road.1t": "You send photos",
+            "road.1p":
+              "Of every cat you meet. We sort them by hand, cat by cat, until each one has an album of its own.",
+            "road.2t": "The app learns who's who",
+            "road.2p":
+              "Once a cat has enough photos, the app learns to tell it from the rest. Snap a cat and it suggests who it probably is.",
+            "road.3t": "You pick the names",
+            "road.3p": "Each cat gets a vote: suggest names, vote for your favorites, and the winner sticks.",
+
+            "steps.title": "How to help right now",
+            "steps.1t": "Spot a cat",
+            "steps.1p":
+              "Anywhere on campus. On a bench, asleep under a bush, or strolling into a building like it pays tuition.",
+            "steps.2t": "Send photos",
+            "steps.2p":
+              "Open the bot and send as many as you like. A few angles of the same cat are worth far more than one perfect shot.",
+            "steps.3t": "Mark the spot",
+            "steps.3p":
+              "The bot will ask where you saw it. Drop a pin on the map — even if the photo is an hour old. The spot is saved rounded to about 100 m.",
+
+            "yb.title": "The yearbook",
+            "yb.sub": "A few of the residents we've already photographed. Most don't have a name yet — that's your call.",
+            "card.name": 'Name: <span class="blank">?</span>',
+            "card.marks": "Distinguishing marks",
+            "card.likely": "Most likely to…",
+            "tabby.alt": "A brown tabby cat with a white chin, eyeing the camera suspiciously",
+            "tabby.marks": "Brown tabby, white chin and chest, piercing stare",
+            "tabby.likely": "stare at you until you give up the sandwich",
+            "bench.alt": "A white cat with a grey tabby head, lying on a black wooden bench",
+            "bench.marks": "White, grey tabby head, green eyes",
+            "bench.likely": "claim the best bench on campus",
+            "black.alt": "A black cat asleep on a grey couch, front paws stretched out",
+            "black.marks": "All black. Yes, the hardest kind to tell apart",
+            "black.likely": "take any free couch, especially yours",
+            "next.name": "About 45 more cats",
+            "next.p": "are waiting for your photo. Yes, including the one staring at you right now.",
+            "next.cta": "Snap and send →",
+
+            "tips.title": "How to photograph a cat so it can be recognized",
+            "tips.1": "<b>Face on.</b> At its eye level, not from above.",
+            "tips.2": "<b>The side, too.</b> Spots and stripes are its ID card.",
+            "tips.3": "<b>A few in a row.</b> Different angles of the same cat help more than any filter.",
+            "tips.4": "<b>From a respectful distance.</b> No chasing, no picking up. It was here before you.",
+
+            "footer.cta": 'Open <span dir="ltr">@bgucatsbot</span>',
+            "footer.note": "A student project. Be kind to the cats; don't pick them up.",
+          },
+
+          ru: {
+            "meta.title": "Коты Бен-Гуриона",
+            "meta.description":
+              "Мы собираем настоящий архив котов, которые живут в кампусе. Присылайте фото, а потом предлагайте им имена и голосуйте.",
+            "brand.label": "Коты Бен-Гуриона — на главную",
+            "brand.name": "Коты Бен-Гуриона",
+            "lang.label": "Язык",
+
+            "hero.kicker": "Университет Бен-Гуриона · Беэр-Шева",
+            "hero.l1": "Котов кампуса знают все.",
+            "hero.l2": '<span class="underlined">Но никто не знает, как их зовут.</span>',
+            "hero.lede":
+              "В кампусе живёт около пятидесяти котов. У них есть территории, распорядок дня и очень твёрдое мнение о вашем обеде. Нет у них только имён, которые знали бы все, — и выбирать их будете вы. Начинается всё с ваших фотографий.",
+            "hero.cta": "Отправить фото кота",
+            "hero.ctaSmall": 'Откроется <span dir="ltr">@bgucatsbot</span> в Telegram',
+            "hero.caption": "Снято в кампусе. Имя: решать вам.",
+            "hero.alt": "Рыже-белый кот с зелёными глазами смотрит прямо в камеру крупным планом",
+
+            "plan.title": 'Кто выбирает имена? <span class="underlined">Вы.</span>',
+            "plan.body":
+              "Не мы и не алгоритм. Любой сможет предложить имя знакомому коту и проголосовать за понравившиеся — останется то, что наберёт больше всех голосов. Но сначала приложение должно научиться узнавать каждого кота, а для этого ему нужны фотографии. Много фотографий.",
+            "ballot.label": "Пример голосования за имя: Декан — 7 голосов, Профессор — 4, Барсик — 2",
+            "ballot.q": "Как назовём?",
+            "ballot.n1": "Декан",
+            "ballot.n2": "Профессор",
+            "ballot.n3": "Барсик",
+            "ballot.new": "+ ваш вариант",
+            "ballot.note": "Это будет позже. Сначала — фото.",
+            "road.now": "Сейчас",
+            "road.here": "Мы здесь",
+            "road.next": "Потом",
+            "road.then": "А затем",
+            "road.1t": "Вы присылаете фото",
+            "road.1p":
+              "Каждого кота, которого встретили. Мы вручную раскладываем снимки, пока у каждого не появится свой альбом.",
+            "road.2t": "Приложение учится узнавать",
+            "road.2p":
+              "Когда у кота набирается достаточно фото, приложение учится отличать его от остальных. Сфотографируйте кота — и оно подскажет, кто это.",
+            "road.3t": "Вы выбираете имена",
+            "road.3p":
+              "У каждого кота — своё голосование: предлагайте имена, голосуйте за любимые, и победитель останется.",
+
+            "steps.title": "Как помочь уже сейчас",
+            "steps.1t": "Замечаете кота",
+            "steps.1p":
+              "Где угодно в кампусе. На скамейке, спящим под кустом или заходящим в корпус так, будто он платит за учёбу.",
+            "steps.2t": "Присылаете фото",
+            "steps.2p":
+              "Откройте бота и присылайте сколько хотите. Несколько ракурсов одного кота ценнее одного идеального кадра.",
+            "steps.3t": "Отмечаете место",
+            "steps.3p":
+              "Бот спросит, где вы его видели. Поставьте метку на карте — даже если снимок сделан час назад. Место сохраняется с точностью около 100 м.",
+
+            "yb.title": "Выпускной альбом",
+            "yb.sub": "Некоторые жильцы, которых мы уже сфотографировали. У большинства пока нет имени — его выберете вы.",
+            "card.name": 'Имя: <span class="blank">?</span>',
+            "card.marks": "Особые приметы",
+            "card.likely": "Скорее всего…",
+            "tabby.alt": "Бурый полосатый кот с белым подбородком подозрительно смотрит в камеру",
+            "tabby.marks": "Бурый полосатый, белые подбородок и грудь, пронзительный взгляд",
+            "tabby.likely": "будет смотреть на вас, пока не отдадите бутерброд",
+            "bench.alt": "Белый кот с серой полосатой головой лежит на чёрной деревянной скамейке",
+            "bench.marks": "Белый, серая полосатая голова, зелёные глаза",
+            "bench.likely": "займёт лучшую скамейку в кампусе",
+            "black.alt": "Чёрный кот спит на сером диване, вытянув передние лапы",
+            "black.marks": "Полностью чёрный. Да, таких различать сложнее всего",
+            "black.likely": "займёт любой свободный диван, особенно ваш",
+            "next.name": "Ещё около 45 котов",
+            "next.p": "ждут вашего фото. Да, и тот, что смотрит на вас прямо сейчас.",
+            "next.cta": "Снять и отправить →",
+
+            "tips.title": "Как снять кота, чтобы его можно было узнать",
+            "tips.1": "<b>Морда анфас.</b> На уровне его глаз, а не сверху.",
+            "tips.2": "<b>И сбоку.</b> Пятна и полоски — его паспорт.",
+            "tips.3": "<b>Несколько кадров подряд.</b> Разные ракурсы одного кота помогают больше любого фильтра.",
+            "tips.4": "<b>С уважительного расстояния.</b> Не догоняйте и не берите на руки. Он жил здесь до вас.",
+
+            "footer.cta": 'Открыть <span dir="ltr">@bgucatsbot</span>',
+            "footer.note": "Студенческий проект. Будьте добры к котам и не берите их на руки.",
+          },
+        };
+
+        const root = document.documentElement;
+        const description = document.querySelector('meta[name="description"]');
+        const switcher = document.querySelector(".langs");
+
+        // [element, attribute or null for the content, key]
+        const targets = [
+          ...[...document.querySelectorAll("[data-i18n]")].map((el) => [el, null, el.dataset.i18n]),
+          ...[...document.querySelectorAll("[data-i18n-alt]")].map((el) => [el, "alt", el.dataset.i18nAlt]),
+          ...[...document.querySelectorAll("[data-i18n-label]")].map((el) => [el, "aria-label", el.dataset.i18nLabel]),
+        ];
+
+        const he = { "meta.title": document.title, "meta.description": description.content };
+        for (const [el, attr, key] of targets) he[key] = attr ? el.getAttribute(attr) : el.innerHTML;
+        STRINGS.he = he;
+
+        function apply(lang) {
+          // A key missing from a translation shows the Hebrew, not a blank.
+          const t = (key) => STRINGS[lang][key] ?? he[key];
+          root.lang = lang;
+          root.dir = lang === "he" ? "rtl" : "ltr";
+          document.title = t("meta.title");
+          description.content = t("meta.description");
+          for (const [el, attr, key] of targets) {
+            if (attr) el.setAttribute(attr, t(key));
+            else el.innerHTML = t(key);
+          }
+          for (const button of switcher.querySelectorAll("button")) {
+            button.setAttribute("aria-pressed", String(button.dataset.lang === lang));
+          }
+        }
+
+        switcher.addEventListener("click", (event) => {
+          const lang = event.target.closest("button[data-lang]")?.dataset.lang;
+          if (!lang || lang === root.lang) return;
+          apply(lang);
+          try {
+            localStorage.setItem("bgucats.lang", lang);
+          } catch {}
+          // Drop a ?lang= from the address, or reloading would undo the choice.
+          const url = new URL(location.href);
+          if (url.searchParams.has("lang")) {
+            url.searchParams.delete("lang");
+            history.replaceState(null, "", url);
+          }
+        });
+
+        apply(root.lang);
+        switcher.hidden = false;
+      })();
+    </script>
+    <script>
+      // Where visitors come from, for the stats page in the admin tool. No
+      // cookies and no identifiers: each beacon carries an event name, a
+      // source slug and whether this browser was already counted today, and
+      // the server keeps daily totals (src/beacon/handler.py).
+      (() => {
+        const BEACON_URL = "__BEACON_URL__"; // filled in by infra/main/site.tf
+        const BOT_URL = "https://t.me/bgucatsbot";
+        // Same alphabet as the bot's /start payload, which it is passed on as.
+        const SLUG = /^[a-z0-9][a-z0-9-]{0,31}$/;
+        const REMEMBER_MS = 30 * 864e5;
+
+        const store = {
+          get(key) {
+            try {
+              return JSON.parse(localStorage.getItem(key));
+            } catch {
+              return null;
+            }
+          },
+          set(key, value) {
+            try {
+              localStorage.setItem(key, JSON.stringify(value));
+            } catch {}
+          },
+        };
+
+        // A tracked link: ?src=poster on the poster's QR, ?src=<partner> in an ad.
+        function fromLink() {
+          const params = new URLSearchParams(location.search);
+          const raw = (params.get("src") || params.get("utm_source") || "").trim().toLowerCase();
+          return SLUG.test(raw) ? raw : null;
+        }
+
+        // Sites that sent someone here without a tracked link.
+        const REFERRERS = [
+          [/(^|\.)(t\.me|telegram\.org)$/, "telegram"],
+          [/(^|\.)instagram\.com$/, "instagram"],
+          [/(^|\.)(facebook\.com|fb\.com)$/, "facebook"],
+          [/(^|\.)whatsapp\.(com|net)$/, "whatsapp"],
+          [/(^|\.)google\.[a-z.]+$/, "google"],
+        ];
+
+        function fromReferrer() {
+          let host;
+          try {
+            host = new URL(document.referrer).hostname;
+          } catch {
+            return null;
+          }
+          if (!host || host === location.hostname) return null;
+          for (const [pattern, name] of REFERRERS) if (pattern.test(host)) return name;
+          return "referral";
+        }
+
+        // Remembered for a month, so someone who saw the ad on Monday and
+        // typed the address on Wednesday still counts for the ad.
+        function resolveReferral() {
+          const fresh = fromLink() || fromReferrer();
+          if (fresh) {
+            store.set("bgucats.src", { slug: fresh, at: Date.now() });
+            return fresh;
+          }
+          const saved = store.get("bgucats.src");
+          if (saved && SLUG.test(saved.slug) && Date.now() - saved.at < REMEMBER_MS) {
+            return saved.slug;
+          }
+          return "direct";
+        }
+
+        const referral = resolveReferral();
+
+        // A string body goes as text/plain: a "simple" cross-origin request,
+        // so there is no CORS preflight and nothing to configure for one.
+        function send(event, extra) {
+          if (BEACON_URL.startsWith("__")) return; // a local preview, not deployed
+          const body = JSON.stringify({ event, referral, ...extra });
+          try {
+            if (!navigator.sendBeacon?.(BEACON_URL, body)) {
+              fetch(BEACON_URL, { method: "POST", body, keepalive: true, mode: "no-cors" });
+            }
+          } catch {}
+        }
+
+        const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+        const firstToday = store.get("bgucats.day") !== today;
+        store.set("bgucats.day", today);
+        send("visit", { firstToday });
+
+        // Every "send a photo" button carries the source on into the bot as
+        // its /start payload — that is how a contributor gets attributed.
+        for (const link of document.querySelectorAll(`a[href="${BOT_URL}"]`)) {
+          link.href = `${BOT_URL}?start=${referral}`;
+          link.addEventListener("click", () => send("bot_click"));
+        }
+      })();
+    </script>
+  </body>
+</html>

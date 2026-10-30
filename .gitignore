@@ -40,3 +40,14 @@ Thumbs.db
 
 # Claude Code local overrides
 .claude/settings.local.json
+
+# Research track — never commit weights, datasets, or run outputs
+research/data/
+research/runs/
+research/.cache/
+*.pt
+*.pth
+*.onnx
+*.wasm
+*.bin
+*.safetensors

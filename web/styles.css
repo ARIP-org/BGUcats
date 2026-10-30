@@ -1,0 +1,2860 @@
+/* Admin labeling tool. Same paper, ink and ginger as the landing page
+   (site/styles.css), so the project reads as one thing — but calmer: this
+   is a work surface, used for an hour at a time, and the photos are what
+   need the attention. Ink borders frame things; colour is kept for the one
+   action that matters on each card.
+
+   Phone first-class: below 760px the tabs become a bottom bar, card actions
+   stack into thumb-sized buttons, and dialogs become bottom sheets. */
+
+:root {
+  --paper: #fbf6ec;
+  --paper-2: #f3e9d6;
+  --card: #fffdf8;
+  --ink: #1f1b18;
+  --ink-soft: #5f554d;
+  --muted: #6f655c;
+  --line: #e6d9c2;
+  --line-strong: #d3c3a5;
+  --ginger: #e07b2f;
+  --ginger-deep: #b55b1b;
+  --ginger-wash: #fbe8d6;
+  --pink: #f2a19b;
+  --grey: #cfc7bb;
+  --good: #2f7d4f;
+  --good-wash: #e2f0e5;
+  --danger: #b8372f;
+  --danger-wash: #fbe4e1;
+
+  /* Chart marks: one hue, deep enough for 3:1 against --card (the site's
+     --ginger is 2.9:1). Track is one step off the card surface. */
+  --chart: #d0691f;
+  --chart-track: #f1e6d4;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --lift: 3px 3px 0 var(--ink);
+  --soft-shadow: 5px 6px 0 rgba(31, 27, 24, 0.08);
+
+  --font-body: "Rubik", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  /* Marker capitals, only ever used large. */
+  --font-display: "Amatic SC", var(--font-body);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --tabbar-height: 0px;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* No rubber-band bounce on the page itself: in an installed app it drags the
+   whole interface around like a web page. Lists still scroll normally. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+body.no-scroll {
+  overflow: hidden;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+a {
+  color: var(--ginger-deep);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ginger-deep);
+  outline-offset: 2px;
+}
+
+/* ---------- doodles (as on the landing page) ---------- */
+
+.defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.doodle {
+  display: block;
+  overflow: visible;
+  filter: url(#wobble);
+}
+
+.ink-lines {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.thin {
+  stroke-width: 3;
+}
+.fill-ink {
+  fill: var(--ink);
+}
+.fill-paper {
+  fill: var(--card);
+}
+.fill-ginger {
+  fill: var(--ginger);
+}
+.fill-pink {
+  fill: var(--pink);
+}
+.fill-grey {
+  fill: var(--grey);
+}
+.stroke-paper {
+  stroke: var(--card);
+}
+
+/* ---------- login ---------- */
+
+/* Pinned to the screen rather than sized to it: there is nothing to scroll
+   here, and an installed iPhone app would otherwise let the whole card
+   bounce. overflow: auto still rescues a very short landscape screen. */
+.login {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 28px;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.login-card .login-alert {
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 2px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-wash);
+  color: var(--ink);
+  font-size: 14px;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.login-card {
+  width: min(100%, 380px);
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  padding: 36px 30px 28px;
+  text-align: center;
+  box-shadow: 6px 7px 0 var(--ink);
+}
+
+.login-mark {
+  width: 84px;
+  height: 70px;
+  margin: 0 auto;
+}
+
+.login-card h1 {
+  margin: 8px 0 4px;
+  font: 700 52px/1 var(--font-display);
+}
+
+.login-card p {
+  color: var(--ink-soft);
+  margin: 0 0 22px;
+}
+
+.login-note {
+  margin: 14px 0 0 !important;
+  font-size: 13px;
+}
+
+.lineup {
+  display: flex;
+  gap: 18px;
+}
+
+.lineup .doodle {
+  width: 58px;
+  height: 48px;
+}
+
+/* ---------- top bar & tabs ---------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px max(20px, env(safe-area-inset-right)) 10px max(20px, env(safe-area-inset-left));
+  background: rgba(251, 246, 236, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 2px solid var(--ink);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  width: 40px;
+  height: 33px;
+}
+
+.brand span {
+  font: 700 32px/1 var(--font-display);
+}
+
+.brand small {
+  align-self: flex-end;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font: 500 15px/1 var(--font-body);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+.tab.active {
+  color: var(--ink);
+  background: var(--card);
+  border-color: var(--ink);
+  box-shadow: var(--lift);
+}
+
+.tab-icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+.badge {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--ginger);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+#who-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+main {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 26px max(20px, env(safe-area-inset-right))
+    calc(80px + var(--tabbar-height)) max(20px, env(safe-area-inset-left));
+  transition: opacity 0.15s ease;
+}
+
+main.loading {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* ---------- buttons & fields ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  font: 500 14px/1.2 var(--font-body);
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: var(--card);
+  color: var(--ink);
+  padding: 8px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--paper-2);
+}
+
+.btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--ginger);
+  font-weight: 700;
+  box-shadow: var(--lift);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #ea8a40;
+}
+
+.btn-primary:active:not(:disabled) {
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-wash);
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-soft);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+.btn-sm {
+  min-height: 34px;
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
+.btn-lg {
+  width: 100%;
+  min-height: 50px;
+  font-size: 16px;
+}
+
+.btn-icon {
+  min-height: 40px;
+  min-width: 40px;
+  padding: 8px;
+}
+
+/* A <select> dressed as a button: the native picker is still the best
+   chooser on a phone. */
+.btn-select {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="number"] {
+  font: 16px/1.3 var(--font-body); /* 16px: iOS zooms into anything smaller */
+  width: 100%;
+  min-height: 44px;
+  background: var(--card);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+}
+
+input::placeholder {
+  color: #9a8f84;
+}
+
+/* ---------- section heads ---------- */
+
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 0 0 20px;
+}
+
+.section-title h2 {
+  margin: 0;
+  font: 700 46px/1 var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+.section-title p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.back {
+  margin: -6px 0 6px -10px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ---------- cards ---------- */
+
+.card {
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--soft-shadow);
+  margin-bottom: 22px;
+}
+
+.session-list .card {
+  overflow: hidden;
+}
+
+.card-head {
+  display: grid;
+  gap: 2px;
+  padding: 14px 16px 12px;
+  border-bottom: 1.5px dashed var(--line-strong);
+}
+
+.card-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+a.place {
+  color: var(--ginger-deep);
+  text-decoration: none;
+  width: fit-content;
+}
+
+a.place:hover {
+  text-decoration: underline;
+}
+
+.mono,
+code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.session-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9a8f84;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--paper-2);
+  cursor: zoom-in;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+.thumb img,
+.thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb:hover {
+  outline-color: var(--ink);
+}
+
+.thumb .flag {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--card);
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+}
+
+.thumb .flag + .flag {
+  bottom: 30px;
+}
+
+.thumb .kill {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.thumb:hover .kill,
+.thumb .kill:focus-visible {
+  opacity: 1;
+}
+
+.thumb .kill:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+/* No hover on a touchscreen, so the delete control has to be visible to
+   exist at all — small and quiet, but there. */
+@media (hover: none) {
+  .thumb .kill {
+    opacity: 0.85;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* The model's guess on a queue card and atop the picker. */
+.model-guess {
+  margin: 14px 16px 0;
+  padding: 12px;
+  border: 2px solid var(--ginger);
+  border-radius: var(--radius-sm);
+  background: var(--ginger-wash);
+}
+.model-guess[hidden],
+.picker-guess[hidden] {
+  display: none;
+}
+.model-guess[data-status="waiting"],
+.model-guess[data-status="skipped"] {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: transparent;
+}
+.model-guess-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.model-guess-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+.model-guess-picks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 168px));
+  gap: 10px;
+}
+.model-pick .pick-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.model-pick .pick-count {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.model-pick {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 6px 6px 8px;
+  border: 2px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--card);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-pick:hover,
+.model-pick:focus-visible {
+  border-color: var(--ink);
+  box-shadow: var(--lift);
+}
+.model-pick.first {
+  border-color: var(--ginger-deep);
+  border-width: 3px;
+}
+.model-pick img,
+.model-pick .pick-cover-empty {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--paper-2);
+}
+.model-rank {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--card);
+  font-size: 12px;
+  font-weight: 700;
+}
+.model-pick.first .model-rank {
+  background: var(--ginger-deep);
+}
+.picker-guess {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 2px solid var(--ginger);
+  border-radius: var(--radius-sm);
+  background: var(--ginger-wash);
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px 16px;
+}
+
+.card-actions .btn-primary {
+  min-width: 180px;
+}
+
+.card-actions .btn-danger {
+  margin-left: auto;
+}
+
+/* ---------- empty / loading ---------- */
+
+.empty {
+  text-align: center;
+  padding: 56px 20px;
+  color: var(--ink-soft);
+}
+
+.empty-mark {
+  width: 120px;
+  height: 100px;
+  margin: 0 auto 12px;
+}
+
+.empty h3 {
+  margin: 0 0 4px;
+  font: 700 34px/1.1 var(--font-display);
+  color: var(--ink);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.spinner {
+  color: var(--muted);
+  padding: 60px;
+  text-align: center;
+}
+
+/* ---------- dialogs: centred card on a desk, bottom sheet on a phone ---------- */
+
+.sheet {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(86vh, 860px);
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 6px 7px 0 var(--ink);
+  overflow: hidden;
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet::backdrop {
+  background: rgba(31, 27, 24, 0.45);
+}
+
+.sheet-small {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+}
+
+.sheet-body h3 {
+  margin: 0;
+  font: 700 34px/1 var(--font-display);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sheet-text {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.field small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.field input:invalid:not(:placeholder-shown) {
+  border-color: var(--danger);
+}
+
+/* the cat picker */
+
+.picker {
+  padding-bottom: 0;
+}
+
+.picker-preview {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+
+.picker-preview img {
+  width: 84px;
+  height: 84px;
+  flex: none;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--ink);
+}
+
+.picker-search {
+  flex: none;
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 10px;
+  padding-bottom: 20px;
+}
+
+.pick {
+  display: grid;
+  gap: 2px;
+  padding: 6px 6px 8px;
+  border: 2px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--card);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick:hover,
+.pick:focus-visible {
+  border-color: var(--ink);
+  box-shadow: var(--lift);
+}
+
+.pick img,
+.pick-cover-empty,
+.pick-plus {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--paper-2);
+}
+
+.pick-cover-empty {
+  display: grid;
+  place-items: center;
+}
+
+.pick-cover-empty .doodle {
+  width: 56%;
+  height: auto;
+  aspect-ratio: 132 / 104;
+  opacity: 0.6;
+}
+
+.pick-name {
+  margin-top: 4px;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.pick-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pick-new {
+  border-style: dashed;
+  border-color: var(--ink);
+}
+
+.pick-plus {
+  display: grid;
+  place-items: center;
+  background: var(--ginger-wash);
+  font: 700 46px/1 var(--font-display);
+}
+
+.picker-hint {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  margin: 8px 0;
+}
+
+/* ---------- cats ---------- */
+
+.filter {
+  max-width: 340px;
+  margin-bottom: 22px;
+}
+
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 30px 22px;
+  padding-top: 8px;
+}
+
+/* Taped into the yearbook, like the cards on the landing page. */
+.cat-card {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 10px 10px 12px;
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  box-shadow: var(--soft-shadow);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transform: rotate(var(--tilt, -0.8deg));
+  transition: transform 0.15s ease;
+}
+
+.cat-card:nth-child(3n + 2) {
+  --tilt: 0.9deg;
+}
+.cat-card:nth-child(3n) {
+  --tilt: -0.3deg;
+}
+
+.cat-card:hover,
+.cat-card:focus-visible {
+  transform: rotate(0deg) translateY(-3px);
+}
+
+.cat-card::before {
+  content: "";
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 70px;
+  height: 20px;
+  margin-left: -35px;
+  background: rgba(232, 214, 178, 0.85);
+  border: 1px solid rgba(31, 27, 24, 0.08);
+  transform: rotate(-3deg);
+}
+
+.cat-cover {
+  aspect-ratio: 4 / 3;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--paper-2);
+  margin-bottom: 8px;
+}
+
+.cat-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cat-cover-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+.cat-cover-empty .doodle {
+  width: 40%;
+  height: auto;
+  aspect-ratio: 132 / 104;
+  opacity: 0.5;
+}
+
+.cat-name {
+  font-weight: 700;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- admins ---------- */
+
+.inline-form {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1.5px dashed var(--line-strong);
+}
+
+.inline-form input {
+  max-width: 380px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 99px;
+  border: 1.5px solid var(--line-strong);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.tag.good {
+  border-color: var(--good);
+  color: var(--good);
+  background: var(--good-wash);
+}
+
+/* ---------- stats ---------- */
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.stat {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px 16px 16px;
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--soft-shadow);
+}
+
+.stat-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.stat-value {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.stat-delta {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.stat-delta .arrow {
+  margin-right: 4px;
+  font-size: 11px;
+}
+
+.stat-delta.up .arrow {
+  color: var(--good);
+}
+
+.stat-delta.down .arrow {
+  color: var(--danger);
+}
+
+.stat-delta.flat .arrow {
+  color: var(--muted);
+}
+
+.stat-note {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.meter {
+  height: 8px;
+  margin: 6px 0 2px;
+  border-radius: 99px;
+  background: var(--chart-track);
+  overflow: hidden;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--chart);
+}
+
+.panel {
+  padding: 18px 18px 20px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.panel-head h3 {
+  margin: 0;
+  font: 700 32px/1 var(--font-display);
+}
+
+.panel-head p {
+  margin: 6px 0 0;
+  max-width: 62ch;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.panel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 0 22px;
+  align-items: start;
+}
+
+.callout {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-left: 4px solid var(--ginger);
+  background: var(--ginger-wash);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 14px;
+}
+
+/* sources */
+
+.sources {
+  display: grid;
+  gap: 10px;
+}
+
+.source {
+  border: 1.5px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.source[open] {
+  border-color: var(--ink);
+}
+
+.source-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.source-summary::-webkit-details-marker {
+  display: none;
+}
+
+.source-name {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.source-name b::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.1em;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.source[open] .source-name b::before {
+  transform: rotate(90deg);
+}
+
+.source-name small {
+  padding-left: 1.1em;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.source-figures {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(64px, auto));
+  gap: 14px;
+  margin: 0;
+  text-align: right;
+}
+
+.source-figures dt {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.source-figures dd {
+  margin: 0;
+  font-weight: 500;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.source-body {
+  display: grid;
+  gap: 16px;
+  padding: 4px 14px 16px;
+}
+
+.copy-list {
+  display: grid;
+  gap: 8px;
+}
+
+.copy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+}
+
+.copy-row > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.copy-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.copy-row code {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.copy-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* charts */
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px 28px;
+}
+
+.chart {
+  margin: 0;
+}
+
+.chart figcaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.chart figcaption b {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.colchart {
+  position: relative;
+}
+
+.colchart-plot {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  padding-top: 1px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.colchart-max {
+  position: absolute;
+  top: -9px;
+  right: 0;
+  padding-left: 6px;
+  background: var(--card);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The column is the hit target — the full slot height, not just the
+   painted bar — so a tap on a short day still lands. */
+.col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: default;
+  outline: none;
+}
+
+.col-bar {
+  display: block;
+  width: 100%;
+  max-width: 18px;
+  height: 0;
+  border-radius: 4px 4px 0 0;
+  background: var(--chart);
+}
+
+.col:hover .col-bar,
+.col:focus .col-bar {
+  background: var(--ginger-deep);
+}
+
+.col:focus-visible {
+  background: var(--chart-track);
+}
+
+.colchart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.chart-tip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 1px;
+  padding: 6px 10px;
+  background: var(--ink);
+  color: var(--card);
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translate(-50%, calc(-100% - 8px));
+  pointer-events: none;
+}
+
+.chart-tip strong {
+  font-size: 14px;
+}
+
+.chart-tip span {
+  opacity: 0.8;
+}
+
+/* horizontal bar lists (funnels, cats, contributor buckets) */
+
+.barlist {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.barlist-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 2fr) minmax(0, 3fr) auto;
+  align-items: center;
+  gap: 4px 14px;
+}
+
+.barlist-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+}
+
+.barlist-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.barlist-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.barlist-track {
+  height: 14px;
+}
+
+.barlist-bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 0 4px 4px 0;
+  background: var(--chart);
+}
+
+.barlist-value {
+  min-width: 6ch;
+  text-align: right;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.funnel {
+  margin: 0;
+}
+
+/* facts list (bot health) */
+
+.facts {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.facts > div:last-child {
+  border-bottom: 0;
+}
+
+.facts dt {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.facts dd .meter {
+  width: 100%;
+}
+
+.facts > div:has(.meter) dd {
+  flex-basis: 100%;
+}
+
+.readiness {
+  display: grid;
+  gap: 2px;
+  max-width: 420px;
+  margin-bottom: 18px;
+}
+
+/* tables */
+
+.as-table {
+  margin-top: 18px;
+}
+
+.as-table summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-bottom: 1.5px solid var(--ink);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.table td:first-child {
+  font-weight: 500;
+}
+
+/* ---------- lightbox ---------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  background: rgba(24, 20, 17, 0.96);
+  padding: 50px 8px max(10px, env(safe-area-inset-bottom));
+  touch-action: pan-y;
+}
+
+.lightbox-stage {
+  grid-column: 2;
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.lightbox img,
+.lightbox video {
+  max-width: 100%;
+  max-height: calc(100vh - 150px);
+  max-height: calc(100dvh - 150px);
+  border-radius: 10px;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.lightbox-nav {
+  width: 48px;
+  height: 64px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--paper);
+  font-size: 44px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-nav:hover {
+  background: rgba(255, 253, 248, 0.08);
+}
+
+.lightbox-nav.prev {
+  grid-column: 1;
+}
+
+.lightbox-nav.next {
+  grid-column: 3;
+}
+
+.lightbox-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px 8px 4px;
+  color: #cfc7bb;
+  font-size: 13px;
+  text-align: center;
+}
+
+.lightbox-count {
+  font-weight: 700;
+  color: var(--paper);
+}
+
+.lightbox-bar .btn-danger {
+  background: none;
+  color: #f0a39d;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: 0;
+  color: var(--paper);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+/* ---------- toasts ---------- */
+
+.toasts {
+  position: fixed;
+  bottom: calc(20px + var(--tabbar-height));
+  right: 20px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-left: 8px solid var(--good);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  box-shadow: var(--lift);
+  max-width: 380px;
+}
+
+.toast.error {
+  border-left-color: var(--danger);
+}
+
+/* ---------- narrower desks ---------- */
+
+/* ---------- capture ---------- */
+
+/* The start screen is an ordinary page. Once an encounter is open the camera
+   takes the whole screen, like the phone's own camera app: the picture edge
+   to edge, the encounter and location along the top, and the controls under
+   the thumb at the bottom, over soft dark gradients so they read on any
+   picture. The buttons keep the app's paper-and-ink look. */
+
+.capture-start {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+.capture-start h3 {
+  margin: 0;
+  font: 700 34px/1 var(--font-display);
+}
+
+.capture-start p {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--ink-soft);
+}
+
+.capture-tips {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.capture-open .shot-strip {
+  max-width: 100%;
+  padding: 2px 0;
+}
+
+.capture-open-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.camera {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+}
+
+.camera video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-note {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 16px;
+  text-align: center;
+}
+
+.camera-top,
+.camera-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+.camera-top {
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  padding-bottom: 28px;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+
+.camera-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  background: rgba(31, 27, 24, 0.45);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.camera-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: auto;
+  line-height: 1.2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.camera-title b {
+  font: 700 26px/1 var(--font-display);
+}
+
+.camera-title span {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.chip.warn {
+  border-color: var(--ginger-deep);
+  background: var(--ginger-wash);
+}
+
+.camera-bottom {
+  bottom: 0;
+  display: grid;
+  gap: 10px;
+  padding-top: 48px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.6) 45%);
+}
+
+.camera .outbox-line {
+  margin: 0;
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.camera .outbox-line .btn {
+  margin-left: 6px;
+}
+
+.camera.flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  animation: shutter-flash 0.25s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes shutter-flash {
+  from {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* No camera (refused, or none in this browser): the phone's own camera
+   becomes the main way in, so its buttons grow. */
+.camera.no-camera {
+  background: var(--ink);
+}
+
+.camera.no-camera video {
+  display: none;
+}
+
+/* Up under the header, so the guess card at the bottom never covers the
+   phone's-camera buttons. */
+.camera.no-camera .camera-note {
+  place-items: start center;
+  padding-top: calc(96px + env(safe-area-inset-top));
+}
+
+.camera-fallback {
+  display: grid;
+  gap: 16px;
+  max-width: 30ch;
+}
+
+.camera-fallback p {
+  margin: 0;
+}
+
+.camera.no-camera .capture-controls {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.camera.no-camera .capture-controls > .btn {
+  justify-self: center;
+}
+
+/* Toasts move to the top while the camera fills the screen, so they never
+   sit on the shutter. */
+.camera-open .toasts {
+  top: calc(76px + env(safe-area-inset-top));
+  bottom: auto;
+}
+
+.capture-controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.capture-controls > .btn {
+  justify-self: end;
+}
+
+/* The shutter is the one big round thing on the screen. */
+.shutter {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: var(--ginger);
+  box-shadow: var(--lift);
+  color: var(--ink);
+  font: 700 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.shutter:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.record {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: 500 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.record::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  vertical-align: 0;
+}
+
+.record.recording {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}
+
+.shutter:disabled,
+.record:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shot-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.shot-strip:empty {
+  display: none;
+}
+
+.shot {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--paper-2);
+}
+
+.shot img,
+.shot-blank {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.shot-kind {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  color: var(--paper);
+  font-size: 12px;
+  text-shadow: 0 0 3px var(--ink);
+}
+
+.shot-state {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1px 0;
+  background: rgba(31, 27, 24, 0.72);
+  color: var(--paper);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.shot.sent .shot-state {
+  background: var(--good);
+}
+
+.shot.failed {
+  border-color: var(--danger);
+}
+
+.shot.failed .shot-state {
+  background: var(--danger);
+}
+
+.outbox-panel {
+  margin-bottom: 18px;
+}
+
+.outbox-panel .outbox-line {
+  margin: 0;
+  padding: 14px 16px;
+}
+
+.system-camera {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+a.btn {
+  text-decoration: none;
+}
+
+/* ---------- confirmations ---------- */
+
+/* Filled red for the one button that cannot be taken back. */
+.btn-danger-solid {
+  border-color: var(--ink);
+  background: var(--danger);
+  color: #fff;
+  box-shadow: var(--lift);
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  background: #9f2e27;
+}
+
+.sheet-body.confirm {
+  gap: 10px;
+}
+
+.sheet-body.confirm .sheet-text {
+  font-size: 15px;
+  max-width: 46ch;
+}
+
+/* ---------- install page ---------- */
+
+/* What a browser tab shows instead of the app. Same paper, ink and ginger
+   as the landing page; reads right-to-left in Hebrew and Arabic. Amatic SC
+   has no Arabic letters, so Arabic headings use Rubik instead. */
+
+.install {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.install-wrap {
+  display: grid;
+  gap: 22px;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.install-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.install-top .brand span {
+  font: 700 32px/1 var(--font-display);
+}
+
+.langs {
+  display: inline-flex;
+  padding: 3px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+
+.langs button {
+  min-width: 38px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: 500 14px/1.7 var(--font-body);
+  cursor: pointer;
+}
+
+.langs button:hover {
+  background: var(--paper-2);
+}
+
+.langs button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.langs button:focus-visible {
+  outline: 2.5px solid var(--ginger);
+  outline-offset: 1px;
+}
+
+.install-hero {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 10px 0 6px;
+}
+
+.install-hero h1 {
+  margin: 0;
+  max-width: 18ch;
+  font: 700 clamp(44px, 9vw, 72px) / 1.02 var(--font-display);
+  text-wrap: balance;
+}
+
+.install-lede {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink-soft);
+  font-size: 17px;
+}
+
+.install-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 18px;
+}
+
+.install-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 20px 22px;
+}
+
+.install-card h2 {
+  margin: 0;
+  font: 700 36px/1 var(--font-display);
+}
+
+.install-card h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.install-what,
+.install-how,
+.install-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-inline-start: 22px;
+}
+
+.install-how li::marker,
+.install-steps li::marker {
+  font-weight: 700;
+  color: var(--ginger-deep);
+}
+
+.install-now {
+  border-width: 3px;
+  box-shadow: var(--lift);
+}
+
+.install-now > .btn {
+  justify-self: start;
+}
+
+.install-platform {
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.install-other summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--ginger-deep);
+}
+
+.install-other[open] summary {
+  margin-bottom: 12px;
+}
+
+.install-other .install-platform + .install-platform {
+  margin-top: 10px;
+}
+
+.install-done {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--good-wash);
+  color: var(--good);
+  font-weight: 500;
+}
+
+.share-icon {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0 0.15em;
+  vertical-align: -0.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.install-invite {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.install[dir="rtl"] .callout {
+  border-left: 0;
+  border-right: 4px solid var(--ginger);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.install:lang(ar) h1,
+.install:lang(ar) h2 {
+  font-family: var(--font-body);
+  letter-spacing: 0;
+}
+
+.install:lang(ar) .install-hero h1 {
+  font-size: clamp(34px, 7vw, 54px);
+  line-height: 1.25;
+}
+
+.install:lang(ar) .install-card h2 {
+  font-size: 26px;
+  line-height: 1.3;
+}
+
+/* ---------- people & roles ---------- */
+
+.role-help {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0 18px 14px;
+  font-size: 13px;
+}
+
+.role-help dt {
+  font-weight: 700;
+}
+
+.role-help dd {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+/* An email address is one unbreakable word: on a phone it gets its own
+   line, and the role and Remove sit under it. */
+@media (max-width: 760px) {
+  .row.person {
+    flex-wrap: wrap;
+  }
+
+  .row.person .row-main {
+    flex: 1 0 100%;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 1000px) {
+  .panel-row {
+    grid-template-columns: 1fr;
+  }
+
+  .brand small {
+    display: none;
+  }
+}
+
+/* ---------- phones ---------- */
+
+@media (max-width: 760px) {
+  :root {
+    --tabbar-height: calc(62px + env(safe-area-inset-bottom));
+  }
+
+  /* backdrop-filter would make the bar the containing block of the fixed
+     tab bar inside it, pinning the "bottom" bar to the header instead. */
+  .topbar {
+    gap: 10px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: 8px;
+    background: var(--paper);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .brand span {
+    font-size: 28px;
+  }
+
+  #who-email {
+    display: none;
+  }
+
+  /* The tabs become a bar along the bottom edge, where a thumb reaches. */
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    height: var(--tabbar-height);
+    padding: 6px 6px env(safe-area-inset-bottom);
+    gap: 4px;
+    background: var(--card);
+    border-top: 2px solid var(--ink);
+  }
+
+  .tab {
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 2px;
+    border-radius: 12px;
+    font-size: 12px;
+  }
+
+  .tab.active {
+    box-shadow: none;
+    background: var(--ginger-wash);
+    border-color: transparent;
+  }
+
+  .tab-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .badge {
+    position: absolute;
+    top: 0;
+    left: calc(50% + 6px);
+    min-width: 18px;
+    padding: 1px 5px;
+    font-size: 11px;
+  }
+
+  main {
+    padding-top: 18px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  .section-title h2 {
+    font-size: 40px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 10px;
+  }
+
+  .card-head {
+    padding: 12px 12px 10px;
+  }
+
+  /* minmax(0, …): a <select> is as wide as its longest option, and a
+     plain 1fr column would stretch to fit it. */
+  .card-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding: 10px 10px 12px;
+  }
+
+  .card-actions .btn {
+    min-width: 0;
+  }
+
+  .card-actions .btn-primary {
+    grid-column: 1 / -1;
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .card-actions .btn-danger {
+    margin-left: 0;
+  }
+
+  .cat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px 14px;
+  }
+
+  .filter {
+    max-width: none;
+  }
+
+  /* Dialogs slide up from the bottom edge instead of floating mid-screen. */
+  .sheet {
+    width: 100%;
+    max-width: none;
+    max-height: 92vh;
+    max-height: 92dvh;
+    margin: auto 0 0;
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+    box-shadow: none;
+  }
+
+  .sheet[open] {
+    animation: sheet-up 0.2s ease-out;
+  }
+
+  .sheet-body {
+    padding: 18px 16px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .picker-preview img {
+    width: 72px;
+    height: 72px;
+  }
+
+  .picker-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .inline-form {
+    flex-direction: column;
+  }
+
+  .inline-form input {
+    max-width: none;
+  }
+
+  .panel {
+    padding: 14px 14px 16px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat {
+    padding: 12px;
+  }
+
+  .stat-value {
+    font-size: 28px;
+  }
+
+  .source-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .source-figures {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    text-align: left;
+    padding-left: 1.1em;
+  }
+
+  .source-figures dt {
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .copy-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .barlist-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .barlist-label {
+    grid-column: 1 / -1;
+  }
+
+  /* A table becomes one labelled block per row: no sideways scrolling. */
+  .table thead {
+    display: none;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+  }
+
+  .table tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 0;
+    border: 0;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .toasts {
+    left: 16px;
+    right: 16px;
+    align-items: center;
+  }
+
+  .lightbox {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .lightbox-nav {
+    width: 36px;
+    font-size: 34px;
+  }
+}
+
+@media (max-width: 380px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .picker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet[open] {
+    animation: none;
+  }
+
+  .cat-card,
+  .btn {
+    transition: none;
+  }
+}
+
+/* ---------- Recognition model (recognition.js) ---------- */
+
+/* One quiet line above the queue. It never shows a guess — those are
+   revealed only after a session is labeled. */
+.model-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+.model-strip[hidden] {
+  display: none;
+}
+.model-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grey);
+  flex: none;
+}
+.model-strip[data-phase="loading"] .model-dot,
+.model-strip[data-phase="learning"] .model-dot,
+.model-strip[data-phase="guessing"] .model-dot {
+  background: var(--ginger);
+  animation: model-pulse 1.2s ease-in-out infinite;
+}
+.model-strip[data-phase="ready"] .model-dot {
+  background: var(--good);
+}
+.model-strip[data-phase="error"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.model-strip[data-phase="error"] .model-dot {
+  background: var(--danger);
+}
+.model-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.model-strip progress {
+  flex: 1 1 100%;
+  height: 6px;
+  accent-color: var(--chart);
+}
+@keyframes model-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-strip .model-dot {
+    animation: none !important;
+  }
+}
+
+.model-block + .model-block {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1.5px solid var(--line);
+}
+.model-block h4 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+.model-block .btn {
+  margin: 4px 0 10px;
+}
+.model-grid {
+  margin: 8px 0;
+}
+.muted.small,
+.small {
+  font-size: 0.85rem;
+}
+
+/* ---------- Cat guesses in Capture (capture.js) ---------- */
+
+/* A card on the dark camera overlay: the paper colours, so the cats' faces
+   read clearly over any viewfinder. */
+.guess-offer h3 {
+  margin: 0 0 6px;
+}
+.guess-offer p {
+  margin: 0 0 12px;
+}
+.guess-setting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.pick-right {
+  color: var(--good);
+  font-weight: 500;
+}
+.pick-wrong {
+  color: var(--danger);
+}
+
+/* ---------- capture: the encounter's result ---------- */
+
+.result-photos .shot-strip {
+  padding: 0;
+}
+.result-photos .outbox-line {
+  margin: 10px 0 0;
+}
+.result {
+  display: grid;
+  gap: 12px;
+}
+.result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.result-title {
+  margin: 0;
+  font-size: 20px;
+}
+.result > .meta {
+  margin: -6px 0 0;
+}
+.result-wait {
+  margin: 0;
+  font-weight: 500;
+}
+.result-wait::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--ginger);
+  animation: model-pulse 1.2s ease-in-out infinite;
+}
+.result progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--chart);
+}
+/* Bigger than on a queue card: this is the whole question. */
+.result-picks {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.result-picks .pick-name {
+  font-size: 15px;
+}
+.result-choices,
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.result-choices .btn {
+  flex: 1 1 auto;
+}
+.result-actions {
+  align-items: center;
+  margin-top: 4px;
+}
+.result-done {
+  display: grid;
+  gap: 10px;
+}
+.result-cat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.result-cat img,
+.result-cat .pick-cover-empty {
+  width: 96px;
+  height: 96px;
+  flex: none;
+  object-fit: cover;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper-2);
+}
+.result-cat p {
+  margin: 0;
+}
+.result-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.result-name {
+  margin: 0;
+  font: 700 34px/1.05 var(--font-display);
+}
+.result-model {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+.result-model.agree {
+  background: var(--good-wash);
+  color: var(--good);
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .result-wait::before {
+    animation: none;
+  }
+}
+
+.encounter-row {
+  flex-wrap: wrap;
+}
+.verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: var(--ink-soft);
+}

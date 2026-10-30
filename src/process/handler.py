@@ -37,6 +37,11 @@ NEAR_DUPLICATE_MAX_DISTANCE = 5
 # mapping but never precise enough to reveal where a contributor stood.
 COORDINATE_DECIMALS = 3
 
+# Anything else under raw/ is video. Hashed and deduped like a photo, but
+# gets none of the Pillow pipeline — no frames extracted, no thumbnails, no
+# EXIF. Turning a clip into browsable stills is a later problem.
+IMAGE_EXTENSIONS = {"jpg", "jpeg", "png"}
+
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 s3 = boto3.client("s3")
@@ -56,7 +61,32 @@ def handler(event, context):
 
 
 def _process_object(key):
-    session_id, photo_id, _ = _parse_raw_key(key)
+    session_id, photo_id, ext = _parse_raw_key(key)
+    # Write order (spec §10) puts the record before the object, so an object
+    # with no record was not sent through a bot or the app — someone copied
+    # it into raw/ by hand. Processing it would upsert a half-built record
+    # (one was, from a diagnostic upload on 2026-08-28) and claim its hash.
+    if "Item" not in table.get_item(
+        Key={"PK": f"PHOTO#{photo_id}", "SK": "META"}, ProjectionExpression="PK"
+    ):
+        logger.warning("no photo record for %s, skipping", key)
+        return
+    if ext.lower() in IMAGE_EXTENSIONS:
+        _process_image(key, session_id, photo_id)
+    else:
+        _process_video(key, session_id, photo_id)
+
+
+def _process_video(key, session_id, photo_id):
+    logger.info("processing video=%s session=%s", photo_id, session_id)
+
+    raw = s3.get_object(Bucket=MEDIA_BUCKET, Key=key)["Body"].read()
+    sha256 = hashlib.sha256(raw).hexdigest()
+    duplicate_of = _claim_sha256(sha256, photo_id)
+    _record_video_results(photo_id=photo_id, sha256=sha256, duplicate_of=duplicate_of)
+
+
+def _process_image(key, session_id, photo_id):
     logger.info("processing photo=%s session=%s", photo_id, session_id)
 
     raw = s3.get_object(Bucket=MEDIA_BUCKET, Key=key)["Body"].read()
@@ -274,6 +304,7 @@ def _record_results(
         "phash = :phash",
         "width = :w",
         "height = :h",
+        "mediaType = :mt",
         "processedAt = :now",
     ]
     values = {
@@ -281,6 +312,7 @@ def _record_results(
         ":phash": image_phash,
         ":w": width,
         ":h": height,
+        ":mt": "photo",
         ":now": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
     }
 
@@ -299,6 +331,33 @@ def _record_results(
     if duplicate_of:
         # Byte-identical resubmission: mark it and keep it out of the
         # labeling queue. Near-duplicates deliberately do NOT do this.
+        expressions += ["#status = :status", "duplicateOf = :dup", "GSI2PK = :g2pk"]
+        values[":status"] = "duplicate"
+        values[":dup"] = duplicate_of
+        values[":g2pk"] = "STATUS#duplicate"
+        names["#status"] = "status"
+
+    kwargs = {
+        "Key": {"PK": f"PHOTO#{photo_id}", "SK": "META"},
+        "UpdateExpression": "SET " + ", ".join(expressions),
+        "ExpressionAttributeValues": values,
+    }
+    if names:
+        kwargs["ExpressionAttributeNames"] = names
+
+    table.update_item(**kwargs)
+
+
+def _record_video_results(photo_id, sha256, duplicate_of):
+    expressions = ["sha256 = :sha", "mediaType = :mt", "processedAt = :now"]
+    values = {
+        ":sha": sha256,
+        ":mt": "video",
+        ":now": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+    }
+
+    names = {}
+    if duplicate_of:
         expressions += ["#status = :status", "duplicateOf = :dup", "GSI2PK = :g2pk"]
         values[":status"] = "duplicate"
         values[":dup"] = duplicate_of
