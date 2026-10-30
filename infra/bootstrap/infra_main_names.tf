@@ -3,14 +3,13 @@
 # resources. This root and infra/main deliberately share no state, so they
 # are written out here.
 #
-# Names are ones we chose, so they are stable. IDs are ones AWS assigned to
-# resources that have no name-based ARN (API Gateway, CloudFront, Cognito).
-# The account also hosts schedule-ai-app, which has one of each, so a
-# wildcard over those services would cover its resources too. Pinning the
-# deploy role to our IDs also means that replacing one of these resources
-# (a new ID) fails the deploy instead of happening silently: the owner
-# updates the ID here first. Read them with
-#   terraform -chdir=infra/main state show <address>
+# Names are ones we chose, so they are stable, and the policies name them.
+# API Gateway, CloudFront and Cognito have no name-based ARNs: AWS assigns
+# an ID at creation. Those are scoped to the account instead. That is
+# exact, because this account (sasha-bgucats-prod) runs bgucats and
+# nothing else, and it is what lets a deploy into an empty account create
+# them. Until 2026-10 the account was shared with schedule-ai-app and the
+# policies were pinned to our IDs; that reason is gone.
 locals {
   account_id = data.aws_caller_identity.current.account_id
 
@@ -29,8 +28,14 @@ locals {
 
   data_table_arn = "arn:aws:dynamodb:us-east-1:${local.account_id}:table/bgucats-data"
 
-  api_id                  = "kxle008kl8"                         # aws_apigatewayv2_api.main
-  cloudfront_distribution = ["E1KM1WXCPKSU13", "E1DFTNHZ0NL01S"] # .site, .web
-  cloudfront_oac          = ["EW78DHJ9WGKM9", "E38522F4F2GXTV"]  # .site, .web
-  cognito_user_pool_arn   = "arn:aws:cognito-idp:us-east-1:${local.account_id}:userpool/us-east-1_iLd1I4gJ9"
+  # API Gateway ARNs carry no account; the role's credentials only ever act
+  # in their own account, so region-wide is account-wide.
+  apigateway_arns = [
+    "arn:aws:apigateway:us-east-1::/apis",
+    "arn:aws:apigateway:us-east-1::/apis/*",
+    "arn:aws:apigateway:us-east-1::/tags/*",
+  ]
+  cloudfront_distribution_arns = "arn:aws:cloudfront::${local.account_id}:distribution/*"
+  cloudfront_oac_arns          = "arn:aws:cloudfront::${local.account_id}:origin-access-control/*"
+  cognito_user_pool_arns       = "arn:aws:cognito-idp:us-east-1:${local.account_id}:userpool/*"
 }

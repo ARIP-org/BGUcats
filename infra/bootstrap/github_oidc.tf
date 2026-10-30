@@ -194,9 +194,7 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
       {
         # bgucats-* rather than one entry per function: read-only, still
         # confined to this project's names, and every new Lambda would
-        # otherwise break CI until this policy was extended by hand. The
-        # account is shared with an unrelated project, so the prefix is
-        # what keeps the blast radius right.
+        # otherwise break CI until this policy was extended by hand.
         Sid    = "DescribeLambdaRoles"
         Effect = "Allow"
         Action = [
@@ -246,9 +244,8 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Resource = "*"
       },
       {
-        # Read-only, so not pinned to our IDs the way the deploy role's
-        # writes are (deploy_role.tf). ListCachePolicies and
-        # DescribeUserPoolDomain have no resource-level scoping at all.
+        # Read-only, and the account runs nothing else. ListCachePolicies
+        # and DescribeUserPoolDomain have no resource-level scoping at all.
         Sid    = "DescribeCloudFrontAndCognitoForPlan"
         Effect = "Allow"
         Action = [

@@ -4,10 +4,12 @@
 # codespace, no PR run.
 #
 # What it may do is derived from the resource types in infra/main/*.tf, and
-# scoped to their names (or, where AWS only offers IDs, their IDs: see
-# infra_main_names.tf). Four things it deliberately cannot do:
-#   - delete the data table, a bucket or the user pool. A plan that tries
-#     fails at apply. Destroying stored data is an owner decision.
+# scoped to their names (or, where AWS only offers IDs, to the account: see
+# infra_main_names.tf). It can create everything infra/main declares, so a
+# deploy can build an empty account. Four things it deliberately cannot do:
+#   - delete a table, a bucket or the user pool, or anything in the media
+#     bucket (explicit denies below). A plan that tries fails at apply.
+#     Destroying stored data is an owner decision.
 #   - give any role more than the Lambda permissions boundary
 #     (lambda_boundary.tf), or touch the GitHub roles, the boundary, or
 #     the OIDC provider. That is what stops it from escalating.
@@ -297,10 +299,8 @@ resource "aws_iam_role_policy" "github_actions_deploy_compute" {
           "apigateway:PATCH",
           "apigateway:DELETE",
         ]
-        Resource = [
-          "arn:aws:apigateway:us-east-1::/apis/${local.api_id}",
-          "arn:aws:apigateway:us-east-1::/apis/${local.api_id}/*",
-        ]
+        # Creating the API is a POST on /apis itself.
+        Resource = local.apigateway_arns
       },
     ]
   })
@@ -315,11 +315,13 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Update, never create or delete: see infra_main_names.tf.
+        # Create and update, never delete: a distribution's address is the
+        # URL people have installed the app from and the poster points at.
         # CreateInvalidation is `make site-invalidate`.
         Sid    = "OurDistributions"
         Effect = "Allow"
         Action = [
+          "cloudfront:CreateDistribution",
           "cloudfront:GetDistribution",
           "cloudfront:GetDistributionConfig",
           "cloudfront:UpdateDistribution",
@@ -329,17 +331,18 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
           "cloudfront:TagResource",
           "cloudfront:UntagResource",
         ]
-        Resource = [for id in local.cloudfront_distribution : "arn:aws:cloudfront::${local.account_id}:distribution/${id}"]
+        Resource = local.cloudfront_distribution_arns
       },
       {
         Sid    = "OurOriginAccessControls"
         Effect = "Allow"
         Action = [
+          "cloudfront:CreateOriginAccessControl",
           "cloudfront:GetOriginAccessControl",
           "cloudfront:GetOriginAccessControlConfig",
           "cloudfront:UpdateOriginAccessControl",
         ]
-        Resource = [for id in local.cloudfront_oac : "arn:aws:cloudfront::${local.account_id}:origin-access-control/${id}"]
+        Resource = local.cloudfront_oac_arns
       },
       {
         # The AWS-managed cache and origin-request policies the data sources
@@ -357,7 +360,7 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
       },
       {
         # Our user pool and what hangs off it (client, Google IdP, domain,
-        # managed-login branding). No DeleteUserPool.
+        # managed-login branding). No DeleteUserPool, and a deny below.
         Sid    = "OurUserPool"
         Effect = "Allow"
         Action = [
@@ -386,13 +389,14 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
           "cognito-idp:TagResource",
           "cognito-idp:UntagResource",
         ]
-        Resource = local.cognito_user_pool_arn
+        Resource = local.cognito_user_pool_arns
       },
       {
-        # Takes a domain name, not a pool: no resource-level scoping.
-        Sid      = "DescribeUserPoolDomain"
+        # DescribeUserPoolDomain takes a domain name, not a pool, and
+        # CreateUserPool has no pool yet: neither has resource-level scoping.
+        Sid      = "CreatePoolAndDescribeDomain"
         Effect   = "Allow"
-        Action   = "cognito-idp:DescribeUserPoolDomain"
+        Action   = ["cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPoolDomain"]
         Resource = "*"
       },
       {
@@ -458,6 +462,31 @@ resource "aws_iam_role_policy" "github_actions_deploy_guards" {
         Effect   = "Deny"
         Action   = "iam:DeleteRolePermissionsBoundary"
         Resource = "*"
+      },
+      {
+        # The dataset and the state outlive any deploy. Nothing above allows
+        # these; the deny keeps it that way whatever a later edit adds.
+        Sid    = "NoDeletingStores"
+        Effect = "Deny"
+        Action = [
+          "dynamodb:DeleteTable",
+          "dynamodb:DeleteBackup",
+          "s3:DeleteBucket",
+          "cognito-idp:DeleteUserPool",
+        ]
+        Resource = "*"
+      },
+      {
+        # People's photos. Terraform owns no object in the media bucket, so
+        # a deploy never needs to write, overwrite or delete one.
+        Sid    = "NoTouchingTheMedia"
+        Effect = "Deny"
+        Action = [
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:DeleteObjectVersion",
+        ]
+        Resource = "arn:aws:s3:::bgucats-media-${local.account_id}/*"
       },
       {
         # The recognition model is published by the owner (docs/deploy.md).
