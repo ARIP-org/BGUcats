@@ -192,6 +192,11 @@ under **Authorized redirect URIs**, keeping the old one until step 9:
 https://bgucats-app.auth.us-east-1.amazoncognito.com/oauth2/idpresponse
 ```
 
+Check that it was **saved**: the list must show both URIs. On 2026-10-30
+only the old one was there after the cutover, and the new app's sign-in
+failed with `Error 400: redirect_uri_mismatch` until it was added. Google
+can take a few minutes to pick up a change.
+
 ### 5e. Ruleset on `main`
 
 After step 3: *Settings* → *Rules* → *Rulesets* → **New branch ruleset**:
@@ -442,6 +447,11 @@ so nobody opens the new app before step 8.
 ---
 
 ## 8. Cutover
+
+**Done on 2026-10-30**, in the afternoon rather than the evening, since
+nobody was using the app. `scripts/cutover.sh` ran 12:28–12:31 UTC and the
+copy verified as `MATCH`. Telegram and Capture work in the new account.
+Still open: the next-day check (8.4) and, from 2026-11-13, step 9.
 
 1. **Telegram to the new account.** The queued messages arrive within
    seconds:

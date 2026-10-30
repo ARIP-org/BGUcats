@@ -101,8 +101,12 @@ blocked on someone else.
   debugging goes through `aws sso login` (`docs/codespaces.md`).
 - **Production has an account of its own,** `sasha-bgucats-prod`
   (`395591097129`), named in one file: `infra/main/backend/prod.hcl`.
-  `851725214678` is the organization's management account and, once the
-  move in `docs/MANUAL_STEPS.md` is done, runs nothing. Every hand-run AWS
+  It has been production since the cutover on 2026-10-30 (app
+  `https://d1m4aukbm35e12.cloudfront.net/`, Cognito `bgucats-app`).
+  `851725214678` is the organization's management account. It still holds
+  the old deployment and the old copy of the data, untouched, as the way
+  back until `docs/MANUAL_STEPS.md` step 9 decommissions it (not before
+  2026-11-13). Never deploy or write there. Every hand-run AWS
   command names its SSO profile (`bgucats-prod-ro`, `bgucats-prod-admin`,
   `mgmt-ro`, `mgmt-admin`); `infra/scripts/aws-guard.sh` refuses the wrong
   account and leftover access keys.
