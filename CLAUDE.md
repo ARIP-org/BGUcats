@@ -7,7 +7,10 @@ Authoritative specs, in order of precedence:
 - `docs/cat-app-design-spec.pdf` (v2 draft) — authoritative for ingest, storage,
   processing and security.
 
-Read both before non-trivial work. This file is the short version of the
+Read both before non-trivial work. For **how** the project is built, deployed
+and worked on — accounts, environments, repos, people — `docs/ROADMAP.md`
+is the plan; read it before any infra, CI/CD, repo-layout or access work.
+This file is the short version of the
 constraints that are easy to violate by reflex.
 
 The addendum supersedes the spec's "no machine learning of any kind" in
