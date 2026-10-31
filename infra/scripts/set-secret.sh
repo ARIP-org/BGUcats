@@ -57,11 +57,25 @@ ssm_get() {
   fi
 }
 
+# aws_json <aws args...>: the request JSON comes on stdin. The AWS CLI cannot
+# read --cli-input-json from file:///dev/stdin ("Invalid JSON received"), and
+# an argument would show the value in the process list, so it goes through a
+# file only this user can read, deleted at once.
+aws_json() {
+  local dir rc=0
+  dir=$(mktemp -d)
+  chmod 700 "$dir"
+  (umask 077 && cat >"$dir/in.json")
+  aws "$@" --cli-input-json "file://$dir/in.json" || rc=$?
+  rm -rf "$dir"
+  return "$rc"
+}
+
 # ssm_put <name> <value> [--overwrite]
 ssm_put() {
   NAME="$1" VALUE="$2" OVERWRITE="${3:+true}" jq -n \
     '{Name: env.NAME, Value: env.VALUE, Type: "SecureString", Overwrite: (env.OVERWRITE == "true")}' |
-    aws ssm put-parameter --cli-input-json file:///dev/stdin --query Version --output text |
+    aws_json ssm put-parameter --query Version --output text |
     sed "s|^|$1: version |"
 }
 
@@ -147,14 +161,14 @@ google-oauth)
     --provider-name Google --query IdentityProvider.ProviderName --output text >/dev/null 2>&1; then
     POOL="$pool" DETAILS="$details" jq -n \
       '{UserPoolId: env.POOL, ProviderName: "Google", ProviderDetails: (env.DETAILS | fromjson)}' |
-      aws cognito-idp update-identity-provider --cli-input-json file:///dev/stdin \
+      aws_json cognito-idp update-identity-provider \
         --query IdentityProvider.LastModifiedDate --output text | sed 's/^/Google provider updated: /'
   else
     POOL="$pool" DETAILS="$details" jq -n \
       '{UserPoolId: env.POOL, ProviderName: "Google", ProviderType: "Google",
         ProviderDetails: (env.DETAILS | fromjson),
         AttributeMapping: {email: "email", username: "sub", name: "name", picture: "picture"}}' |
-      aws cognito-idp create-identity-provider --cli-input-json file:///dev/stdin \
+      aws_json cognito-idp create-identity-provider \
         --query IdentityProvider.CreationDate --output text | sed 's/^/Google provider created: /'
   fi
   ;;
