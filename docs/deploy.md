@@ -149,15 +149,19 @@ The names: `telegram-bot-token` (paste from @BotFather after `/revoke`),
 `telegram-webhook-secret` (generated), `google-oauth` (paste the client ID
 and secret), `submitter-hash-salt` (new accounts only: it never replaces an
 existing salt, because that would give every Telegram contributor a new
-identity). The Telegram ones re-register the webhook themselves. The ingest
-Lambda re-reads its secrets every 5 minutes, so a Telegram rotation can
-fail a few webhook calls for up to 5 minutes; Telegram retries them. Do it
-when the bot is quiet.
+identity). The Telegram ones register the webhook themselves, at the API's
+address, and stop if Telegram refuses it. **Revoking a token also drops the
+bot's webhook**: on 2026-10-31 the first version of the script asked
+Telegram for the old address, found none, and the bot went silent until
+the webhook was set by hand. The ingest Lambda re-reads its secrets every 5
+minutes, so a Telegram rotation can fail a few webhook calls for up to 5
+minutes; Telegram retries them. Do it when the bot is quiet, and send the
+bot `/start` afterwards.
 
 In a **new account**, run `google-oauth` after the first deploy has created
 the user pool and failed at the app client (which names the Google
-provider), then deploy again; and `submitter-hash-salt`, both Telegram
-ones, then `infra/scripts/set-telegram-webhook.sh`.
+provider), then deploy again; and `submitter-hash-salt` and both Telegram
+ones (the second one registers the webhook).
 
 ## History
 

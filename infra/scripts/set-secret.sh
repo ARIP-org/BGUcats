@@ -9,7 +9,8 @@
 #
 # <name> is one of:
 #   telegram-bot-token       paste the token from @BotFather; checked with
-#                            getMe, then the webhook is re-registered with it
+#                            getMe, then the webhook is registered with it
+#                            (revoking a token drops the webhook)
 #   telegram-webhook-secret  a new random value is generated; Telegram is
 #                            told the new one at once
 #   submitter-hash-salt      only creates it, in a new account. Changing it
@@ -31,6 +32,7 @@ TOKEN_PARAM=/bgucats/telegram/bot-token
 SECRET_PARAM=/bgucats/telegram/webhook-secret
 SALT_PARAM=/bgucats/submitter-hash-salt
 USER_POOL_NAME=bgucats-admins
+API_NAME=bgucats-api
 ALLOWED_UPDATES='["message","callback_query"]' # as set-telegram-webhook.sh
 
 ask() { # value=$(ask <prompt>): hidden input; the prompt goes to stderr
@@ -61,13 +63,16 @@ ssm_get() {
 # read --cli-input-json from file:///dev/stdin ("Invalid JSON received"), and
 # an argument would show the value in the process list, so it goes through a
 # file only this user can read, deleted at once.
+json_dir=""
+trap '[ -z "$json_dir" ] || rm -rf "$json_dir"' EXIT # also on Ctrl-C
 aws_json() {
-  local dir rc=0
-  dir=$(mktemp -d)
-  chmod 700 "$dir"
-  (umask 077 && cat >"$dir/in.json")
-  aws "$@" --cli-input-json "file://$dir/in.json" || rc=$?
-  rm -rf "$dir"
+  local rc=0
+  json_dir=$(mktemp -d)
+  chmod 700 "$json_dir"
+  (umask 077 && cat >"$json_dir/in.json")
+  aws "$@" --cli-input-json "file://$json_dir/in.json" || rc=$?
+  rm -rf "$json_dir"
+  json_dir=""
   return "$rc"
 }
 
@@ -93,22 +98,29 @@ tg() {
   } | curl -sS --config -
 }
 
-# The webhook URL does not change with a secret; take it from Telegram.
-# In a new account, with the token or the secret not set yet, or no webhook
-# registered, say so: infra/scripts/set-telegram-webhook.sh does the first one.
+# Registers the webhook at our API's address, with the current secret, and
+# checks that Telegram took it. The address comes from API Gateway, not from
+# Telegram: revoking a token also drops the bot's webhook, so on 2026-10-31
+# asking Telegram for the old address found none and the bot went silent.
 reregister_webhook() {
-  local token="$1" secret="$2" url
+  local token="$1" secret="$2" api url answer
   if [ -z "$token" ] || [ -z "$secret" ]; then
-    echo "Webhook not registered: set the other Telegram secret too, then run set-telegram-webhook.sh."
+    echo "Webhook not registered: set the other Telegram secret too."
     return
   fi
-  url=$(tg "$token" getWebhookInfo | jq -r '.result.url // ""')
-  if [ -z "$url" ]; then
-    echo "Telegram has no webhook for this bot yet: run infra/scripts/set-telegram-webhook.sh"
-    return
-  fi
-  echo "Re-registering webhook: $url"
-  tg "$token" setWebhook "url=$url" "secret_token=$secret" "allowed_updates=$ALLOWED_UPDATES" | jq -c .
+  api=$(aws apigatewayv2 get-apis --query "Items[?Name=='$API_NAME'].ApiEndpoint" --output text)
+  [ -n "$api" ] && [ "$api" != None ] || {
+    echo "No API named $API_NAME in this account: the webhook is NOT registered." >&2
+    exit 1
+  }
+  url="$api/webhook/telegram"
+  echo "Registering webhook: $url"
+  answer=$(tg "$token" setWebhook "url=$url" "secret_token=$secret" "allowed_updates=$ALLOWED_UPDATES")
+  [ "$(jq -r .ok <<<"$answer")" = true ] || {
+    echo "Telegram refused the webhook: $answer" >&2
+    exit 1
+  }
+  tg "$token" getWebhookInfo | jq -c '{url: .result.url, pending: .result.pending_update_count}'
 }
 
 case "${1:-}" in
@@ -121,8 +133,6 @@ telegram-bot-token)
     exit 1
   }
   echo "Token is for @$(jq -r .result.username <<<"$me")"
-  # The webhook was registered with the old token; ask with the new one,
-  # which is the same bot.
   secret=$(ssm_get "$SECRET_PARAM")
   ssm_put "$TOKEN_PARAM" "$token" overwrite
   reregister_webhook "$token" "$secret"
