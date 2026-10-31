@@ -60,7 +60,7 @@ and Claude:
 
 ---
 
-## Where we are (2026-10-30)
+## Where we are (updated 2026-10-31)
 
 | Area | State |
 |---|---|
@@ -70,9 +70,38 @@ and Claude:
 | Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old account keeps its copy until step 9, not before 2026-11-13. |
 | WhatsApp bot | Removed from code (PR #4). Old account copy runs until decommission. |
 | Repo | Single repo `sasha720709/BGUcats`: `src/` (Lambdas), `web/` (PWA), `site/` (landing), `infra/`, `research/` (imports nothing from `src/`), `scripts/`. |
+| Secrets | **Outside Terraform since 2026-10-31** (PR #12): SSM values and Cognito's Google provider are set by `infra/scripts/set-secret.sh`, owner-only. CI and deploy roles have no access to them (PR #14, bootstrap applied by the owner 2026-10-31; the CI plan with the restricted role shows no changes). Telegram bot token, webhook secret and Google client secret rotated by the owner 2026-10-31. Salt deliberately not rotated. |
+| Telegram bot | A stopgap, not a product line: the app's Capture is the real upload channel. Kept working while the landing page points to it; no long-term plans around it (e.g. staging needs no test bot). |
 | GitHub plan | Personal Pro, student (environments + branch policies on private repos; **no** required reviewers). The owner's merge is the only gate. |
 
 ---
+
+## Next session starts here (2026-10-31)
+
+**Phase 1, secrets gap: done** (PRs #12, #14, #15; bootstrap applied;
+rotation done). Owner, before anything else:
+
+- Confirm the rotation worked, if not already: the bot answers a photo;
+  Google sign-in in the app works; the **old Google client secret is
+  disabled and deleted** in Google Cloud → Credentials.
+- Delete the five unused `production` environment secrets in GitHub, if
+  not already: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
+  `SUBMITTER_HASH_SALT`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+  (keep `BOOTSTRAP_ADMIN_EMAIL`).
+- Delete merged branches; turn on Settings → General → *Automatically
+  delete head branches* (a stacked PR, #13, merged into its base branch
+  instead of `main` because the base was not deleted).
+
+**Next: Phase 2a, the GitHub organization**, done together step by step.
+Claude proposes its steps as text first. The rest of Phase 1 (SHA-pinned
+actions, Dependabot, PR/issue templates, plan summary as a PR comment,
+budgets) is not started and can be done between owner steps.
+
+**Incident during the rotation:** revoking the bot token also dropped the
+webhook, and the first `set-secret.sh` did not notice, so the bot was
+silent from the rotation until the owner set the webhook by hand the same
+evening. Fixed in PR #17 (address from API Gateway, refused `setWebhook`
+stops the script); `docs/deploy.md` has the details.
 
 ## Phase 0 — Finish the move
 
