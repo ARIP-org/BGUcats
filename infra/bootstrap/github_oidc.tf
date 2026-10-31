@@ -223,25 +223,9 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Action   = "apigateway:GET"
         Resource = "arn:aws:apigateway:us-east-1::/apis/*"
       },
-      {
-        Sid    = "DescribeSecretsForPlan"
-        Effect = "Allow"
-        Action = ["ssm:GetParameter", "ssm:ListTagsForResource"]
-        Resource = [
-          "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/bot-token",
-          "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/telegram/webhook-secret",
-          "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/bgucats/submitter-hash-salt",
-        ]
-      },
-      {
-        # DescribeParameters (metadata, not values — tier/type/tags) is
-        # one more KMS-ListAliases-shaped action: no resource-level
-        # scoping, must be Resource "*".
-        Sid      = "DescribeSecretsMetadataForPlan"
-        Effect   = "Allow"
-        Action   = "ssm:DescribeParameters"
-        Resource = "*"
-      },
+      # No SSM and no Cognito identity provider: the secrets are outside
+      # Terraform (infra/main/ssm.tf), so plan never reads them, and this
+      # role — which any PR's workflow can drive — must not be able to.
       {
         # Read-only, and the account runs nothing else. ListCachePolicies
         # and DescribeUserPoolDomain have no resource-level scoping at all.
@@ -258,7 +242,6 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "cognito-idp:DescribeUserPool",
           "cognito-idp:DescribeUserPoolClient",
           "cognito-idp:DescribeUserPoolDomain",
-          "cognito-idp:DescribeIdentityProvider",
           "cognito-idp:DescribeManagedLoginBranding",
           "cognito-idp:DescribeManagedLoginBrandingByClient",
           "cognito-idp:GetUserPoolMfaConfig",
