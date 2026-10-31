@@ -95,11 +95,6 @@ jobs:
 
       - name: Plan
         env:
-          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TF_VAR_telegram_webhook_secret: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
-          TF_VAR_submitter_hash_salt: ${{ secrets.SUBMITTER_HASH_SALT }}
-          TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
-          TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           TF_VAR_bootstrap_admin_email: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
         run: |
           terraform -chdir=infra/main init -input=false -backend-config=backend/prod.hcl

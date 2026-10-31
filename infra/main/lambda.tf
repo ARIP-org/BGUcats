@@ -63,12 +63,8 @@ resource "aws_iam_role_policy" "ingest_lambda_access" {
         # Handler uses the batch API (ssm.get_parameters, plural) to fetch
         # all three in one call — GetParameter (singular) is a different
         # IAM action and doesn't cover it.
-        Action = "ssm:GetParameters"
-        Resource = [
-          aws_ssm_parameter.telegram_bot_token.arn,
-          aws_ssm_parameter.telegram_webhook_secret.arn,
-          aws_ssm_parameter.submitter_hash_salt.arn,
-        ]
+        Action   = "ssm:GetParameters"
+        Resource = local.ssm_param_arns
       },
       {
         Sid      = "DecryptSecrets"
@@ -95,9 +91,9 @@ resource "aws_lambda_function" "ingest" {
     variables = {
       TABLE_NAME                    = aws_dynamodb_table.data.name
       MEDIA_BUCKET                  = aws_s3_bucket.media.id
-      TELEGRAM_BOT_TOKEN_PARAM      = aws_ssm_parameter.telegram_bot_token.name
-      TELEGRAM_WEBHOOK_SECRET_PARAM = aws_ssm_parameter.telegram_webhook_secret.name
-      SUBMITTER_HASH_SALT_PARAM     = aws_ssm_parameter.submitter_hash_salt.name
+      TELEGRAM_BOT_TOKEN_PARAM      = local.ssm_params.telegram_bot_token
+      TELEGRAM_WEBHOOK_SECRET_PARAM = local.ssm_params.telegram_webhook_secret
+      SUBMITTER_HASH_SALT_PARAM     = local.ssm_params.submitter_hash_salt
       # Opened as a Telegram Mini App from the bot's "Pick on map" button.
       # Telegram only accepts https Mini App URLs, which CloudFront gives us.
       MAP_PICKER_URL = "https://${aws_cloudfront_distribution.site.domain_name}/map.html"

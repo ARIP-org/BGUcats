@@ -78,18 +78,10 @@ jobs:
           aws-region: us-east-1
 
       - name: plan (infra/main only — bootstrap is applied by hand)
-        # Placeholder secret values: PR runs get no secrets, and this role
-        # can only read (infra/README.md), so it could not apply even if it
-        # tried. The placeholders make every CI plan show the three
-        # aws_ssm_parameter values and the Google identity provider as
-        # changing. That is expected here; the deploy run's plan uses the
-        # real values from the production environment (deploy.yml).
+        # PR runs get no environment secrets, and this role can only read
+        # (infra/README.md). The one variable left is not a secret; the
+        # bot's secrets and Google's are outside Terraform (infra/main/ssm.tf).
         env:
-          TF_VAR_telegram_bot_token: "ci-plan-placeholder"
-          TF_VAR_telegram_webhook_secret: "ci-plan-placeholder"
-          TF_VAR_submitter_hash_salt: "ci-plan-placeholder"
-          TF_VAR_google_client_id: "ci-plan-placeholder"
-          TF_VAR_google_client_secret: "ci-plan-placeholder"
           TF_VAR_bootstrap_admin_email: "ci-plan-placeholder@example.com"
         run: |
           terraform -chdir=infra/main init -reconfigure -backend-config=backend/prod.hcl

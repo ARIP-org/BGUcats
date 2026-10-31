@@ -35,38 +35,26 @@ resource "aws_lambda_permission" "cognito_presignup" {
   source_arn    = aws_cognito_user_pool.admins.arn
 }
 
-# Credentials come from a Google Cloud OAuth 2.0 client — see infra/README.md
-# for the console walkthrough. The authorized redirect URI Google needs is
-# https://{domain_prefix}.auth.{region}.amazoncognito.com/oauth2/idpresponse,
-# which is knowable before this is ever applied because we pick the prefix.
-resource "aws_cognito_identity_provider" "google" {
-  user_pool_id  = aws_cognito_user_pool.admins.id
-  provider_name = "Google"
-  provider_type = "Google"
-
-  # The four endpoint values below are filled in by Cognito itself when the
-  # provider type is Google. Left out of the config they come back as
-  # unmanaged drift, so every future `plan` proposes deleting them and
-  # nobody reads plans that always say something. Stating them explicitly
-  # makes the resource converge.
-  provider_details = {
-    client_id                     = var.google_client_id
-    client_secret                 = var.google_client_secret
-    authorize_scopes              = "openid email profile"
-    attributes_url                = "https://people.googleapis.com/v1/people/me?personFields="
-    attributes_url_add_attributes = "true"
-    authorize_url                 = "https://accounts.google.com/o/oauth2/v2/auth"
-    oidc_issuer                   = "https://accounts.google.com"
-    token_request_method          = "POST"
-    token_url                     = "https://www.googleapis.com/oauth2/v4/token"
+# Google is the identity provider, and its client secret is the one value
+# Terraform must not hold: Cognito returns it on every read, so it would sit
+# in the state that the CI role reads to plan. The provider is created and
+# updated outside Terraform, by the owner, with
+# `infra/scripts/set-secret.sh google-oauth` (Google Cloud walkthrough:
+# infra/README.md). In a new account, run that after the user pool exists
+# and before the app client is created: the client names "Google", and
+# Cognito refuses a client whose provider does not exist yet.
+#
+# Until 2026-10-31 this was aws_cognito_identity_provider.google. The
+# removed block lets Terraform forget it without deleting it.
+removed {
+  from = aws_cognito_identity_provider.google
+  lifecycle {
+    destroy = false
   }
+}
 
-  attribute_mapping = {
-    email    = "email"
-    username = "sub"
-    name     = "name"
-    picture  = "picture"
-  }
+locals {
+  google_provider_name = "Google"
 }
 
 resource "aws_cognito_user_pool_domain" "admins" {
@@ -101,7 +89,7 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
-  supported_identity_providers         = [aws_cognito_identity_provider.google.provider_name]
+  supported_identity_providers         = [local.google_provider_name]
 
   # No SRP, no admin password auth, no refresh-less flows — the pool has no
   # passwords, so every one of these would be dead surface area.

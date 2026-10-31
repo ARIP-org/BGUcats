@@ -110,9 +110,15 @@ blocked on someone else.
   command names its SSO profile (`bgucats-prod-ro`, `bgucats-prod-admin`,
   `mgmt-ro`, `mgmt-admin`); `infra/scripts/aws-guard.sh` refuses the wrong
   account and leftover access keys.
-- **Two exceptions, both owner-only:** `infra/bootstrap` (the state backend and
-  the GitHub roles; it cannot deploy itself) and `make model-publish` (needs
-  torch, so it is not in CI). Both are in `docs/deploy.md`.
+- **Three exceptions, all owner-only:** `infra/bootstrap` (the state backend and
+  the GitHub roles; it cannot deploy itself), `make model-publish` (needs
+  torch, so it is not in CI) and `infra/scripts/set-secret.sh`. All are in
+  `docs/deploy.md`.
+- **No secret value in Terraform.** The bot's secrets (SSM) and the Google
+  OAuth client (Cognito) are set with `set-secret.sh`; Terraform only names
+  them. Anything it manages lands in the state, which every PR's CI run can
+  read. Never add a secret `variable`, `aws_ssm_parameter` value or
+  `aws_cognito_identity_provider` back.
 - **Rollback is `git revert`** of the merge commit, merged like any change.
 - **Update the docs in the same PR** as the change: `docs/deploy.md` when the
   deploy changes, `docs/app-backlog.md`, `research/FINDINGS.md`, and this
