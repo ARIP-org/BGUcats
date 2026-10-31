@@ -22,8 +22,8 @@ than a late one.
 
 1. `make lint && make test`: the same checks as CI, again on the merged code.
 2. `make build`: the Lambda zips.
-3. `terraform plan -out=tfplan` on `infra/main`, with the secrets from the
-   `production` environment as `TF_VAR_*`.
+3. `terraform plan -out=tfplan` on `infra/main`. It needs no secrets: the
+   bot's and Google's live in AWS only, outside Terraform ("Secrets" below).
 4. `terraform apply tfplan`: exactly the plan above, nothing recomputed.
 5. If the plan changed any `aws_s3_object.site[...]`: `make site-invalidate`.
    The landing page is cached for up to a day; the admin app is not cached,
@@ -37,10 +37,8 @@ applies.
 ## Reading the plan
 
 The plan is in the CI run of every PR (job `terraform`) and again in the
-deploy run. Read it before merging. CI plans with placeholder secrets, so
-there the three `aws_ssm_parameter` values and
-`aws_cognito_identity_provider.google` always show as changing; ignore
-those in CI only.
+deploy run. Read it before merging. The CI plan and the deploy plan should
+match.
 
 **Stop, and do not merge, if the plan shows:**
 
@@ -53,11 +51,9 @@ those in CI only.
   `point_in_time_recovery` on the table, or a lifecycle rule on the media
   bucket that expires anything. Those are the ways a deploy could still
   lose data, and the guards above do not catch them.
-- in the **deploy** run, a change to an `aws_ssm_parameter` or to the
-  Google identity provider when nobody meant to rotate a secret. It means a
-  `production` environment secret differs from the live value, and the
-  apply would overwrite the live one. Run with `plan_only` first after
-  changing a secret.
+- any `aws_ssm_parameter` or `aws_cognito_identity_provider` being
+  created. Secrets are outside Terraform since 2026-10-31; one coming back
+  would put its value into the state again.
 - anything under `model/` in the admin web bucket (Terraform never owns it).
 
 **Normal:**
@@ -110,9 +106,9 @@ second path. What a revert does not undo:
   opened. Say in the PR if a change bumps a store and the old code cannot
   read it.
 
-## The two things the pipeline does not do
+## The three things the pipeline does not do
 
-Both are owner-only, with an IAM Identity Center admin session
+All are owner-only, with an IAM Identity Center admin session
 (`aws sso login --profile bgucats-prod-admin`, see `docs/codespaces.md`).
 
 **Publishing the recognition model.** The export needs torch, which has no
@@ -134,6 +130,34 @@ then, and the manifest is written last.
 
 **`infra/bootstrap`** (the state backend and the GitHub roles). It cannot be
 deployed by the role it creates. `infra/README.md` has the commands.
+
+**Secrets.** The bot token, the webhook secret, the submitter salt (SSM
+Parameter Store) and the Google OAuth client (Cognito's Google provider)
+are set in AWS by `infra/scripts/set-secret.sh`, never by Terraform.
+Anything Terraform manages is copied into its state, and the CI role reads
+the state to plan, so any PR's workflow could read it. Until 2026-10-31
+they came from `production` environment secrets; those GitHub secrets are
+no longer used.
+
+```bash
+aws sso login --profile bgucats-prod-admin --use-device-code
+AWS_PROFILE=bgucats-prod-admin infra/scripts/set-secret.sh telegram-bot-token
+aws sso logout
+```
+
+The names: `telegram-bot-token` (paste from @BotFather after `/revoke`),
+`telegram-webhook-secret` (generated), `google-oauth` (paste the client ID
+and secret), `submitter-hash-salt` (new accounts only: it never replaces an
+existing salt, because that would give every Telegram contributor a new
+identity). The Telegram ones re-register the webhook themselves. The ingest
+Lambda re-reads its secrets every 5 minutes, so a Telegram rotation can
+fail a few webhook calls for up to 5 minutes; Telegram retries them. Do it
+when the bot is quiet.
+
+In a **new account**, run `google-oauth` after the first deploy has created
+the user pool and failed at the app client (which names the Google
+provider), then deploy again; and `submitter-hash-salt`, both Telegram
+ones, then `infra/scripts/set-telegram-webhook.sh`.
 
 ## History
 

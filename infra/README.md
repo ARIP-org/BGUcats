@@ -70,9 +70,10 @@ In the [Google Cloud console](https://console.cloud.google.com/):
    Application type **Web application**. Leave *Authorized JavaScript
    origins* empty — the browser never talks to Google directly here — and add
    the `.../oauth2/idpresponse` URL above under **Authorized redirect URIs**.
-5. Copy the client ID and client secret into `terraform.tfvars` as
-   the `production` environment secrets `GOOGLE_CLIENT_ID` /
-   `GOOGLE_CLIENT_SECRET` (`docs/MANUAL_STEPS.md`), and run Deploy.
+5. Give the client ID and client secret to Cognito with
+   `AWS_PROFILE=bgucats-prod-admin infra/scripts/set-secret.sh google-oauth`.
+   Not Terraform: Cognito returns the secret on every read, so Terraform
+   would keep it in its state (`docs/deploy.md`, "Secrets").
 
 If the redirect URI is wrong, Google fails with `redirect_uri_mismatch`
 before Cognito is ever reached — compare it character for character with
@@ -152,9 +153,10 @@ project. Every credential below is short-lived and assumed for one job.
 **CI (plan only).** Trusts any job of `sasha720709/BGUcats`: a PR from a
 branch needs a real plan too. Read-only, scoped to our resource names, or
 to our IDs where a service has no names in its ARNs. Read-only still means
-it can read the state, and the state holds the secret values in clear
-text. A PR runs its own `ci.yml`, so whoever can push a branch can reach
-them. See "Known gap" in `docs/MANUAL_STEPS.md`.
+it can read the state, and a PR runs its own `ci.yml`, so whoever can push
+a branch can read whatever the state holds. That is why no secret value is
+managed by Terraform (`docs/deploy.md`, "Secrets"); see "Known gap" in
+`docs/MANUAL_STEPS.md` for what is left.
 
 **Deploy (plan and apply).** Trusts only a `sub` ending in
 `:environment:production`. GitHub only lets `main` deploy to that

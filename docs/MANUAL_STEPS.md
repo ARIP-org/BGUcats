@@ -674,23 +674,27 @@ Then console → *IAM* → *Root access management* → `sasha-bgucats-prod` →
 
 ## Known gap: the CI role can read production secrets
 
-This is not new, and the move does not fix it. CI runs `terraform plan` on
-every PR, and a PR runs **its own** copy of `ci.yml`. The plan needs the
-state file, and Terraform state holds every secret in clear text: the
-Telegram token, the webhook secret, the salt and the Google client secret.
-So anyone who can push a branch to this repo can write a workflow that reads
-them through the CI role. That includes a Claude Code session with your
-GitHub token. It cannot change anything in AWS, but it can read those
-values.
+CI runs `terraform plan` on every PR, and a PR runs **its own** copy of
+`ci.yml`. So anyone who can push a branch to this repo — including a Claude
+Code session with your GitHub token — can make the CI role do whatever it
+is allowed to. It cannot change anything in AWS. Until 2026-10-31 it could
+read every secret, two ways:
 
-Ways to close it, in order of effort:
+1. **Through the state.** Terraform state held the Telegram token, the
+   webhook secret, the salt and the Google client secret in clear text.
+   **Closed** by the PR "Secrets out of Terraform": Terraform no longer
+   manages them (`infra/scripts/set-secret.sh` does, `docs/deploy.md`).
+   Older copies of the state stay in the versioned state bucket, which the
+   CI role cannot read (`s3:GetObject` only, no `GetObjectVersion`).
+2. **Directly.** The CI role has `ssm:GetParameter` on the three
+   parameters and `cognito-idp:DescribeIdentityProvider`, both needed only
+   while Terraform refreshed them. **Open until** the bootstrap change that
+   removes them is applied (owner-only, `infra/scripts/bootstrap-apply.sh`).
 
-1. Make the secrets *write-only* in Terraform (`value_wo` on
-   `aws_ssm_parameter`, Terraform ≥ 1.11), so they never enter state. The
-   Google client secret needs the same, or to be set outside Terraform the
-   way the WhatsApp secrets were.
-2. Until then, keep push access to yourself, and read any Claude session's
-   PR that edits `.github/workflows/` before its checks run.
+After both: rotate what was readable — the bot token (`/revoke` in
+@BotFather), the webhook secret and the Google client secret, each with
+`set-secret.sh`. Not the salt: a new salt makes every Telegram contributor
+a new person, and it only matters to someone who also has the table.
 
 ---
 

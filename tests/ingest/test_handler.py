@@ -661,3 +661,32 @@ def test_a_fetch_that_times_out_asks_for_the_photo_again(
     assert [(p["status"], p["GSI2PK"]) for p in photos] == [
         ("pending", "STATUS#pending")
     ]
+
+
+class _FakeSsm:
+    def __init__(self, value):
+        self.value = value
+        self.calls = 0
+
+    def get_parameters(self, Names, WithDecryption):
+        self.calls += 1
+        return {"Parameters": [{"Name": n, "Value": self.value} for n in Names]}
+
+
+def test_secrets_are_reread_after_the_ttl(monkeypatch):
+    # A rotation (infra/scripts/set-secret.sh) must reach warm containers.
+    fake = _FakeSsm("old")
+    now = [1000.0]
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "_secrets_cache", None)
+    monkeypatch.setattr(handler.time, "monotonic", lambda: now[0])
+
+    assert handler._get_secrets()["webhook_secret"] == "old"
+    fake.value = "new"
+    now[0] += handler.SECRETS_TTL_S - 1
+    assert handler._get_secrets()["webhook_secret"] == "old"
+    assert fake.calls == 1
+
+    now[0] += 2
+    assert handler._get_secrets()["webhook_secret"] == "new"
+    assert fake.calls == 2

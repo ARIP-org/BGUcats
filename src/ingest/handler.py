@@ -12,6 +12,7 @@ import base64
 import json
 import logging
 import os
+import time
 import urllib.request
 
 import boto3
@@ -120,11 +121,16 @@ NO_SESSION_FOR_LOCATION_TEXT = (
 ssm = boto3.client("ssm")
 
 _secrets_cache = None
+_secrets_read_at = 0.0
+# Secrets are set outside Terraform (infra/scripts/set-secret.sh) and can be
+# rotated while containers are warm. Re-read them this often, so a rotation
+# takes effect within minutes instead of whenever a container happens to die.
+SECRETS_TTL_S = 300
 
 
 def _get_secrets():
-    global _secrets_cache
-    if _secrets_cache is None:
+    global _secrets_cache, _secrets_read_at
+    if _secrets_cache is None or time.monotonic() - _secrets_read_at > SECRETS_TTL_S:
         response = ssm.get_parameters(
             Names=[BOT_TOKEN_PARAM, WEBHOOK_SECRET_PARAM, SALT_PARAM],
             WithDecryption=True,
@@ -135,6 +141,7 @@ def _get_secrets():
             "webhook_secret": values[WEBHOOK_SECRET_PARAM],
             "salt": values[SALT_PARAM],
         }
+        _secrets_read_at = time.monotonic()
     return _secrets_cache
 
 
