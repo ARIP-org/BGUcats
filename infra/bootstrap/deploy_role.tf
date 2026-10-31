@@ -311,7 +311,7 @@ resource "aws_iam_role_policy" "github_actions_deploy_compute" {
   })
 }
 
-# web.tf, site.tf, cognito.tf, ssm.tf.
+# web.tf, site.tf, cognito.tf, ssm.tf (the KMS key lookup only).
 resource "aws_iam_role_policy" "github_actions_deploy_edge" {
   name = "bgucats-deploy-edge"
   role = aws_iam_role.github_actions_deploy.id
@@ -364,8 +364,10 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
         Resource = "*"
       },
       {
-        # Our user pool and what hangs off it (client, Google IdP, domain,
-        # managed-login branding). No DeleteUserPool, and a deny below.
+        # Our user pool and what hangs off it (client, domain, managed-login
+        # branding). Not the Google identity provider: it holds the client
+        # secret and is set outside Terraform (set-secret.sh). No
+        # DeleteUserPool, and a deny below.
         Sid    = "OurUserPool"
         Effect = "Allow"
         Action = [
@@ -378,10 +380,6 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
           "cognito-idp:CreateUserPoolClient",
           "cognito-idp:UpdateUserPoolClient",
           "cognito-idp:DeleteUserPoolClient",
-          "cognito-idp:DescribeIdentityProvider",
-          "cognito-idp:CreateIdentityProvider",
-          "cognito-idp:UpdateIdentityProvider",
-          "cognito-idp:DeleteIdentityProvider",
           "cognito-idp:CreateUserPoolDomain",
           "cognito-idp:UpdateUserPoolDomain",
           "cognito-idp:DeleteUserPoolDomain",
@@ -404,29 +402,14 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
         Action   = ["cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPoolDomain"]
         Resource = "*"
       },
+      # No SSM parameter actions: the bot's secrets are set outside
+      # Terraform (infra/scripts/set-secret.sh). Terraform still looks up
+      # the aws/ssm key, for the ingest Lambda's kms:Decrypt grant.
       {
-        # The SecureString values come from the production environment's
-        # secrets (TF_VAR_*). Encrypting and decrypting them needs no KMS
-        # grant here: the AWS-managed aws/ssm key's own policy allows any
-        # principal in the account to use it through SSM.
-        Sid    = "OurParameters"
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters",
-          "ssm:PutParameter",
-          "ssm:DeleteParameter",
-          "ssm:ListTagsForResource",
-          "ssm:AddTagsToResource",
-          "ssm:RemoveTagsFromResource",
-        ]
-        Resource = "arn:aws:ssm:us-east-1:${local.account_id}:parameter/bgucats/*"
-      },
-      {
-        # Metadata only, and no resource-level scoping, like ListAliases.
-        Sid      = "DescribeParameters"
+        # No resource-level scoping.
+        Sid      = "ListKmsAliases"
         Effect   = "Allow"
-        Action   = ["ssm:DescribeParameters", "kms:ListAliases"]
+        Action   = "kms:ListAliases"
         Resource = "*"
       },
       {

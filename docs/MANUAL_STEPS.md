@@ -686,10 +686,12 @@ read every secret, two ways:
    manages them (`infra/scripts/set-secret.sh` does, `docs/deploy.md`).
    Older copies of the state stay in the versioned state bucket, which the
    CI role cannot read (`s3:GetObject` only, no `GetObjectVersion`).
-2. **Directly.** The CI role has `ssm:GetParameter` on the three
+2. **Directly.** The CI role had `ssm:GetParameter` on the three
    parameters and `cognito-idp:DescribeIdentityProvider`, both needed only
-   while Terraform refreshed them. **Open until** the bootstrap change that
-   removes them is applied (owner-only, `infra/scripts/bootstrap-apply.sh`).
+   while Terraform refreshed them. **Closed** by the bootstrap PR "CI and
+   deploy roles: no access to secrets", once applied
+   (`infra/scripts/bootstrap-apply.sh`). The deploy role lost its SSM and
+   Google-provider actions in the same change.
 
 After both: rotate what was readable — the bot token (`/revoke` in
 @BotFather), the webhook secret and the Google client secret, each with
