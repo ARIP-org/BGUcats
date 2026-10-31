@@ -97,8 +97,11 @@ Claude proposes its steps as text first. The rest of Phase 1 (SHA-pinned
 actions, Dependabot, PR/issue templates, plan summary as a PR comment,
 budgets) is not started and can be done between owner steps.
 
-Small open item: `set-secret.sh` should delete its temp file on Ctrl-C too
-(a `trap`), not only after the `aws` call.
+**Incident during the rotation:** revoking the bot token also dropped the
+webhook, and the first `set-secret.sh` did not notice, so the bot was
+silent from the rotation until the owner set the webhook by hand the same
+evening. Fixed in PR #17 (address from API Gateway, refused `setWebhook`
+stops the script); `docs/deploy.md` has the details.
 
 ## Phase 0 — Finish the move
 
