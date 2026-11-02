@@ -88,11 +88,13 @@ jobs:
         # PR runs get no environment secrets, and this role can only read
         # (infra/README.md). The one variable left is not a secret; the
         # bot's secrets and Google's are outside Terraform (infra/main/ssm.tf).
+        # No lock: this plan changes nothing, and it runs at the same time as
+        # Deploy on every merge. Holding the lock could fail either of them.
         env:
           TF_VAR_bootstrap_admin_email: "ci-plan-placeholder@example.com"
         run: |
           terraform -chdir=infra/main init -reconfigure -backend-config=backend/prod.hcl
-          terraform -chdir=infra/main plan -input=false -out=tfplan
+          terraform -chdir=infra/main plan -input=false -lock=false -out=tfplan
 
       # Counts, actions and addresses only. The JSON plan holds sensitive
       # values in clear text, so it goes straight into jq, and the plan file
