@@ -1,0 +1,22 @@
+name: Bug
+description: Something in the app, a bot or the pipeline is not working
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: Phone and browser, role (admin or collaborator), installed app or tab.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Error text, session or photo ULIDs, Actions run. No secrets, and no contributor photos.
