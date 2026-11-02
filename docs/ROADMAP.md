@@ -79,21 +79,16 @@ and Claude:
 
 ## Next session starts here (2026-11-02)
 
-**Phase 1, rest:** three PRs opened 2026-11-02, for the owner to read and
-merge: pinned actions and Dependabot (#18), plan comment and templates (#19),
-budget alert (#20, bootstrap: the owner applies it before merging). Any
-order. After they merge, Phase 1 is done.
+**Phase 1:** done on `main` (#18, #19, #20, #24, #25), except that the budget
+alert in `infra/bootstrap` is applied by the owner: `infra/README.md`, with
+`TF_VAR_budget_alert_email` set. Dependabot's PRs: the runtime group is
+merged by the owner after the SCPs, so a failure has one cause; the dev-tools
+group needs a small code change first, because the new `ruff` flags existing code.
 
-**Owner, still open from 2026-10-31:** confirm the rotation worked, if not
-already (the bot answers a photo; Google sign-in works; the old Google client
-secret is deleted); delete the five unused `production` environment secrets:
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `SUBMITTER_HASH_SALT`,
-`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (keep `BOOTSTRAP_ADMIN_EMAIL`). A
-Claude session cannot list those secrets. Merged branches and auto-delete of
-head branches: done (checked 2026-11-02).
-
-**Owner, Phase 0:** the next-day check (`docs/MANUAL_STEPS.md` 8.4) and the
-SCPs (step 10), if not done. Step 9 not before 2026-11-13.
+**Owner, Phase 0:** the SCPs (`docs/MANUAL_STEPS.md` step 10). Everyone on the
+new app: an encounter was shot in the old one on 2026-10-31 and had to be
+copied across (8.4). Step 9 not before 2026-11-13. Rotation and clean-up of
+the unused secrets: done.
 
 **Next: Phase 2a, the GitHub organization**, done together step by step. The
 owner picks the organization's name; Claude then opens the bootstrap PR that
