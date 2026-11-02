@@ -107,7 +107,7 @@ its name.
 approve on whatever machine you are typing from. Every later day:
 
 ```bash
-aws sso login --sso-session bgucats --use-device-code
+aws sso login --profile bgucats-prod-ro --use-device-code   # works whatever the session is called
 aws sts get-caller-identity --profile bgucats-prod-ro   # .../AWSReservedSSO_ReadOnlyAccess_.../<you>
 ```
 

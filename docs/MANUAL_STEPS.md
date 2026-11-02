@@ -47,7 +47,7 @@ one has run for two weeks and a final `verify` says nothing is missing
 Check that all four profiles work and point where they should:
 
 ```bash
-aws sso login --sso-session bgucats --use-device-code
+aws sso login --profile bgucats-prod-ro --use-device-code   # signs in all four: one SSO session
 for p in mgmt-ro mgmt-admin bgucats-prod-ro bgucats-prod-admin; do
   printf '%-20s ' "$p"; aws sts get-caller-identity --profile "$p" --query Arn --output text
 done
@@ -630,6 +630,19 @@ stay in the organization, no IAM users or access keys, no region but
 to exempt the global services (IAM, STS, CloudFront, Organizations, Support,
 billing and others). Without that, CloudFront and IAM would break.
 
+First see what is there. If `bgucats-member-guardrails` is already listed, it
+has been applied: skip to the checks below. Every account listed will be
+covered, so anything other than the management account and
+`sasha-bgucats-prod` needs a look first.
+
+```bash
+aws organizations list-policies --filter SERVICE_CONTROL_POLICY --profile mgmt-ro --query 'Policies[].Name'
+aws organizations list-accounts --profile mgmt-ro --query 'Accounts[].[Id,Name,Status]' --output table
+```
+
+Then, from the repo root (`enable-policy-type` says
+`PolicyTypeAlreadyEnabledException` if SCPs are already on; that is fine):
+
 ```bash
 export AWS_PROFILE=mgmt-admin
 ROOT=$(aws organizations list-roots --query 'Roots[0].Id' --output text)
@@ -655,6 +668,16 @@ aws ec2 describe-vpcs --region us-east-1 --profile bgucats-prod-ro --query 'leng
 ```
 
 Then run **Deploy** with `plan_only`: `No changes.`
+
+**Way back,** if something in production is refused. It takes effect within
+minutes and deletes nothing:
+
+```bash
+ROOT=$(aws organizations list-roots --profile mgmt-admin --query 'Roots[0].Id' --output text)
+POLICY=$(aws organizations list-policies --filter SERVICE_CONTROL_POLICY --profile mgmt-admin \
+  --query "Policies[?Name=='bgucats-member-guardrails'].Id" --output text)
+aws organizations detach-policy --policy-id "$POLICY" --target-id "$ROOT" --profile mgmt-admin
+```
 
 **Optional, recommended: central root access.** Member accounts created in
 Organizations have a root user with no password, but anyone with the
