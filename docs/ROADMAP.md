@@ -19,6 +19,7 @@ it instead.
 | 2026-10-31 | **GitHub organization, private repos.** If the organization needs a paid plan for environments, it is GitHub Team, not public repos. The owner's student Pro plan is personal and does not cover an organization. |
 | 2026-10-31 | **Order: Phase 1's secrets gap → GitHub organization (2a) → staging (2b).** The organization comes before staging so the staging account's roles trust the new repo name from day one. The owner and Claude do 2a and 2b together, step by step. |
 | 2026-11-02 | **The organization is on GitHub Team, from before the transfer.** On GitHub Free, a private repo has no deployment branch restrictions, environment secrets or environment variables, and transferring to a Free account loses protected branches. The deployment branch rule is what limits the deploy role to `main`, so a Free organization could let a workflow on any branch deploy. |
+| 2026-11-02 | **Decommission the old account now, not on 2026-11-13.** The new account has run production since 2026-10-30, and the next-day check is done. |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -79,16 +80,12 @@ and Claude:
 
 ## Next session starts here (2026-11-02)
 
-**Phase 1:** done on `main` (#18, #19, #20, #24, #25), except that the budget
-alert in `infra/bootstrap` is applied by the owner: `infra/README.md`, with
-`TF_VAR_budget_alert_email` set. Dependabot's PRs: the runtime group is
-merged by the owner after the SCPs, so a failure has one cause; the dev-tools
-group needs a small code change first, because the new `ruff` flags existing code.
+**Phase 1: done** (2026-11-02), including the budget alert.
 
-**Owner, Phase 0:** the SCPs (`docs/MANUAL_STEPS.md` step 10). Everyone on the
-new app: an encounter was shot in the old one on 2026-10-31 and had to be
-copied across (8.4). Step 9 not before 2026-11-13. Rotation and clean-up of
-the unused secrets: done.
+**Phase 0:** SCPs applied and checked (2026-11-02). The owner decided on
+2026-11-02 not to wait until 2026-11-13 and is decommissioning the old account
+now (`docs/MANUAL_STEPS.md` step 9). When that is done, update `CLAUDE.md`,
+"Workflow", which still describes the old copy as the way back.
 
 **Next: Phase 2a, the GitHub organization**, done together step by step. The
 owner picks the organization's name; Claude then opens the bootstrap PR that

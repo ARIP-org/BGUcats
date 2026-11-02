@@ -507,19 +507,31 @@ script, accounts reversed:
 
 ## 9. Decommission the old account
 
-**Not before two weeks of the new account working**, and in this order.
-Everything before 9e can be undone.
+Planned for two weeks after the cutover. **The owner decided on 2026-11-02 not
+to wait.** Do it in this order. `851725214678` is the organization's management
+account, so the account itself stays: it holds the organization, Identity Center
+and billing. Closing it would take production with it. What goes is everything
+bgucats has inside it.
+
+Two things here cannot be undone: 9c ends the old CloudFront addresses for good,
+so the QR codes on printed posters stop working, and 9e deletes the old data.
 
 ### 9a. Last checks
 
 ```bash
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+aws sso login --profile mgmt-admin --use-device-code
 python scripts/migrate_account.py verify            # "missing" must be 0, except TRAFFIC# (see 8.4)
 aws dynamodb describe-continuous-backups --table-name bgucats-data --profile bgucats-prod-ro \
   --query ContinuousBackupsDescription.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus   # ENABLED
 aws dynamodb describe-table --table-name bgucats-data --profile bgucats-prod-ro --query Table.DeletionProtectionEnabled   # true
 ```
 
-Optional, recommended: a copy outside AWS altogether, on your own computer
+`verify` ends with `DIFFERENCES`, and that is expected: new work in the new
+account, and under SSM the bot token and webhook secret `differ` because they
+were rotated on 2026-10-31. The salt must say `same`.
+
+Recommended before 9e: a copy outside AWS altogether, on your own computer
 rather than the codespace (which goes when its machine does). A few GB:
 `aws s3 sync s3://bgucats-media-395591097129 ./bgucats-media --profile bgucats-prod-ro`.
 
@@ -557,11 +569,11 @@ done
 ```
 
 The state bucket is versioned, so the state from before these `state rm`s
-is still there as an older version. Then plan the destroy. The variables
-need some value, since nothing is created:
+is still there as an older version. A `state rm` that says `No matching objects`
+is fine: that resource was never in the old state. Then plan the destroy. The
+variable needs some value, since nothing is created:
 
 ```bash
-for v in telegram_bot_token telegram_webhook_secret submitter_hash_salt google_client_id google_client_secret; do export TF_VAR_$v=destroy; done
 export TF_VAR_bootstrap_admin_email=destroy@example.com
 terraform -chdir=infra/main plan -destroy -out=destroy.tfplan
 terraform -chdir=infra/main show -no-color destroy.tfplan \
@@ -572,12 +584,17 @@ It must say `data not in the plan` and `0 to add, 0 to change, N to
 destroy`. What it destroys: the Lambdas (the old WhatsApp bot's too, which
 the code no longer has but the old state does) and their roles, the API, both
 distributions, the user pool with its `bgucats-admin` domain, the site
-bucket, the app's files, the SSM parameters, and the media bucket's CORS
-rule and S3 → Lambda notification.
+bucket, the app's files, the SSM parameters, Google's identity provider, and the
+media bucket's CORS rule and S3 → Lambda notification. The `removed` blocks in
+`ssm.tf` and `cognito.tf` do not protect these: a destroy plan ignores them
+(tested 2026-11-02), and the old state still has them.
+
+If the apply stops on `BucketNotEmpty`, empty the site bucket in the console and
+run the plan and apply again. Its session lasts an hour, so sign in just before.
 
 ```bash
 terraform -chdir=infra/main apply destroy.tfplan          # CloudFront takes 15+ minutes
-rm destroy.tfplan; unset AWS_PROFILE TF_DATA_DIR $(env | grep -o '^TF_VAR_[a-z_]*')
+rm infra/main/destroy.tfplan; unset AWS_PROFILE TF_DATA_DIR TF_VAR_bootstrap_admin_email
 ```
 
 **The QR codes on the posters stop working here**, as accepted: they encode
@@ -600,6 +617,22 @@ aws iam delete-open-id-connect-provider --profile mgmt-admin \
 The old state bucket and lock table stay, with the data, until 9e. In
 Google's OAuth client, remove the old `bgucats-admin` redirect URI.
 
+Terraform never managed the Lambdas' log groups, so delete them by hand, then
+look at what is left. Only the data from 9e and anything that is not bgucats
+should remain:
+
+```bash
+for g in $(aws logs describe-log-groups --log-group-name-prefix /aws/lambda/bgucats --profile mgmt-ro \
+             --query 'logGroups[].logGroupName' --output text); do
+  aws logs delete-log-group --log-group-name "$g" --profile mgmt-admin
+done
+aws ssm get-parameters-by-path --path /bgucats --recursive --profile mgmt-ro --query 'Parameters[].Name'
+aws lambda list-functions --profile mgmt-ro --query 'Functions[].FunctionName'
+aws cloudfront list-distributions --profile mgmt-ro --query 'DistributionList.Items[].DomainName'
+aws cognito-idp list-user-pools --max-results 20 --profile mgmt-ro --query 'UserPools[].Name'
+aws s3 ls --profile mgmt-ro
+```
+
 ### 9d. Keys, the old IAM user, schedule-ai-app
 
 1. **GitHub:** repo → *Settings* → *Secrets and variables* → **Codespaces**:
@@ -614,17 +647,31 @@ Google's OAuth client, remove the old `bgucats-admin` redirect URI.
    Tear it down from its own repo before item 3. First confirm that it
    never used `sasha-bgucats-admin` (`aws sts get-caller-identity` in its
    codespace).
-3. **The keys** of `sasha-bgucats-admin`: console (as `mgmt-admin`) →
-   *IAM* → *Users* → *Security credentials* → each key → **Deactivate**.
-   Wait a day or two and look at *Last used*. If nothing broke,
-   **Delete** each key, then **delete the user**. Its login profile, its
+3. **The keys** of `sasha-bgucats-admin`. First see what they were last used
+   for. A use after 2026-10-30 means something still depends on them: find out
+   what before going on.
+
+   ```bash
+   for k in $(aws iam list-access-keys --user-name sasha-bgucats-admin --profile mgmt-ro \
+                --query 'AccessKeyMetadata[].AccessKeyId' --output text); do
+     aws iam get-access-key-last-used --access-key-id "$k" --profile mgmt-ro \
+       --query '[AccessKeyLastUsed.LastUsedDate,AccessKeyLastUsed.ServiceName]' --output text
+   done
+   ```
+
+   Then console (as `mgmt-admin`) → *IAM* → *Users* → *Security credentials* →
+   each key → **Deactivate**, then **Delete**, then **delete the user**. Its login profile, its
    MFA device `arn:aws:iam::851725214678:mfa/iphone` and its group
    membership go with it. Root and Identity Center remain as the ways in.
 
-### 9e. 30 days later: the old data
+### 9e. Last: the old data
 
+Planned for 30 days after 9c. This is the only other copy of the photos, and
+deleting it leaves production as the only one, so take the copy from 9a first.
 Only after running 9a's `verify` again that day, with `missing` = 0
-everywhere but `TRAFFIC#`. Then, in the console as `mgmt-admin`: *DynamoDB* →
+everywhere but `TRAFFIC#`. If the table has deletion protection on, turn it off:
+`aws dynamodb update-table --table-name bgucats-data --no-deletion-protection-enabled --profile mgmt-admin`.
+Then, in the console as `mgmt-admin`: *DynamoDB* →
 `bgucats-data` → **Delete**. Keep the 9b backup; it is not deleted with the
 table. *S3* → `bgucats-media-851725214678`, `bgucats-admin-web-851725214678`,
 `bgucats-tfstate-851725214678` → **Empty** (this removes every version) →
