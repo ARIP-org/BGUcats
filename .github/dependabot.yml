@@ -1,10 +1,6 @@
 # Monthly, grouped, so an update is one PR to read and not ten. Every merge
 # deploys, so each of these goes through the same CI and the same plan as
-# any other change (docs/deploy.md, "Dependabot").
-#
-# research/ is left out on purpose: a torch or timm bump can change an exported
-# model, which is a decision, not a chore. pandas is left out with it, because
-# requirements-dev.txt keeps the same pin as research/requirements.txt.
+# any other change (docs/deploy.md, "Actions and Dependabot").
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -22,10 +18,32 @@ updates:
       - /src/beacon
       - /src/ingest
       - /src/process
+    # Scanning / also finds research/requirements.txt. A torch or timm bump can
+    # change an exported model, which is a decision, not a chore.
+    exclude-paths:
+      - research/**
     schedule:
       interval: monthly
     ignore:
+      # A major version is a decision too: Pillow decodes every photo.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Pinned to the same version as research/requirements.txt, so one venv
+      # can hold both. Bump them together, by hand.
+      - dependency-name: numpy
       - dependency-name: pandas
+    # Two groups, so a linter that wants code changes cannot hold up the
+    # packages the Lambdas run on. The first group that matches wins.
     groups:
-      python:
+      dev-tools:
+        patterns:
+          - boto3-stubs*
+          - imagehash
+          - moto*
+          - piexif
+          - pre-commit
+          - pytest*
+          - ruff
+          - segno
+      runtime:
         patterns: ["*"]
