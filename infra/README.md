@@ -5,14 +5,15 @@ service control policy for the organization's member accounts, applied by
 the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
 
 - **`bootstrap/`**: the state backend (S3 bucket + DynamoDB lock table), the
-  GitHub Actions OIDC provider and its two roles, and the permissions
-  boundary for every role in `main/`. Local state, since it creates the
+  GitHub Actions OIDC provider and its two roles, the permissions boundary
+  for every role in `main/`, and the account's monthly cost alert. Local state, since it creates the
   backend it would otherwise depend on. **Applied only by the owner**, with an
   IAM Identity Center admin session, from a checkout of the branch that
   changes it:
 
   ```bash
   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  export TF_VAR_budget_alert_email=you@example.com   # budget.tf; not kept in the repo
   aws sso login --profile bgucats-prod-admin --use-device-code \
     && infra/scripts/bootstrap-apply.sh; aws sso logout
   ```
