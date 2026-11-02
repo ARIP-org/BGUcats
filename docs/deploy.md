@@ -106,6 +106,26 @@ second path. What a revert does not undo:
   opened. Say in the PR if a change bumps a store and the old code cannot
   read it.
 
+## Actions and Dependabot
+
+Every action in `ci.yml` and `deploy.yml` is pinned to a full commit SHA, with
+the version in a comment: a tag can be moved, a commit cannot, and `deploy.yml`
+holds the deploy role. Nobody edits the SHAs by hand. Dependabot
+(`.github/dependabot.yml`) opens one grouped PR a month for actions and one for
+Python packages, and updates the SHA and the comment together.
+
+Treat those PRs like any other, because merging one deploys:
+
+- **Actions:** the PR's CI runs `checkout`, `setup-python`, `setup-terraform`
+  and `configure-aws-credentials` with the new versions, under the CI role.
+  The deploy role itself is first used by the merge. If that run fails, it
+  fails before the apply, and a revert fixes it.
+- **Python:** a new version of a package in `src/*/requirements.txt` changes
+  that Lambda's zip, so the plan shows it updated in place. That is expected.
+
+`research/requirements.txt` and `pandas` are left out on purpose; the reason is
+in the config file.
+
 ## The three things the pipeline does not do
 
 All are owner-only, with an IAM Identity Center admin session
