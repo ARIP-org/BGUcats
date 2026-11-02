@@ -29,7 +29,7 @@ import logging
 import math
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import boto3
@@ -147,7 +147,7 @@ class ApiError(Exception):
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def handler(event, context):
@@ -431,7 +431,7 @@ def _get_insights(**_):
         traffic=_entities("TRAFFIC"),
         links=_entities("LINK"),
         cats=_entities("CAT"),
-        now=datetime.now(timezone.utc),
+        now=datetime.now(UTC),
     )
 
 
@@ -1634,7 +1634,7 @@ def _iso_param(body, field):
     if not isinstance(value, str) or len(value) > 40:
         return None
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        datetime.fromisoformat(value)
     except ValueError:
         return None
     return value

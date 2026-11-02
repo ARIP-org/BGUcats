@@ -10,7 +10,7 @@ import io
 import logging
 import os
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import boto3
@@ -237,8 +237,8 @@ def _exif_timestamp(exif):
     if not raw:
         return None
     try:
-        # EXIF carries no zone by design; DTZ007 does not apply.
-        taken = datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S")  # noqa: DTZ007
+        # EXIF carries no zone by design.
+        taken = datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S")
     except ValueError:
         return None
 
@@ -246,7 +246,7 @@ def _exif_timestamp(exif):
     if offset:
         try:
             aware = taken.replace(tzinfo=_parse_utc_offset(str(offset)))
-            return aware.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+            return aware.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
         except ValueError:
             pass
 
@@ -313,7 +313,7 @@ def _record_results(
         ":w": width,
         ":h": height,
         ":mt": "photo",
-        ":now": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        ":now": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
     }
 
     if captured_at:
@@ -353,7 +353,7 @@ def _record_video_results(photo_id, sha256, duplicate_of):
     values = {
         ":sha": sha256,
         ":mt": "video",
-        ":now": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        ":now": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
     }
 
     names = {}
