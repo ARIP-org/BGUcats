@@ -18,7 +18,7 @@ import os
 import re
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import boto3
@@ -75,7 +75,7 @@ s3 = boto3.client("s3")
 
 
 def now_iso():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def now_epoch():
@@ -83,9 +83,7 @@ def now_epoch():
 
 
 def epoch_to_iso(epoch):
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%S.%fZ"
-    )
+    return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def submitter_hash(salt, user_key):

@@ -39,7 +39,7 @@ import shutil
 import subprocess
 import tarfile
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ORT_VERSION = "1.17.3"  # web/recognition.js is written against this API
@@ -110,7 +110,7 @@ def build(model_path):
         # guesses and never-seen cats overlap. Until the labeling tool has
         # measured enough sessions, the app ranks and never decides.
         "thresholds": None,
-        "publishedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "publishedAt": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     return files, manifest
 

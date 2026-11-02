@@ -1,11 +1,11 @@
 """The stats page's arithmetic, on plain lists — no DynamoDB involved."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from admin import insights
 
 # 10:00 UTC = 13:00 in Israel (IDT, UTC+3) on 2026-10-20.
-NOW = datetime(2026, 10, 20, 10, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
 
 
 def _media(n, *, submitter="a", session="s1", cat=None, day="2026-10-20", **extra):

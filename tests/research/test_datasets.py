@@ -5,7 +5,7 @@ not quietly become a source where every photo is its own session, because that
 is the exact substitution that turns a reported number into fiction.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -19,7 +19,7 @@ from catreid.datasets import (
 )
 from catreid.splits import SplitError, open_set_split
 
-BASE = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+BASE = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 
 
 def frame(rows):
