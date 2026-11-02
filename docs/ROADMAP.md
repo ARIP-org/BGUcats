@@ -18,6 +18,7 @@ it instead.
 | 2026-10-31 | **Promote model, not a `dev` branch.** Merge to `main` deploys staging; a manual Promote deploys the same commit to production. (Considered: a long-lived `dev` branch merged into `main`. Rejected: production would run a merge commit staging never ran, and it is the branch stack again.) |
 | 2026-10-31 | **GitHub organization, private repos.** If the organization needs a paid plan for environments, it is GitHub Team, not public repos. The owner's student Pro plan is personal and does not cover an organization. |
 | 2026-10-31 | **Order: Phase 1's secrets gap → GitHub organization (2a) → staging (2b).** The organization comes before staging so the staging account's roles trust the new repo name from day one. The owner and Claude do 2a and 2b together, step by step. |
+| 2026-11-02 | **The organization is on GitHub Team, from before the transfer.** On GitHub Free, a private repo has no deployment branch restrictions, environment secrets or environment variables, and transferring to a Free account loses protected branches. The deployment branch rule is what limits the deploy role to `main`, so a Free organization could let a workflow on any branch deploy. |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -76,26 +77,27 @@ and Claude:
 
 ---
 
-## Next session starts here (2026-10-31)
+## Next session starts here (2026-11-02)
 
-**Phase 1, secrets gap: done** (PRs #12, #14, #15; bootstrap applied;
-rotation done). Owner, before anything else:
+**Phase 1, rest:** three PRs opened 2026-11-02, for the owner to read and
+merge: pinned actions and Dependabot (#18), plan comment and templates (#19),
+budget alert (#20, bootstrap: the owner applies it before merging). Any
+order. After they merge, Phase 1 is done.
 
-- Confirm the rotation worked, if not already: the bot answers a photo;
-  Google sign-in in the app works; the **old Google client secret is
-  disabled and deleted** in Google Cloud → Credentials.
-- Delete the five unused `production` environment secrets in GitHub, if
-  not already: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
-  `SUBMITTER_HASH_SALT`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-  (keep `BOOTSTRAP_ADMIN_EMAIL`).
-- Delete merged branches; turn on Settings → General → *Automatically
-  delete head branches* (a stacked PR, #13, merged into its base branch
-  instead of `main` because the base was not deleted).
+**Owner, still open from 2026-10-31:** confirm the rotation worked, if not
+already (the bot answers a photo; Google sign-in works; the old Google client
+secret is deleted); delete the five unused `production` environment secrets:
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `SUBMITTER_HASH_SALT`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (keep `BOOTSTRAP_ADMIN_EMAIL`). A
+Claude session cannot list those secrets. Merged branches and auto-delete of
+head branches: done (checked 2026-11-02).
 
-**Next: Phase 2a, the GitHub organization**, done together step by step.
-Claude proposes its steps as text first. The rest of Phase 1 (SHA-pinned
-actions, Dependabot, PR/issue templates, plan summary as a PR comment,
-budgets) is not started and can be done between owner steps.
+**Owner, Phase 0:** the next-day check (`docs/MANUAL_STEPS.md` 8.4) and the
+SCPs (step 10), if not done. Step 9 not before 2026-11-13.
+
+**Next: Phase 2a, the GitHub organization**, done together step by step. The
+owner picks the organization's name; Claude then opens the bootstrap PR that
+makes the roles trust both names (see 2a).
 
 **Incident during the rotation:** revoking the bot token also dropped the
 webhook, and the first `set-secret.sh` did not notice, so the bot was
@@ -144,14 +146,19 @@ SHA-pinned; every PR shows its plan summary inline.
 
 ### 2a. GitHub organization
 
-- Create the organization; choose its plan (Free if environments work for
-  private repos there, else Team).
-- Transfer `BGUcats` into it. **The transfer changes the OIDC subject**
-  (`repo:sasha720709/BGUcats:…` → `repo:<org>/BGUcats:…`), so the bootstrap
-  trust policies must accept the new name before the transfer and drop the
-  old one after it — or CI and deploys are refused.
+- Create the organization **on GitHub Team, before the transfer** (Decisions,
+  2026-11-02).
+- Transfer `BGUcats` into it. **The transfer changes the OIDC claims**
+  (`repo:sasha720709@…/BGUcats@…:…` → `repo:<org>@…/BGUcats@…:…`, and
+  `repository`), so the bootstrap trust policies must accept the new name
+  before the transfer and drop the old one after it — or CI and deploys are
+  refused. GitHub says transfers after 2026-07-15 use the `@id` subject
+  format; the first CI run after the transfer confirms it.
 - Check that environments, environment secrets, variables and the ruleset
-  came across; recreate what did not.
+  came across; recreate what did not. GitHub's transfer docs promise secrets
+  and webhooks but do not mention environments, variables or rulesets, so
+  **check that the `production` deployment branch rule is there before the
+  first merge**.
 
 **Done when:** a PR in the organization's repo passes CI, and its merge
 deploys.
