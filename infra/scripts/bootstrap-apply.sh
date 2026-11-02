@@ -4,6 +4,7 @@
 # (infra/README.md). Run it from a checkout of the branch that changes
 # bootstrap, before merging that branch:
 #
+#   export TF_VAR_budget_alert_email=you@example.com
 #   aws sso login --profile bgucats-prod-admin --use-device-code
 #   infra/scripts/bootstrap-apply.sh
 #   aws sso logout
