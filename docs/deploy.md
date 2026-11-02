@@ -122,8 +122,9 @@ second path. What a revert does not undo:
 Every action in `ci.yml` and `deploy.yml` is pinned to a full commit SHA, with
 the version in a comment: a tag can be moved, a commit cannot, and `deploy.yml`
 holds the deploy role. Nobody edits the SHAs by hand. Dependabot
-(`.github/dependabot.yml`) opens one grouped PR a month for actions and one for
-Python packages, and updates the SHA and the comment together.
+(`.github/dependabot.yml`) opens grouped PRs once a month: one for actions, one
+for the packages the Lambdas run on, one for dev tools. Each updates the SHA or
+the pin for you.
 
 Treat those PRs like any other, because merging one deploys:
 
@@ -131,11 +132,14 @@ Treat those PRs like any other, because merging one deploys:
   and `configure-aws-credentials` with the new versions, under the CI role.
   The deploy role itself is first used by the merge. If that run fails, it
   fails before the apply, and a revert fixes it.
-- **Python:** a new version of a package in `src/*/requirements.txt` changes
+- **Runtime:** a new version of a package in `src/*/requirements.txt` changes
   that Lambda's zip, so the plan shows it updated in place. That is expected.
+- **Dev tools:** a new `ruff` can flag existing code. That is a code change to
+  make on the Dependabot branch or in its own PR first, not a reason to skip
+  the check.
 
-`research/requirements.txt` and `pandas` are left out on purpose; the reason is
-in the config file.
+Left to a person on purpose, and the reasons are in the config file: major
+versions of Python packages, `numpy` and `pandas`, and all of `research/`.
 
 ## The three things the pipeline does not do
 
