@@ -45,6 +45,12 @@ The comment carries actions and addresses only, never values, and says which
 commit it describes. If it is missing or names an older commit, read the log
 instead: posting it may fail without failing the check.
 
+CI plans without taking the state lock, so it never blocks a deploy. Only
+Deploy locks, and it runs one at a time. A CI plan that runs during an apply
+can show changes the apply is making. Push again or re-run it if the comment
+looks wrong after a merge. On 2026-11-02, with the lock, CI on `main` and on a
+Dependabot PR failed with `Error acquiring the state lock` while Deploy ran.
+
 **Stop, and do not merge, if the plan shows:**
 
 - anything to **destroy** or **replace** (`-/+`, `must be replaced`). The
