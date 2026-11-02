@@ -65,13 +65,20 @@ def test_different_message_gets_a_different_photo(dynamo_table):
     assert photo_id_1 != photo_id_2
 
 
-def test_rate_limit_allows_up_to_threshold_then_blocks(dynamo_table):
+@pytest.fixture
+def frozen_clock(monkeypatch):
+    # The limiter counts per clock minute, so on the real clock a test that
+    # crosses a minute starts a new count and fails.
+    monkeypatch.setattr(core, "now_epoch", lambda: 1_800_000_000)
+
+
+def test_rate_limit_allows_up_to_threshold_then_blocks(dynamo_table, frozen_clock):
     for _ in range(core.RATE_LIMIT_PER_MINUTE):
         assert core.check_rate_limit("hash-c") is True
     assert core.check_rate_limit("hash-c") is False
 
 
-def test_rate_limit_is_scoped_per_submitter(dynamo_table):
+def test_rate_limit_is_scoped_per_submitter(dynamo_table, frozen_clock):
     for _ in range(core.RATE_LIMIT_PER_MINUTE):
         core.check_rate_limit("hash-d")
     assert core.check_rate_limit("hash-d") is False
