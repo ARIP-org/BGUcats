@@ -36,9 +36,14 @@ applies.
 
 ## Reading the plan
 
-The plan is in the CI run of every PR (job `terraform`) and again in the
-deploy run. Read it before merging. The CI plan and the deploy plan should
-match.
+CI posts a summary on every PR as one comment, updated on each push: the
+`Plan:` line and every resource that changes, destroys first. The full plan is
+in the CI run (job `terraform`) and again in the deploy run. Read it before
+merging. The CI plan and the deploy plan should match.
+
+The comment carries actions and addresses only, never values, and says which
+commit it describes. If it is missing or names an older commit, read the log
+instead: posting it may fail without failing the check.
 
 **Stop, and do not merge, if the plan shows:**
 

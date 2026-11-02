@@ -1,0 +1,33 @@
+name: Infra change
+description: Terraform, CI/CD, accounts or access
+labels: [infra]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What changes, and why
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: How it reaches AWS
+      options:
+        - infra/main, by merging (deploy.yml)
+        - infra/bootstrap, applied by the owner before merging
+        - By hand, owner only (docs/deploy.md)
+        - Nothing in AWS (GitHub or docs)
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Expected plan
+      description: Add, change, destroy. Anything destroyed or replaced needs a reason here.
+  - type: textarea
+    id: back
+    attributes:
+      label: Way back
+      description: What undoes it. Anything that touches the table or the media bucket is add-only, verified and reversible.
+    validations:
+      required: true

@@ -34,6 +34,10 @@ jobs:
 
   terraform:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write # the plan summary comment
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,6 +46,9 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.15.9"
+          # The wrapper re-prints stdout, which would garble the JSON plan
+          # that the summary below reads.
+          terraform_wrapper: false
 
       - name: fmt check
         run: |
@@ -85,4 +92,42 @@ jobs:
           TF_VAR_bootstrap_admin_email: "ci-plan-placeholder@example.com"
         run: |
           terraform -chdir=infra/main init -reconfigure -backend-config=backend/prod.hcl
-          terraform -chdir=infra/main plan
+          terraform -chdir=infra/main plan -input=false -out=tfplan
+
+      # Counts, actions and addresses only. The JSON plan holds sensitive
+      # values in clear text, so it goes straight into jq, and the plan file
+      # is never uploaded. Destroys sort first: they are what to look for
+      # (docs/deploy.md, "Reading the plan").
+      - name: plan summary
+        run: |
+          {
+            terraform -chdir=infra/main show -no-color tfplan | grep -E '^(Plan:|No changes)' || echo "No summary line in the plan."
+            echo
+            terraform -chdir=infra/main show -json tfplan | jq -r '[(.resource_changes // [])[]
+              | select(.mode == "managed" and .change.actions != ["no-op"])
+              | {a: (.change.actions | join("+")), r: .address}]
+              | sort_by((.a | contains("delete") | not), .r)[]
+              | "- `\(.a)` `\(.r)`"'
+          } > plan-summary.md
+          cat plan-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # One comment per PR, updated on each push. A failure here must not
+      # block a merge: the plan itself has already passed, and it is in the log.
+      - name: post the plan summary on the PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker='<!-- terraform-plan-summary -->'
+          body=$(printf '%s\n**Terraform plan** at %s\n\n%s\n' "$marker" "$SHA" "$(cat plan-summary.md)")
+          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" --silent
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -f body="$body" --silent
+          fi
