@@ -454,7 +454,7 @@ so nobody opens the new app before step 8.
 **Done on 2026-10-30**, in the afternoon rather than the evening, since
 nobody was using the app. `scripts/cutover.sh` ran 12:28–12:31 UTC and the
 copy verified as `MATCH`. Telegram and Capture work in the new account.
-Still open: the next-day check (8.4) and, from 2026-11-13, step 9.
+Still open: step 9, from 2026-11-13.
 
 1. **Telegram to the new account.** The queued messages arrive within
    seconds:
@@ -482,6 +482,18 @@ Still open: the next-day check (8.4) and, from 2026-11-13, step 9.
    the new account is touched:
    `migrate media --apply --allow-nonempty-table`, then `migrate table --apply`.
 
+   **Done on 2026-11-02, later than planned, and it found something.** One
+   encounter (15 files: session `01M696VEWN451Q707YRB6XQSFM`, with its pick) had
+   been shot in the **old app** on 2026-10-31, a day after the cutover. It was
+   copied as above, and `missing` is now 0. An installed old app keeps working
+   until step 9, so anything it uploads lands in the old account.
+
+   `TRAFFIC#` items can show as `missing` again at any time and do not matter:
+   the old landing page and its schedule keep counting until step 9. Before
+   copying anything back, check when a missing ULID was made. One made before
+   the cutover was deleted in the new account on purpose, and the copy would
+   bring it back.
+
 ### Way back, until step 9
 
 The old account is complete and still running. Point Telegram back at it
@@ -501,7 +513,7 @@ Everything before 9e can be undone.
 ### 9a. Last checks
 
 ```bash
-python scripts/migrate_account.py verify            # "missing" must be 0 everywhere
+python scripts/migrate_account.py verify            # "missing" must be 0, except TRAFFIC# (see 8.4)
 aws dynamodb describe-continuous-backups --table-name bgucats-data --profile bgucats-prod-ro \
   --query ContinuousBackupsDescription.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus   # ENABLED
 aws dynamodb describe-table --table-name bgucats-data --profile bgucats-prod-ro --query Table.DeletionProtectionEnabled   # true
@@ -612,7 +624,7 @@ Google's OAuth client, remove the old `bgucats-admin` redirect URI.
 ### 9e. 30 days later: the old data
 
 Only after running 9a's `verify` again that day, with `missing` = 0
-everywhere. Then, in the console as `mgmt-admin`: *DynamoDB* →
+everywhere but `TRAFFIC#`. Then, in the console as `mgmt-admin`: *DynamoDB* →
 `bgucats-data` → **Delete**. Keep the 9b backup; it is not deleted with the
 table. *S3* → `bgucats-media-851725214678`, `bgucats-admin-web-851725214678`,
 `bgucats-tfstate-851725214678` → **Empty** (this removes every version) →
