@@ -36,7 +36,7 @@ data "aws_iam_policy_document" "github_actions_deploy_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:repository"
-      values   = ["sasha720709/BGUcats"]
+      values   = local.github_repos # both names during the move, github_oidc.tf
     }
 
     # The difference from the CI role. A job bound to a GitHub environment
@@ -49,7 +49,7 @@ data "aws_iam_policy_document" "github_actions_deploy_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:sasha720709@*/BGUcats@*:environment:production"]
+      values   = [for p in local.github_sub_prefixes : "${p}:environment:production"]
     }
   }
 }

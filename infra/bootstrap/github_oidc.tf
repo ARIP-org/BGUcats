@@ -22,6 +22,22 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   ]
 }
 
+# The names GitHub may give this repo in a token. Two while it moves from
+# the owner's account to the ARIP-org organization (docs/ROADMAP.md, 2a):
+# a transfer changes the `repository` and `sub` claims at once, so the
+# roles must accept the new name before it, or CI and deploys are refused
+# from the first run after it. The old name goes in the PR after the
+# transfer. The numeric repo ID (1339652949) survives a transfer; the
+# owner segment becomes ARIP-org's (353802310).
+locals {
+  github_repos = ["sasha720709/BGUcats", "ARIP-org/BGUcats"]
+
+  # "owner/name" -> "repo:owner@*/name@*", the start of the token's `sub`.
+  github_sub_prefixes = [
+    for r in local.github_repos : format("repo:%s@*/%s@*", split("/", r)[0], split("/", r)[1])
+  ]
+}
+
 data "aws_iam_policy_document" "github_actions_trust" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -49,13 +65,13 @@ data "aws_iam_policy_document" "github_actions_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:sasha720709@*/BGUcats@*:*"]
+      values   = [for p in local.github_sub_prefixes : "${p}:*"]
     }
 
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:repository"
-      values   = ["sasha720709/BGUcats"]
+      values   = local.github_repos
     }
   }
 }
@@ -100,7 +116,10 @@ resource "aws_iam_role_policy" "github_actions_ci_kms_list" {
 }
 
 # CI's only current job is `terraform plan`, which needs to read the state
-# object and take/release the DynamoDB lock — nothing more. Scoped to
+# object and the lock table — nothing more. It plans with -lock=false
+# (ci.yml) because it runs at the same time as Deploy on every merge, so it
+# never takes or releases the lock; GetItem stays for the S3 backend's
+# state digest, which it reads from the same table. Scoped to
 # exactly the two resources this same root module creates. Extend this
 # policy (never a broad managed policy) in the same commit that gives CI a
 # new job against a new resource.
@@ -124,13 +143,9 @@ resource "aws_iam_role_policy" "github_actions_ci_state_access" {
         Resource = "${aws_s3_bucket.tfstate.arn}/*"
       },
       {
-        Sid    = "StateLock"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:DeleteItem",
-        ]
+        Sid      = "StateLockRead"
+        Effect   = "Allow"
+        Action   = "dynamodb:GetItem"
         Resource = aws_dynamodb_table.tfstate_lock.arn
       },
     ]

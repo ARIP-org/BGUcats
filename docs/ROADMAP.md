@@ -89,11 +89,11 @@ than two weeks: the owner waived the wait. SCPs applied 2026-11-02; step 9
 done in full, 9e included, on 2026-11-07. No IAM user or access key is left in the
 organization. Phase 1 was done 2026-11-02.
 
-**Next: Phase 2a, the GitHub organization.** `ARIP-org` exists. Before the
-transfer: the owner checks it is on **GitHub Team**; Claude opens the
-bootstrap PR that makes the roles trust both `sasha720709/BGUcats` and
-`ARIP-org/BGUcats`, and the owner applies it. Then the transfer, then the
-checks in 2a.
+**Now: Phase 2a, the GitHub organization.** `ARIP-org` exists, on GitHub
+Team (owner, 2026-11-07). The runbook is `docs/MANUAL_STEPS.md` step 11:
+apply the bootstrap PR that makes the roles trust both `sasha720709/BGUcats`
+and `ARIP-org/BGUcats` (11a), transfer (11b–c), check what came across
+(11d), then a second bootstrap PR drops the old name (11e).
 
 **Owner, any time:** download `~/bgucats-media-backup` from the codespace to a
 computer. It is the only copy of the photos outside production.
