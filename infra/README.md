@@ -151,8 +151,11 @@ project. Every credential below is short-lived and assumed for one job.
 | `bgucats-github-actions-deploy` | `deploy.yml`, only in the `production` environment | plan and apply `main/` | `bootstrap/deploy_role.tf` |
 | `bgucats-*-lambda` (six) | each Lambda | its own function's needs, capped by the boundary | `main/*.tf`, `bootstrap/lambda_boundary.tf` |
 
-**CI (plan only).** Trusts any job of `sasha720709/BGUcats`: a PR from a
-branch needs a real plan too. Read-only, scoped to our resource names, or
+**CI (plan only).** Trusts any job of this repo, under its old name
+`sasha720709/BGUcats` and its new one `ARIP-org/BGUcats` while it moves
+(`docs/MANUAL_STEPS.md`, step 11): a PR from a branch needs a real plan too.
+It reads the lock table but never takes the lock (`ci.yml` plans with
+`-lock=false`). Read-only, scoped to our resource names, or
 to our IDs where a service has no names in its ARNs. Read-only still means
 it can read the state, and a PR runs its own `ci.yml`, so whoever can push
 a branch can read whatever the state holds. That is why no secret value is

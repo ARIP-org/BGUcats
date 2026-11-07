@@ -785,6 +785,103 @@ Then console → *IAM* → *Root access management* → `sasha-bgucats-prod` →
 
 ---
 
+## 11. Move the repo to `ARIP-org` (Phase 2a)
+
+The organization `ARIP-org` (ID 353802310) was created on 2026-11-07, on
+GitHub Team. The repo keeps its ID (1339652949) through a transfer, but its
+name in GitHub's tokens changes, and AWS trusts tokens by name. So, in this
+order: AWS learns the new name, then the transfer, then the checks, then AWS
+forgets the old name.
+
+### 11a. Apply the bootstrap PR from its branch, then merge it
+
+The PR "Bootstrap: trust ARIP-org/BGUcats too" adds the new name to both
+roles' trust and takes the lock writes away from the CI role. Merging it
+does not apply it: `infra/bootstrap` is applied by hand
+(`infra/README.md`). From the codespace:
+
+```bash
+cd /workspaces/BGUcats && git fetch origin && git checkout bootstrap-trust-arip-org && git pull --ff-only
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+aws sso login --profile bgucats-prod-admin --use-device-code
+export TF_VAR_budget_alert_email=$(jq -r '[.resources[]|select(.type=="aws_budgets_budget")|.instances[0].attributes.notification[]?.subscriber_email_addresses[]?]|first' infra/bootstrap/terraform.tfstate)
+echo "${TF_VAR_budget_alert_email:-EMPTY}"          # the budget alerts' address, not EMPTY
+infra/scripts/bootstrap-apply.sh
+```
+
+It must show `Plan: 0 to add, 3 to change, 0 to destroy`: the two roles'
+trust policies (`sasha720709/BGUcats` → both names) and the CI role's
+`bgucats-tfstate-read` (lock: GetItem only). Type `yes`. It ends with
+`Apply complete! Resources: 0 added, 3 changed, 0 destroyed.` and copies the
+state to the bucket. Then:
+
+```bash
+unset TF_VAR_budget_alert_email; git checkout main
+```
+
+and merge the PR. Its CI passes before and after the apply alike, since the
+old name stays trusted. The deploy of the merge says `No changes.`
+
+### 11b. Before the transfer
+
+1. **Download `~/bgucats-media-backup`** from the codespace to a computer
+   (VS Code explorer → right-click → *Download*). A codespace may have to be
+   created again after the transfer, and this copy would go with the old one.
+2. **Push everything.** No work only in the codespace.
+3. **Codespaces in the organization:** `ARIP-org` → *Settings* →
+   *Codespaces*: allow them for you (all members, or you selected) and look
+   at who pays. If a new codespace for `ARIP-org/BGUcats` can't be created
+   after the transfer, this is where to look.
+
+### 11c. The transfer
+
+Repo → *Settings* → *General* → bottom, *Danger Zone* → **Transfer** →
+*Select one of my organizations* → `ARIP-org` → type `sasha720709/BGUcats`
+to confirm → **I understand, transfer this repository**. Old URLs, clones
+and `git` remotes are redirected. In the codespace, all the same:
+
+```bash
+git remote set-url origin https://github.com/ARIP-org/BGUcats.git && git fetch origin
+```
+
+### 11d. Right after: check what came across
+
+GitHub's transfer docs promise secrets and webhooks, not environments,
+variables or rulesets. Claude can read most of these; what it can't, you
+check in *Settings*:
+
+| What | Expect | If missing |
+|---|---|---|
+| *Environments* → `production` → deployment branches | **Selected**, one rule: `main` | 5a. **Before any merge**: this is what limits the deploy role to `main` |
+| *Secrets and variables* → *Actions* → *Variables* | repo `AWS_CI_ROLE_ARN`; environment `production`: `AWS_DEPLOY_ROLE_ARN` | 5b, with `R=ARIP-org/BGUcats` |
+| Environment `production` → secrets | `BOOTSTRAP_ADMIN_EMAIL` | below |
+| *Rules* → *Rulesets* | `main`, Active, no bypass: deletions, force pushes, PR, checks `python` + `terraform` | 5e |
+| *General* | *Automatically delete head branches* on | tick it |
+| *Code security* | Dependabot alerts and version updates on | turn on |
+
+`BOOTSTRAP_ADMIN_EMAIL`, if missing, from production's table:
+
+```bash
+env -u GITHUB_TOKEN gh auth login --hostname github.com --git-protocol https --web
+aws dynamodb query --profile bgucats-prod-ro --table-name bgucats-data --index-name GSI2 \
+  --key-condition-expression 'GSI2PK = :a' --filter-expression 'addedBy = :t' \
+  --expression-attribute-values '{":a":{"S":"ENTITY#ADMIN"},":t":{"S":"terraform"}}' \
+  --query 'Items[0].email.S' --output text | tr -d '\n' \
+  | env -u GITHUB_TOKEN gh secret set BOOTSTRAP_ADMIN_EMAIL --env production -R ARIP-org/BGUcats
+```
+
+### 11e. Prove it, then drop the old name
+
+Claude opens one more bootstrap PR: only `ARIP-org/BGUcats` in
+`github_repos`, and the docs moved to the new name. **Its CI run is the
+proof for the CI role** (`terraform` passes, so the new token was accepted).
+Apply it as in 11a (`Plan: 0 to add, 2 to change, 0 to destroy`), then
+merge: **its Deploy is the proof for the deploy role**. Until then the old
+name is still trusted, so do this the same day. A repo created again as
+`sasha720709/BGUcats` would be trusted too while it is.
+
+---
+
 ## Known gap: the CI role can read production secrets
 
 CI runs `terraform plan` on every PR, and a PR runs **its own** copy of
