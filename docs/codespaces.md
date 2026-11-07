@@ -75,12 +75,14 @@ secrets.** `postCreate.sh` warns if they are there.
 
 When a person needs to look at AWS (logs, a table item, a read-only plan),
 they sign in through IAM Identity Center and get credentials that expire
-within hours. Four profiles, two per account, set up once per codespace
-(`~/.aws` does not survive a rebuild). One SSO session serves all four:
+within hours. Six profiles, two per account, set up once per codespace
+(`~/.aws` does not survive a rebuild). One SSO session serves all six:
 
 | Profile | Account | Permission set | For |
 |---|---|---|---|
 | `bgucats-prod-ro` | `395591097129` sasha-bgucats-prod | ReadOnlyAccess | debugging production |
+| `bgucats-staging-ro` | `586943192664` bgucats-staging | ReadOnlyAccess | debugging staging |
+| `bgucats-staging-admin` | `586943192664` bgucats-staging | AdministratorAccess | the owner's manual jobs on staging |
 | `bgucats-prod-admin` | `395591097129` sasha-bgucats-prod | AdministratorAccess | the owner's manual jobs, below |
 | `mgmt-ro` | `851725214678` management | ReadOnlyAccess | billing, the organization |
 | `mgmt-admin` | `851725214678` management | AdministratorAccess | Identity Center, SCPs, Organizations |

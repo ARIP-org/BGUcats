@@ -2,12 +2,14 @@
 # the ingest package in) so the zip only ever contains what the Lambda
 # actually needs — no Pillow/ImageHash, those belong to the process Lambda.
 data "archive_file" "ingest" {
+  count       = local.telegram_bot_count
   type        = "zip"
   source_dir  = "${path.module}/../../build/ingest"
   output_path = "${path.module}/../../build/ingest.zip"
 }
 
 resource "aws_iam_role" "ingest_lambda" {
+  count                = local.telegram_bot_count
   name                 = "bgucats-ingest-lambda"
   permissions_boundary = local.lambda_permissions_boundary
 
@@ -24,7 +26,8 @@ resource "aws_iam_role" "ingest_lambda" {
 }
 
 resource "aws_iam_role_policy_attachment" "ingest_lambda_logs" {
-  role       = aws_iam_role.ingest_lambda.name
+  count      = local.telegram_bot_count
+  role       = aws_iam_role.ingest_lambda[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
@@ -32,8 +35,9 @@ resource "aws_iam_role_policy_attachment" "ingest_lambda_logs" {
 # prefix, the data table, and its own three secrets. Extend when this
 # Lambda takes on new responsibilities, never ahead of time.
 resource "aws_iam_role_policy" "ingest_lambda_access" {
-  name = "bgucats-ingest-lambda-access"
-  role = aws_iam_role.ingest_lambda.id
+  count = local.telegram_bot_count
+  name  = "bgucats-ingest-lambda-access"
+  role  = aws_iam_role.ingest_lambda[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -77,15 +81,16 @@ resource "aws_iam_role_policy" "ingest_lambda_access" {
 }
 
 resource "aws_lambda_function" "ingest" {
+  count         = local.telegram_bot_count
   function_name = "bgucats-ingest"
-  role          = aws_iam_role.ingest_lambda.arn
+  role          = aws_iam_role.ingest_lambda[0].arn
   handler       = "ingest.handler.handler"
   runtime       = "python3.12"
   timeout       = 10
   memory_size   = 256
 
-  filename         = data.archive_file.ingest.output_path
-  source_code_hash = data.archive_file.ingest.output_base64sha256
+  filename         = data.archive_file.ingest[0].output_path
+  source_code_hash = data.archive_file.ingest[0].output_base64sha256
 
   environment {
     variables = {
@@ -101,6 +106,29 @@ resource "aws_lambda_function" "ingest" {
   }
 }
 
+# null in staging, which has no bot.
 output "ingest_lambda_name" {
-  value = aws_lambda_function.ingest.function_name
+  value = one(aws_lambda_function.ingest[*].function_name)
+}
+
+# The bot's resources took a count on 2026-11-07, when staging (no bot)
+# arrived. These keep production's from being destroyed and recreated.
+moved {
+  from = aws_iam_role.ingest_lambda
+  to   = aws_iam_role.ingest_lambda[0]
+}
+
+moved {
+  from = aws_iam_role_policy_attachment.ingest_lambda_logs
+  to   = aws_iam_role_policy_attachment.ingest_lambda_logs[0]
+}
+
+moved {
+  from = aws_iam_role_policy.ingest_lambda_access
+  to   = aws_iam_role_policy.ingest_lambda_access[0]
+}
+
+moved {
+  from = aws_lambda_function.ingest
+  to   = aws_lambda_function.ingest[0]
 }

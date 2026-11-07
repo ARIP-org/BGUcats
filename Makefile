@@ -71,17 +71,22 @@ build-beacon:
 	$(call lambda-compile,beacon)
 
 # Every target that calls AWS from a person's shell takes the profile by
-# name, PROFILE=bgucats-prod-ro or PROFILE=bgucats-prod-admin, and first runs
-# infra/scripts/aws-guard.sh: no access keys in the environment, and the
-# credentials must be production's account (infra/main/backend/prod.hcl).
+# name, PROFILE=bgucats-prod-ro or PROFILE=bgucats-staging-ro (or -admin),
+# and first runs infra/scripts/aws-guard.sh: no access keys in the
+# environment, and the credentials must be the environment's account
+# (infra/main/backend/<prod|staging>.hcl).
 # In GitHub Actions the OIDC role is the environment, and PROFILE is unset.
-AWS_ENV = $(if $(PROFILE),AWS_PROFILE=$(PROFILE))
+#
+# BGUCATS_ENV is production or staging, the name aws-guard.sh reads too. It
+# follows the profile (bgucats-staging-* is staging) unless given.
+BGUCATS_ENV ?= $(if $(filter bgucats-staging-%,$(PROFILE)),staging,production)
+AWS_ENV = BGUCATS_ENV=$(BGUCATS_ENV) $(if $(PROFILE),AWS_PROFILE=$(PROFILE))
 aws-guard = $(AWS_ENV) infra/scripts/aws-guard.sh
 
-# Which account's state: backend/<BACKEND>.hcl. There is one, prod.
+# Which account's state: backend/<BACKEND>.hcl, prod or staging.
 # -reconfigure, because a .terraform left over from another backend would
 # otherwise offer to copy that state into this one.
-BACKEND ?= prod
+BACKEND = $(if $(filter staging,$(BGUCATS_ENV)),staging,prod)
 
 tf-init:
 	$(aws-guard)
@@ -90,10 +95,11 @@ tf-init:
 # Read-only, for debugging with an SSO session (docs/codespaces.md): no lock,
 # since the read-only role cannot write one, and no apply target at all.
 # Deploys run in GitHub Actions only (.github/workflows/deploy.yml). Needs the
-# TF_VAR_* values in the environment; without them, plan asks for each.
+# TF_VAR_bootstrap_admin_email in the environment; without it, plan asks.
+# Run tf-init with the same profile first.
 tf-plan: build
 	$(aws-guard)
-	$(AWS_ENV) terraform -chdir=infra/main plan -lock=false
+	$(AWS_ENV) TF_VAR_environment=$(BGUCATS_ENV) terraform -chdir=infra/main plan -lock=false
 
 # The landing page sits behind CachingOptimized (default TTL one day), so an
 # apply alone leaves visitors on the old page until the edge copy expires.

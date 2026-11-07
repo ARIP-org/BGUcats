@@ -897,6 +897,71 @@ state and refuses anything that is not one address.
 
 ---
 
+## 12. The staging account (Phase 2b)
+
+A second copy of the app in an account of its own, so every change is seen
+before users see it (`docs/ROADMAP.md`, 2b). Decided 2026-11-07: **no
+Telegram bot** in staging (it is on its way out), **a separate Google OAuth
+client** (beta access will be managed apart from production), never real
+contributor photos.
+
+| | |
+|---|---|
+| Account | `586943192664` `bgucats-staging`, root email `sashajewishman+bgucats-staging@gmail.com` (no root password) |
+| SSO profiles | `bgucats-staging-ro`, `bgucats-staging-admin` |
+| State bucket | `bgucats-tfstate-586943192664` (`infra/main/backend/staging.hcl`), made by step 12c |
+| Cognito domain | `bgucats-staging` |
+
+### 12a. Create the account — done 2026-11-07
+
+Claude ran it in the owner's session, at the owner's request:
+
+```bash
+export AWS_PROFILE=mgmt-admin
+aws organizations create-account --email sashajewishman+bgucats-staging@gmail.com \
+  --account-name bgucats-staging --query CreateAccountStatus.Id --output text
+# then describe-create-account-status until SUCCEEDED (about 2 minutes)
+```
+
+It sits under the root (`r-6978`), so both SCPs apply (checked: a call to
+`eu-west-1` is an explicit deny). The owner's user `Sasha` got
+ReadOnlyAccess and AdministratorAccess on it, directly, as on production
+(`aws sso-admin create-account-assignment`, principal type `USER`). **The
+first assignment failed** with `InvalidClientTokenId`: the account was
+seconds old and its IAM was not ready. Run again, it succeeded. Then:
+`alias/aws/ssm` described once (6a's reason), Lambda concurrency 10 (enough:
+staging copies no data and nothing reserves concurrency). AWS sent no
+welcome email; accounts created inside an organization often get none.
+
+The profiles, in `~/.aws/config`:
+
+```ini
+[profile bgucats-staging-ro]
+sso_session = sasha
+sso_account_id = 586943192664
+sso_role_name = ReadOnlyAccess
+region = us-east-1
+[profile bgucats-staging-admin]
+sso_session = sasha
+sso_account_id = 586943192664
+sso_role_name = AdministratorAccess
+region = us-east-1
+```
+
+### 12b. `infra/main` for two accounts — the PR "Staging: infra/main for two accounts"
+
+Production's plan: the bot's 7 resources move to `[0]`, nothing else.
+A plan of the empty staging account (read-only, local state, 2026-11-07):
+78 to add, no bot, domain `bgucats-staging` (free that day).
+
+### 12c–12g
+
+Next: bootstrap the staging account, its Google client and salt, the
+GitHub environment `staging`, the deploy and promote workflows, seed data.
+Written here as each one is done.
+
+---
+
 ## Known gap: the CI role can read production secrets
 
 CI runs `terraform plan` on every PR, and a PR runs **its own** copy of

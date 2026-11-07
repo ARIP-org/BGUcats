@@ -91,10 +91,13 @@ jobs:
       # for. A variable pointing at another account fails here, not halfway
       # through an apply.
       - name: Check the account
+        env:
+          BGUCATS_ENV: production
         run: infra/scripts/aws-guard.sh
 
       - name: Plan
         env:
+          TF_VAR_environment: production
           TF_VAR_bootstrap_admin_email: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
         run: |
           terraform -chdir=infra/main init -input=false -backend-config=backend/prod.hcl

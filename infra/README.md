@@ -33,9 +33,12 @@ the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
 
 - **`main/`**: the application (buckets, table, Lambdas, API, CloudFront,
   Cognito, SSM parameters). Uses the S3 backend `bootstrap/` created, named
-  per account in `main/backend/prod.hcl`
+  per account in `main/backend/prod.hcl` and `main/backend/staging.hcl`
   (`terraform -chdir=infra/main init -backend-config=backend/prod.hcl`,
-  or `make tf-init PROFILE=bgucats-prod-ro`). CI
+  or `make tf-init PROFILE=bgucats-prod-ro`; a `bgucats-staging-*` profile
+  picks staging). The variable `environment` (`production` or `staging`,
+  no default) selects what differs between them, all in `main/variables.tf`:
+  the Cognito domain prefix and whether the Telegram bot exists. CI
   runs `plan` on every PR; `.github/workflows/deploy.yml` plans and applies
   it on every push to `main`. **No person applies it.** Runbook:
   `docs/deploy.md`.
@@ -47,7 +50,9 @@ DynamoDB allowlist decides whose Google account is allowed to exist at all.
 Setting that up needs one artifact from outside AWS: an OAuth 2.0 client.
 
 The redirect URI Google needs is knowable before the first apply, because we
-choose the Cognito domain prefix ourselves (`var.cognito_domain_prefix`):
+choose the Cognito domain prefix ourselves (`local.settings` in
+`main/variables.tf`; staging's is `bgucats-staging`, with a Google client of
+its own):
 
 ```
 https://bgucats-app.auth.us-east-1.amazoncognito.com/oauth2/idpresponse
