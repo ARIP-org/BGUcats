@@ -125,6 +125,12 @@ blocked on someone else.
   `bgucats-staging-ro`, `bgucats-staging-admin`, `mgmt-ro`, `mgmt-admin`);
   `infra/scripts/aws-guard.sh` refuses the wrong account (a staging profile
   means staging) and leftover access keys.
+- **The owner orchestrates; Claude writes the code and the infrastructure**
+  (2026-11-07). Never add a new kind of AWS resource quietly: it needs the
+  deploy role widened (bootstrap, owner-applied), and expensive services
+  (RDS, NAT gateways, EC2, …) are to be denied by SCP even to admins.
+  What Claude may and may not do, and how that is enforced rather than
+  promised: `docs/ROADMAP.md`, Phase 2c "Guardrails" and 2d "Claude in CI".
 - **Three exceptions, all owner-only:** `infra/bootstrap` (the state backend and
   the GitHub roles; it cannot deploy itself), `make model-publish` (needs
   torch, so it is not in CI) and `infra/scripts/set-secret.sh`. All are in
