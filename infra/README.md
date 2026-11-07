@@ -13,13 +13,13 @@ the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
 
   ```bash
   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-  export TF_VAR_budget_alert_email=you@example.com   # budget.tf; not kept in the repo
   aws sso login --profile bgucats-prod-admin --use-device-code \
     && infra/scripts/bootstrap-apply.sh; aws sso logout
   ```
 
   `bootstrap-apply.sh` checks the account, uses the newer of the local
-  state and its copy in the state bucket, refuses any destroy or replace,
+  state and its copy in the state bucket, keeps the budget alerts' address
+  from that state (`TF_VAR_budget_alert_email` overrides it), refuses any destroy or replace,
   shows the plan and applies it only after you type `yes`, then puts the
   new state back in the bucket. The state is local (`*.tfstate` is
   gitignored); the copy in the bucket is how the next machine finds it.

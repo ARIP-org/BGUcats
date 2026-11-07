@@ -793,7 +793,9 @@ name in GitHub's tokens changes, and AWS trusts tokens by name. So, in this
 order: AWS learns the new name, then the transfer, then the checks, then AWS
 forgets the old name.
 
-**11a–11d done on 2026-11-07.** The apply changed 3 resources as planned
+**Done on 2026-11-07, 11e included.** Both roles trust only
+`ARIP-org/BGUcats` (checked with `aws iam get-role` after the apply).
+**11a–11d:** The apply changed 3 resources as planned
 (#32, merged before the transfer). After the transfer: the `production`
 environment with its `main` rule, the `main` ruleset (no bypass, checks
 `python` + `terraform`), auto-delete of head branches and Dependabot's
@@ -811,8 +813,6 @@ does not apply it: `infra/bootstrap` is applied by hand
 cd /workspaces/BGUcats && git fetch origin && git checkout bootstrap-trust-arip-org && git pull --ff-only
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 aws sso login --profile bgucats-prod-admin --use-device-code
-export TF_VAR_budget_alert_email=$(jq -r '[.resources[]|select(.type=="aws_budgets_budget")|.instances[0].attributes.notification[]?.subscriber_email_addresses[]?]|first' infra/bootstrap/terraform.tfstate)
-echo "${TF_VAR_budget_alert_email:-EMPTY}"          # the budget alerts' address, not EMPTY
 infra/scripts/bootstrap-apply.sh
 ```
 
@@ -823,7 +823,7 @@ trust policies (`sasha720709/BGUcats` → both names) and the CI role's
 state to the bucket. Then:
 
 ```bash
-unset TF_VAR_budget_alert_email; git checkout main
+git checkout main
 ```
 
 and merge the PR. Its CI passes before and after the apply alike, since the
@@ -886,6 +886,14 @@ Apply it as in 11a (`Plan: 0 to add, 2 to change, 0 to destroy`), then
 merge: **its Deploy is the proof for the deploy role**. Until then the old
 name is still trusted, so do this the same day. A repo created again as
 `sasha720709/BGUcats` would be trusted too while it is.
+
+**How it went (2026-11-07):** PR #34's CI and its merge's Deploy passed;
+the apply ran from a new codespace afterwards, at 17:47 UTC, once the owner
+could sign in (`docs/codespaces.md`, "When the device page hangs"). Its
+first plan also wanted to update the budget: a pasted `export` had split
+across two lines and put the whole state into `TF_VAR_budget_alert_email`.
+Nothing was applied; `bootstrap-apply.sh` now takes the address from the
+state and refuses anything that is not one address.
 
 ---
 

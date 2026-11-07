@@ -4,7 +4,6 @@
 # (infra/README.md). Run it from a checkout of the branch that changes
 # bootstrap, before merging that branch:
 #
-#   export TF_VAR_budget_alert_email=you@example.com
 #   aws sso login --profile bgucats-prod-admin --use-device-code
 #   infra/scripts/bootstrap-apply.sh
 #   aws sso logout
@@ -14,6 +13,8 @@
 # - The state is local (infra/bootstrap/terraform.tfstate). Its copy in
 #   the state bucket is how another machine finds it. Whichever of the two
 #   is newer (by serial) is used; two different lineages stop the run.
+# - The budget alerts' address (TF_VAR_budget_alert_email) is taken from
+#   the state unless it is set; a value that is not one address stops it.
 # - Any destroy or replace stops the run before anything is applied.
 # - Otherwise it lists every change and applies only after you type "yes",
 #   exactly the plan it showed, then puts the new state in the bucket
@@ -69,6 +70,20 @@ elif [ -n "$remote_serial" ]; then
 else
   echo "No bootstrap state, local or in $REMOTE." >&2
   echo "A first bootstrap of an empty account is docs/MANUAL_STEPS.md 6b, not this script." >&2
+  exit 1
+fi
+
+# The budget alerts' address is not kept in the repo. Unless it is given,
+# keep the one in the state. Anything that is not one address stops the
+# run: on 2026-11-07 a pasted command split across two lines put the whole
+# state file in this variable, and the plan wanted to "update" the budget.
+if [ -z "${TF_VAR_budget_alert_email:-}" ]; then
+  TF_VAR_budget_alert_email=$(jq -r '[.. | .subscriber_email_addresses? // empty | .[]] | first // empty' "$LOCAL")
+  export TF_VAR_budget_alert_email
+  echo "Budget alerts: the state's address."
+fi
+if ! [[ "$TF_VAR_budget_alert_email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+  echo "TF_VAR_budget_alert_email is not one email address. Unset it to keep the state's." >&2
   exit 1
 fi
 
