@@ -95,8 +95,8 @@ across, PR #34's CI and deploy passed, and AWS trusts only the new name.
 
 **Next: Phase 2b, the staging account.**
 
-**Owner, any time:** download `~/bgucats-media-backup` from the codespace it
-was made in (the one from before the transfer) to a computer. It is the only copy of the photos outside production.
+**Photos backup:** the owner downloaded `~/bgucats-media-backup` to a
+computer (2026-11-07), the one copy outside production.
 
 **Incident during the rotation:** revoking the bot token also dropped the
 webhook, and the first `set-secret.sh` did not notice, so the bot was
