@@ -41,7 +41,8 @@ data "aws_iam_policy_document" "github_actions_deploy_trust" {
 
     # The difference from the CI role. A job bound to a GitHub environment
     # gets a `sub` ending in ":environment:<name>" instead of the ref or
-    # "pull_request", so only jobs in `production` match. GitHub lets only
+    # "pull_request", so only jobs in this account's environment match
+    # (`production` or `staging`, var.environment). GitHub lets only
     # `main` deploy to that environment (its deployment-branch rule), and a
     # PR from a fork or a branch can't claim it. The numeric-ID segments are
     # the same as in the CI role's trust. Proven on 2026-10-30: deploy.yml
@@ -49,14 +50,14 @@ data "aws_iam_policy_document" "github_actions_deploy_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [for p in local.github_sub_prefixes : "${p}:environment:production"]
+      values   = [for p in local.github_sub_prefixes : "${p}:environment:${var.environment}"]
     }
   }
 }
 
 resource "aws_iam_role" "github_actions_deploy" {
   name                 = "bgucats-github-actions-deploy"
-  description          = "Assumed by deploy.yml (environment production) to plan and apply infra/main."
+  description          = "Assumed by deploy.yml (environment ${var.environment}) to plan and apply infra/main."
   assume_role_policy   = data.aws_iam_policy_document.github_actions_deploy_trust.json
   max_session_duration = 3600
 }

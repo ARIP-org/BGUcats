@@ -17,14 +17,19 @@ the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
     && infra/scripts/bootstrap-apply.sh; aws sso logout
   ```
 
-  `bootstrap-apply.sh` checks the account, uses the newer of the local
-  state and its copy in the state bucket, keeps the budget alerts' address
-  from that state (`TF_VAR_budget_alert_email` overrides it), refuses any destroy or replace,
-  shows the plan and applies it only after you type `yes`, then puts the
-  new state back in the bucket. The state is local (`*.tfstate` is
+  Once per account: production with `bgucats-prod-admin` (the default),
+  staging with `AWS_PROFILE=bgucats-staging-admin`. The profile sets
+  `var.environment`, the GitHub environment the account's deploy role
+  trusts. `bootstrap-apply.sh` checks the account, uses the newer of the
+  local state and its copy in the state bucket, keeps the budget alerts'
+  address from that state (`TF_VAR_budget_alert_email` overrides it),
+  refuses any destroy or replace, shows the plan and applies it only after
+  you type `yes`, then puts the new state back in the bucket. The state is
+  local, one file per account (`bootstrap/state/<account>.tfstate`,
   gitignored); the copy in the bucket is how the next machine finds it.
-  The very first apply in an empty account is `docs/MANUAL_STEPS.md`,
-  step 6b.
+  An account's very first apply is `bootstrap-apply.sh --first`, which
+  needs the budget address and refuses anything but creates
+  (`docs/MANUAL_STEPS.md`, 12c; production's was done by hand, 6b).
 
   The deploy role cannot read or write that key (only `main/`). CI only runs `fmt` and
   `validate` on it. Change it **before** the PR that needs it: a new kind
