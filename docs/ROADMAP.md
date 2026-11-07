@@ -22,6 +22,9 @@ it instead.
 | 2026-11-02 | **Decommission the old account now, not on 2026-11-13.** The new account has run production since 2026-10-30, and the next-day check is done. |
 | 2026-11-07 | **The organization is `ARIP-org`** (Animal Re-Identification Project), not a bgucats name: the architecture is not limited to one campus. `arip` was taken. Created by the owner 2026-11-07. |
 | 2026-11-07 | **Claude may run AWS write commands** when the owner is signed in and asks for the job (step 9 was done this way). It still never deploys, never merges, and holds no credentials of its own: it works in the owner's SSO session. |
+| 2026-11-07 | **Staging: no Telegram bot, a Google OAuth client of its own.** The bot is on its way out as the app gets closer to real. Staging's Google client lives in a Google Cloud project of its own (`bgucats-staging`), so its consent screen's *Test users* is a beta list kept apart from production's. Root email `sashajewishman+bgucats-staging@gmail.com`. |
+| 2026-11-07 | **The owner orchestrates; Claude writes all the code and the infrastructure.** The owner directs through GitHub issues (features, bugs, tester feedback) and through interactive sessions (infrastructure, planning). CI deploys. Claude never deploys and never merges. |
+| 2026-11-07 | **Guardrails that do not depend on Claude's judgment** (Phase 2c). The fear to design against: Claude deciding "we need a relational database" and a VPC, a NAT gateway and RDS reaching AWS. The walls are AWS-side (deploy role scope, an SCP that denies expensive services even to admins) and GitHub-side (Claude's own identity, a required approval, no `workflows` permission). `CLAUDE.md` and Claude Code's deny rules are seatbelts on top, not the wall. |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -43,10 +46,12 @@ and Claude:
 - **Each person gets exactly the access their work needs.** A designer works
   in Figma and on staging, with no cloud access. An ML engineer works in the
   model repo with read access to dataset exports, never to production.
-- **Claude is a contributor, not an operator.** It writes code and opens PRs
-  in any repo. It never holds credentials of its own, never deploys, and
-  never merges; AWS writes happen only in the owner's session, for a job the
-  owner asked for.
+- **Claude is a contributor, not an operator.** It writes all the code and
+  the infrastructure, and opens PRs in any repo; the owner orchestrates and
+  does not write code. It never holds AWS credentials of its own, never
+  deploys, and never merges; AWS writes happen only in the owner's session,
+  for a job the owner asked for. Its only identity of its own will be a
+  GitHub App (Phase 2d), which can open PRs and nothing more.
 
 ## Principles (apply to every phase)
 
@@ -70,15 +75,16 @@ and Claude:
 
 | Area | State |
 |---|---|
-| AWS Organization | Created. Management account `851725214678`, running nothing since 2026-11-07 (step 9): only the organization, Identity Center, budgets and one backup of the old table. Identity Center with group `Admins` (AdministratorAccess, ReadOnlyAccess). |
+| AWS Organization | Created. Management account `851725214678`, running nothing since 2026-11-07 (step 9): only the organization, Identity Center, budgets and one backup of the old table. Identity Center: permission sets AdministratorAccess (1 h) and ReadOnlyAccess (4 h), assigned to the owner's user `Sasha` directly on each member account (group `Admins` exists, empty). |
+| Staging account | `bgucats-staging` `586943192664`, created 2026-11-07 under the same SCPs. Bootstrapped 2026-11-07 (deploy role trusts environment `staging`). Nothing of the app in it yet. |
 | Production account | `sasha-bgucats-prod` `395591097129`. Bootstrapped (state bucket, lock table, OIDC provider, CI role, deploy role, permissions boundary). |
 | CI/CD | PRs run `python` + `terraform` (plan). Push to `main` runs **Deploy** (OIDC, environment `production`). Ruleset on `main`: PR required, both checks required, no bypass. |
-| Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old copy was deleted on 2026-11-07 (step 9) after a final `verify`; production is the only copy in AWS, plus a media copy in the codespace (`~/bgucats-media-backup`). |
+| Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old copy was deleted on 2026-11-07 (step 9) after a final `verify`; production is the only copy in AWS, plus a media copy (`~/bgucats-media-backup`) the owner downloaded to a computer on 2026-11-07. |
 | WhatsApp bot | Removed from code (PR #4) and from the old account (step 9). |
 | Repo | Single repo `ARIP-org/BGUcats` (moved from `sasha720709/BGUcats` on 2026-11-07): `src/` (Lambdas), `web/` (PWA), `site/` (landing), `infra/`, `research/` (imports nothing from `src/`), `scripts/`. |
 | Secrets | **Outside Terraform since 2026-10-31** (PR #12): SSM values and Cognito's Google provider are set by `infra/scripts/set-secret.sh`, owner-only. CI and deploy roles have no access to them (PR #14, bootstrap applied by the owner 2026-10-31; the CI plan with the restricted role shows no changes). Telegram bot token, webhook secret and Google client secret rotated by the owner 2026-10-31. Salt deliberately not rotated. |
 | Telegram bot | A stopgap, not a product line: the app's Capture is the real upload channel. Kept working while the landing page points to it; no long-term plans around it (e.g. staging needs no test bot). |
-| GitHub plan | Personal Pro, student (environments + branch policies on private repos; **no** required reviewers). The owner's merge is the only gate. Organization `ARIP-org` on GitHub Team; the repo moved into it on 2026-11-07. |
+| GitHub plan | Organization `ARIP-org` on GitHub Team; the repo moved into it on 2026-11-07. Team gives environments and deployment branch rules on private repos, and rulesets that can require a PR approval; required reviewers *on environments* need Enterprise. Today the owner's merge is the only gate, and every PR is authored with the owner's token (Phase 2d changes that). |
 
 ---
 
@@ -93,13 +99,24 @@ organization. Phase 1 was done 2026-11-02.
 `ARIP-org/BGUcats` (`docs/MANUAL_STEPS.md` step 11); everything came
 across, PR #34's CI and deploy passed, and AWS trusts only the new name.
 
-**Now: Phase 2b, the staging account** (`docs/MANUAL_STEPS.md` step 12).
-Account `bgucats-staging` (`586943192664`) created 2026-11-07; `infra/main`
-takes `environment`. Decided: no Telegram bot in staging, a separate
-Google OAuth client. Next: bootstrap it (12c).
+**Now: Phase 2b, the staging account** (`docs/MANUAL_STEPS.md` step 12),
+about half done on 2026-11-07:
 
-**Owner, any time:** download `~/bgucats-media-backup` from the codespace it
-was made in (the one from before the transfer) to a computer. It is the only copy of the photos outside production.
+| Step | |
+|---|---|
+| 12a account `586943192664` | done |
+| 12b `infra/main` for two accounts (#36) | done: production plan 0/0/0 |
+| 12c bootstrap staging (#37) | applied 18:42 UTC; merge #37 |
+| 12d Google client, own project | made; goes into Cognito after the first deploy |
+| 12e GitHub environment `staging` | next |
+| 12f deploy-to-staging + Promote workflows | then |
+| 12g seed data, the end-to-end check | last |
+
+**Before staging's first deploy (12f): Phase 2c, the guardrails PR.** Then
+Phase 2d, Claude in CI.
+
+**Photos backup:** the owner downloaded `~/bgucats-media-backup` to a
+computer (2026-11-07), the one copy outside production.
 
 **Incident during the rotation:** revoking the bot token also dropped the
 webhook, and the first `set-secret.sh` did not notice, so the bot was
@@ -188,11 +205,87 @@ the org and needs a spending limit above zero.
   (deployments only from the promote workflow).
 - **Data:** staging never receives real contributor photos. A seed script
   creates sample cats/sessions from public-domain or own test images.
-- The landing site and QR codes stay production-only.
+- The landing site is deployed to staging too (cheap, and a place to
+  preview landing-page changes); QR codes and links point only to
+  production.
 
 **Done when:** a merge appears on staging within ~20 minutes without
 touching production, and promoting deploys an identical build to
 production.
+
+### 2c. Guardrails that do not depend on Claude
+
+Claude can only reach AWS through three doors. What holds each one shut:
+
+| Door | Today | Wall (enforced by AWS or GitHub) | Seatbelt (enforced by the harness) |
+|---|---|---|---|
+| **1. A deploy:** Claude writes Terraform, the owner merges, CI applies | Open by design | The deploy role can create only the resource types `infra/main` uses today; widening it is a bootstrap change only the owner can apply. **New:** an SCP that denies expensive services in every member account, even to admins. **New:** a CI check that fails on any resource type not on an allowlist, so a red check means "something new that could cost money" | The plan summary on every PR |
+| **2. The owner's admin login** in a session where Claude runs | Open whenever the owner signs in to an `-admin` profile there | The SCP above: even admin cannot create the expensive things. In Actions (2d) the runner has no SSO session and Claude's job requests no OIDC token | **New:** Claude Code deny rules in `.claude/settings.json` (`terraform apply`, `*-admin` profiles, `gh pr merge`, pushes to `main`). Habit: `-ro` while writing app code, `-admin` only for infra sessions, then `aws sso logout` |
+| **3. Merging without the owner** | Partly open: in a codespace Claude holds the owner's token | 2d: Claude's own GitHub App, one required approval on `main`, no `workflows` permission, CODEOWNERS on `.github/`, `infra/bootstrap/`, `infra/org/` | Deny rule on `gh pr merge` |
+
+**The SCP, `bgucats-no-expensive-services`** (`infra/org/`, applied by the
+owner from the management account like step 10): deny creating RDS and
+Aurora, NAT gateways, EC2 instances, EKS and ECS on EC2, SageMaker,
+Redshift, OpenSearch, ElastiCache, MSK, and the like. Lifting it for one
+service is a deliberate change in the management account, never a side
+effect of a PR.
+
+**Alarms**, which stop nothing but catch it within hours: the $10 budget in
+each account (exists), **Cost Anomaly Detection** (free, email), and
+optionally a budget action that attaches a deny-all policy to the deploy
+role at 200% of budget.
+
+**DDoS** (secondary): API Gateway throttling already caps the public
+beacon, and CloudFront absorbs most floods. WAF costs money; not at this
+scale. Revisit when the app is public.
+
+**Done when:** the SCP is attached and proven (creating a NAT gateway in
+staging is an explicit deny, even as admin); anomaly detection is on; the
+allowlist check fails a test PR that adds `aws_db_instance`; the deny rules
+are in the repo.
+
+### 2d. Claude in CI, and the feedback loop
+
+How the owner works from here: **orchestrating, not writing code.**
+
+- **GitHub issues** for anything that should end in a PR: features, bugs,
+  tester feedback. Claude triages, the owner adds `approved`, Claude opens a
+  PR, the owner looks at staging, approves and merges, then promotes.
+- **Interactive sessions** (codespace, claude.ai/code, Remote Control from
+  a phone) for open-ended work: infrastructure, planning, "should we…?".
+  The only place AWS admin is ever used, and only when the owner signs in
+  for it.
+
+What it takes:
+
+- **Claude's own GitHub identity:** a GitHub App installed on `ARIP-org`,
+  with contents and pull requests write, **no `workflows` permission** (it
+  cannot change CI, deploys or its own workflow), no admin.
+- **The `main` ruleset requires one approval.** A bot cannot approve its
+  own PR, so nothing lands without the owner. "Allow GitHub Actions to
+  create and approve pull requests" stays off.
+- **Two workflows, split by trust.** *Triage* reads issues and feedback
+  (untrusted text: anyone can write "ignore your instructions") with
+  read-only GitHub permissions, no AWS, limited tools. *Fix* runs only when
+  the owner adds `approved`; it may push a branch and open a PR. Neither
+  requests `id-token`, so neither can assume an AWS role.
+- **Subscription auth only** (`CLAUDE_CODE_OAUTH_TOKEN`, as an environment
+  secret limited to `main`), never `ANTHROPIC_API_KEY`.
+- **In-app feedback:** a "Send feedback" button and shake-to-report, sent to
+  our own API (screenshots stay in S3, never in git). A read-only OIDC role
+  lets GitHub pull new feedback into issues; no GitHub token in AWS. App
+  Store Connect / TestFlight becomes a second source only once the app is
+  wrapped for the stores.
+
+**Doors after 2d:** door 2 closed for everyday work (no AWS in Claude's
+jobs), door 3 closed (own identity + required approval), door 1 guarded by
+the owner's approval, the allowlist check, staging before promote, and the
+SCP. Open on purpose: interactive infra sessions with the owner's admin
+login, covered by the SCP.
+
+**Done when:** an issue labeled `approved` becomes a Claude PR that the
+owner approves, which deploys to staging, without anyone opening a
+codespace.
 
 ## Phase 3 — Design system and the designer's workflow
 
@@ -251,7 +344,7 @@ one pin.
 | Owner (infra) | admin on all repos | `Admins` — everything | merges, promotes to production |
 | ML engineer | write on `bgucats-recognition` | `bgucats-ml` — read dataset exports | own GPU / training environment |
 | Designer | write on `BGUcats` (PRs) | none | Figma, staging URL |
-| Claude | opens PRs in any repo | none (at most read-only on staging) | never merges, never holds AWS write |
+| Claude | its own GitHub App (2d): opens PRs, no `workflows`, no admin | none in CI; in interactive sessions, only the owner's session, at the owner's request | never merges, never approves, never holds AWS credentials of its own |
 
 - Onboarding doc per role: what to install, where to start, who reviews.
 - Offboarding: remove from the group / repo; nothing personal to rotate,
@@ -265,18 +358,17 @@ one pin.
 - Codifying Identity Center groups and permission sets in Terraform
   (an `infra/org` root, applied by the owner).
 - Product phases 2–4 from `CLAUDE.md` run on top of this platform.
-- **In-app feedback and Claude in CI** (owner, 2026-11-07, after 2a). A
-  "Send feedback" button and shake-to-report in the app, sent to our own API
-  (screenshots stay in S3). GitHub pulls new feedback into issues; Claude
-  triages each issue read-only; the owner's `approved` label starts a Claude
-  run that opens a PR. Subscription token only, no API key. App Store
-  Connect / TestFlight becomes a second source only once the app is wrapped
-  for the stores.
+- **WAF** in front of API Gateway and CloudFront, once the app is public
+  (Phase 2c, DDoS).
 
 ## Never
 
 - Long-lived environment branches.
 - IAM users or access keys, for anyone, including CI.
 - Claude merging, approving deploys, or holding AWS credentials of its own.
+- Claude's CI jobs requesting an OIDC token, or its GitHub App holding the
+  `workflows` permission.
+- Expensive services (RDS, NAT gateways, EC2, …) appearing as a side effect
+  of a PR: they are denied by SCP until the owner lifts it (2c).
 - Real contributor photos in staging or in the model repo.
 - A softmax classifier over our cats (`CLAUDE.md`).
