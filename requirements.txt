@@ -6,4 +6,4 @@ Pillow==12.3.0
 numpy==2.5.2
 python-ulid==4.1.0
 tzdata==2026.6
-boto3==1.43.122          # provided by the Lambda runtime; pinned for local parity
+boto3==1.43.123          # provided by the Lambda runtime; pinned for local parity
