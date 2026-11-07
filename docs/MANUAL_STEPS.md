@@ -8,7 +8,7 @@ step can lose the dataset.
 
 | | |
 |---|---|
-| Old account | `851725214678`: production today; becomes the organization's management account and ends up running nothing |
+| Old account | `851725214678`: production until step 8; now the organization's management account, running nothing since step 9 (2026-11-07) |
 | New account | `395591097129` `sasha-bgucats-prod`: production after step 8 |
 | Region | `us-east-1` |
 | SSO profiles | `mgmt-ro`, `mgmt-admin` (old account), `bgucats-prod-ro`, `bgucats-prod-admin` (new) |
@@ -17,7 +17,7 @@ step can lose the dataset.
 | Deploy role | `arn:aws:iam::395591097129:role/bgucats-github-actions-deploy` |
 | Cognito domain | `bgucats-app` (old: `bgucats-admin`) |
 | Old user pool | `us-east-1_iLd1I4gJ9` |
-| Old IAM user | `sasha-bgucats-admin` (group `admins` → AdministratorAccess), keys ending `…F4MF` and `…IITS` |
+| Old IAM user | `sasha-bgucats-admin` (group `admins` → AdministratorAccess), keys ending `…F4MF` and `…IITS`: all deleted in step 9 |
 
 **The pull requests:** PR #1 `consolidate-main` (main is production), PR #2
 `deploy-oidc` (account-agnostic infra, the deploy role, `deploy.yml`, this
@@ -454,7 +454,7 @@ so nobody opens the new app before step 8.
 **Done on 2026-10-30**, in the afternoon rather than the evening, since
 nobody was using the app. `scripts/cutover.sh` ran 12:28–12:31 UTC and the
 copy verified as `MATCH`. Telegram and Capture work in the new account.
-Still open: step 9, from 2026-11-13.
+Step 9 was done on 2026-11-07.
 
 1. **Telegram to the new account.** The queued messages arrive within
    seconds:
@@ -496,6 +496,8 @@ Still open: step 9, from 2026-11-13.
 
 ### Way back, until step 9
 
+**Gone since step 9 (2026-11-07).** Kept for the record.
+
 The old account is complete and still running. Point Telegram back at it
 (`setWebhook` with the URL written down in 7b.2 and the same
 `secret_token`), and use the old app. Work
@@ -515,6 +517,35 @@ bgucats has inside it.
 
 Two things here cannot be undone: 9c ends the old CloudFront addresses for good,
 so the QR codes on printed posters stop working, and 9e deletes the old data.
+
+**Done on 2026-11-07, all of it, 9e included.** Claude ran the commands in the
+owner's SSO session, at the owner's request (`CLAUDE.md`, "Workflow"). What
+happened, where it differs from the text below:
+
+- **9a** passed: `missing` = 0 except two `TRAFFIC#` counters, salt `same`,
+  production's point-in-time recovery `ENABLED` and deletion protection on.
+- **9b:** backup `bgucats-data-before-decommission`, `AVAILABLE`. It is the only
+  bgucats thing left in the account. Keep it.
+- **9c:** the owner had already deleted every Lambda and both APIs in the console
+  and disabled the three distributions. The destroy plan then had 66 resources
+  instead of about 90, and applied with no errors.
+- **9d:** both IAM users went, with their keys, console password and MFA, along
+  with the `admins` group. The Codespaces and Actions secrets were already gone.
+- **The rest of the account went too**, at the owner's request: schedule-ai-app
+  (unused since 2026-08-26), 2025 leftovers (SageMaker, CodeBuild/CodePipeline,
+  RDS and App Runner roles, their log groups), two unrelated buckets, and
+  `beer7.click`: SES identities, DNS records, hosted zone and the domain
+  registration. Its Anthropic API key, readable in its old state, was revoked.
+  No custom IAM role, policy, user or OIDC provider is left.
+- **9e** the same day, at the owner's request: production's media was copied
+  to the codespace first (`~/bgucats-media-backup`, 1,239 objects, byte count
+  equal to the bucket), then the old table, lock table and the three buckets
+  were deleted. Production checked afterwards: table `ACTIVE` with deletion
+  protection, media unchanged. That copy lives only as long as the codespace;
+  download it to a computer.
+
+What remains in `851725214678`: Organizations, Identity Center (and its KMS
+key), the budgets, and the 9b backup.
 
 ### 9a. Last checks
 
@@ -796,5 +827,6 @@ a new person, and it only matters to someone who also has the table.
   `make admin-add` with the same `PROFILE`, and
   break-glass. `mgmt-admin` only for Identity Center, Organizations and
   billing.
-- **Everything else read-only:** `bgucats-prod-ro`. It is the only profile
-  a Claude session may ever be handed.
+- **Everything else read-only:** `bgucats-prod-ro`. A Claude session uses
+  the read-only profiles by default, and an admin profile only for a job the
+  owner asked for, in the owner's session (`CLAUDE.md`, "Workflow").

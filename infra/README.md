@@ -135,8 +135,8 @@ Every resource name is prefixed `bgucats-`, and every resource carries the
 `Project = "bgucats"` default tag (set once, in each root's provider
 block). Since 2026-10-30 the project runs in an AWS account of its own,
 `sasha-bgucats-prod` (`395591097129`), a member of the organization whose
-management account (`851725214678`) keeps only the old copy until it is
-decommissioned (`docs/MANUAL_STEPS.md`, step 9). The deploy role's
+management account (`851725214678`) has run nothing since the old copy was
+decommissioned on 2026-11-07 (`docs/MANUAL_STEPS.md`, step 9). The deploy role's
 account-wide scopes rely on that: nothing else may be deployed into this
 account.
 

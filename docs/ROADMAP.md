@@ -20,6 +20,8 @@ it instead.
 | 2026-10-31 | **Order: Phase 1's secrets gap → GitHub organization (2a) → staging (2b).** The organization comes before staging so the staging account's roles trust the new repo name from day one. The owner and Claude do 2a and 2b together, step by step. |
 | 2026-11-02 | **The organization is on GitHub Team, from before the transfer.** On GitHub Free, a private repo has no deployment branch restrictions, environment secrets or environment variables, and transferring to a Free account loses protected branches. The deployment branch rule is what limits the deploy role to `main`, so a Free organization could let a workflow on any branch deploy. |
 | 2026-11-02 | **Decommission the old account now, not on 2026-11-13.** The new account has run production since 2026-10-30, and the next-day check is done. |
+| 2026-11-07 | **The organization is `ARIP-org`** (Animal Re-Identification Project), not a bgucats name: the architecture is not limited to one campus. `arip` was taken. Created by the owner 2026-11-07. |
+| 2026-11-07 | **Claude may run AWS write commands** when the owner is signed in and asks for the job (step 9 was done this way). It still never deploys, never merges, and holds no credentials of its own: it works in the owner's SSO session. |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -42,7 +44,9 @@ and Claude:
   in Figma and on staging, with no cloud access. An ML engineer works in the
   model repo with read access to dataset exports, never to production.
 - **Claude is a contributor, not an operator.** It writes code and opens PRs
-  in any repo. It never holds write credentials to AWS, and never merges.
+  in any repo. It never holds credentials of its own, never deploys, and
+  never merges; AWS writes happen only in the owner's session, for a job the
+  owner asked for.
 
 ## Principles (apply to every phase)
 
@@ -62,34 +66,37 @@ and Claude:
 
 ---
 
-## Where we are (updated 2026-10-31)
+## Where we are (updated 2026-11-07)
 
 | Area | State |
 |---|---|
-| AWS Organization | Created. Management account `851725214678` (to end up running nothing). Identity Center with group `Admins` (AdministratorAccess, ReadOnlyAccess). |
+| AWS Organization | Created. Management account `851725214678`, running nothing since 2026-11-07 (step 9): only the organization, Identity Center, budgets and one backup of the old table. Identity Center with group `Admins` (AdministratorAccess, ReadOnlyAccess). |
 | Production account | `sasha-bgucats-prod` `395591097129`. Bootstrapped (state bucket, lock table, OIDC provider, CI role, deploy role, permissions boundary). |
 | CI/CD | PRs run `python` + `terraform` (plan). Push to `main` runs **Deploy** (OIDC, environment `production`). Ruleset on `main`: PR required, both checks required, no bypass. |
-| Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old account keeps its copy until step 9, not before 2026-11-13. |
-| WhatsApp bot | Removed from code (PR #4). Old account copy runs until decommission. |
+| Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old copy was deleted on 2026-11-07 (step 9) after a final `verify`; production is the only copy in AWS, plus a media copy in the codespace (`~/bgucats-media-backup`). |
+| WhatsApp bot | Removed from code (PR #4) and from the old account (step 9). |
 | Repo | Single repo `sasha720709/BGUcats`: `src/` (Lambdas), `web/` (PWA), `site/` (landing), `infra/`, `research/` (imports nothing from `src/`), `scripts/`. |
 | Secrets | **Outside Terraform since 2026-10-31** (PR #12): SSM values and Cognito's Google provider are set by `infra/scripts/set-secret.sh`, owner-only. CI and deploy roles have no access to them (PR #14, bootstrap applied by the owner 2026-10-31; the CI plan with the restricted role shows no changes). Telegram bot token, webhook secret and Google client secret rotated by the owner 2026-10-31. Salt deliberately not rotated. |
 | Telegram bot | A stopgap, not a product line: the app's Capture is the real upload channel. Kept working while the landing page points to it; no long-term plans around it (e.g. staging needs no test bot). |
-| GitHub plan | Personal Pro, student (environments + branch policies on private repos; **no** required reviewers). The owner's merge is the only gate. |
+| GitHub plan | Personal Pro, student (environments + branch policies on private repos; **no** required reviewers). The owner's merge is the only gate. Organization `ARIP-org` created 2026-11-07; the repo is not transferred yet. |
 
 ---
 
-## Next session starts here (2026-11-02)
+## Next session starts here (2026-11-07)
 
-**Phase 1: done** (2026-11-02), including the budget alert.
+**Phase 0: done** (2026-11-07), after eight days on the new account rather
+than two weeks: the owner waived the wait. SCPs applied 2026-11-02; step 9
+done in full, 9e included, on 2026-11-07. No IAM user or access key is left in the
+organization. Phase 1 was done 2026-11-02.
 
-**Phase 0:** SCPs applied and checked (2026-11-02). The owner decided on
-2026-11-02 not to wait until 2026-11-13 and is decommissioning the old account
-now (`docs/MANUAL_STEPS.md` step 9). When that is done, update `CLAUDE.md`,
-"Workflow", which still describes the old copy as the way back.
+**Next: Phase 2a, the GitHub organization.** `ARIP-org` exists. Before the
+transfer: the owner checks it is on **GitHub Team**; Claude opens the
+bootstrap PR that makes the roles trust both `sasha720709/BGUcats` and
+`ARIP-org/BGUcats`, and the owner applies it. Then the transfer, then the
+checks in 2a.
 
-**Next: Phase 2a, the GitHub organization**, done together step by step. The
-owner picks the organization's name; Claude then opens the bootstrap PR that
-makes the roles trust both names (see 2a).
+**Owner, any time:** download `~/bgucats-media-backup` from the codespace to a
+computer. It is the only copy of the photos outside production.
 
 **Incident during the rotation:** revoking the bot token also dropped the
 webhook, and the first `set-secret.sh` did not notice, so the bot was
@@ -105,8 +112,9 @@ Owner-driven; follows `docs/MANUAL_STEPS.md`.
 - Delete the WhatsApp Meta app before the cutover evening.
 - Cutover (`scripts/cutover.sh`), reinstall the app on phones, smoke test.
 - Next day: `verify --only table` → `missing` = 0.
-- Two weeks later: decommission the old account (step 9), keys and the
-  `sasha-bgucats-admin` IAM user deleted; 30 days after, old data deleted.
+- Decommission the old account (step 9), keys and the
+  `sasha-bgucats-admin` IAM user deleted, old data deleted. **Done 2026-11-07**,
+  earlier than planned, all at once.
 - SCPs on member accounts (step 10) and central root access management.
 
 **Done when:** the management account runs nothing; no IAM users or access
@@ -248,11 +256,18 @@ one pin.
 - Codifying Identity Center groups and permission sets in Terraform
   (an `infra/org` root, applied by the owner).
 - Product phases 2–4 from `CLAUDE.md` run on top of this platform.
+- **In-app feedback and Claude in CI** (owner, 2026-11-07, after 2a). A
+  "Send feedback" button and shake-to-report in the app, sent to our own API
+  (screenshots stay in S3). GitHub pulls new feedback into issues; Claude
+  triages each issue read-only; the owner's `approved` label starts a Claude
+  run that opens a PR. Subscription token only, no API key. App Store
+  Connect / TestFlight becomes a second source only once the app is wrapped
+  for the stores.
 
 ## Never
 
 - Long-lived environment branches.
 - IAM users or access keys, for anyone, including CI.
-- Claude merging, approving deploys, or holding AWS write credentials.
+- Claude merging, approving deploys, or holding AWS credentials of its own.
 - Real contributor photos in staging or in the model repo.
 - A softmax classifier over our cats (`CLAUDE.md`).
