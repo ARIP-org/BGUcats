@@ -6,7 +6,7 @@
 # Names are ones we chose, so they are stable, and the policies name them.
 # API Gateway, CloudFront and Cognito have no name-based ARNs: AWS assigns
 # an ID at creation. Those are scoped to the account instead. That is
-# exact, because this account (sasha-bgucats-prod) runs bgucats and
+# exact, because each account (sasha-bgucats-prod, bgucats-staging) runs bgucats and
 # nothing else, and it is what lets a deploy into an empty account create
 # them. Until 2026-10 the account was shared with schedule-ai-app and the
 # policies were pinned to our IDs; that reason is gone.

@@ -3,7 +3,8 @@
 #
 # Two roles trust this provider: bgucats-github-actions-ci below (plan only,
 # any branch or PR of this repo) and bgucats-github-actions-deploy in
-# deploy_role.tf (apply, only jobs in the `production` environment).
+# deploy_role.tf (apply, only jobs in this account's environment,
+# `production` or `staging`).
 #
 # AWS validates GitHub's OIDC tokens against its own trusted CA bundle, not
 # this field, but the API still requires a syntactically valid thumbprint.

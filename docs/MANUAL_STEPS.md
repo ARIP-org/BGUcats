@@ -954,11 +954,67 @@ Production's plan: the bot's 7 resources move to `[0]`, nothing else.
 A plan of the empty staging account (read-only, local state, 2026-11-07):
 78 to add, no bot, domain `bgucats-staging` (free that day).
 
-### 12c–12g
+### 12c. Bootstrap the staging account
 
-Next: bootstrap the staging account, its Google client and salt, the
-GitHub environment `staging`, the deploy and promote workflows, seed data.
-Written here as each one is done.
+**Done 2026-11-07, 18:42 UTC:** 18 resources, the state in
+`s3://bgucats-tfstate-586943192664/bootstrap/terraform.tfstate` (serial 21),
+the deploy role's trust `repo:ARIP-org@*/BGUcats@*:environment:staging`,
+budget `bgucats-monthly` $10. Production's bootstrap on the same branch:
+`No changes`.
+
+The PR "Staging: bootstrap per account" gives `infra/bootstrap` a variable
+`environment` (the deploy role trusts `…:environment:<it>`), and keeps
+its local state per account, in `infra/bootstrap/state/<account>.tfstate`.
+The first run there moves the old `infra/bootstrap/terraform.tfstate` if it is
+that account's. Production's plan on that branch: `No changes`.
+
+From that PR's branch:
+
+```bash
+cd /workspaces/BGUcats && git fetch origin && git checkout staging-bootstrap && git pull --ff-only
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+aws sts get-caller-identity --profile bgucats-staging-admin --query Arn --output text
+export TF_VAR_budget_alert_email=sashajewishman@gmail.com
+export AWS_PROFILE=bgucats-staging-admin
+infra/scripts/bootstrap-apply.sh --first
+```
+
+It must say `aws-guard: staging, account 586943192664` and
+`No state yet: a first bootstrap of account 586943192664 (staging)`, then
+`Plan: 18 to add, 0 to change, 0 to destroy`: the state bucket (4), the
+lock table, the OIDC provider, the CI role (4), the boundary, the deploy
+role (6) whose trust ends in `:environment:staging`, and the budget. Type
+`yes`. It ends with `Saved: s3://bgucats-tfstate-586943192664/…`. Then:
+
+```bash
+unset AWS_PROFILE TF_VAR_budget_alert_email
+AWS_PROFILE=bgucats-prod-admin infra/scripts/bootstrap-apply.sh   # production: No changes
+git checkout main
+```
+
+and merge the PR. Its CI only formats and validates bootstrap.
+
+### 12d. Google: a client of staging's own
+
+Done 2026-11-07, by the owner: a Google Cloud project `bgucats-staging` of
+its own, so its consent screen's *Test users* is staging's beta list,
+apart from production's. Consent screen External, in Testing; a Web
+application client `bgucats-staging-cognito`, no JavaScript origins, one
+redirect URI:
+
+```
+https://bgucats-staging.auth.us-east-1.amazoncognito.com/oauth2/idpresponse
+```
+
+Cognito gets it after the first staging deploy has made the user pool (12f).
+
+**No salt in staging:** only the Telegram ingest Lambda reads
+`/bgucats/submitter-hash-salt`, and staging has no bot.
+
+### 12e–12g
+
+Next: the GitHub environment `staging`, the deploy and promote workflows,
+seed data. Written here as each one is done.
 
 ---
 

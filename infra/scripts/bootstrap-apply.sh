@@ -8,11 +8,18 @@
 #   infra/scripts/bootstrap-apply.sh
 #   aws sso logout
 #
-# - Production's account and an SSO profile, or nothing runs
-#   (aws-guard.sh). The profile defaults to bgucats-prod-admin.
-# - The state is local (infra/bootstrap/terraform.tfstate). Its copy in
-#   the state bucket is how another machine finds it. Whichever of the two
-#   is newer (by serial) is used; two different lineages stop the run.
+# For staging: AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh
+#
+# - An SSO profile and its environment's account, or nothing runs
+#   (aws-guard.sh). The profile defaults to bgucats-prod-admin; a
+#   bgucats-staging-* profile means staging, and sets var.environment.
+# - The state is local, one file per account
+#   (infra/bootstrap/state/<account>.tfstate). Its copy in the account's
+#   state bucket is how another machine finds it. Whichever of the two is
+#   newer (by serial) is used; two different lineages stop the run.
+# - --first is for an account with no bootstrap yet: no state anywhere, the
+#   budget address given, and a plan that only creates. Without --first, no
+#   state stops the run; with it, any state does.
 # - The budget alerts' address (TF_VAR_budget_alert_email) is taken from
 #   the state unless it is set; a value that is not one address stops it.
 # - Any destroy or replace stops the run before anything is applied.
@@ -22,12 +29,36 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+first=""
+case "${1:-}" in
+  --first) first=yes ;;
+  "") ;;
+  *)
+    echo "usage: $0 [--first]" >&2
+    exit 1
+    ;;
+esac
+
 export AWS_PROFILE="${AWS_PROFILE:-bgucats-prod-admin}"
+case "$AWS_PROFILE" in
+  bgucats-staging-*) environment=staging ;;
+  *) environment=production ;;
+esac
+export BGUCATS_ENV="$environment" TF_VAR_environment="$environment"
 infra/scripts/aws-guard.sh
 account=$(aws sts get-caller-identity --query Account --output text)
 
 ROOT=infra/bootstrap
-LOCAL="$ROOT/terraform.tfstate"
+mkdir -p "$ROOT/state"
+LOCAL="$ROOT/state/$account.tfstate"
+# Before 2026-11-07 there was one account and one file,
+# infra/bootstrap/terraform.tfstate. If it is this account's, it moves.
+OLD="$ROOT/terraform.tfstate"
+if [ ! -f "$LOCAL" ] && [ -f "$OLD" ] &&
+  jq -e --arg b "bgucats-tfstate-$account" '[.. | .bucket? // empty] | index($b)' "$OLD" >/dev/null; then
+  mv "$OLD" "$LOCAL"
+  echo "Moved $OLD to $LOCAL."
+fi
 BUCKET="bgucats-tfstate-$account"
 KEY=bootstrap/terraform.tfstate
 REMOTE="s3://$BUCKET/$KEY"
@@ -47,7 +78,17 @@ else
   echo "$head" >&2
   exit 1
 fi
-if [ -f "$LOCAL" ]; then
+if [ -n "$first" ]; then
+  if [ -f "$LOCAL" ] || [ -n "$remote_serial" ]; then
+    echo "--first, but this account already has a bootstrap state ($LOCAL or $REMOTE). Stopping." >&2
+    exit 1
+  fi
+  if [ -z "${TF_VAR_budget_alert_email:-}" ]; then
+    echo "--first needs the budget alerts' address: export TF_VAR_budget_alert_email=..." >&2
+    exit 1
+  fi
+  echo "No state yet: a first bootstrap of account $account ($environment)."
+elif [ -f "$LOCAL" ]; then
   local_serial=$(jq .serial "$LOCAL")
   if [ -n "$remote_serial" ]; then
     if [ "$(jq -r .lineage "$LOCAL")" != "$(jq -r .lineage "$work/remote.tfstate")" ]; then
@@ -69,7 +110,7 @@ elif [ -n "$remote_serial" ]; then
   echo "Using the bucket's copy (serial $remote_serial)."
 else
   echo "No bootstrap state, local or in $REMOTE." >&2
-  echo "A first bootstrap of an empty account is docs/MANUAL_STEPS.md 6b, not this script." >&2
+  echo "For an account that has never been bootstrapped: $0 --first" >&2
   exit 1
 fi
 
@@ -89,7 +130,8 @@ fi
 
 echo
 echo "== Plan"
-terraform -chdir="$ROOT" init -input=false >/dev/null
+terraform -chdir="$ROOT" init -input=false -reconfigure \
+  -backend-config="path=state/$account.tfstate" >/dev/null
 terraform -chdir="$ROOT" plan -input=false -out="$(basename "$PLAN")" >"$work/plan.txt" ||
   { cat "$work/plan.txt"; exit 1; }
 terraform -chdir="$ROOT" show -json "$(basename "$PLAN")" >"$work/plan.json"
@@ -104,6 +146,11 @@ terraform -chdir="$ROOT" show -no-color "$(basename "$PLAN")"
 echo
 echo "Changes:"
 cat "$work/changes.txt"
+if [ -n "$first" ] && grep -qv $'^  create\t' "$work/changes.txt"; then
+  echo
+  echo "--first, but the plan does more than create. Nothing applied." >&2
+  exit 1
+fi
 if grep -q delete "$work/changes.txt"; then
   echo
   echo "The plan destroys or replaces something. Nothing applied." >&2
@@ -112,7 +159,7 @@ if grep -q delete "$work/changes.txt"; then
 fi
 
 echo
-read -r -p "Apply the $(wc -l <"$work/changes.txt") change(s) above to account $account? Type yes: " answer
+read -r -p "Apply the $(wc -l <"$work/changes.txt") change(s) above to account $account ($environment)? Type yes: " answer
 if [ "$answer" != yes ]; then
   echo "Nothing applied."
   exit 1

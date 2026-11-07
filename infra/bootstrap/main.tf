@@ -9,6 +9,11 @@
 terraform {
   required_version = ">= 1.9"
 
+  # Local state, one file per account: infra/scripts/bootstrap-apply.sh
+  # passes -backend-config=path=state/<account>.tfstate. A copy goes to
+  # that account's state bucket after each apply.
+  backend "local" {}
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -29,6 +34,20 @@ provider "aws" {
 }
 
 data "aws_caller_identity" "current" {}
+
+# Which copy of the app this account runs: "production" (sasha-bgucats-prod)
+# or "staging" (bgucats-staging). The deploy role trusts only GitHub jobs in
+# the environment of the same name. bootstrap-apply.sh sets it from the
+# profile; no default, so it is never a guess.
+variable "environment" {
+  description = "production or staging: the GitHub environment this account's deploy role trusts."
+  type        = string
+
+  validation {
+    condition     = contains(["production", "staging"], var.environment)
+    error_message = "environment must be \"production\" or \"staging\"."
+  }
+}
 
 resource "aws_s3_bucket" "tfstate" {
   bucket = "bgucats-tfstate-${data.aws_caller_identity.current.account_id}"
