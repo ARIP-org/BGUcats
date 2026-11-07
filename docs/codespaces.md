@@ -82,8 +82,8 @@ within hours. Four profiles, two per account, set up once per codespace
 |---|---|---|---|
 | `bgucats-prod-ro` | `395591097129` sasha-bgucats-prod | ReadOnlyAccess | debugging production |
 | `bgucats-prod-admin` | `395591097129` sasha-bgucats-prod | AdministratorAccess | the owner's manual jobs, below |
-| `mgmt-ro` | `851725214678` management | ReadOnlyAccess | billing, the organization; reading the old copy of the data until it is deleted |
-| `mgmt-admin` | `851725214678` management | AdministratorAccess | Identity Center, SCPs, decommissioning |
+| `mgmt-ro` | `851725214678` management | ReadOnlyAccess | billing, the organization |
+| `mgmt-admin` | `851725214678` management | AdministratorAccess | Identity Center, SCPs, Organizations |
 
 ```bash
 aws configure sso --use-device-code
@@ -118,14 +118,16 @@ account but production's (`infra/scripts/aws-guard.sh`).
 
 **`bgucats-prod-ro`** is for debugging: CloudWatch logs, DynamoDB items,
 `make tf-plan PROFILE=bgucats-prod-ro` (it skips the lock, so read-only is
-enough; it needs the `TF_VAR_*` values in the environment). It is the only
-profile a Claude session may ever be handed, and only when you choose to.
+enough; it needs the `TF_VAR_*` values in the environment). It is what a
+Claude session uses by default, and only when you choose to sign in.
 
 **`bgucats-prod-admin`** is for the owner's manual jobs only: applying
 `infra/bootstrap`, `make model-publish`, and the table writer
 (`make admin-add`), always per command
-(`make model-publish PROFILE=bgucats-prod-admin`), never exported, never
-handed to a Claude session. Its sessions are short on purpose.
+(`make model-publish PROFILE=bgucats-prod-admin`), never exported. Its
+sessions are short on purpose. Since 2026-11-07 a Claude session may use an
+admin profile too, but only for a job the owner asked for, while the owner is
+signed in, and never in place of a deploy (`CLAUDE.md`, "Workflow").
 
 ## Costs
 

@@ -99,17 +99,24 @@ blocked on someone else.
   which plans and applies `infra/main` under a GitHub OIDC role. Runbook,
   post-deploy checks and rollback: `docs/deploy.md`.
 - **Never deploy by hand and never push to `main`.** No `terraform apply`,
-  `make tf-apply`, `make site-invalidate` or AWS write calls from a codespace
-  or a Claude session. The codespace holds no AWS credentials; read-only
-  debugging goes through `aws sso login` (`docs/codespaces.md`).
+  `make tf-apply` or `make site-invalidate` on `infra/main` from a codespace
+  or a Claude session. The codespace holds no AWS keys; credentials come only
+  from `aws sso login` (`docs/codespaces.md`).
+- **AWS commands from a Claude session** (owner's decision, 2026-11-07):
+  read-only (`*-ro`) by default. With the owner signed in and asking for a
+  specific job, Claude may also run write commands with the `*-admin`
+  profiles; that is how step 9 was done. Never in place of a deploy: a
+  change to what `infra/main` describes still goes through a PR. Never a
+  write to production's table or media bucket unless the owner names it.
 - **Production has an account of its own,** `sasha-bgucats-prod`
   (`395591097129`), named in one file: `infra/main/backend/prod.hcl`.
   It has been production since the cutover on 2026-10-30 (app
   `https://d1m4aukbm35e12.cloudfront.net/`, Cognito `bgucats-app`).
-  `851725214678` is the organization's management account. It still holds
-  the old deployment and the old copy of the data, untouched, as the way
-  back until `docs/MANUAL_STEPS.md` step 9 decommissions it (not before
-  2026-11-13). Never deploy or write there. Every hand-run AWS
+  `851725214678` is the organization's management account and has run
+  nothing since step 9 (`docs/MANUAL_STEPS.md`, 2026-11-07): Organizations,
+  Identity Center, billing, and one DynamoDB backup of the old table. The old
+  deployment and the old copy of the data are gone; there is no way back
+  through it. Never deploy there. Every hand-run AWS
   command names its SSO profile (`bgucats-prod-ro`, `bgucats-prod-admin`,
   `mgmt-ro`, `mgmt-admin`); `infra/scripts/aws-guard.sh` refuses the wrong
   account and leftover access keys.
@@ -457,8 +464,8 @@ actual product question.
   Dataset" is scraped from neko-jirushi.com with unclear licensing — a cautionary
   example, not a source.
 - Commit cat photos, datasets, exports, model weights, or `.tfvars` — see `.gitignore`.
-- Push to `main`, apply Terraform, or call AWS with write intent from a session.
-  See "Workflow".
+- Push to `main` or apply `infra/main` from a session, or call AWS with write
+  intent unless the owner asked for that job. See "Workflow".
 
 ## Stack
 
