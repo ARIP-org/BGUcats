@@ -91,6 +91,7 @@ jobs:
         # No lock: this plan changes nothing, and it runs at the same time as
         # Deploy on every merge. Holding the lock could fail either of them.
         env:
+          TF_VAR_environment: production
           TF_VAR_bootstrap_admin_email: "ci-plan-placeholder@example.com"
         run: |
           terraform -chdir=infra/main init -reconfigure -backend-config=backend/prod.hcl

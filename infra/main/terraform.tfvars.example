@@ -1,26 +1,12 @@
-# Copy to terraform.tfvars (gitignored — never commit the real file) and
-# fill in real values.
+# Copy to terraform.tfvars (gitignored — never commit the real file) for a
+# read-only plan from a codespace (make tf-plan). Deploys set these in
+# .github/workflows/deploy.yml instead.
+#
+# Secrets are not variables: the bot's are in SSM and Google's client is in
+# Cognito, both set with infra/scripts/set-secret.sh (docs/deploy.md).
 
-# Create the bot via @BotFather on Telegram (send it /newbot), then paste
-# the token it gives you.
-telegram_bot_token = "123456789:REPLACE-WITH-REAL-BOTFATHER-TOKEN"
-
-# Any random string. Telegram echoes it back in the
-# X-Telegram-Bot-Api-Secret-Token header on every webhook call — that's how
-# the ingest Lambda knows a request actually came from Telegram.
-# Generate with: openssl rand -hex 32
-telegram_webhook_secret = "replace-with-openssl-rand-hex-32"
-
-# Salt mixed into the SHA-256 hash of Telegram user IDs before they're
-# stored, so the table never holds a raw, reversible user identifier.
-# Generate with: openssl rand -hex 32
-submitter_hash_salt = "replace-with-openssl-rand-hex-32"
-
-# OAuth 2.0 Web application client from the Google Cloud console — see
-# "Google sign-in" in infra/README.md for the click-by-click. Cognito is the
-# only thing that ever sees these; the browser never does.
-google_client_id     = "REPLACE.apps.googleusercontent.com"
-google_client_secret = "GOCSPX-replace-me"
+# "production" or "staging": which account's copy (variables.tf).
+environment = "production"
 
 # The Google account seeded into the admin allowlist, so there is someone who
 # can open the labeling tool and add everyone else.

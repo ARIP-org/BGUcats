@@ -112,14 +112,19 @@ blocked on someone else.
   (`395591097129`), named in one file: `infra/main/backend/prod.hcl`.
   It has been production since the cutover on 2026-10-30 (app
   `https://d1m4aukbm35e12.cloudfront.net/`, Cognito `bgucats-app`).
+  **Staging** is `bgucats-staging` (`586943192664`, created 2026-11-07,
+  `infra/main/backend/staging.hcl`): the same Terraform with
+  `environment = "staging"`, no Telegram bot, its own Google client, never
+  real contributor photos. Being set up (`docs/ROADMAP.md`, Phase 2b).
   `851725214678` is the organization's management account and has run
   nothing since step 9 (`docs/MANUAL_STEPS.md`, 2026-11-07): Organizations,
   Identity Center, billing, and one DynamoDB backup of the old table. The old
   deployment and the old copy of the data are gone; there is no way back
   through it. Never deploy there. Every hand-run AWS
   command names its SSO profile (`bgucats-prod-ro`, `bgucats-prod-admin`,
-  `mgmt-ro`, `mgmt-admin`); `infra/scripts/aws-guard.sh` refuses the wrong
-  account and leftover access keys.
+  `bgucats-staging-ro`, `bgucats-staging-admin`, `mgmt-ro`, `mgmt-admin`);
+  `infra/scripts/aws-guard.sh` refuses the wrong account (a staging profile
+  means staging) and leftover access keys.
 - **Three exceptions, all owner-only:** `infra/bootstrap` (the state backend and
   the GitHub roles; it cannot deploy itself), `make model-publish` (needs
   torch, so it is not in CI) and `infra/scripts/set-secret.sh`. All are in

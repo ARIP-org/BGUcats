@@ -93,7 +93,10 @@ organization. Phase 1 was done 2026-11-02.
 `ARIP-org/BGUcats` (`docs/MANUAL_STEPS.md` step 11); everything came
 across, PR #34's CI and deploy passed, and AWS trusts only the new name.
 
-**Next: Phase 2b, the staging account.**
+**Now: Phase 2b, the staging account** (`docs/MANUAL_STEPS.md` step 12).
+Account `bgucats-staging` (`586943192664`) created 2026-11-07; `infra/main`
+takes `environment`. Decided: no Telegram bot in staging, a separate
+Google OAuth client. Next: bootstrap it (12c).
 
 **Owner, any time:** download `~/bgucats-media-backup` from the codespace it
 was made in (the one from before the transfer) to a computer. It is the only copy of the photos outside production.
@@ -175,9 +178,9 @@ the org and needs a spending limit above zero.
   assigned; covered by the same SCPs.
 - Same Terraform, its own backend file (`infra/main/backend/staging.hcl`),
   its own bootstrap (OIDC, CI/deploy roles scoped to environment `staging`).
-- Own secrets: **a separate Telegram test bot**, own Cognito domain prefix
-  (e.g. `bgucats-staging`), its Google redirect URI added to the OAuth client
-  (or a separate OAuth client), own salt.
+- Own secrets: own Cognito domain prefix (`bgucats-staging`), **a separate
+  Google OAuth client** (beta access is managed apart from production), own
+  salt. **No Telegram bot** (decided 2026-11-07: the bot is on its way out).
 - **Pipeline:** merge to `main` → deploy **staging** automatically.
   Production deploys only via a manual **Promote** workflow that deploys the
   *same commit SHA* that staging already runs (or a `v*` release tag).

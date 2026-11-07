@@ -58,7 +58,7 @@ locals {
 }
 
 resource "aws_cognito_user_pool_domain" "admins" {
-  domain       = var.cognito_domain_prefix
+  domain       = local.settings.cognito_domain_prefix
   user_pool_id = aws_cognito_user_pool.admins.id
 
   # Managed login (2), not the classic hosted UI (1). Only managed login
