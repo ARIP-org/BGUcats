@@ -89,15 +89,14 @@ than two weeks: the owner waived the wait. SCPs applied 2026-11-02; step 9
 done in full, 9e included, on 2026-11-07. No IAM user or access key is left in the
 organization. Phase 1 was done 2026-11-02.
 
-**Phase 2a, the GitHub organization: last step.** The repo is
-`ARIP-org/BGUcats` since 2026-11-07 (`docs/MANUAL_STEPS.md` step 11; 11a–11d
-done, everything came across). Left: 11e, the bootstrap PR that drops the
-old name. Its CI run and its deploy are 2a's "done when".
+**Phase 2a, the GitHub organization: done** (2026-11-07). The repo is
+`ARIP-org/BGUcats` (`docs/MANUAL_STEPS.md` step 11); everything came
+across, PR #34's CI and deploy passed, and AWS trusts only the new name.
 
 **Next: Phase 2b, the staging account.**
 
-**Owner, any time:** download `~/bgucats-media-backup` from the codespace to a
-computer. It is the only copy of the photos outside production.
+**Owner, any time:** download `~/bgucats-media-backup` from the codespace it
+was made in (the one from before the transfer) to a computer. It is the only copy of the photos outside production.
 
 **Incident during the rotation:** revoking the bot token also dropped the
 webhook, and the first `set-secret.sh` did not notice, so the bot was
@@ -162,7 +161,13 @@ SHA-pinned; every PR shows its plan summary inline.
   first merge**.
 
 **Done when:** a PR in the organization's repo passes CI, and its merge
-deploys.
+deploys. **Done 2026-11-07** (PR #34).
+
+Codespaces in the organization: GitHub Team includes no Codespaces quota.
+`ARIP-org` → *Settings* → *Codespaces* → *General* → "Codespace
+ownership" decides who pays: **User ownership** bills the creator's
+personal account (and its free or Pro quota); Organization ownership bills
+the org and needs a spending limit above zero.
 
 ### 2b. Staging account
 

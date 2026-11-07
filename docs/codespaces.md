@@ -111,6 +111,33 @@ aws sso login --profile bgucats-prod-ro --use-device-code   # works whatever the
 aws sts get-caller-identity --profile bgucats-prod-ro   # .../AWSReservedSSO_ReadOnlyAccess_.../<you>
 ```
 
+### When the device page hangs
+
+Twice on 2026-11-07 the device page (`…/start/#/device`) never loaded,
+while the portal itself did. Waiting does not help: a new codespace has no
+SSO session at all. Leave out `--use-device-code` and finish the browser
+flow by hand:
+
+```bash
+aws sso login --profile bgucats-prod-admin     # terminal 1: prints a link, waits
+```
+
+Open the link, sign in, *Allow*. The browser then goes to
+`http://127.0.0.1:<port>/oauth/callback?code=…&state=…` and fails to load:
+that 127.0.0.1 is your computer, not the codespace. Copy the whole address
+and hand it to the waiting CLI, quickly (the code is single-use and short-lived):
+
+```bash
+curl 'http://127.0.0.1:<port>/oauth/callback?code=…&state=…'   # terminal 2, in single quotes
+```
+
+Terminal 1 says `Successfully logged into Start URL`. From VS Code desktop
+the redirect may just work, since it forwards ports to your machine.
+Fallback: the portal's *Access keys* → "add a profile to your AWS
+credentials file", pasted into `~/.aws/credentials` under a new name
+(e.g. `[bgucats-prod-admin-keys]`) and used as `AWS_PROFILE`; they last an
+hour, delete them after.
+
 **Always name the profile.** Make targets that call AWS take
 `PROFILE=...` and refuse to run without it, or while `AWS_ACCESS_KEY_ID`
 is set (environment keys silently win over any profile), or against any
@@ -130,6 +157,15 @@ admin profile too, but only for a job the owner asked for, while the owner is
 signed in, and never in place of a deploy (`CLAUDE.md`, "Workflow").
 
 ## Costs
+
+The repo lives in the organization `ARIP-org`, whose GitHub Team plan
+includes no Codespaces quota. Who pays is `ARIP-org` → *Settings* →
+*Codespaces* → *General* → "Codespace ownership": **User ownership** bills
+the person who creates the codespace (their own free or Pro quota);
+Organization ownership bills the org and needs a spending limit above zero.
+`~/.aws/config` and Claude Code's memory do not move to a new codespace on
+their own; copy them across (2026-11-07: as a zip in the repo root,
+never committed).
 
 Codespaces bills core-hours while running and storage while it exists. This
 codespace is a 2-core machine, so it burns 2 core-hours per wall-clock hour.
