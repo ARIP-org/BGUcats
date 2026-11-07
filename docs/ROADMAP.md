@@ -75,10 +75,10 @@ and Claude:
 | CI/CD | PRs run `python` + `terraform` (plan). Push to `main` runs **Deploy** (OIDC, environment `production`). Ruleset on `main`: PR required, both checks required, no bypass. |
 | Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old copy was deleted on 2026-11-07 (step 9) after a final `verify`; production is the only copy in AWS, plus a media copy in the codespace (`~/bgucats-media-backup`). |
 | WhatsApp bot | Removed from code (PR #4) and from the old account (step 9). |
-| Repo | Single repo `sasha720709/BGUcats`: `src/` (Lambdas), `web/` (PWA), `site/` (landing), `infra/`, `research/` (imports nothing from `src/`), `scripts/`. |
+| Repo | Single repo `ARIP-org/BGUcats` (moved from `sasha720709/BGUcats` on 2026-11-07): `src/` (Lambdas), `web/` (PWA), `site/` (landing), `infra/`, `research/` (imports nothing from `src/`), `scripts/`. |
 | Secrets | **Outside Terraform since 2026-10-31** (PR #12): SSM values and Cognito's Google provider are set by `infra/scripts/set-secret.sh`, owner-only. CI and deploy roles have no access to them (PR #14, bootstrap applied by the owner 2026-10-31; the CI plan with the restricted role shows no changes). Telegram bot token, webhook secret and Google client secret rotated by the owner 2026-10-31. Salt deliberately not rotated. |
 | Telegram bot | A stopgap, not a product line: the app's Capture is the real upload channel. Kept working while the landing page points to it; no long-term plans around it (e.g. staging needs no test bot). |
-| GitHub plan | Personal Pro, student (environments + branch policies on private repos; **no** required reviewers). The owner's merge is the only gate. Organization `ARIP-org` created 2026-11-07; the repo is not transferred yet. |
+| GitHub plan | Personal Pro, student (environments + branch policies on private repos; **no** required reviewers). The owner's merge is the only gate. Organization `ARIP-org` on GitHub Team; the repo moved into it on 2026-11-07. |
 
 ---
 
@@ -89,11 +89,12 @@ than two weeks: the owner waived the wait. SCPs applied 2026-11-02; step 9
 done in full, 9e included, on 2026-11-07. No IAM user or access key is left in the
 organization. Phase 1 was done 2026-11-02.
 
-**Now: Phase 2a, the GitHub organization.** `ARIP-org` exists, on GitHub
-Team (owner, 2026-11-07). The runbook is `docs/MANUAL_STEPS.md` step 11:
-apply the bootstrap PR that makes the roles trust both `sasha720709/BGUcats`
-and `ARIP-org/BGUcats` (11a), transfer (11b–c), check what came across
-(11d), then a second bootstrap PR drops the old name (11e).
+**Phase 2a, the GitHub organization: last step.** The repo is
+`ARIP-org/BGUcats` since 2026-11-07 (`docs/MANUAL_STEPS.md` step 11; 11a–11d
+done, everything came across). Left: 11e, the bootstrap PR that drops the
+old name. Its CI run and its deploy are 2a's "done when".
+
+**Next: Phase 2b, the staging account.**
 
 **Owner, any time:** download `~/bgucats-media-backup` from the codespace to a
 computer. It is the only copy of the photos outside production.

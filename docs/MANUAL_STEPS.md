@@ -12,7 +12,7 @@ step can lose the dataset.
 | New account | `395591097129` `sasha-bgucats-prod`: production after step 8 |
 | Region | `us-east-1` |
 | SSO profiles | `mgmt-ro`, `mgmt-admin` (old account), `bgucats-prod-ro`, `bgucats-prod-admin` (new) |
-| Repo | `sasha720709/BGUcats` (owner ID 254865293, repo ID 1339652949) |
+| Repo | `ARIP-org/BGUcats` (owner ID 353802310, repo ID 1339652949); `sasha720709/BGUcats` (owner ID 254865293) until 2026-11-07, step 11 |
 | CI role | `arn:aws:iam::395591097129:role/bgucats-github-actions-ci` |
 | Deploy role | `arn:aws:iam::395591097129:role/bgucats-github-actions-deploy` |
 | Cognito domain | `bgucats-app` (old: `bgucats-admin`) |
@@ -138,7 +138,7 @@ Done on 2026-10-30, with the variables (5b) and the six secrets (5c).
 ```bash
 env -u GITHUB_TOKEN gh auth login --hostname github.com --git-protocol https --web
 alias ghx='env -u GITHUB_TOKEN gh'
-R=sasha720709/BGUcats
+R=ARIP-org/BGUcats          # sasha720709/BGUcats when this ran, 2026-10-30
 ghx variable set AWS_CI_ROLE_ARN -R $R --body arn:aws:iam::395591097129:role/bgucats-github-actions-ci
 ghx variable set AWS_DEPLOY_ROLE_ARN --env production -R $R --body arn:aws:iam::395591097129:role/bgucats-github-actions-deploy
 ghx variable list -R $R; ghx variable list --env production -R $R
@@ -792,6 +792,13 @@ GitHub Team. The repo keeps its ID (1339652949) through a transfer, but its
 name in GitHub's tokens changes, and AWS trusts tokens by name. So, in this
 order: AWS learns the new name, then the transfer, then the checks, then AWS
 forgets the old name.
+
+**11a–11d done on 2026-11-07.** The apply changed 3 resources as planned
+(#32, merged before the transfer). After the transfer: the `production`
+environment with its `main` rule, the `main` ruleset (no bypass, checks
+`python` + `terraform`), auto-delete of head branches and Dependabot's
+updates were all there. Variables and secrets are proven by 11e's CI run and
+deploy, which fail by name if one is missing.
 
 ### 11a. Apply the bootstrap PR from its branch, then merge it
 

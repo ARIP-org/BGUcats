@@ -22,15 +22,15 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   ]
 }
 
-# The names GitHub may give this repo in a token. Two while it moves from
-# the owner's account to the ARIP-org organization (docs/ROADMAP.md, 2a):
-# a transfer changes the `repository` and `sub` claims at once, so the
-# roles must accept the new name before it, or CI and deploys are refused
-# from the first run after it. The old name goes in the PR after the
-# transfer. The numeric repo ID (1339652949) survives a transfer; the
-# owner segment becomes ARIP-org's (353802310).
+# The names GitHub may give this repo in a token. The repo moved from the
+# owner's account (sasha720709/BGUcats) to the ARIP-org organization on
+# 2026-11-07 (docs/MANUAL_STEPS.md, step 11). A transfer changes the
+# `repository` and `sub` claims at once, so for a move both names are listed
+# here first, and the old one is dropped once a CI run and a deploy have
+# used the new one. The numeric repo ID (1339652949) survives a transfer;
+# the owner segment is ARIP-org's (353802310).
 locals {
-  github_repos = ["sasha720709/BGUcats", "ARIP-org/BGUcats"]
+  github_repos = ["ARIP-org/BGUcats"]
 
   # "owner/name" -> "repo:owner@*/name@*", the start of the token's `sub`.
   github_sub_prefixes = [
@@ -58,7 +58,7 @@ data "aws_iam_policy_document" "github_actions_trust" {
     # `job_workflow_ref`) to something other than a bare wildcard — it
     # rejects an UpdateAssumeRolePolicy that omits it. This environment's
     # actual `sub` embeds numeric owner/repo IDs
-    # ("repo:sasha720709@<id>/BGUcats@<id>:ref:refs/heads/main") rather than
+    # ("repo:ARIP-org@<id>/BGUcats@<id>:ref:refs/heads/main") rather than
     # the plain "repo:owner/name:..." documented for github.com, so the
     # wildcards sit around those ID segments. `repository` (exact "owner/repo")
     # is the claim that actually does the scoping precisely.
