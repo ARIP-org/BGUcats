@@ -956,6 +956,12 @@ A plan of the empty staging account (read-only, local state, 2026-11-07):
 
 ### 12c. Bootstrap the staging account
 
+**Done 2026-11-07, 18:42 UTC:** 18 resources, the state in
+`s3://bgucats-tfstate-586943192664/bootstrap/terraform.tfstate` (serial 21),
+the deploy role's trust `repo:ARIP-org@*/BGUcats@*:environment:staging`,
+budget `bgucats-monthly` $10. Production's bootstrap on the same branch:
+`No changes`.
+
 The PR "Staging: bootstrap per account" gives `infra/bootstrap` a variable
 `environment` (the deploy role trusts `…:environment:<it>`), and keeps
 its local state per account, in `infra/bootstrap/state/<account>.tfstate`.
