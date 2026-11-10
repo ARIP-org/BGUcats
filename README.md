@@ -46,7 +46,7 @@ deploys (`docs/deploy.md`).
 ```
 .devcontainer/  dev container definition
 .github/        CI (GitHub Actions)
-docs/           design spec, recognition addendum, runbooks, branch map
+docs/           design spec, recognition addendum, runbooks, roadmap
 infra/          Terraform — infra/bootstrap (state backend, applied by hand),
                 infra/main (application resources, see infra/README.md)
 src/            Python Lambda handlers
