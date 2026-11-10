@@ -11,7 +11,7 @@ wildlife-datasets==1.0.9     # dataset downloaders + metadata, incl. CatIndividu
 kornia==0.9.0                # ALIKED, DISK and LightGlue for the local-feature rerank
 pandas==3.1.0
 numpy==2.5.2                 # pinned to match the root requirements, so one venv can hold both
-Pillow==12.3.0
+Pillow==13.0.0
 
 # Browser export (catreid.export): ONNX graph + int8 quantisation for the web MVP
 onnx==1.23.2
