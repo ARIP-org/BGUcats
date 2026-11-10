@@ -1020,11 +1020,41 @@ Checked by the owner on 2026-11-10: *Settings* → *Environments* →
 variable `AWS_DEPLOY_ROLE_ARN` =
 `arn:aws:iam::586943192664:role/bgucats-github-actions-deploy`.
 
-### 12f–12g
+### 12f. Deploy to staging, promote by tag — done 2026-11-10
 
-After step 13: the deploy-to-staging and promote workflows, the first
-staging deploy, the Google client into Cognito, seed data. Written here as
-each one is done.
+PR #40. A push to `main` deploys staging; a `v*` tag deploys production
+(`docs/deploy.md`). The owner made the tag ruleset `release tags` and
+limited the environment `production` to `v*` tags.
+
+**The first deploy of a brand-new account fails once, and that is
+expected.** The user pool's client names the Google provider, and
+`set-secret.sh google-oauth` can only create that provider once the pool
+exists. So: let the first run fail at the client, then
+
+```bash
+aws sso login --profile bgucats-staging-admin --use-device-code
+AWS_PROFILE=bgucats-staging-admin infra/scripts/set-secret.sh google-oauth
+```
+
+and re-run the failed job (*Actions → Deploy → the run → Re-run failed
+jobs*). The same order applies to any account made later.
+
+Result: app `https://d2rysfyl47qmmz.cloudfront.net/`, landing
+`https://d2hdwn6h65nfue.cloudfront.net/`, user pool `us-east-1_jib6xkLFN`.
+
+### 12g. Make staging usable
+
+- **The model: done 2026-11-10.** Staging got the files production
+  serves, not a new export: `model/` was downloaded from production's web
+  bucket with `bgucats-prod-ro` and uploaded to staging's with
+  `bgucats-staging-admin`, the manifest last. The version is a hash of the
+  model, so both environments run the same one.
+- **Seed data:** not done. A script that creates test cats, sessions and
+  photos from public-domain or generated images.
+- **The freeze policy's exemption for the Lambda roles:** not proven
+  (13b). Attach `bgucats-budget-freeze` to staging for a minute and check
+  that the app's API still answers.
+- **The owner signs in** to the staging app on a phone.
 
 ---
 
