@@ -111,3 +111,13 @@ jobs:
 
             If you cannot finish, comment on the issue with what stopped you.
             Never leave it silent.
+
+      # The action hides why a run failed. This prints only Claude's final
+      # message (for a refused token or a usage limit, the reason), never
+      # tool output.
+      - name: Why it failed
+        if: failure()
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          [ -f "$f" ] || { echo "No execution log: Claude never started."; exit 0; }
+          jq -r '.. | objects | select(.type? == "result") | "Result: \(.result // "(no message)")"' "$f"

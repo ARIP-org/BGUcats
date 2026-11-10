@@ -73,3 +73,13 @@ jobs:
 
             Never add or remove the label `approved`: only the owner decides
             that. Do not edit the issue's title or body, and do not close it.
+
+      # The action hides why a run failed. This prints only Claude's final
+      # message (for a refused token or a usage limit, the reason), never
+      # tool output.
+      - name: Why it failed
+        if: failure()
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          [ -f "$f" ] || { echo "No execution log: Claude never started."; exit 0; }
+          jq -r '.. | objects | select(.type? == "result") | "Result: \(.result // "(no message)")"' "$f"
