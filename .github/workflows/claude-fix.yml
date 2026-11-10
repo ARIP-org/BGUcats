@@ -70,6 +70,8 @@ jobs:
           terraform_version: "1.15.9"
           terraform_wrapper: false
       - run: pip install -r requirements-dev.txt
+      # For tests/web: Claude can open the screens it changes and look.
+      - run: playwright install --with-deps chromium
 
       - uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1.0.271
         env:
@@ -100,6 +102,9 @@ jobs:
               owner has to decide, and open no pull request.
             - Tests for what you change. Run `make lint` and `make test`, and
               fix what they find. Do not weaken or skip a test to pass.
+            - If you change a screen (web/), add or update its test in
+              tests/web and look at the screenshot it saves in
+              build/screenshots/ before you call the work done.
             - Update the docs in the same change (CLAUDE.md, "Workflow").
             - No AWS commands: this job has no AWS access, by design.
 

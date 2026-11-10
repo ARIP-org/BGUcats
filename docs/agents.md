@@ -30,6 +30,22 @@ Planned, not built: a **reviewer** on every pull request (comments only), a
 **verifier** that runs a smoke test against staging after each deploy and
 posts screenshots, and **in-app feedback** that becomes issues.
 
+## Seeing a change before it is merged
+
+Staging only ever shows merged code. What shows a change before the merge
+is `tests/web`: the app's screens in a headless browser at a phone's size,
+against the real API and process handlers with AWS mocked on localhost.
+
+- Every CI run keeps a screenshot of each screen: the run's page →
+  *Artifacts* → `screenshots`.
+- The Fix agent has the browser too, and is told to look at the screens it
+  changes.
+- In any session: `make screenshots`, or `make local-app` to click through
+  the app by hand. Neither needs AWS.
+
+They show a made-up campus (three cats, coloured shapes for photos), so
+they are safe to attach anywhere.
+
 ## Why it is safe to let it run
 
 An issue is text from outside, and text can say "ignore your instructions".

@@ -18,7 +18,12 @@ pandas==3.1.0
 
 pytest==9.2.0
 pytest-cov==7.1.0
-moto[s3,dynamodb]==5.2.5
+# server: tests/web runs moto as a local HTTP server, so a real browser can
+# load photos from it and upload to it through presigned URLs.
+moto[s3,dynamodb,server]==5.2.5
+# Drives a headless Chromium through the app's screens (tests/web). The
+# browser itself is not a pip package: `playwright install chromium`.
+playwright==1.65.0
 ruff==0.17.3
 boto3-stubs[s3,dynamodb]
 pre-commit==4.7.0

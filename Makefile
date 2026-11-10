@@ -1,4 +1,4 @@
-.PHONY: fmt lint test build build-ingest build-process build-admin build-beacon \
+.PHONY: fmt lint test screenshots local-app build build-ingest build-process build-admin build-beacon \
 	tf-init tf-plan site-invalidate admin-add poster \
 	model-export model-publish
 
@@ -30,6 +30,16 @@ lint:
 
 test:
 	pytest
+
+# The app's screens in a headless browser, against the real handlers and a
+# mocked AWS on localhost (tests/web). Leaves a phone-sized screenshot of
+# each screen in build/screenshots/. Once: playwright install chromium
+screenshots:
+	pytest tests/web
+
+# The same local app, kept running, to click through by hand. No AWS.
+local-app:
+	PYTHONPATH=src python -u -m tests.web.localapp
 
 build: build-ingest build-process build-admin build-beacon
 
