@@ -118,13 +118,55 @@ fingerprint, and a new one can be generated at any time.
   for triage), or delete the secret `CLAUDE_CODE_OAUTH_TOKEN`.
 - For good: *Settings → GitHub Apps → arip-claude → Uninstall*.
 
-## Interactive sessions
+## Hands-on sessions in the cloud
 
-A codespace session still works as before, for infrastructure and
-planning. Its pull requests are opened with the owner's own token, so once
-the ruleset requires an approval they need another author.
+For work the owner wants to steer: a feature, a redesigned screen, "try it
+this way". A session on claude.ai/code or in the Claude phone app, on this
+repo, running on a machine Anthropic provides. No charge beyond the Claude
+plan, and nothing to keep running.
 
-Planned: hands-on sessions in the cloud for features and design work, with
-no AWS access at all, and a GitHub identity for them that is not the
-owner's. The plan and the decision it waits for are in `docs/ROADMAP.md`,
-2d, "Hands-on sessions in the cloud".
+| | |
+|---|---|
+| Acts on GitHub as | the machine user `arip-dev-bot`: write access, not an admin, not a code owner. Its credential stays outside the session's machine, behind a proxy that is part of the product; that proxy refuses tag pushes and branch deletions |
+| AWS | none. SSO sign-in is not possible in a cloud session |
+| Rules | the same `CLAUDE.md` and the same deny rules (`.claude/settings.json`) |
+| Tools | `scripts/cloud_session_setup.sh` runs when the session starts: the dev dependencies and Terraform. A Chrome is already there, so `make screenshots` works |
+| Ends in | a branch `claude/<topic>` and a pull request authored by the bot, which the owner approves and merges |
+
+**How a session goes:** describe the change, attach screenshots, sketches
+or a Figma link. Claude makes it, runs `make lint` and `make test`, and
+shows the changed screens from `make screenshots`. The pull request gets
+CI's two plans like any other. After the merge, staging has it.
+
+**What it cannot do, and why that is the point:** approve or merge its own
+pull request (the author cannot approve, and the `main` ruleset requires an
+approval), change who may approve (no admin), create a `v*` tag (the tag
+ruleset, and the proxy), or touch AWS. Anything that needs AWS is a
+codespace session with the owner signed in.
+
+### Setup (once, by the owner)
+
+1. **The machine user.** A second GitHub account, `arip-dev-bot`, a member
+   of `ARIP-org` with the role **Write** on `BGUcats`
+   (`https://github.com/ARIP-org/BGUcats/settings/access`).
+2. **The Claude GitHub App on the repo.** As the owner:
+   `https://github.com/apps/claude` → *Install* (or *Configure*) →
+   `ARIP-org` → *Only select repositories* → `BGUcats`.
+3. **Connect the Claude account to GitHub as the bot.** In a browser where
+   GitHub is signed in as `arip-dev-bot`, open `https://claude.ai/code` and
+   connect GitHub. If the Claude account is already connected as the
+   owner, disconnect that first in claude.ai's settings. From then on every
+   cloud session on that Claude account acts as the bot, in any repo.
+4. **Try it:** a cloud session, "fix a typo in docs/…, open a pull
+   request". The pull request's author must be `arip-dev-bot`.
+5. **Then require the approval** on `main` (step 6 of the setup above),
+   which until now would have locked the owner's own pull requests.
+
+## Infrastructure sessions
+
+A codespace session, steered from a phone with Remote Control if wanted:
+the only place AWS is used by hand, and only with the owner signed in to
+SSO for a job the owner asked for (`CLAUDE.md`, "Workflow"). Its pull
+requests are opened with the codespace's token, which is the owner's. Once
+the ruleset requires an approval they need another author too: push the
+branch and let a cloud session, or the bot's token, open the pull request.
