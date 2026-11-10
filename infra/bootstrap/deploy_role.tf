@@ -423,6 +423,70 @@ resource "aws_iam_role_policy" "github_actions_deploy_edge" {
   })
 }
 
+# alarms.tf: the alerts topic, its email subscription and the alarms.
+resource "aws_iam_role_policy" "github_actions_deploy_alerts" {
+  name = "bgucats-deploy-alerts"
+  role = aws_iam_role.github_actions_deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # The one topic, by name. Subscribe is checked against the topic,
+        # so a deploy cannot subscribe anyone to anything else.
+        Sid    = "AlertsTopic"
+        Effect = "Allow"
+        Action = [
+          "sns:CreateTopic",
+          "sns:DeleteTopic",
+          "sns:GetTopicAttributes",
+          "sns:SetTopicAttributes",
+          "sns:ListTagsForResource",
+          "sns:TagResource",
+          "sns:UntagResource",
+          "sns:Subscribe",
+          "sns:ListSubscriptionsByTopic",
+        ]
+        Resource = local.alerts_topic_arn
+      },
+      {
+        # A subscription is not a resource IAM can name: these three are
+        # checked against "*". The account runs nothing else.
+        Sid    = "AlertsSubscription"
+        Effect = "Allow"
+        Action = [
+          "sns:GetSubscriptionAttributes",
+          "sns:SetSubscriptionAttributes",
+          "sns:Unsubscribe",
+        ]
+        Resource = "*"
+      },
+      {
+        # Alarms by our name prefix. An alarm costs ten cents a month past
+        # the free ten, and only alarms on plain metrics can be made here:
+        # the plan check has no other kind on its list.
+        Sid    = "OurAlarms"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricAlarm",
+          "cloudwatch:DeleteAlarms",
+          "cloudwatch:TagResource",
+          "cloudwatch:UntagResource",
+        ]
+        Resource = local.alarm_arns
+      },
+      {
+        # Read-only. DescribeAlarms is checked against every alarm in the
+        # account, not the ones asked for.
+        Sid      = "ReadAlarms"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:DescribeAlarms", "cloudwatch:ListTagsForResource"]
+        Resource = "arn:aws:cloudwatch:us-east-1:${local.account_id}:alarm:*"
+      },
+    ]
+  })
+}
+
 # Explicit denies win over any allow, including one a later edit adds by
 # mistake. These are the lines that keep the deploy role a deploy role.
 resource "aws_iam_role_policy" "github_actions_deploy_guards" {

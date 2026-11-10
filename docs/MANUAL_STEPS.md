@@ -1149,6 +1149,39 @@ it again.
 
 ---
 
+## 14. Alerts (2026-11-10)
+
+The PR "Alerts: an email when a Lambda fails or the API answers 5xx". It
+adds a service (`sns`) and three kinds of resource, so three roots change
+and two of them are applied by hand, **from the PR's branch, before
+merging**:
+
+```bash
+git switch alerts
+infra/scripts/org-apply.sh                                           # mgmt-admin: sns onto the allowlist
+AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh   # staging: deploy and CI roles
+infra/scripts/bootstrap-apply.sh                                     # production: the same
+```
+
+Each shows its plan and asks for `yes`. Expected: `org-apply.sh` changes
+the allowlist policy in place (and, if 13c was not applied yet, moves its
+attachment from staging to the root); each bootstrap adds
+`bgucats-deploy-alerts` and changes `bgucats-plan-read-infra-main`.
+
+Then re-run the PR's `terraform` check (it fails until the CI roles can
+read alarms and the topic) and merge. Staging gets the alarms with the
+merge, production with the next `v*` tag. Each account sends one
+confirmation email to the bootstrap admin: click its link.
+
+**Proof on staging:** make one Lambda fail and wait for the email.
+
+```bash
+aws lambda invoke --function-name bgucats-process --payload '{"Records":"not-a-list"}' \
+  --cli-binary-format raw-in-base64-out /dev/null --profile bgucats-staging-admin
+```
+
+---
+
 ## Known gap: the CI role can read production secrets
 
 CI runs `terraform plan` on every PR, and a PR runs **its own** copy of
