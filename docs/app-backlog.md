@@ -24,6 +24,11 @@ Things decided to leave for later, so they are not lost. Newest first.
   `photoCount = 0`, 2026-10-28 and 2026-10-29) are still in the table. The API
   no longer lists them, and new ones are not created. Delete them only if
   Stats starts counting them. *(Raised 2026-10-29.)*
+- **Photo counts stored too low before 2026-11-10 stay low** until the next
+  write to that cat or encounter (issue #55). Since the fix, each recount adds
+  the photos the call itself wrote and leaves out those it removed, so the
+  index lagging no longer shortens it. No one-off recount was run; one on
+  staging or production needs the owner to ask. *(Raised 2026-11-10.)*
 - **"The interface is confusing."** Reported along with the stall; no
   specifics yet. Ask which screens and steps before redesigning anything.
   *(Raised 2026-10-29.)*

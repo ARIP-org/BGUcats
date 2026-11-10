@@ -245,6 +245,29 @@ def test_complete_flips_to_unlabeled_and_joins_the_queue(app):
     assert [s["session"]["sessionId"] for s in queue] == [ENCOUNTER]
 
 
+def test_counts_include_the_photo_just_written_when_the_index_lags(app, monkeypatch):
+    """GSIs are eventually consistent: a recount right after a write may not
+    see it. The count stored must still include what this call wrote."""
+    real = handler._query_all
+
+    def lagging(**kwargs):
+        if kwargs.get("IndexName") in ("GSI1", "GSI3"):
+            return []  # the index has not caught up with anything yet
+        return real(**kwargs)
+
+    _encounter()
+    _start_upload(**GPS)
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    monkeypatch.setattr(handler, "_query_all", lagging)
+
+    assert _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)[0] == 200
+    assert _item(app, f"SESSION#{ENCOUNTER}")["photoCount"] == 1
+
+    cat = _call("POST", "/api/cats", {"name": "Mitzi"})[1]["catId"]
+    assert _call("POST", f"/api/photos/{PHOTO}/assign", {"catId": cat})[0] == 200
+    assert _item(app, f"CAT#{cat}")["photoCount"] == 1
+
+
 def test_the_first_located_photo_pins_an_unlocated_encounter(app):
     _encounter()  # no GPS fix yet when it opened
     _start_upload(**GPS)

@@ -630,18 +630,20 @@ def _assign_session(session_id, body, email, **_):
 
     photos = _session_photos(session_id)
     assigned = 0
+    assigned_ids = []
     for photo in photos:
         if photo.get("status") in UNASSIGNABLE_STATUSES:
             continue
         _assign_photo_item(photo, cat_id, email)
         assigned += 1
+        assigned_ids.append(photo["photoId"])
 
     table.update_item(
         Key={"PK": f"SESSION#{session_id}", "SK": "META"},
         UpdateExpression="SET catId = :cat, labeledAt = :now, labeledBy = :by",
         ExpressionAttributeValues={":cat": cat_id, ":now": _now_iso(), ":by": email},
     )
-    _refresh_cat_photo_count(cat_id)
+    _refresh_cat_photo_count(cat_id, present=assigned_ids)
     return {"sessionId": session_id, "catId": cat_id, "assigned": assigned}
 
 
@@ -652,7 +654,7 @@ def _assign_photo(photo_id, body, email, **_):
     if photo.get("status") in UNASSIGNABLE_STATUSES:
         raise ApiError(409, f"photo is {photo.get('status')}")
     _assign_photo_item(photo, cat_id, email)
-    _refresh_cat_photo_count(cat_id)
+    _refresh_cat_photo_count(cat_id, present=[photo_id])
     return {"photoId": photo_id, "catId": cat_id}
 
 
@@ -698,8 +700,9 @@ def _unassign_session(session_id, **_):
         Key={"PK": f"SESSION#{session_id}", "SK": "META"},
         UpdateExpression="REMOVE catId, labeledAt, labeledBy",
     )
+    unassigned_ids = [p["photoId"] for p in photos if p.get("status") == "labeled"]
     for cat_id in previous:
-        _refresh_cat_photo_count(cat_id)
+        _refresh_cat_photo_count(cat_id, absent=unassigned_ids)
     return {"sessionId": session_id, "unassigned": len(photos)}
 
 
@@ -752,7 +755,8 @@ def _merge_sessions(body, email, **_):
             ":zero": 0,
         },
     )
-    _refresh_session_photo_count(target_id)
+    moved_ids = [p["photoId"] for p in photos]
+    _refresh_session_photo_count(target_id, present=moved_ids)
 
     target_cat = target.get("catId")
     if target_cat:
@@ -761,7 +765,14 @@ def _merge_sessions(body, email, **_):
         for photo in photos:
             if photo.get("status") not in UNASSIGNABLE_STATUSES:
                 _assign_photo_item(photo, target_cat, email)
-        _refresh_cat_photo_count(target_cat)
+        _refresh_cat_photo_count(
+            target_cat,
+            present=[
+                p["photoId"]
+                for p in photos
+                if p.get("status") not in UNASSIGNABLE_STATUSES
+            ],
+        )
 
     return {"merged": len(photos), "into": target_id}
 
@@ -810,9 +821,9 @@ def _reject_photo(photo_id, **_):
         table.delete_item(Key={"PK": f"SHA#{sha256}", "SK": "META"})
 
     if session_id:
-        _refresh_session_photo_count(session_id)
+        _refresh_session_photo_count(session_id, absent=[photo_id])
     if cat_id:
-        _refresh_cat_photo_count(cat_id)
+        _refresh_cat_photo_count(cat_id, absent=[photo_id])
 
     return {"deleted": photo_id}
 
@@ -1513,7 +1524,7 @@ def _complete_upload(photo_id, email, **_):
         UpdateExpression="SET lastPhotoAt = :now",
         ExpressionAttributeValues={":now": _now_iso()},
     )
-    _refresh_session_photo_count(session_id)
+    _refresh_session_photo_count(session_id, present=[photo_id])
     _locate_session_from_photo(session, photo)
 
     cat_id = session.get("catId")
@@ -1523,7 +1534,7 @@ def _complete_upload(photo_id, email, **_):
         _assign_photo_item(
             {**photo, "photoId": photo_id}, cat_id, session.get("labeledBy") or email
         )
-        _refresh_cat_photo_count(cat_id)
+        _refresh_cat_photo_count(cat_id, present=[photo_id])
         status = "labeled"
     return {"photoId": photo_id, "status": status}
 
@@ -1664,31 +1675,46 @@ def _require_photo(photo_id):
     return photo
 
 
-def _refresh_cat_photo_count(cat_id):
+def _refresh_cat_photo_count(cat_id, present=(), absent=()):
     """Recounted rather than incremented: an idempotent write that cannot
-    drift, which matters when the same merge is retried."""
-    count = table.query(
-        IndexName="GSI3",
-        KeyConditionExpression=Key("GSI3PK").eq(f"CAT#{cat_id}"),
-        Select="COUNT",
-    )["Count"]
-    table.update_item(
-        Key={"PK": f"CAT#{cat_id}", "SK": "META"},
-        UpdateExpression="SET photoCount = :count",
-        ExpressionAttributeValues={":count": count},
+    drift, which matters when the same merge is retried.
+
+    The index is eventually consistent, so it may not yet show what this very
+    request wrote (or still show what it removed). The caller names those
+    photos: `present` are counted even if the index misses them, `absent` are
+    left out even if it still lists them."""
+    _store_count(
+        {"PK": f"CAT#{cat_id}", "SK": "META"},
+        _indexed_ids("GSI3", "GSI3PK", f"CAT#{cat_id}", present, absent),
     )
 
 
-def _refresh_session_photo_count(session_id):
-    count = table.query(
-        IndexName="GSI1",
-        KeyConditionExpression=Key("GSI1PK").eq(f"SESSION#{session_id}"),
-        Select="COUNT",
-    )["Count"]
+def _refresh_session_photo_count(session_id, present=(), absent=()):
+    _store_count(
+        {"PK": f"SESSION#{session_id}", "SK": "META"},
+        _indexed_ids("GSI1", "GSI1PK", f"SESSION#{session_id}", present, absent),
+    )
+
+
+def _indexed_ids(index, key_name, key_value, present, absent):
+    ids = {
+        item["PK"]
+        for item in _query_all(
+            IndexName=index,
+            KeyConditionExpression=Key(key_name).eq(key_value),
+            ProjectionExpression="PK",
+        )
+    }
+    ids |= {f"PHOTO#{photo_id}" for photo_id in present}
+    ids -= {f"PHOTO#{photo_id}" for photo_id in absent}
+    return ids
+
+
+def _store_count(key, ids):
     table.update_item(
-        Key={"PK": f"SESSION#{session_id}", "SK": "META"},
+        Key=key,
         UpdateExpression="SET photoCount = :count",
-        ExpressionAttributeValues={":count": count},
+        ExpressionAttributeValues={":count": len(ids)},
     )
 
 
