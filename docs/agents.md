@@ -104,8 +104,11 @@ fingerprint, and a new one can be generated at any time.
 
 ## Interactive sessions
 
-A codespace or claude.ai/code session still works as before, for
-infrastructure and planning. Its pull requests are opened with the owner's
-own token, so once the ruleset requires an approval they need another way
-to be approved. Not solved yet: the plan is a small workflow that has the
-App open the pull request for any `claude/*` branch pushed from a session.
+A codespace session still works as before, for infrastructure and
+planning. Its pull requests are opened with the owner's own token, so once
+the ruleset requires an approval they need another author.
+
+Planned: hands-on sessions in the cloud for features and design work, with
+no AWS access at all, and a GitHub identity for them that is not the
+owner's. The plan and the decision it waits for are in `docs/ROADMAP.md`,
+2d, "Hands-on sessions in the cloud".

@@ -81,52 +81,66 @@ and Claude:
 | Area | State |
 |---|---|
 | AWS Organization | Created. Management account `851725214678`, running nothing since 2026-11-07 (step 9): only the organization, Identity Center, budgets and one backup of the old table. Identity Center: permission sets AdministratorAccess (1 h) and ReadOnlyAccess (4 h), assigned to the owner's user `Sasha` directly on each member account (group `Admins` exists, empty). |
-| Staging account | `bgucats-staging` `586943192664`, created 2026-11-07 under the same SCPs. Bootstrapped 2026-11-07 (deploy role trusts environment `staging`). Nothing of the app in it yet. |
+| Staging account | `bgucats-staging` `586943192664`, created and bootstrapped 2026-11-07. Deployed by every merge since 2026-11-10: app `https://d2rysfyl47qmmz.cloudfront.net/`, landing `https://d2hdwn6h65nfue.cloudfront.net/`, its own user pool and Google client. The recognition model is published there (2026-11-10, the same files as production's). No cats or photos in it yet (12g). |
 | Production account | `sasha-bgucats-prod` `395591097129`. Bootstrapped (state bucket, lock table, OIDC provider, CI role, deploy role, permissions boundary). |
-| CI/CD | PRs run `python` + `terraform` (plan, then the plan check: no new kind of resource, no provisioned table, no oversized Lambda). Push to `main` runs **Deploy** (OIDC, environment `production`). Ruleset on `main`: PR required, both checks required, no bypass. |
-| Guardrails | `infra/org`, applied 2026-11-10 from the management account (`docs/MANUAL_STEPS.md`, step 13): the service allowlist SCP (on staging; onto the root after staging's first deploy, 13c), budget actions at $20 and $40 on both member accounts, anomaly emails from $5. Claude Code deny rules in `.claude/settings.json`. |
+| CI/CD | PRs run `python` + `terraform` (a plan of each account, then the plan check: no new kind of resource, no provisioned table, no oversized Lambda; both accounts since PR #48). A push to `main` runs **Deploy** for staging; a `v*` tag, which only the owner can create, runs the same job for production (#40). No tag exists yet, so the promote has never been exercised; production's plan today says `No changes`. Ruleset on `main`: PR required, both checks required, no bypass, no approval required yet. |
+| Guardrails | `infra/org`, applied 2026-11-10 from the management account (`docs/MANUAL_STEPS.md`, step 13): the service allowlist SCP (on staging; onto the root with PR #47, which the owner applies, 13c), budget actions at $20 and $40 on both member accounts, anomaly emails from $5. Claude Code deny rules in `.claude/settings.json`. |
 | Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old copy was deleted on 2026-11-07 (step 9) after a final `verify`; production is the only copy in AWS, plus a media copy (`~/bgucats-media-backup`) the owner downloaded to a computer on 2026-11-07. |
 | WhatsApp bot | Removed from code (PR #4) and from the old account (step 9). |
 | Repo | Single repo `ARIP-org/BGUcats` (moved from `sasha720709/BGUcats` on 2026-11-07): `src/` (Lambdas), `web/` (PWA), `site/` (landing), `infra/`, `research/` (imports nothing from `src/`), `scripts/`. |
 | Secrets | **Outside Terraform since 2026-10-31** (PR #12): SSM values and Cognito's Google provider are set by `infra/scripts/set-secret.sh`, owner-only. CI and deploy roles have no access to them (PR #14, bootstrap applied by the owner 2026-10-31; the CI plan with the restricted role shows no changes). Telegram bot token, webhook secret and Google client secret rotated by the owner 2026-10-31. Salt deliberately not rotated. |
 | Telegram bot | A stopgap, not a product line: the app's Capture is the real upload channel. Kept working while the landing page points to it; no long-term plans around it (e.g. staging needs no test bot). |
-| GitHub plan | Organization `ARIP-org` on GitHub Team; the repo moved into it on 2026-11-07. Team gives environments and deployment branch rules on private repos, and rulesets that can require a PR approval; required reviewers *on environments* need Enterprise. Today the owner's merge is the only gate, and every PR is authored with the owner's token (Phase 2d changes that). |
+| GitHub plan | Organization `ARIP-org` on GitHub Team; the repo moved into it on 2026-11-07. Team gives environments and deployment branch rules on private repos, and rulesets that can require a PR approval; required reviewers *on environments* need Enterprise. Today the owner's merge is the only gate, and every PR so far is authored with the owner's token. Claude's own GitHub App (`arip-claude`) and the environment `claude` exist since 2026-11-10: **Claude triage** has run on real issues; **Claude fix** has never run, because no issue has been labeled `approved` yet (`docs/agents.md`). |
 
 ---
 
-## Next session starts here (2026-11-10)
+## Next session starts here (2026-11-10, evening)
 
-**Phase 0: done** (2026-11-07), after eight days on the new account rather
-than two weeks: the owner waived the wait. SCPs applied 2026-11-02; step 9
-done in full, 9e included, on 2026-11-07. No IAM user or access key is left in the
-organization. Phase 1 was done 2026-11-02.
+Phases 0, 1 and 2a are done. 2b, 2c and the first half of 2d are done
+except for the rows marked below.
 
-**Phase 2a, the GitHub organization: done** (2026-11-07). The repo is
-`ARIP-org/BGUcats` (`docs/MANUAL_STEPS.md` step 11); everything came
-across, PR #34's CI and deploy passed, and AWS trusts only the new name.
-
-**Phase 2c, the guardrails: done** (2026-11-10, `docs/MANUAL_STEPS.md`
-step 13) except 13c, which waits for staging's first deploy.
-
-**Now: Phase 2b, the staging account** (`docs/MANUAL_STEPS.md` step 12):
-
-| Step | |
+| | State |
 |---|---|
-| 12a account `586943192664` | done |
-| 12b `infra/main` for two accounts (#36) | done: production plan 0/0/0 |
-| 12c bootstrap staging (#37) | applied 18:42 UTC; merge #37 |
-| 12d Google client, own project | made; goes into Cognito after the first deploy |
-| 12e GitHub environment `staging` | done 2026-11-10 |
-| 12f deploy-to-staging + promote-by-tag workflows | next |
-| 12g seed data, the end-to-end check | then |
-| 13c the allowlist onto the root | after 12g |
+| 12f deploy to staging, promote by tag (#40) | done; staging has been deployed by every merge since |
+| 13c the allowlist onto the root (#47) | checked and planned. **The owner's command:** `infra/scripts/org-apply.sh` from the PR's branch, then merge. Claude's session was refused the apply |
+| CI plans both accounts (#48) | open; both plans say `No changes` |
+| The model on staging | published 2026-11-10 |
+| 12g seed data, and the freeze policy's exemption for the Lambda roles | **next** |
+| First promote (a `v*` tag) | never exercised. Expected production plan: no changes |
+| Claude triage | works |
+| Claude fix | never run: label one small issue `approved` |
+| Required approval on `main` | off until a pull request exists that the owner did not author |
+| Apple Developer Program | paid 2026-11-10, enrollment pending |
 
-Then Phase 2d, Claude in CI, whose GitHub half needs no AWS and can start
-alongside 12f. Then 2e, the native apps. The owner's remaining manual
-steps: the GitHub App and `claude setup-token` (2d), one approval on `main`
-once the App authors the PRs, staging's Google client with `set-secret.sh`
-after its first deploy, and the two developer-program enrollments (2e),
-which take days and can start any time.
+**Claude's next jobs, in order:**
+
+1. **12g:** a seed script that fills staging with test cats, sessions and
+   photos (public-domain or generated images, never contributor photos),
+   run with `bgucats-staging-admin`. Then the freeze policy attached to
+   staging for a minute: the app's API must keep answering.
+2. **The verifier:** a headless-browser smoke test of the app, with
+   screenshots. It runs against staging after each deploy, and against a
+   local copy of `web/` in any session, so every pull request that changes
+   a screen can show it. The app has no automated test of its screens
+   today; this comes before more agent-written changes to them.
+3. **Hands-on sessions in the cloud** (2d, below), once the owner has
+   chosen between its two options.
+4. **The reviewer** agent: comments on every pull request.
+5. **2e,** when Apple approves the enrollment: the Capacitor wrap, signed
+   in against staging, built and uploaded to TestFlight by a workflow.
+6. **Alerts:** nobody is told when production breaks (2f, below).
+
+**The owner's steps:**
+
+- Apply and merge #47; merge #48.
+- Label a small issue `approved`, to see the first **Claude fix** run.
+- Sign in to the staging app on a phone (the Google account must be in
+  the staging Google project's *Test users*).
+- Tag the first release, to exercise the promote (`docs/deploy.md`,
+  "Promoting to production").
+- After Apple's approval: an App Store Connect API key (Issuer ID, Key ID,
+  the `.p8` file) into a GitHub environment, and the app's record in App
+  Store Connect. Claude writes the steps when 2e starts.
 
 **Photos backup:** the owner downloaded `~/bgucats-media-backup` to a
 computer (2026-11-07), the one copy outside production.
@@ -276,6 +290,8 @@ proven by its tests, not by a test PR.
 
 ### 2d. Claude in CI, and the feedback loop
 
+What is built, how it is set up and how to stop it: `docs/agents.md`.
+
 How the owner works from here: **orchestrating, not writing code.**
 
 - **GitHub issues** for anything that should end in a PR: features, bugs,
@@ -311,6 +327,59 @@ What it takes:
   Store Connect / TestFlight becomes a second source only once the app is
   wrapped for the stores.
 
+#### Hands-on sessions in the cloud (proposed 2026-11-10, not built)
+
+The feedback loop is for small changes nobody needs to watch. For larger
+ones (a redesigned screen, a new feature, "try it this way") the owner
+wants to work with Claude directly, from any device, without paying for a
+machine and with no more access than the Fix agent has.
+
+**Three ways of working, chosen by what the job needs:**
+
+| | Feedback loop | Hands-on session | Infrastructure session |
+|---|---|---|---|
+| For | small fixes, tester feedback | features, design work, exploring | bootstrap, organization, secrets, incidents |
+| Started from | an issue labeled `approved` | claude.ai/code or the Claude phone app, repo `ARIP-org/BGUcats` | a codespace, with Remote Control |
+| Runs on | a GitHub Actions runner | a VM Anthropic runs: no charge beyond the Claude plan | Codespaces hours (personal quota) |
+| GitHub | the App `arip-claude` | through a proxy; the credential never enters the VM. It can push branches; it cannot push tags or delete branches | the codespace's token (the owner's) |
+| AWS | none | none: SSO sign-in is not possible there | the owner's SSO session, when asked |
+| Ends in | a pull request | a pull request | a pull request, or an applied `infra/bootstrap` / `infra/org` |
+
+A hands-on session, step by step:
+
+1. The owner opens a cloud session on the repo and describes the change,
+   with screenshots, sketches or a Figma link attached.
+2. Claude works in the VM under the same `CLAUDE.md` and the same deny
+   rules, runs `make lint` and `make test`, and shows the changed screens
+   as screenshots from a headless browser (the verifier's harness, job 2
+   above). That is the look before the merge.
+3. Claude pushes `claude/<topic>` and a pull request is opened. CI plans
+   both accounts. The owner approves and merges; staging gets it; the
+   owner tries it on a phone and tags a release.
+
+To build: a `SessionStart` hook that installs the dev dependencies and
+Terraform when the session is a cloud one; the screenshot harness; and
+the way a pull request gets an author who is not the owner (below).
+
+**The open decision: whose GitHub identity a session uses.** A cloud
+session acts on GitHub as whoever connected GitHub to the Claude account.
+If that is the owner, the session's pull requests are the owner's own,
+which the owner cannot approve, and the session could approve and merge
+an App-authored pull request in the owner's name. Only the deny rules, a
+seatbelt, would stop it. The codespace has the same gap today (door 3).
+
+| | A. The owner's identity | B. A machine user |
+|---|---|---|
+| How | The session pushes `claude/*` and asks a workflow on `main` (`repository_dispatch`, to be tested through the proxy) to have the App open the pull request | A second GitHub account (`arip-dev-bot` or similar) with write access, not an admin and not a code owner, is what the Claude account connects to GitHub |
+| Cost | nothing | one more seat on GitHub Team, about $4 a month |
+| Required approval | works, but a session holding the owner's identity can give it | a wall: the bot cannot approve its own pull request, and nothing in a session can act as the owner |
+| Extra code | one workflow | none |
+
+Recommended: **B.** It is what companies do (a bot account, never a
+person's), it closes door 3 for every kind of interactive session at
+once, and it removes a workflow instead of adding one. The owner's
+personal access token in the codespace can then be deleted.
+
 **Doors after 2d:** door 2 closed for everyday work (no AWS in Claude's
 jobs), door 3 closed (own identity + required approval), door 1 guarded by
 the owner's approval, the allowlist check, staging before promote, and the
@@ -343,9 +412,77 @@ Decided 2026-11-10: as early as possible, not Phase 4 of `CLAUDE.md`.
   for new personal accounts before planning a public release).
 - **Feedback:** TestFlight's own feedback becomes a second source for the
   2d pipeline, as the owner's original spec had it.
+- **State, 2026-11-10:** the owner has paid for the Apple Developer
+  Program; the enrollment is pending. Nothing is built yet.
+- **Cost to plan for:** GitHub Team includes 3,000 Actions minutes a
+  month and a macOS minute counted as ten when this was written (check
+  the current rate), so an iOS build of 15 minutes costs 150. iOS builds run for a release candidate or on request, never
+  on every merge.
 
 **Done when:** a merge produces a TestFlight build and an Android internal
 test build of the same commit, both signed in against staging.
+
+### 2f. Knowing when it breaks (proposed 2026-11-10)
+
+Nothing tells anyone when production fails. In October, 48 photos stalled
+for an hour and it was found by looking. CloudWatch alarms on the
+Lambdas' errors and the API's 5xx answers, sent by email. It needs `sns`
+on the service allowlist, and the alarm and topic resource types on the
+plan check's list and in the deploy role: all the owner's decisions. A
+few cents a month.
+
+**Done when:** a Lambda made to fail on staging sends an email within
+minutes.
+
+## Review against industry practice (2026-11-10)
+
+The owner's goal is experience as close to a company's as a student's
+budget allows. An honest comparison, to be redone after each phase.
+
+**As a company would do it:** one AWS account per environment under an
+organization, SSO and OIDC with no long-lived keys, service control
+policies, infrastructure as code with a plan on every pull request and
+applies only by pipeline, trunk-based development, the same commit
+promoted from staging to production, secrets outside the state, budgets
+that act, a decision log and runbooks with incident notes. The split of
+agents by what their tokens can do is ahead of common practice.
+
+**Where it differs, most important first:**
+
+1. **No automated test of the app's screens, and none end to end.** The
+   Lambdas have unit tests; `web/` has none, and nothing checks a deploy
+   beyond "it applied". A team would not let several authors, human or
+   agent, change a UI without them. Next jobs 1 and 2.
+2. **No alerting.** 2f.
+3. **Review.** In a team a second engineer who understands the change
+   approves it. Here the owner approves plans and outcomes, not code.
+   That is the experience of a technical lead; interviews for
+   infrastructure roles also test the hands: reading a diff, a plan, a
+   policy, debugging a failed deploy. Worth doing by hand on purpose:
+   read every infrastructure diff before approving it, and now and then
+   break staging and find the cause without Claude.
+4. **The platform is ahead of the product.** Three weeks of accounts and
+   pipelines for an app with 19 cats and a few users. The numbers that
+   make the project real (re-encounters, auto-resolved queries) were last
+   measured on 2026-10-29. After 12g, the first promote and the first
+   TestFlight build, platform work should be pulled by what the product
+   needs, not pushed ahead of it.
+5. **A person's token in an agent's hands** (door 3, and the personal
+   access token made on 2026-11-10). Option B above.
+6. **Home-made where a standard tool exists.** `check_plan.py` is
+   policy-as-code (the standard names: OPA with Conftest, Checkov,
+   Trivy); `org-apply.sh` is what Atlantis or Terraform Cloud do; account
+   setup by hand is what Control Tower does. At this size the small
+   scripts are the better choice, and knowing the standard names is what
+   an interview asks. A free scanner (Trivy or Checkov) in CI is cheap to
+   add. Dependabot reports 164 alerts on `main`, 20 of them critical,
+   most likely in `research/requirements.txt`; nobody has read them.
+7. **History inside the rules.** `CLAUDE.md` and this file carry dated
+   history next to current rules. Teams keep one decision per file (an
+   ADR) and a changelog, and keep the rules short.
+
+**Already right, and easy to miss:** point-in-time recovery and deletion
+protection on the data table, versioning on the media bucket.
 
 ## Phase 3 — Design system and the designer's workflow
 
