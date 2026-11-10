@@ -1,0 +1,17 @@
+# Who must approve a change to what. With "Require review from Code Owners"
+# on the main ruleset, a pull request that touches one of these paths cannot
+# merge without the owner's approval, whoever wrote it.
+#
+# These are the files that decide what may reach AWS, what it may cost, and
+# what an agent may do. Everything else needs the same one approval anyway
+# while there is one maintainer; this file is what keeps these paths the
+# owner's when there are more.
+
+/.github/                                @sasha720709
+/.claude/                                @sasha720709
+/CLAUDE.md                               @sasha720709
+/infra/bootstrap/                        @sasha720709
+/infra/org/                              @sasha720709
+/infra/scripts/                          @sasha720709
+/infra/main/allowed-resource-types.txt   @sasha720709
+/scripts/check_plan.py                   @sasha720709
