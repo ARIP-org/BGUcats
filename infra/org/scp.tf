@@ -110,12 +110,14 @@ locals {
     "servicequotas:RequestServiceQuotaIncrease",
   ]
 
-  # Rolled out in two steps. Staging first: its first deploy creates every
-  # resource infra/main has, through this policy, which is the proof the
-  # list is complete. Then the root, which covers production and every
-  # account made later (step 13c).
+  # On the root since 2026-11-10 (step 13c): production, staging and every
+  # account made later. It was rolled out in two steps. Staging first: its
+  # first deploy created every resource infra/main has, through this
+  # policy, which was the proof the list is complete. Before the root,
+  # production's whole CloudTrail history was checked: no person, pipeline
+  # or Lambda there had ever called a service outside the list.
   service_allowlist_targets = {
-    staging = local.members.staging
+    root = local.root_id
   }
 }
 

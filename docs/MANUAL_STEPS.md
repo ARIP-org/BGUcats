@@ -1041,7 +1041,7 @@ in step 10); `infra/README.md` says how it is applied.
 |---|---|
 | State | `s3://bgucats-org-tfstate-851725214678/org/terraform.tfstate`, made by the script's first run |
 | Imported | `bgucats-member-guardrails` (`p-2wtfhxmo`) and `DenyLeaveAndCloseAccount` (`p-oo66pcpq`, made in the console before the repo had any SCP), both attached to the root; the anomaly monitor AWS made in 2024 |
-| `bgucats-service-allowlist` (`p-n3xw6wd4`) | Denies every service the project does not use, and inside the allowed ones: reserved capacity, CloudFront savings plans, Lambda provisioned concurrency and capacity providers, quota increases. **Attached to staging only** until 13c |
+| `bgucats-service-allowlist` (`p-n3xw6wd4`) | Denies every service the project does not use, and inside the allowed ones: reserved capacity, CloudFront savings plans, Lambda provisioned concurrency and capacity providers, quota increases. Attached to staging first, to the root in 13c |
 | `bgucats-budget-freeze` (`p-6onfc4n1`), `bgucats-budget-stop` (`p-nq4mzze8`) | Attached by nobody until a budget action does |
 | Budgets `bgucats-production-limit`, `bgucats-staging-limit` | In the management account, one per member account, counting usage before credits. Actions at $20 (freeze) and $40 (stop), automatic, role `bgucats-budget-actions` |
 | `bgucats-anomaly-from-5-usd` | Daily email for an anomaly of $5 or more. AWS's own subscription (from $100 and 40%) is left as it was |
@@ -1079,12 +1079,31 @@ past $20), and the freeze policy's exemption for the Lambdas' roles
 
 ### 13c. After staging's first deploy: the allowlist onto the root
 
-Staging's first deploy creates every kind of resource `infra/main` has,
-through the allowlist. When it has passed and the staging app works, in
-`infra/org/scp.tf` change `service_allowlist_targets` from staging to the
-root (`local.root_id`), `org-apply.sh`, then run **Deploy** with
-`plan_only` for production: `No changes`. Until then an administrator
-session in production is held only by the first two policies.
+Staging's first deploy created every kind of resource `infra/main` has,
+through the allowlist (2026-11-10, three green deploys). The PR "Guardrails:
+the service allowlist onto the root" changes `service_allowlist_targets` in
+`infra/org/scp.tf` from staging to the root (`local.root_id`), so the
+policy covers production and every account made later.
+
+**Checked before applying (2026-11-10, `bgucats-prod-ro`):** production's
+whole CloudTrail history since the account was made, 22,568 management
+events. Every call by a person, a pipeline role or a Lambda role was to a
+service on the list. The calls to other services (RDS, SageMaker, EKS,
+Bedrock, ...) were all `AWSServiceRoleForResourceExplorer`, AWS indexing
+the account: a service-linked role, which no SCP applies to.
+
+```bash
+git switch org-allowlist-root
+aws sso login --profile mgmt-admin --use-device-code
+infra/scripts/org-apply.sh        # 1 to add (root), 1 to destroy (staging); type yes
+```
+
+Then the checks: the production app and `/api/me` answer as before (200,
+401), a photo sent through the app is processed, and **Deploy** run with
+`plan_only` from a `v*` tag, or the `terraform` check of the next pull
+request, says `No changes` for production. Until it is applied an
+administrator session in production is held only by the first two
+policies.
 
 **Way back,** if production is ever refused something it needs (takes
 effect within a minute, deletes nothing):
