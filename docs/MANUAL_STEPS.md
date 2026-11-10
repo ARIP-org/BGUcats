@@ -1049,8 +1049,21 @@ Result: app `https://d2rysfyl47qmmz.cloudfront.net/`, landing
   bucket with `bgucats-prod-ro` and uploaded to staging's with
   `bgucats-staging-admin`, the manifest last. The version is a hash of the
   model, so both environments run the same one.
-- **Seed data:** not done. A script that creates test cats, sessions and
-  photos from public-domain or generated images.
+- **Seed data: done 2026-11-10.** `make seed-staging`
+  (`scripts/seed_campus.py`, profile `bgucats-staging-admin`): six made-up
+  cats with two labeled encounters each and four encounters in the queue;
+  the photos are generated coloured shapes. Everything goes in through the
+  deployed API (the admin Lambda is invoked with API Gateway's event, the
+  photo is posted to the bucket, S3 starts the process Lambda), so the
+  seed is also the first end-to-end run of staging. It found a real bug
+  on its first run (`docs/deploy.md`, History, 2026-11-10). It only adds
+  what is missing, so it is safe to run again. The two members it calls
+  the API as, `seed-admin@bgucats.invalid` and
+  `seed-collaborator@bgucats.invalid`, show on staging's People screen
+  and cannot sign in.
+- **The alert, proven 2026-11-10:** the process Lambda was invoked with a
+  broken event at 19:28 UTC; `bgucats-process-errors` went to ALARM at
+  19:29 and back to OK at 19:34, with an email each way.
 - **The freeze policy's exemption for the Lambda roles:** not proven
   (13b). Attach `bgucats-budget-freeze` to staging for a minute and check
   that the app's API still answers.
