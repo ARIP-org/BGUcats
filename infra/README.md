@@ -45,7 +45,8 @@ the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
   no default) selects what differs between them, all in `main/variables.tf`:
   the Cognito domain prefix and whether the Telegram bot exists. CI
   runs `plan` on every PR; `.github/workflows/deploy.yml` plans and applies
-  it on every push to `main`. **No person applies it.** Runbook:
+  it to staging on every push to `main`, and to production on a `v*` tag.
+  **No person applies it.** Runbook:
   `docs/deploy.md`.
 
 ## Google sign-in
