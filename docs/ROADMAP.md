@@ -25,6 +25,11 @@ it instead.
 | 2026-11-07 | **Staging: no Telegram bot, a Google OAuth client of its own.** The bot is on its way out as the app gets closer to real. Staging's Google client lives in a Google Cloud project of its own (`bgucats-staging`), so its consent screen's *Test users* is a beta list kept apart from production's. Root email `sashajewishman+bgucats-staging@gmail.com`. |
 | 2026-11-07 | **The owner orchestrates; Claude writes all the code and the infrastructure.** The owner directs through GitHub issues (features, bugs, tester feedback) and through interactive sessions (infrastructure, planning). CI deploys. Claude never deploys and never merges. |
 | 2026-11-07 | **Guardrails that do not depend on Claude's judgment** (Phase 2c). The fear to design against: Claude deciding "we need a relational database" and a VPC, a NAT gateway and RDS reaching AWS. The walls are AWS-side (deploy role scope, an SCP that denies expensive services even to admins) and GitHub-side (Claude's own identity, a required approval, no `workflows` permission). `CLAUDE.md` and Claude Code's deny rules are seatbelts on top, not the wall. |
+| 2026-11-10 | **The service SCP is an allowlist, not a list of expensive services.** Everything is denied except what the project uses (`infra/org/scp.tf`). A denylist is never complete: until this day an admin session in a member account could subscribe to Shield Advanced, register a domain or buy from the Marketplace. |
+| 2026-11-10 | **A budget that acts, not only one that emails.** Per member account: $10 emails, $20 attaches an SCP that freezes every change, $40 one that stops the app's API. The owner accepted that production goes down at $40 until the policy is lifted. AWS has no hard cap and Budgets sees spending hours late, so the limit is "$40 plus what was spent before it noticed"; the allowlist and the accounts' quotas keep that remainder small. |
+| 2026-11-10 | **Claude may apply `infra/bootstrap` and `infra/org`** in a session the owner has signed in to, when asked. `infra/main` stays CI-only. `infra/org` is a Terraform root from this day. |
+| 2026-11-10 | **Promote is a protected `v*` tag, not a button.** Only the owner can create one (a tag ruleset) and `production` deploys only from those tags. A `workflow_dispatch` button can be pressed by anyone with write access, including a session that holds the owner's token. |
+| 2026-11-10 | **Native apps early.** The owner will join the Apple Developer Program and ship the beta through TestFlight, with an Android build alongside (Phase 2e). Supersedes "decided then, not now" in the row below; one codebase still stands. |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -71,14 +76,15 @@ and Claude:
 
 ---
 
-## Where we are (updated 2026-11-07)
+## Where we are (updated 2026-11-10)
 
 | Area | State |
 |---|---|
 | AWS Organization | Created. Management account `851725214678`, running nothing since 2026-11-07 (step 9): only the organization, Identity Center, budgets and one backup of the old table. Identity Center: permission sets AdministratorAccess (1 h) and ReadOnlyAccess (4 h), assigned to the owner's user `Sasha` directly on each member account (group `Admins` exists, empty). |
 | Staging account | `bgucats-staging` `586943192664`, created 2026-11-07 under the same SCPs. Bootstrapped 2026-11-07 (deploy role trusts environment `staging`). Nothing of the app in it yet. |
 | Production account | `sasha-bgucats-prod` `395591097129`. Bootstrapped (state bucket, lock table, OIDC provider, CI role, deploy role, permissions boundary). |
-| CI/CD | PRs run `python` + `terraform` (plan). Push to `main` runs **Deploy** (OIDC, environment `production`). Ruleset on `main`: PR required, both checks required, no bypass. |
+| CI/CD | PRs run `python` + `terraform` (plan, then the plan check: no new kind of resource, no provisioned table, no oversized Lambda). Push to `main` runs **Deploy** (OIDC, environment `production`). Ruleset on `main`: PR required, both checks required, no bypass. |
+| Guardrails | `infra/org`, applied 2026-11-10 from the management account (`docs/MANUAL_STEPS.md`, step 13): the service allowlist SCP (on staging; onto the root after staging's first deploy, 13c), budget actions at $20 and $40 on both member accounts, anomaly emails from $5. Claude Code deny rules in `.claude/settings.json`. |
 | Data | Copied and cut over on 2026-10-30 (`docs/MANUAL_STEPS.md` steps 7–8). The old copy was deleted on 2026-11-07 (step 9) after a final `verify`; production is the only copy in AWS, plus a media copy (`~/bgucats-media-backup`) the owner downloaded to a computer on 2026-11-07. |
 | WhatsApp bot | Removed from code (PR #4) and from the old account (step 9). |
 | Repo | Single repo `ARIP-org/BGUcats` (moved from `sasha720709/BGUcats` on 2026-11-07): `src/` (Lambdas), `web/` (PWA), `site/` (landing), `infra/`, `research/` (imports nothing from `src/`), `scripts/`. |
@@ -88,7 +94,7 @@ and Claude:
 
 ---
 
-## Next session starts here (2026-11-07)
+## Next session starts here (2026-11-10)
 
 **Phase 0: done** (2026-11-07), after eight days on the new account rather
 than two weeks: the owner waived the wait. SCPs applied 2026-11-02; step 9
@@ -99,8 +105,10 @@ organization. Phase 1 was done 2026-11-02.
 `ARIP-org/BGUcats` (`docs/MANUAL_STEPS.md` step 11); everything came
 across, PR #34's CI and deploy passed, and AWS trusts only the new name.
 
-**Now: Phase 2b, the staging account** (`docs/MANUAL_STEPS.md` step 12),
-about half done on 2026-11-07:
+**Phase 2c, the guardrails: done** (2026-11-10, `docs/MANUAL_STEPS.md`
+step 13) except 13c, which waits for staging's first deploy.
+
+**Now: Phase 2b, the staging account** (`docs/MANUAL_STEPS.md` step 12):
 
 | Step | |
 |---|---|
@@ -108,12 +116,17 @@ about half done on 2026-11-07:
 | 12b `infra/main` for two accounts (#36) | done: production plan 0/0/0 |
 | 12c bootstrap staging (#37) | applied 18:42 UTC; merge #37 |
 | 12d Google client, own project | made; goes into Cognito after the first deploy |
-| 12e GitHub environment `staging` | next |
-| 12f deploy-to-staging + Promote workflows | then |
-| 12g seed data, the end-to-end check | last |
+| 12e GitHub environment `staging` | done 2026-11-10 |
+| 12f deploy-to-staging + promote-by-tag workflows | next |
+| 12g seed data, the end-to-end check | then |
+| 13c the allowlist onto the root | after 12g |
 
-**Before staging's first deploy (12f): Phase 2c, the guardrails PR.** Then
-Phase 2d, Claude in CI.
+Then Phase 2d, Claude in CI, whose GitHub half needs no AWS and can start
+alongside 12f. Then 2e, the native apps. The owner's remaining manual
+steps: the GitHub App and `claude setup-token` (2d), one approval on `main`
+once the App authors the PRs, staging's Google client with `set-secret.sh`
+after its first deploy, and the two developer-program enrollments (2e),
+which take days and can start any time.
 
 **Photos backup:** the owner downloaded `~/bgucats-media-backup` to a
 computer (2026-11-07), the one copy outside production.
@@ -199,10 +212,10 @@ the org and needs a spending limit above zero.
   Google OAuth client** (beta access is managed apart from production), own
   salt. **No Telegram bot** (decided 2026-11-07: the bot is on its way out).
 - **Pipeline:** merge to `main` → deploy **staging** automatically.
-  Production deploys only via a manual **Promote** workflow that deploys the
-  *same commit SHA* that staging already runs (or a `v*` release tag).
-  GitHub environment `staging` (branch `main`) and `production`
-  (deployments only from the promote workflow).
+  Production deploys only when the owner pushes a `v*` tag on a commit
+  staging already runs. GitHub environment `staging` (branch `main`) and
+  `production` (deployments only from `v*` tags, which a tag ruleset lets
+  only the owner create).
 - **Data:** staging never receives real contributor photos. A seed script
   creates sample cats/sessions from public-domain or own test images.
 - The landing site is deployed to staging too (cheap, and a place to
@@ -219,21 +232,36 @@ Claude can only reach AWS through three doors. What holds each one shut:
 
 | Door | Today | Wall (enforced by AWS or GitHub) | Seatbelt (enforced by the harness) |
 |---|---|---|---|
-| **1. A deploy:** Claude writes Terraform, the owner merges, CI applies | Open by design | The deploy role can create only the resource types `infra/main` uses today; widening it is a bootstrap change only the owner can apply. **New:** an SCP that denies expensive services in every member account, even to admins. **New:** a CI check that fails on any resource type not on an allowlist, so a red check means "something new that could cost money" | The plan summary on every PR |
-| **2. The owner's admin login** in a session where Claude runs | Open whenever the owner signs in to an `-admin` profile there | The SCP above: even admin cannot create the expensive things. In Actions (2d) the runner has no SSO session and Claude's job requests no OIDC token | **New:** Claude Code deny rules in `.claude/settings.json` (`terraform apply`, `*-admin` profiles, `gh pr merge`, pushes to `main`). Habit: `-ro` while writing app code, `-admin` only for infra sessions, then `aws sso logout` |
+| **1. A deploy:** Claude writes Terraform, the owner merges, CI applies | Open by design | The deploy role can create only the resource types `infra/main` uses today; widening it is a bootstrap change. The service allowlist SCP: every service the project does not use is denied in the member accounts, even to admins. A CI check that fails on any resource type not on an allowlist, so a red check means "something new that could cost money" | The plan summary on every PR |
+| **2. The owner's admin login** in a session where Claude runs | Open whenever the owner signs in to an `-admin` profile there | The SCP above: even admin cannot create the expensive things. In Actions (2d) the runner has no SSO session and Claude's job requests no OIDC token | Claude Code deny rules in `.claude/settings.json` (`terraform apply` on `infra/main`, `gh pr merge` and `review`, `gh workflow run`, pushes to `main`, release tags). Habit: `-ro` while writing app code, `-admin` only for infra sessions, then `aws sso logout` |
 | **3. Merging without the owner** | Partly open: in a codespace Claude holds the owner's token | 2d: Claude's own GitHub App, one required approval on `main`, no `workflows` permission, CODEOWNERS on `.github/`, `infra/bootstrap/`, `infra/org/` | Deny rule on `gh pr merge` |
 
-**The SCP, `bgucats-no-expensive-services`** (`infra/org/`, applied by the
-owner from the management account like step 10): deny creating RDS and
-Aurora, NAT gateways, EC2 instances, EKS and ECS on EC2, SageMaker,
-Redshift, OpenSearch, ElastiCache, MSK, and the like. Lifting it for one
-service is a deliberate change in the management account, never a side
-effect of a PR.
+**The SCP, `bgucats-service-allowlist`** (`infra/org/scp.tf`, applied
+from the management account): deny everything except the services the
+project uses, and inside those, the calls that buy a commitment or raise a
+quota. Opening a service is a deliberate change in the management account,
+never a side effect of a PR.
 
-**Alarms**, which stop nothing but catch it within hours: the $10 budget in
-each account (exists), **Cost Anomaly Detection** (free, email), and
-optionally a budget action that attaches a deny-all policy to the deploy
-role at 200% of budget.
+**A budget that acts** (`infra/org/budgets.tf`): $10 emails (the budget in
+each account), $20 attaches `bgucats-budget-freeze` (no creates or
+changes; the app keeps running), $40 attaches `bgucats-budget-stop` (the
+app's API stops; data and static pages stay). **Cost Anomaly Detection**
+emails from $5.
+
+**What is still open,** said plainly:
+
+- Budgets acts hours late, so the limit is not exact.
+- DynamoDB has no condition key for a table's billing mode: a provisioned
+  table is refused in CI (`scripts/check_plan.py`), not by AWS.
+- SCPs never apply to the management account. An admin session there is
+  held by nothing but habit. Next: a narrow permission set for
+  organization and billing work, with full admin kept as break-glass that
+  Claude's settings deny.
+- Faster than Budgets: CloudWatch alarms on usage (Lambda duration,
+  DynamoDB requests) that cut the app's concurrency within minutes. Not
+  built; worth it once the app is public.
+- CloudFront's flat-rate Free plan ($0, no overage charges) for the two
+  distributions: to check when a custom domain is added.
 
 **DDoS** (secondary): API Gateway throttling already caps the public
 beacon, and CloudFront absorbs most floods. WAF costs money; not at this
@@ -241,8 +269,10 @@ scale. Revisit when the app is public.
 
 **Done when:** the SCP is attached and proven (creating a NAT gateway in
 staging is an explicit deny, even as admin); anomaly detection is on; the
-allowlist check fails a test PR that adds `aws_db_instance`; the deny rules
-are in the repo.
+allowlist check fails a plan that adds `aws_db_instance`; the deny rules
+are in the repo. **Done 2026-11-10** for staging; the root follows
+staging's first deploy (`docs/MANUAL_STEPS.md`, 13c). The plan check is
+proven by its tests, not by a test PR.
 
 ### 2d. Claude in CI, and the feedback loop
 
@@ -250,7 +280,11 @@ How the owner works from here: **orchestrating, not writing code.**
 
 - **GitHub issues** for anything that should end in a PR: features, bugs,
   tester feedback. Claude triages, the owner adds `approved`, Claude opens a
-  PR, the owner looks at staging, approves and merges, then promotes.
+  PR that carries screenshots from a headless run and a second agent's
+  review. The owner approves and merges, staging gets it, a smoke test
+  reports back, the owner tries it on a phone and tags a release to
+  promote. (Staging only ever shows merged code, so "look at staging
+  before merging" was never possible; the screenshots are the before.)
 - **Interactive sessions** (codespace, claude.ai/code, Remote Control from
   a phone) for open-ended work: infrastructure, planning, "should we…?".
   The only place AWS admin is ever used, and only when the owner signs in
@@ -286,6 +320,32 @@ login, covered by the SCP.
 **Done when:** an issue labeled `approved` becomes a Claude PR that the
 owner approves, which deploys to staging, without anyone opening a
 codespace.
+
+### 2e. Native apps: TestFlight and Android
+
+Decided 2026-11-10: as early as possible, not Phase 4 of `CLAUDE.md`.
+
+- **One codebase:** `web/` wrapped with Capacitor. The PWA stays (the
+  labeling desk on a computer, and the fallback).
+- **Built in CI, no Mac to own:** Android on the Linux runners; iOS on
+  GitHub's macOS runners (ten times the minutes of Linux), signed and
+  uploaded to TestFlight by script.
+- **Known work:** Google blocks sign-in inside an embedded web view, so
+  sign-in moves to the system browser sheet with a link back into the app;
+  Cognito's callback and the media bucket's CORS must accept the app's
+  origin; uploads with the app closed on an iPhone need a native plugin
+  (the reason to wrap at all, `docs/app-backlog.md`).
+- **The first builds talk to staging.** Which is why this follows 2b and 2d.
+- **The owner's part, days of waiting, start any time:** the Apple
+  Developer Program ($99 a year; an individual enrollment is quick, an
+  organization needs a legal entity) and a Google Play Console account
+  ($25 once, identity verification; check its closed-testing requirement
+  for new personal accounts before planning a public release).
+- **Feedback:** TestFlight's own feedback becomes a second source for the
+  2d pipeline, as the owner's original spec had it.
+
+**Done when:** a merge produces a TestFlight build and an Android internal
+test build of the same commit, both signed in against staging.
 
 ## Phase 3 — Design system and the designer's workflow
 

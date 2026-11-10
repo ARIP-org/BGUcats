@@ -54,6 +54,7 @@ jobs:
         run: |
           terraform -chdir=infra/bootstrap fmt -check -recursive
           terraform -chdir=infra/main fmt -check -recursive
+          terraform -chdir=infra/org fmt -check -recursive
 
       - name: validate (no backend, no AWS creds needed)
         run: |
@@ -61,6 +62,8 @@ jobs:
           terraform -chdir=infra/bootstrap validate
           terraform -chdir=infra/main init -backend=false
           terraform -chdir=infra/main validate
+          terraform -chdir=infra/org init -backend=false
+          terraform -chdir=infra/org validate
 
       # The Lambda deployment packages archive_file reads from — needed
       # for plan to compute source_code_hash, even though nothing is
@@ -96,6 +99,14 @@ jobs:
         run: |
           terraform -chdir=infra/main init -reconfigure -backend-config=backend/prod.hcl
           terraform -chdir=infra/main plan -input=false -lock=false -out=tfplan
+
+      # A new kind of resource, a provisioned table or an oversized Lambda
+      # turns this job red: each is a cost decision for the owner, not
+      # something to read past in a long plan (scripts/check_plan.py).
+      - name: plan check (allowed resource types, cost limits)
+        run: |
+          terraform -chdir=infra/main show -json tfplan \
+            | python scripts/check_plan.py infra/main/allowed-resource-types.txt
 
       # Counts, actions and addresses only. The JSON plan holds sensitive
       # values in clear text, so it goes straight into jq, and the plan file

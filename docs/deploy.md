@@ -117,6 +117,61 @@ second path. What a revert does not undo:
   opened. Say in the PR if a change bumps a store and the old code cannot
   read it.
 
+## When a red "plan check" stops a pull request
+
+`terraform` in CI runs `scripts/check_plan.py` on the plan. It fails when
+the plan holds a kind of resource that is not in
+`infra/main/allowed-resource-types.txt`, a DynamoDB table that is not
+`PAY_PER_REQUEST`, or a Lambda over 2048 MB or 120 s. Each is a cost
+decision, not a mistake to patch around:
+
+1. Decide whether the project should have it at all.
+2. If yes: the deploy role must be allowed to create it (`infra/bootstrap`,
+   applied before the PR can deploy), and a service the project has never
+   used must be added to the organization's allowlist (`infra/org/scp.tf`,
+   applied from the management account). Then the line in the allowlist
+   file, in the same PR as the resource.
+
+The check is the readable warning. What stops the deploy itself is AWS: the
+deploy role's policy, and the service control policy.
+
+## When a budget action fires
+
+Each member account has a budget in the management account
+(`infra/org/budgets.tf`). When the month's spending in an account crosses a
+line, AWS Budgets emails the management account's address and attaches a
+service control policy to that account:
+
+| Spent | Policy attached | What it means |
+|---|---|---|
+| $20 | `bgucats-budget-freeze` | Nobody can create or change anything: not a deploy, not an administrator. The app keeps running; read-only sign-in and CI's plan still work. |
+| $40 | `bgucats-budget-stop` | The app's own roles are denied too: the API answers with errors and uploads fail. The table, the photos and the static pages stay. |
+
+Budgets sees spending some hours late, so the real figure is "the line,
+plus what was spent before it noticed". AWS detaches both policies when the
+next month starts.
+
+**First find what is spending**, with the read-only profile, which still
+works (`aws ce get-cost-and-usage`, or Billing → Cost Explorer in the
+management account, grouped by service and by linked account).
+
+**To fix it, the policy has to come off first**: while it is attached, an
+administrator cannot change anything in that account either. From the
+management account:
+
+```bash
+ACCOUNT=395591097129          # or 586943192664 for staging
+aws organizations list-policies-for-target --target-id "$ACCOUNT" \
+  --filter SERVICE_CONTROL_POLICY --profile mgmt-ro --query 'Policies[].[Id,Name]' --output text
+aws organizations detach-policy --policy-id <p-... of the budget policy> \
+  --target-id "$ACCOUNT" --profile mgmt-admin
+```
+
+It takes effect within a minute. The action will not attach it again this
+month, so fix the cause before anything else. `FullAWSAccess` and
+`bgucats-service-allowlist` (once it is on the root it will not be listed
+here) are not budget policies: leave them.
+
 ## Actions and Dependabot
 
 Every action in `ci.yml` and `deploy.yml` is pinned to a full commit SHA, with
@@ -143,8 +198,12 @@ versions of Python packages, `numpy` and `pandas`, and all of `research/`.
 
 ## The three things the pipeline does not do
 
-All are owner-only, with an IAM Identity Center admin session
+All need an IAM Identity Center admin session
 (`aws sso login --profile bgucats-prod-admin`, see `docs/codespaces.md`).
+The owner runs them, or asks Claude to in a session the owner has signed
+in to, except a secret's value, which only the owner types. A fourth lives
+outside both app accounts: `infra/org`, the organization's guardrails
+(`infra/README.md`; `docs/MANUAL_STEPS.md`, step 13).
 
 **Publishing the recognition model.** The export needs torch, which has no
 place in CI, and a new model is rare. The export needs the research

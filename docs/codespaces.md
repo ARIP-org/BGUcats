@@ -106,7 +106,11 @@ prompt gives `[profile profile bgucats-prod-ro]`, a profile with a space in
 its name.
 
 `--use-device-code` is there because the codespace has no browser: you
-approve on whatever machine you are typing from. Every later day:
+approve on whatever machine you are typing from. Every later day, **always
+with `--profile`**: there is no default profile, so a bare `aws sso login`
+answers "Missing the following required SSO configuration values:
+sso_start_url, sso_region" and suggests `aws configure sso`, which is not
+needed. One login serves all six profiles.
 
 ```bash
 aws sso login --profile bgucats-prod-ro --use-device-code   # works whatever the session is called

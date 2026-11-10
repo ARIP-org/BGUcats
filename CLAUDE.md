@@ -108,6 +108,9 @@ blocked on someone else.
   profiles; that is how step 9 was done. Never in place of a deploy: a
   change to what `infra/main` describes still goes through a PR. Never a
   write to production's table or media bucket unless the owner names it.
+  Since 2026-11-10 this includes applying `infra/bootstrap`
+  (`bootstrap-apply.sh`) and `infra/org` (`org-apply.sh`) when the owner
+  asks; `aws sso login` always needs `--profile` (there is no default one).
 - **Production has an account of its own,** `sasha-bgucats-prod`
   (`395591097129`), named in one file: `infra/main/backend/prod.hcl`.
   It has been production since the cutover on 2026-10-30 (app
@@ -118,7 +121,8 @@ blocked on someone else.
   real contributor photos. Being set up (`docs/ROADMAP.md`, Phase 2b).
   `851725214678` is the organization's management account and has run
   nothing since step 9 (`docs/MANUAL_STEPS.md`, 2026-11-07): Organizations,
-  Identity Center, billing, and one DynamoDB backup of the old table. The old
+  Identity Center, billing, one DynamoDB backup of the old table, and since
+  2026-11-10 the guardrails of `infra/org` with their state bucket. The old
   deployment and the old copy of the data are gone; there is no way back
   through it. Never deploy there. Every hand-run AWS
   command names its SSO profile (`bgucats-prod-ro`, `bgucats-prod-admin`,
@@ -126,15 +130,28 @@ blocked on someone else.
   `infra/scripts/aws-guard.sh` refuses the wrong account (a staging profile
   means staging) and leftover access keys.
 - **The owner orchestrates; Claude writes the code and the infrastructure**
-  (2026-11-07). Never add a new kind of AWS resource quietly: it needs the
-  deploy role widened (bootstrap, owner-applied), and expensive services
-  (RDS, NAT gateways, EC2, …) are to be denied by SCP even to admins.
+  (2026-11-07). Never add a new kind of AWS resource quietly: CI fails a
+  plan that holds a kind not in `infra/main/allowed-resource-types.txt`,
+  the deploy role must be widened first (bootstrap), and every service the
+  project does not use is denied by SCP even to admins (`infra/org/scp.tf`).
+  Adding a line to either list is the owner's decision, never a fix.
   What Claude may and may not do, and how that is enforced rather than
   promised: `docs/ROADMAP.md`, Phase 2c "Guardrails" and 2d "Claude in CI".
-- **Three exceptions, all owner-only:** `infra/bootstrap` (the state backend and
-  the GitHub roles; it cannot deploy itself), `make model-publish` (needs
-  torch, so it is not in CI) and `infra/scripts/set-secret.sh`. All are in
-  `docs/deploy.md`.
+- **Spending is limited from outside the accounts** (`infra/org`, applied
+  from the management account, 2026-11-10). Each member account: $10
+  emails, $20 attaches an SCP that freezes every change (the app keeps
+  running), $40 one that stops the app's API (data and static pages stay).
+  AWS detaches both at the start of the next month; lifting one sooner is
+  in `docs/deploy.md`, "When a budget action fires". The table stays
+  `PAY_PER_REQUEST` and Lambdas stay small (`scripts/check_plan.py`):
+  nothing in AWS can enforce those two.
+- **Four things CI does not do:** `infra/bootstrap` (the state backend and
+  the GitHub roles; it cannot deploy itself), `infra/org` (the
+  organization's guardrails; no GitHub role exists in the management
+  account), `make model-publish` (needs torch) and
+  `infra/scripts/set-secret.sh`. Claude may apply the first two in the
+  owner's session when asked. A secret's value is typed by the owner only.
+  All are in `docs/deploy.md` and `infra/README.md`.
 - **No secret value in Terraform.** The bot's secrets (SSM) and the Google
   OAuth client (Cognito) are set with `set-secret.sh`; Terraform only names
   them. Anything it manages lands in the state, which every PR's CI run can
