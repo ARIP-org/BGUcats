@@ -178,6 +178,7 @@ project. Every credential below is short-lived and assumed for one job.
 |---|---|---|---|
 | `bgucats-github-actions-ci` | `ci.yml`, on every PR and push of this repo | read: the state, and every resource `plan` refreshes | `bootstrap/github_oidc.tf` |
 | `bgucats-github-actions-deploy` | `deploy.yml`, only in the `production` environment | plan and apply `main/` | `bootstrap/deploy_role.tf` |
+| `bgucats-github-actions-smoke` (staging account only) | `deploy.yml`, in the `staging` environment, after an apply | invoke the admin Lambda, nothing else: the smoke test | `bootstrap/smoke_role.tf` |
 | `bgucats-*-lambda` (six) | each Lambda | its own function's needs, capped by the boundary | `main/*.tf`, `bootstrap/lambda_boundary.tf` |
 
 **CI (plan only).** Trusts any job of `ARIP-org/BGUcats` (named

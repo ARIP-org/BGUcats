@@ -38,8 +38,20 @@ cancelled: a half-finished apply is worse than a late one.
 5. If the plan changed any `aws_s3_object.site[...]`: `make site-invalidate`.
    The landing page is cached for up to a day; the admin app is not cached,
    so it never needs this.
-6. The commit gets the status `deployed/staging` or `deployed/production`,
-   a green mark next to it on GitHub that links to the run.
+6. **The front door answers,** checked from outside with no credentials:
+   the app's page and `config.json` answer 200, and `/api/me` answers 401
+   (API Gateway refusing a caller who is not signed in).
+7. **Staging only, the smoke test** (`scripts/smoke_staging.py`): one
+   made-up photo goes through the deployed pipeline (the record, the
+   upload, the process Lambda, the queue, a fetched thumbnail), a
+   collaborator is refused the queue, and the photo is deleted again. It
+   runs under a role that can invoke the admin Lambda and nothing else,
+   and that exists in the staging account alone. Its six lines are in the
+   run's summary.
+8. The commit gets the status `deployed/staging` or `deployed/production`,
+   a green mark next to it on GitHub that links to the run. On staging it
+   means applied **and** the smoke test passed: a commit whose smoke test
+   failed cannot be promoted.
 
 By hand (*Actions → Deploy → Run workflow*), with `plan_only` ticked, it
 stops after step 3: run it from `main` to see what staging would get, or
@@ -127,9 +139,14 @@ Dependabot PR failed with `Error acquiring the state lock` while Deploy ran.
 
 ## Post-deploy checks
 
+The deploy job checks the front door and, on staging, runs the smoke test
+(steps 6 and 7 above). A red Deploy run with the apply green means one of
+those failed: the run's log says which line. What no script checks is the
+app in a person's hand:
+
 On a phone with the installed app, signed in as an admin, unless a step
-says otherwise. On staging, skip step 2 (there is no bot), and steps 3–5
-need its own cats and model (`docs/MANUAL_STEPS.md`, 12g):
+says otherwise. On staging, skip step 2 (there is no bot); its cats are
+the made-up ones of `make seed-staging`:
 
 1. The Actions run is green, and the apply summary has the same numbers as
    the plan.

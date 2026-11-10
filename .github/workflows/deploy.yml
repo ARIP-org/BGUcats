@@ -156,9 +156,55 @@ jobs:
         if: steps.mode.outputs.plan_only != 'true' && steps.site.outputs.changed == 'true'
         run: make site-invalidate
 
+      # From outside and with no credentials, what a phone meets first: the
+      # app's page, its config, and an API that refuses a caller who is not
+      # signed in (API Gateway's authorizer, before any Lambda).
+      - name: The front door answers
+        if: steps.mode.outputs.plan_only != 'true'
+        run: |
+          app=$(terraform -chdir=infra/main output -raw admin_url)
+          check() {
+            code=$(curl -s -o /dev/null -m 20 -w '%{http_code}' "$2")
+            echo "$code $2"
+            if [ "$code" != "$1" ]; then
+              echo "::error::$2 answered $code, expected $1."
+              exit 1
+            fi
+          }
+          check 200 "$app"
+          check 200 "${app}config.json"
+          check 401 "${app}api/me"
+
+      # Staging only: one made-up photo through the whole pipeline, then
+      # deleted again (scripts/smoke_staging.py). Its role can invoke the
+      # admin Lambda and nothing else, and exists in the staging account
+      # alone (infra/bootstrap/smoke_role.tf): production never gets a
+      # test photo. The account ID comes from the backend file, the one
+      # place it is written.
+      - name: The smoke test's role
+        if: steps.mode.outputs.plan_only != 'true' && env.BGUCATS_ENV == 'staging'
+        id: smoke
+        run: |
+          account=$(sed -n 's/^bucket *= *"bgucats-tfstate-\([0-9]\{12\}\)".*/\1/p' infra/main/backend/staging.hcl)
+          echo "role=arn:aws:iam::$account:role/bgucats-github-actions-smoke" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        if: steps.mode.outputs.plan_only != 'true' && env.BGUCATS_ENV == 'staging'
+        with:
+          role-to-assume: ${{ steps.smoke.outputs.role }}
+          aws-region: us-east-1
+
+      - name: Smoke test
+        if: steps.mode.outputs.plan_only != 'true' && env.BGUCATS_ENV == 'staging'
+        # pipefail: without it the step would report tee's success.
+        run: |
+          set -o pipefail
+          python scripts/smoke_staging.py | tee -a "$GITHUB_STEP_SUMMARY"
+
       # A green "deployed/staging" on a commit is what the promote check
       # above looks for, and what tells the owner which commits can be
-      # tagged. Never set by a plan-only run.
+      # tagged: applied, and the smoke test passed. Never set by a
+      # plan-only run.
       - name: Mark the commit as deployed
         if: steps.mode.outputs.plan_only != 'true'
         env:
