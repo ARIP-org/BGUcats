@@ -1,8 +1,26 @@
 # infra/
 
-Two Terraform root modules, applied by different hands, and `org/`: the
-service control policy for the organization's member accounts, applied by
-the owner from the management account (`docs/MANUAL_STEPS.md`, step 10).
+Three Terraform root modules, applied by different hands.
+
+- **`org/`**: the organization's guardrails, in the management account
+  (`851725214678`), acting on the member accounts from outside: the service
+  control policies (stay in the organization, `us-east-1` only, **only the
+  services this project uses**), a budget per member account whose actions
+  attach a freezing policy at $20 and a stopping one at $40, and cost
+  anomaly emails from $5. Nothing inside a member account can change them.
+  State in `s3://bgucats-org-tfstate-851725214678/`. **Applied from an SSO
+  session on the management account**, from a checkout of the branch that
+  changes it, never by CI:
+
+  ```bash
+  aws sso login --profile mgmt-admin --use-device-code
+  infra/scripts/org-apply.sh --plan     # look only; mgmt-ro is enough
+  infra/scripts/org-apply.sh            # the same plan, applied after "yes"
+  ```
+
+  A service the project starts to use must be added to `allowed_actions`
+  in `org/scp.tf` and applied **before** the PR that uses it can deploy.
+  Runbook, proofs and the way back: `docs/MANUAL_STEPS.md`, step 13.
 
 - **`bootstrap/`**: the state backend (S3 bucket + DynamoDB lock table), the
   GitHub Actions OIDC provider and its two roles, the permissions boundary

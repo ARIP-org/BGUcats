@@ -1011,10 +1011,90 @@ Cognito gets it after the first staging deploy has made the user pool (12f).
 **No salt in staging:** only the Telegram ingest Lambda reads
 `/bgucats/submitter-hash-salt`, and staging has no bot.
 
-### 12e–12g
+### 12e. GitHub environment `staging` — done
 
-Next: the GitHub environment `staging`, the deploy and promote workflows,
-seed data. Written here as each one is done.
+Checked by the owner on 2026-11-10: *Settings* → *Environments* →
+`staging`, deployment branch `main`, secret `BOOTSTRAP_ADMIN_EMAIL`,
+variable `AWS_DEPLOY_ROLE_ARN` =
+`arn:aws:iam::586943192664:role/bgucats-github-actions-deploy`.
+
+### 12f–12g
+
+After step 13: the deploy-to-staging and promote workflows, the first
+staging deploy, the Google client into Cognito, seed data. Written here as
+each one is done.
+
+---
+
+## 13. Guardrails that spend cannot get past (Phase 2c)
+
+Done 2026-11-10, by Claude in the owner's session, at the owner's request.
+`infra/org` became a Terraform root (it was one JSON file applied by hand
+in step 10); `infra/README.md` says how it is applied.
+
+### 13a. What was applied
+
+`infra/scripts/org-apply.sh`, profile `mgmt-admin`: 5 imported, 13 added,
+3 changed (tags only), 0 destroyed.
+
+| | |
+|---|---|
+| State | `s3://bgucats-org-tfstate-851725214678/org/terraform.tfstate`, made by the script's first run |
+| Imported | `bgucats-member-guardrails` (`p-2wtfhxmo`) and `DenyLeaveAndCloseAccount` (`p-oo66pcpq`, made in the console before the repo had any SCP), both attached to the root; the anomaly monitor AWS made in 2024 |
+| `bgucats-service-allowlist` (`p-n3xw6wd4`) | Denies every service the project does not use, and inside the allowed ones: reserved capacity, CloudFront savings plans, Lambda provisioned concurrency and capacity providers, quota increases. **Attached to staging only** until 13c |
+| `bgucats-budget-freeze` (`p-6onfc4n1`), `bgucats-budget-stop` (`p-nq4mzze8`) | Attached by nobody until a budget action does |
+| Budgets `bgucats-production-limit`, `bgucats-staging-limit` | In the management account, one per member account, counting usage before credits. Actions at $20 (freeze) and $40 (stop), automatic, role `bgucats-budget-actions` |
+| `bgucats-anomaly-from-5-usd` | Daily email for an anomaly of $5 or more. AWS's own subscription (from $100 and 40%) is left as it was |
+
+Why an allowlist: before this, an administrator session in a member
+account could subscribe to Shield Advanced, register a domain or buy from
+the Marketplace, because the region policy has to exempt those global
+services and nothing else denied them.
+
+### 13b. Proofs (2026-11-10, on staging, as `bgucats-staging-admin`)
+
+```bash
+A=bgucats-staging-admin
+aws ec2 create-vpc --cidr-block 10.99.0.0/16 --dry-run --profile $A     # explicit deny in a service control policy
+SUB=$(aws ec2 describe-subnets --profile $A --query 'Subnets[0].SubnetId' --output text)
+aws ec2 create-nat-gateway --subnet-id "$SUB" --connectivity-type private --dry-run --profile $A   # the same
+aws rds describe-db-instances --profile $A                              # AccessDenied
+aws shield describe-subscription --profile $A                           # AccessDenied
+aws route53domains list-domains --profile $A                            # AccessDenied
+aws s3api list-buckets --profile $A --query 'length(Buckets)'           # 1: the app's services still answer
+```
+
+All as written. `--dry-run` with an ID that does not exist proves nothing:
+EC2 checks the ID before the permission, and answers `InvalidSubnet`.
+
+The two budget policies, each attached to staging by hand for a minute and
+detached again: the administrator was denied `s3:ListBuckets`; the
+read-only profile, with fresh credentials, could still list and still
+could not write. The four actions show `STANDBY`. A second plan:
+`No changes`.
+
+**Not proven:** a budget action firing by itself (it needs real spending
+past $20), and the freeze policy's exemption for the Lambdas' roles
+(staging has no Lambdas yet; check it in 12g).
+
+### 13c. After staging's first deploy: the allowlist onto the root
+
+Staging's first deploy creates every kind of resource `infra/main` has,
+through the allowlist. When it has passed and the staging app works, in
+`infra/org/scp.tf` change `service_allowlist_targets` from staging to the
+root (`local.root_id`), `org-apply.sh`, then run **Deploy** with
+`plan_only` for production: `No changes`. Until then an administrator
+session in production is held only by the first two policies.
+
+**Way back,** if production is ever refused something it needs (takes
+effect within a minute, deletes nothing):
+
+```bash
+aws organizations detach-policy --policy-id p-n3xw6wd4 --target-id <root or account> --profile mgmt-admin
+```
+
+then add the service to `allowed_actions`, apply, and let Terraform attach
+it again.
 
 ---
 

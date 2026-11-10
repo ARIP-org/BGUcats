@@ -20,11 +20,13 @@ fmt:
 	ruff format .
 	terraform -chdir=infra/main fmt -recursive
 	terraform -chdir=infra/bootstrap fmt -recursive
+	terraform -chdir=infra/org fmt -recursive
 
 lint:
 	ruff check .
 	terraform -chdir=infra/main fmt -check -recursive
 	terraform -chdir=infra/bootstrap fmt -check -recursive
+	terraform -chdir=infra/org fmt -check -recursive
 
 test:
 	pytest

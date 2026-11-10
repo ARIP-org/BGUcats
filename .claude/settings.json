@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(terraform -chdir=infra/main apply)",
+      "Bash(terraform -chdir=infra/main apply *)",
+      "Bash(terraform -chdir=infra/main destroy)",
+      "Bash(terraform -chdir=infra/main destroy *)",
+      "Bash(terraform -chdir=infra/main import *)",
+      "Bash(terraform -chdir=infra/main state rm *)",
+      "Bash(terraform -chdir=infra/main state mv *)",
+      "Bash(make tf-apply)",
+      "Bash(make tf-apply *)",
+      "Bash(make site-invalidate)",
+      "Bash(make site-invalidate *)",
+      "Bash(gh pr merge)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr review *)",
+      "Bash(gh workflow run *)",
+      "Bash(gh release create *)",
+      "Bash(git push origin main)",
+      "Bash(git push origin main *)",
+      "Bash(git push origin HEAD:main)",
+      "Bash(git push origin HEAD:main *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git tag v*)",
+      "Bash(git push origin v*)",
+      "Bash(git push --tags)",
+      "Bash(git push --tags *)"
+    ]
+  }
+}
