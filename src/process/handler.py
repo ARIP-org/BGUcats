@@ -66,8 +66,12 @@ def _process_object(key):
     # with no record was not sent through a bot or the app — someone copied
     # it into raw/ by hand. Processing it would upsert a half-built record
     # (one was, from a diagnostic upload on 2026-08-28) and claim its hash.
+    # Read strongly consistent: the record was written moments before the
+    # object landed, and a stale "not there" would skip a real photo for good.
     if "Item" not in table.get_item(
-        Key={"PK": f"PHOTO#{photo_id}", "SK": "META"}, ProjectionExpression="PK"
+        Key={"PK": f"PHOTO#{photo_id}", "SK": "META"},
+        ProjectionExpression="PK",
+        ConsistentRead=True,
     ):
         logger.warning("no photo record for %s, skipping", key)
         return
@@ -167,7 +171,9 @@ def _claim_sha256(sha256, photo_id):
         )
         return None
     except table.meta.client.exceptions.ConditionalCheckFailedException:
-        owner = table.get_item(Key={"PK": f"SHA#{sha256}", "SK": "META"}).get("Item")
+        owner = table.get_item(
+            Key={"PK": f"SHA#{sha256}", "SK": "META"}, ConsistentRead=True
+        ).get("Item")
         owner_id = owner.get("photoId") if owner else None
         return owner_id if owner_id != photo_id else None
 

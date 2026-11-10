@@ -368,3 +368,30 @@ def test_my_encounters_show_which_cat_they_became(app):
     [encounter] = _call("GET", "/api/encounters", email=HELPER)[1]["encounters"]
     assert encounter["catName"] == "Ryzhik"
     assert encounter["photoCount"] == 1
+
+
+# --- reads right after a write -------------------------------------------
+
+
+def test_the_upload_path_never_reads_a_stale_copy(app, monkeypatch):
+    """The phone sends an encounter, its photo's record and the confirmation
+    one after another. A default DynamoDB read may miss a write made
+    milliseconds earlier; a 404 on any of these makes the outbox give the
+    photo up. On staging that happened to one encounter in twelve."""
+    reads = []
+    real_get_item = app["table"].get_item
+
+    def spy(**kwargs):
+        reads.append(kwargs)
+        return real_get_item(**kwargs)
+
+    monkeypatch.setattr(app["table"], "get_item", spy)
+
+    assert _encounter()[0] == 200
+    assert _start_upload()[0] == 200
+    _phone_uploads(app, f"raw/{ENCOUNTER}/{PHOTO}.jpg", JPEG)
+    assert _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)[0] == 200
+
+    assert reads
+    stale = [read["Key"]["PK"] for read in reads if not read.get("ConsistentRead")]
+    assert not stale, f"read without ConsistentRead: {stale}"

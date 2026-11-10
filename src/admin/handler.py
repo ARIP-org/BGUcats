@@ -173,6 +173,21 @@ def handler(event, context):
         return _response(500, {"error": "internal error"})
 
 
+def _item(pk):
+    """One record by its key, read strongly consistent.
+
+    DynamoDB's default read may answer from a copy that has not received a
+    write made milliseconds earlier. The app makes exactly such pairs of
+    calls: an encounter and then its first photo, a photo's record and then
+    its confirmation, a new cat and then its first label. A stale "not
+    there" was answered as 404, and the phone's outbox treats a 404 as
+    final, so the photo was dropped. Found on 2026-11-10 by seeding staging
+    through the API: one encounter in twelve. A consistent read of one item
+    costs one read unit instead of half of one.
+    """
+    return table.get_item(Key={"PK": pk, "SK": "META"}, ConsistentRead=True).get("Item")
+
+
 def _caller_email(event):
     """Email claim from the token the JWT authorizer already verified."""
     claims = (
@@ -189,7 +204,7 @@ def _caller_email(event):
 
 def _require_member(email):
     """The caller's role, or 403 if they are not on the allowlist at all."""
-    item = table.get_item(Key={"PK": f"ADMIN#{email}", "SK": "META"}).get("Item")
+    item = _item(f"ADMIN#{email}")
     if not item:
         logger.warning("rejected non-admin caller=%s", email)
         raise ApiError(403, "not an admin or collaborator")
@@ -286,9 +301,7 @@ def _get_session(session_id, **_):
 
 
 def _session_payload(session_id):
-    session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"}).get(
-        "Item"
-    )
+    session = _item(f"SESSION#{session_id}")
     photos = _session_photos(session_id)
     return {
         "session": _clean(session) if session else {"sessionId": session_id},
@@ -391,7 +404,7 @@ def _cover_url(cat_id):
 
 
 def _get_cat(cat_id, **_):
-    cat = table.get_item(Key={"PK": f"CAT#{cat_id}", "SK": "META"}).get("Item")
+    cat = _item(f"CAT#{cat_id}")
     if not cat:
         raise ApiError(404, "no such cat")
     photos = _cat_photos(cat_id)
@@ -704,9 +717,7 @@ def _merge_sessions(body, email, **_):
     if source_id == target_id:
         raise ApiError(400, "cannot merge a session into itself")
 
-    target = table.get_item(Key={"PK": f"SESSION#{target_id}", "SK": "META"}).get(
-        "Item"
-    )
+    target = _item(f"SESSION#{target_id}")
     if not target:
         raise ApiError(404, "no such target session")
 
@@ -890,9 +901,7 @@ def _record_prediction(session_id, body, email, **_):
     if not isinstance(photo_count, int) or photo_count < 1:
         raise ApiError(400, "photoCount must be a positive integer")
 
-    session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"}).get(
-        "Item"
-    )
+    session = _item(f"SESSION#{session_id}")
     if not session:
         raise ApiError(404, "no such session")
     if session.get("catId"):
@@ -1498,7 +1507,7 @@ def _complete_upload(photo_id, email, **_):
     except table.meta.client.exceptions.ConditionalCheckFailedException:
         status = _require_photo(photo_id).get("status")
 
-    session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"})["Item"]
+    session = _item(f"SESSION#{session_id}")
     table.update_item(
         Key={"PK": f"SESSION#{session_id}", "SK": "META"},
         UpdateExpression="SET lastPhotoAt = :now",
@@ -1604,9 +1613,7 @@ def _record_app_contributor(email):
 
 
 def _require_encounter(session_id, email):
-    session = table.get_item(Key={"PK": f"SESSION#{session_id}", "SK": "META"}).get(
-        "Item"
-    )
+    session = _item(f"SESSION#{session_id}")
     if not session or session.get("channel") != APP_CHANNEL:
         raise ApiError(404, "no such encounter")
     if session.get("startedBy") != email:
@@ -1646,12 +1653,12 @@ def _iso_param(body, field):
 
 
 def _assert_cat_exists(cat_id):
-    if not table.get_item(Key={"PK": f"CAT#{cat_id}", "SK": "META"}).get("Item"):
+    if not _item(f"CAT#{cat_id}"):
         raise ApiError(404, "no such cat")
 
 
 def _require_photo(photo_id):
-    photo = table.get_item(Key={"PK": f"PHOTO#{photo_id}", "SK": "META"}).get("Item")
+    photo = _item(f"PHOTO#{photo_id}")
     if not photo:
         raise ApiError(404, "no such photo")
     return photo

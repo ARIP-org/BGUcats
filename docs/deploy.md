@@ -575,3 +575,27 @@ A native app would be the only way past this.
 `.admin_presignup` (plus zip noise), and `aws_s3_object.web["app.js"]`,
 `["capture.js"]`, `["outbox.js"]`, `["sw.js"]`, `["styles.css"]`,
 `["recognition.js"]` if changed.
+
+### Fix: a photo could be dropped right after its encounter was made (2026-11-10)
+
+Found by seeding staging through the API (`scripts/seed_campus.py`), not by
+a report.
+
+- **What happened:** the phone sends an encounter and then, at once, its
+  first photo's record. The second call looked the encounter up with
+  DynamoDB's default read, which may answer from a copy that has not
+  received a write made milliseconds earlier. It then answered 404 "no such
+  encounter", and the outbox treats a 404 as final (`isPermanent` in
+  `web/outbox.js`): the photo was given up, with a message on the phone
+  and no trace in the table. The same could happen between a photo's
+  record and its confirmation, and between a new cat and its first label.
+  On staging: one encounter in twelve when the calls come back to back.
+  How often it hit real phones is unknown, since nothing recorded it.
+- **Fix:** every single-record read in the API (`_item` in
+  `src/admin/handler.py`) and the two in the process Lambda are strongly
+  consistent. The process Lambda's check had the quieter version of the
+  same fault: an object whose record was "not there" is skipped for good.
+- **Not changed:** lists (the queue, a cat's photos) come from indexes,
+  which DynamoDB can only read eventually consistent. A photo may take a
+  moment to appear in a list; nothing is decided on its absence.
+- **Cost:** one read unit for such a read instead of half of one.
