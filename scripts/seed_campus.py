@@ -229,35 +229,41 @@ def _staging_account():
     return re.search(r"bgucats-tfstate-(\d{12})", text).group(1)
 
 
-def _staging_session():
-    """A boto3 session that is certainly staging, or the script stops."""
+def staging_session():
+    """A boto3 session that is certainly staging, or the script stops.
+
+    By hand it takes a bgucats-staging-* SSO profile. In GitHub Actions the
+    job's role is the credentials and there is no profile. Either way the
+    account must be the one infra/main/backend/staging.hcl names.
+    """
     import boto3
 
-    profile = os.environ.get("AWS_PROFILE", "")
-    if not profile.startswith("bgucats-staging-"):
-        sys.exit(
-            "seed: staging only. Run it as\n"
-            "  AWS_PROFILE=bgucats-staging-admin python scripts/seed_campus.py\n"
-            f"(AWS_PROFILE is {profile or 'not set'})."
-        )
-    if os.environ.get("AWS_ACCESS_KEY_ID"):
-        sys.exit(
-            "seed: AWS_ACCESS_KEY_ID is set, and keys win over a profile. Unset it."
-        )
-    session = boto3.Session(profile_name=profile, region_name="us-east-1")
+    if os.environ.get("GITHUB_ACTIONS"):
+        session = boto3.Session(region_name="us-east-1")
+        who = "this job's role"
+    else:
+        profile = os.environ.get("AWS_PROFILE", "")
+        if not profile.startswith("bgucats-staging-"):
+            sys.exit(
+                "Staging only. Run it with AWS_PROFILE=bgucats-staging-admin "
+                f"(AWS_PROFILE is {profile or 'not set'})."
+            )
+        if os.environ.get("AWS_ACCESS_KEY_ID"):
+            sys.exit("AWS_ACCESS_KEY_ID is set, and keys win over a profile. Unset it.")
+        session = boto3.Session(profile_name=profile, region_name="us-east-1")
+        who = f"profile {profile}"
     account = session.client("sts").get_caller_identity()["Account"]
     if account != _staging_account():
         sys.exit(
-            f"seed: profile {profile} is account {account}, but staging is "
-            f"{_staging_account()} (infra/main/backend/staging.hcl). Nothing written."
+            f"{who} is account {account}, but staging is {_staging_account()} "
+            "(infra/main/backend/staging.hcl). Nothing done."
         )
     return session
 
 
-def main():
-    argparse.ArgumentParser(description=__doc__.split("\n\n")[0]).parse_args()
-
-    session = _staging_session()
+def staging_api(session):
+    """api(method, path, body, email) against staging: the deployed admin
+    Lambda, invoked with the event API Gateway would hand it."""
     functions = session.client("lambda")
 
     def api(method, path, body=None, email=SEED_ADMIN, query=None):
@@ -269,6 +275,15 @@ def main():
         if "statusCode" not in payload:
             raise RuntimeError(f"bgucats-admin failed on {method} {path}: {payload}")
         return payload["statusCode"], json.loads(payload["body"])
+
+    return api
+
+
+def main():
+    argparse.ArgumentParser(description=__doc__.split("\n\n")[0]).parse_args()
+
+    session = staging_session()
+    api = staging_api(session)
 
     # The one direct write: the member the seed calls the API as. Every
     # environment starts from such a row (infra/main/cognito.tf).

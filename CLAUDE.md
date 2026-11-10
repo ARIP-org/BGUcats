@@ -101,9 +101,10 @@ blocked on someone else.
 - **Merging deploys staging; a tag promotes.** A push to `main` runs
   `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
   the staging account under a GitHub OIDC role and marks the commit
-  `deployed/staging`. Production gets a commit only when the owner tags it
-  `v*`, and only if it is on `main` with that mark: the same job, the same
-  steps. Only the owner creates those tags (a tag ruleset); Claude never
+  `deployed/staging`, once a smoke test has put one made-up photo through
+  staging's pipeline (`scripts/smoke_staging.py`). Production gets a commit
+  only when the owner tags it `v*`, and only if it is on `main` with that
+  mark: the same job, the same steps, without the smoke test. Only the owner creates those tags (a tag ruleset); Claude never
   does. Runbook, promoting, post-deploy checks and rollback: `docs/deploy.md`.
 - **Never deploy by hand and never push to `main`.** No `terraform apply`,
   `make tf-apply` or `make site-invalidate` on `infra/main` from a codespace

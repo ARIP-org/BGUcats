@@ -108,8 +108,9 @@ except for the rows marked below.
 | 13c the allowlist onto the root (#47) | **applied 2026-11-10** by the owner, together with `sns` for the alerts. Production runs under the allowlist |
 | Alerts (#51) | live on staging, proven (an email at ALARM and at OK). Production gets them with the first promote |
 | Tests of the app's screens (#52), Pillow 13.0.0 (#50), CI plans both accounts (#48) | merged |
-| Consistent reads (#53) | a real bug the seed found: a photo could be dropped right after its encounter was made |
-| Machine user `arip-dev-bot` | created by the owner; needs **Write** on the repo, then the Claude account's GitHub connection |
+| Consistent reads (#53) | merged: a real bug the seed found, a photo could be dropped right after its encounter was made |
+| Smoke test after every staging deploy | built: through the API, as the seed does (the owner's choice, 2026-11-10). A commit gets `deployed/staging` only if it passes |
+| Machine user `arip-dev-bot` | works: PR #57 came from a cloud session and is authored by it. Next: the required approval on `main` |
 | The model on staging | published 2026-11-10 |
 | 12g seed data | done 2026-11-10: `make seed-staging`, six made-up cats, through staging's own API |
 | 12g the freeze policy's exemption for the Lambda roles | not proven yet |
@@ -123,8 +124,9 @@ except for the rows marked below.
 
 1. **12g, the rest:** the freeze policy attached to staging for a minute:
    the app's API must keep answering.
-2. **The verifier:** the browser tests of #52 pointed at staging after
-   each deploy, signed in as a test member.
+2. **The codespace without the owner's token:** the bot's token for
+   `gh` there, so pull requests from infrastructure sessions have an
+   author the owner can approve.
 3. **Hands-on sessions in the cloud** (2d, below), once the machine user
    exists: the session setup hook, then one trial session.
 4. **The reviewer** agent: comments on every pull request.
