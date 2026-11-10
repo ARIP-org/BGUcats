@@ -1,4 +1,4 @@
-.PHONY: fmt lint test screenshots local-app build build-ingest build-process build-admin build-beacon \
+.PHONY: fmt lint test screenshots local-app seed-staging build build-ingest build-process build-admin build-beacon \
 	tf-init tf-plan site-invalidate admin-add poster \
 	model-export model-publish
 
@@ -39,7 +39,14 @@ screenshots:
 
 # The same local app, kept running, to click through by hand. No AWS.
 local-app:
-	PYTHONPATH=src python -u -m tests.web.localapp
+	PYTHONPATH=src:scripts python -u -m tests.web.localapp
+
+# Fills staging with a made-up campus through its own API, which also
+# proves its whole pipeline (scripts/seed_campus.py). Staging only: the
+# script refuses any other profile or account. Safe to run again: it only
+# adds what is missing.
+seed-staging:
+	AWS_PROFILE=bgucats-staging-admin python scripts/seed_campus.py
 
 build: build-ingest build-process build-admin build-beacon
 

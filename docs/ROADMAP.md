@@ -105,13 +105,14 @@ except for the rows marked below.
 | | State |
 |---|---|
 | 12f deploy to staging, promote by tag (#40) | done; staging has been deployed by every merge since |
-| 13c the allowlist onto the root (#47) | merged, **not applied yet**. The alerts PR (#51) changes the same root, so one command applies both: `echo yes \| infra/scripts/org-apply.sh` on branch `alerts`. Claude's session is refused this apply |
-| Alerts (#51) | bootstrap applied to both accounts; waits for the `infra/org` apply above, then merge |
-| Tests of the app's screens (#52) | open, green |
-| Pillow 13.0.0 (#50) | open, green: closes all 164 Dependabot alerts |
-| CI plans both accounts (#48) | open; both plans say `No changes` |
+| 13c the allowlist onto the root (#47) | **applied 2026-11-10** by the owner, together with `sns` for the alerts. Production runs under the allowlist |
+| Alerts (#51) | live on staging, proven (an email at ALARM and at OK). Production gets them with the first promote |
+| Tests of the app's screens (#52), Pillow 13.0.0 (#50), CI plans both accounts (#48) | merged |
+| Consistent reads (#53) | a real bug the seed found: a photo could be dropped right after its encounter was made |
+| Machine user `arip-dev-bot` | created by the owner; needs **Write** on the repo, then the Claude account's GitHub connection |
 | The model on staging | published 2026-11-10 |
-| 12g seed data, and the freeze policy's exemption for the Lambda roles | **next** |
+| 12g seed data | done 2026-11-10: `make seed-staging`, six made-up cats, through staging's own API |
+| 12g the freeze policy's exemption for the Lambda roles | not proven yet |
 | First promote (a `v*` tag) | never exercised. Expected production plan: no changes |
 | Claude triage | works |
 | Claude fix | never run: label one small issue `approved` |
@@ -120,10 +121,8 @@ except for the rows marked below.
 
 **Claude's next jobs, in order:**
 
-1. **12g:** a seed script that fills staging with test cats, sessions and
-   photos (generated images, never contributor photos), run with
-   `bgucats-staging-admin`. Then the freeze policy attached to staging for
-   a minute: the app's API must keep answering.
+1. **12g, the rest:** the freeze policy attached to staging for a minute:
+   the app's API must keep answering.
 2. **The verifier:** the browser tests of #52 pointed at staging after
    each deploy, signed in as a test member.
 3. **Hands-on sessions in the cloud** (2d, below), once the machine user

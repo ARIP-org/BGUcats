@@ -27,7 +27,6 @@ moto's address and made-up keys explicitly.
 
 import base64
 import contextlib
-import io
 import json
 import mimetypes
 import os
@@ -47,11 +46,10 @@ import boto3
 import urllib3
 from botocore.config import Config
 from moto.server import ThreadedMotoServer
-from PIL import Image, ImageDraw
-from ulid import ULID
 
 from admin import handler as admin_handler
 from process import handler as process_handler
+from seed_campus import Campus, gateway_event, sample_photo  # noqa: F401 (tests import it)
 
 WEB = Path(__file__).resolve().parents[2] / "web"
 
@@ -92,25 +90,6 @@ def _email_from(authorization):
         return json.loads(base64.urlsafe_b64decode(payload)).get("email")
     except (IndexError, ValueError, AttributeError):
         return None
-
-
-def sample_photo(seed, size=(1200, 900)):
-    """A JPEG that is clearly not a cat: flat shapes, different per seed.
-
-    Tests never hold a real contributor's photo (CLAUDE.md), and the
-    process Lambda only needs something Pillow can decode and hash.
-    """
-    palette = [(214, 122, 61), (63, 94, 135), (96, 140, 88), (150, 84, 140)]
-    image = Image.new("RGB", size, palette[seed % len(palette)])
-    draw = ImageDraw.Draw(image)
-    for i in range(6):
-        x = (seed * 97 + i * 173) % (size[0] - 300)
-        y = (seed * 61 + i * 131) % (size[1] - 300)
-        colour = palette[(seed + i + 1) % len(palette)]
-        draw.ellipse([x, y, x + 180 + 20 * i, y + 180 + 20 * i], fill=colour)
-    out = io.BytesIO()
-    image.save(out, "JPEG", quality=85)
-    return out.getvalue()
 
 
 class LocalApp:
@@ -205,14 +184,7 @@ class LocalApp:
 
     def api(self, method, path, body=None, email=ADMIN, query=None):
         """One API call, as API Gateway would deliver it. Returns (status, json)."""
-        event = {
-            "requestContext": {
-                "http": {"method": method, "path": path},
-                "authorizer": {"jwt": {"claims": {"email": email}}},
-            },
-            "queryStringParameters": query or None,
-            "body": json.dumps(body) if body is not None else None,
-        }
+        event = gateway_event(method, path, body, email, query)
         with self._lock:
             if method == "GET":
                 self._process_new_uploads()
@@ -248,67 +220,11 @@ class LocalApp:
             }
         )
 
-    def add_member(self, email, role="collaborator"):
-        status, out = self.api("POST", "/api/admins", {"email": email, "role": role})
-        assert status == 200, out
-
-    def add_cat(self, name):
-        status, cat = self.api("POST", "/api/cats", {"name": name})
-        assert status == 200, cat
-        return cat["catId"]
-
-    def add_encounter(self, photos=2, email=COLLABORATOR, seed=0):
-        """An encounter with photos, through the same three calls the phone
-        makes: the record, the upload to storage, the confirmation."""
-        session_id = str(ULID())
-        status, made = self.api(
-            "POST", "/api/encounters", {"sessionId": session_id}, email
-        )
-        assert status == 200, made
-        for n in range(photos):
-            photo_id = str(ULID())
-            status, upload = self.api(
-                "POST",
-                f"/api/encounters/{session_id}/media",
-                {"photoId": photo_id, "contentType": "image/jpeg"},
-                email,
-            )
-            assert status == 200, upload
-            post = upload["upload"]
-            sent = self._http.request(
-                "POST",
-                post["url"],
-                fields={
-                    **post["fields"],
-                    "file": ("photo.jpg", sample_photo(seed * 10 + n)),
-                },
-            )
-            assert sent.status in (200, 204), sent.data
-            status, done = self.api(
-                "POST", f"/api/photos/{photo_id}/complete", None, email
-            )
-            assert status == 200, done
-        return session_id
-
-    def label(self, session_id, cat_id):
-        status, out = self.api(
-            "POST", f"/api/sessions/{session_id}/assign", {"catId": cat_id}
-        )
-        assert status == 200, out
-
     def seed(self):
-        """A small campus: two members, three cats, two labeled encounters
-        and two waiting in the queue."""
+        """A small campus, put in through the API (scripts/seed_campus.py):
+        two members, three cats, two labeled encounters, two in the queue."""
         self.add_first_admin()
-        self.add_member(COLLABORATOR)
-        cats = {name: self.add_cat(name) for name in ("Mitzi", "Shunra", "Pilpel")}
-        self.label(self.add_encounter(photos=3, seed=1), cats["Mitzi"])
-        self.label(self.add_encounter(photos=2, seed=2), cats["Shunra"])
-        queue = [
-            self.add_encounter(photos=2, seed=3),
-            self.add_encounter(photos=1, seed=4),
-        ]
-        return {"cats": cats, "queue": queue}
+        return Campus(self.api, ADMIN, COLLABORATOR).small()
 
     # ------------------------------------------------------ the web server
 
