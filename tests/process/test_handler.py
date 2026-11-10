@@ -426,3 +426,25 @@ def test_an_object_with_no_photo_record_is_left_alone(aws):
 
     items = aws["table"].scan()["Items"]
     assert items == []
+
+
+# --- reads right after a write -------------------------------------------
+
+
+def test_the_record_check_never_reads_a_stale_copy(aws, monkeypatch):
+    """The photo's record is written moments before its object lands. A
+    default DynamoDB read may miss it, and a photo with "no record" is
+    skipped for good: no thumbnail, never in the queue."""
+    reads = []
+    real_get_item = aws["table"].get_item
+
+    def spy(**kwargs):
+        reads.append(kwargs)
+        return real_get_item(**kwargs)
+
+    monkeypatch.setattr(aws["table"], "get_item", spy)
+    key = _upload(aws, "01PHOTO0000000000000000001", _jpeg())
+    handler.handler({"Records": [{"s3": {"object": {"key": key}}}]}, None)
+
+    assert reads and all(read.get("ConsistentRead") for read in reads)
+    assert _objects(aws, "derived/")
