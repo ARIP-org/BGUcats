@@ -71,62 +71,63 @@ jobs:
       - name: build Lambda packages
         run: make build
 
-      # The role lives in the production account. Its ARN is a repository
-      # variable, not an environment one: a PR run has no environment.
-      - name: check the CI role is configured
-        env:
-          ROLE: ${{ vars.AWS_CI_ROLE_ARN }}
+      # One CI role per account, with the same name (infra/bootstrap): it can
+      # read what a plan needs and nothing else. The account IDs are read
+      # from the backend files, the one place they are written. A PR run has
+      # no environment, so these cannot be environment variables.
+      - name: the two accounts' CI roles
+        id: roles
         run: |
-          if [ -z "$ROLE" ]; then
-            echo "::error::Repository variable AWS_CI_ROLE_ARN is not set (docs/MANUAL_STEPS.md)."
-            exit 1
-          fi
+          for backend in staging prod; do
+            account=$(sed -n 's/^bucket *= *"bgucats-tfstate-\([0-9]\{12\}\)".*/\1/p' "infra/main/backend/$backend.hcl")
+            if [ -z "$account" ]; then
+              echo "::error::No account ID in infra/main/backend/$backend.hcl."
+              exit 1
+            fi
+            echo "$backend=arn:aws:iam::$account:role/bgucats-github-actions-ci" >> "$GITHUB_OUTPUT"
+          done
 
+      # Two plans of infra/main, one per account, each followed by the plan
+      # check (scripts/ci_plan.sh). Staging first: it is what merging this
+      # pull request deploys. PR runs get no environment secrets, and these
+      # roles can only read (infra/README.md).
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
+          role-to-assume: ${{ steps.roles.outputs.staging }}
           aws-region: us-east-1
 
-      - name: plan (infra/main only — bootstrap is applied by hand)
-        # PR runs get no environment secrets, and this role can only read
-        # (infra/README.md). The one variable left is not a secret; the
-        # bot's secrets and Google's are outside Terraform (infra/main/ssm.tf).
-        # No lock: this plan changes nothing, and it runs at the same time as
-        # Deploy on every merge. Holding the lock could fail either of them.
-        env:
-          TF_VAR_environment: production
-          TF_VAR_bootstrap_admin_email: "ci-plan-placeholder@example.com"
-        run: |
-          terraform -chdir=infra/main init -reconfigure -backend-config=backend/prod.hcl
-          terraform -chdir=infra/main plan -input=false -lock=false -out=tfplan
+      - name: plan staging (what merging deploys)
+        run: scripts/ci_plan.sh staging
 
-      # A new kind of resource, a provisioned table or an oversized Lambda
-      # turns this job red: each is a cost decision for the owner, not
-      # something to read past in a long plan (scripts/check_plan.py).
-      - name: plan check (allowed resource types, cost limits)
-        run: |
-          terraform -chdir=infra/main show -json tfplan \
-            | python scripts/check_plan.py infra/main/allowed-resource-types.txt
+      # Production runs the latest v* tag, so its plan holds this change and
+      # every merged change not promoted yet.
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ steps.roles.outputs.prod }}
+          aws-region: us-east-1
 
-      # Counts, actions and addresses only. The JSON plan holds sensitive
-      # values in clear text, so it goes straight into jq, and the plan file
-      # is never uploaded. Destroys sort first: they are what to look for
-      # (docs/deploy.md, "Reading the plan").
+      - name: plan production (what the next promote would deploy)
+        run: scripts/ci_plan.sh production
+
+      # Counts, actions and addresses only: the plan files are never
+      # uploaded.
       - name: plan summary
         run: |
           {
-            terraform -chdir=infra/main show -no-color tfplan | grep -E '^(Plan:|No changes)' || echo "No summary line in the plan."
+            echo "### Staging: what merging this deploys"
             echo
-            terraform -chdir=infra/main show -json tfplan | jq -r '[(.resource_changes // [])[]
-              | select(.mode == "managed" and .change.actions != ["no-op"])
-              | {a: (.change.actions | join("+")), r: .address}]
-              | sort_by((.a | contains("delete") | not), .r)[]
-              | "- `\(.a)` `\(.r)`"'
+            cat plan-summary-staging.md
+            echo
+            echo "### Production: what the next promote would deploy"
+            echo
+            echo "This change and everything merged since the last \`v*\` tag."
+            echo
+            cat plan-summary-production.md
           } > plan-summary.md
           cat plan-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       # One comment per PR, updated on each push. A failure here must not
-      # block a merge: the plan itself has already passed, and it is in the log.
+      # block a merge: both plans have already passed, and they are in the log.
       - name: post the plan summary on the PR
         if: github.event_name == 'pull_request'
         continue-on-error: true
@@ -137,7 +138,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           marker='<!-- terraform-plan-summary -->'
-          body=$(printf '%s\n**Terraform plan** at %s\n\n%s\n' "$marker" "$SHA" "$(cat plan-summary.md)")
+          body=$(printf '%s\n**Terraform plans** at %s\n\n%s\n' "$marker" "$SHA" "$(cat plan-summary.md)")
           id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
             --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
           if [ -n "$id" ]; then

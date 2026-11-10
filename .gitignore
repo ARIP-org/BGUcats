@@ -13,6 +13,7 @@ venv/
 *.tfstate.*
 # Saved plans can hold secret values in clear text.
 *.tfplan
+plan-summary-*.md
 *.tfvars
 !*.tfvars.example
 crash.log

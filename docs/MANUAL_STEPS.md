@@ -145,7 +145,9 @@ ghx variable list -R $R; ghx variable list --env production -R $R
 ```
 
 `AWS_CI_ROLE_ARN` is a repository variable because a PR run has no
-environment. The codespace's own `GITHUB_TOKEN` cannot write variables or
+environment. (Since 2026-11-10 `ci.yml` no longer reads it: it plans both
+accounts and builds each CI role's ARN from the account ID in
+`infra/main/backend/*.hcl`. The variable can be deleted.) The codespace's own `GITHUB_TOKEN` cannot write variables or
 secrets, hence the `ghx` login.
 
 ### 5c. Environment secrets, copied from the old account
