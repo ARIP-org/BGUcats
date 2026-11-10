@@ -30,6 +30,9 @@ it instead.
 | 2026-11-10 | **Claude may apply `infra/bootstrap` and `infra/org`** in a session the owner has signed in to, when asked. `infra/main` stays CI-only. `infra/org` is a Terraform root from this day. |
 | 2026-11-10 | **Promote is a protected `v*` tag, not a button.** Only the owner can create one (a tag ruleset) and `production` deploys only from those tags. A `workflow_dispatch` button can be pressed by anyone with write access, including a session that holds the owner's token. |
 | 2026-11-10 | **Native apps early.** The owner will join the Apple Developer Program and ship the beta through TestFlight, with an Android build alongside (Phase 2e). Supersedes "decided then, not now" in the row below; one codebase still stands. |
+| 2026-11-10 | **Interactive cloud sessions act on GitHub as a machine user,** not as the owner (2d, option B). The owner creates the account; one more seat on GitHub Team. |
+| 2026-11-10 | **Alerts by email through SNS** (2f): `sns` goes onto the service allowlist. |
+| 2026-11-10 | **The platform is the point.** The owner is more interested in the platform than in the product, so platform work is not held back until the product asks for it. |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -102,7 +105,10 @@ except for the rows marked below.
 | | State |
 |---|---|
 | 12f deploy to staging, promote by tag (#40) | done; staging has been deployed by every merge since |
-| 13c the allowlist onto the root (#47) | checked and planned. **The owner's command:** `infra/scripts/org-apply.sh` from the PR's branch, then merge. Claude's session was refused the apply |
+| 13c the allowlist onto the root (#47) | merged, **not applied yet**. The alerts PR (#51) changes the same root, so one command applies both: `echo yes \| infra/scripts/org-apply.sh` on branch `alerts`. Claude's session is refused this apply |
+| Alerts (#51) | bootstrap applied to both accounts; waits for the `infra/org` apply above, then merge |
+| Tests of the app's screens (#52) | open, green |
+| Pillow 13.0.0 (#50) | open, green: closes all 164 Dependabot alerts |
 | CI plans both accounts (#48) | open; both plans say `No changes` |
 | The model on staging | published 2026-11-10 |
 | 12g seed data, and the freeze policy's exemption for the Lambda roles | **next** |
@@ -115,24 +121,24 @@ except for the rows marked below.
 **Claude's next jobs, in order:**
 
 1. **12g:** a seed script that fills staging with test cats, sessions and
-   photos (public-domain or generated images, never contributor photos),
-   run with `bgucats-staging-admin`. Then the freeze policy attached to
-   staging for a minute: the app's API must keep answering.
-2. **The verifier:** a headless-browser smoke test of the app, with
-   screenshots. It runs against staging after each deploy, and against a
-   local copy of `web/` in any session, so every pull request that changes
-   a screen can show it. The app has no automated test of its screens
-   today; this comes before more agent-written changes to them.
-3. **Hands-on sessions in the cloud** (2d, below), once the owner has
-   chosen between its two options.
+   photos (generated images, never contributor photos), run with
+   `bgucats-staging-admin`. Then the freeze policy attached to staging for
+   a minute: the app's API must keep answering.
+2. **The verifier:** the browser tests of #52 pointed at staging after
+   each deploy, signed in as a test member.
+3. **Hands-on sessions in the cloud** (2d, below), once the machine user
+   exists: the session setup hook, then one trial session.
 4. **The reviewer** agent: comments on every pull request.
 5. **2e,** when Apple approves the enrollment: the Capacitor wrap, signed
    in against staging, built and uploaded to TestFlight by a workflow.
-6. **Alerts:** nobody is told when production breaks (2f, below).
 
 **The owner's steps:**
 
-- Apply and merge #47; merge #48.
+- On branch `alerts`: `echo yes | infra/scripts/org-apply.sh`, then merge
+  #51. Merge #48, #49, #50 and #52.
+- Create the machine user (2d, below) and give it write access.
+- Click the link in AWS's two confirmation emails, one per account, after
+  #51 is deployed.
 - Label a small issue `approved`, to see the first **Claude fix** run.
 - Sign in to the staging app on a phone (the Google account must be in
   the staging Google project's *Test users*).
@@ -327,7 +333,7 @@ What it takes:
   Store Connect / TestFlight becomes a second source only once the app is
   wrapped for the stores.
 
-#### Hands-on sessions in the cloud (proposed 2026-11-10, not built)
+#### Hands-on sessions in the cloud (decided 2026-11-10: option B; not built)
 
 The feedback loop is for small changes nobody needs to watch. For larger
 ones (a redesigned screen, a new feature, "try it this way") the owner
@@ -361,7 +367,7 @@ To build: a `SessionStart` hook that installs the dev dependencies and
 Terraform when the session is a cloud one; the screenshot harness; and
 the way a pull request gets an author who is not the owner (below).
 
-**The open decision: whose GitHub identity a session uses.** A cloud
+**Whose GitHub identity a session uses.** A cloud
 session acts on GitHub as whoever connected GitHub to the Claude account.
 If that is the owner, the session's pull requests are the owner's own,
 which the owner cannot approve, and the session could approve and merge
@@ -375,10 +381,12 @@ seatbelt, would stop it. The codespace has the same gap today (door 3).
 | Required approval | works, but a session holding the owner's identity can give it | a wall: the bot cannot approve its own pull request, and nothing in a session can act as the owner |
 | Extra code | one workflow | none |
 
-Recommended: **B.** It is what companies do (a bot account, never a
-person's), it closes door 3 for every kind of interactive session at
-once, and it removes a workflow instead of adding one. The owner's
-personal access token in the codespace can then be deleted.
+**Decided: B** (2026-11-10). It is what companies do (a bot account,
+never a person's), it closes door 3 for every kind of interactive session
+at once, and it removes a workflow instead of adding one. The owner's
+personal access token in the codespace can then be deleted. GitHub is
+reached through a proxy that is part of Claude's cloud sessions: there
+is nothing to set up or run.
 
 **Doors after 2d:** door 2 closed for everyday work (no AWS in Claude's
 jobs), door 3 closed (own identity + required approval), door 1 guarded by
@@ -422,14 +430,15 @@ Decided 2026-11-10: as early as possible, not Phase 4 of `CLAUDE.md`.
 **Done when:** a merge produces a TestFlight build and an Android internal
 test build of the same commit, both signed in against staging.
 
-### 2f. Knowing when it breaks (proposed 2026-11-10)
+### 2f. Knowing when it breaks (built 2026-11-10, PR #51)
 
 Nothing tells anyone when production fails. In October, 48 photos stalled
 for an hour and it was found by looking. CloudWatch alarms on the
-Lambdas' errors and the API's 5xx answers, sent by email. It needs `sns`
-on the service allowlist, and the alarm and topic resource types on the
-plan check's list and in the deploy role: all the owner's decisions. A
-few cents a month.
+Lambdas' errors and the API's 5xx answers, sent by email
+(`infra/main/alarms.tf`; what each alarm means: `docs/deploy.md`, "When
+an alert email arrives"). It took `sns` on the service allowlist, and
+the alarm and topic resource types on the plan check's list and in the
+deploy role. Free at this size.
 
 **Done when:** a Lambda made to fail on staging sends an email within
 minutes.
@@ -452,8 +461,10 @@ agents by what their tokens can do is ahead of common practice.
 1. **No automated test of the app's screens, and none end to end.** The
    Lambdas have unit tests; `web/` has none, and nothing checks a deploy
    beyond "it applied". A team would not let several authors, human or
-   agent, change a UI without them. Next jobs 1 and 2.
-2. **No alerting.** 2f.
+   agent, change a UI without them. **Started in PR #52:** ten browser
+   tests against the real handlers, with screenshots kept by CI. Still
+   missing: the same tests against staging after a deploy.
+2. **No alerting.** Built in PR #51 (2f).
 3. **Review.** In a team a second engineer who understands the change
    approves it. Here the owner approves plans and outcomes, not code.
    That is the experience of a technical lead; interviews for
@@ -461,22 +472,26 @@ agents by what their tokens can do is ahead of common practice.
    policy, debugging a failed deploy. Worth doing by hand on purpose:
    read every infrastructure diff before approving it, and now and then
    break staging and find the cause without Claude.
-4. **The platform is ahead of the product.** Three weeks of accounts and
-   pipelines for an app with 19 cats and a few users. The numbers that
+4. **The platform is ahead of the product, on purpose** (Decisions,
+   2026-11-10: the platform is what the owner is here for). Three weeks
+   of accounts and pipelines for an app with 19 cats and a few users. The numbers that
    make the project real (re-encounters, auto-resolved queries) were last
-   measured on 2026-10-29. After 12g, the first promote and the first
-   TestFlight build, platform work should be pulled by what the product
-   needs, not pushed ahead of it.
+   measured on 2026-10-29. The one thing the product must keep
+   supplying is real use: a platform nobody uses is never tested by
+   traffic, incidents or users' reports.
 5. **A person's token in an agent's hands** (door 3, and the personal
-   access token made on 2026-11-10). Option B above.
+   access token made on 2026-11-10). Option B above, decided; waits for
+   the owner to create the account.
 6. **Home-made where a standard tool exists.** `check_plan.py` is
    policy-as-code (the standard names: OPA with Conftest, Checkov,
    Trivy); `org-apply.sh` is what Atlantis or Terraform Cloud do; account
    setup by hand is what Control Tower does. At this size the small
    scripts are the better choice, and knowing the standard names is what
    an interview asks. A free scanner (Trivy or Checkov) in CI is cheap to
-   add. Dependabot reports 164 alerts on `main`, 20 of them critical,
-   most likely in `research/requirements.txt`; nobody has read them.
+   add. Dependabot reported 164 alerts on `main`, 20 of them critical:
+   all one package, Pillow below 13.0.0, counted once per requirements
+   file. Dependabot never proposed the fix because major versions are
+   ignored on purpose. Closed by PR #50.
 7. **History inside the rules.** `CLAUDE.md` and this file carry dated
    history next to current rules. Teams keep one decision per file (an
    ADR) and a changelog, and keep the rules short.
