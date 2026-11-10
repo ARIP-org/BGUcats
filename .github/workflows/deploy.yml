@@ -1,42 +1,77 @@
 name: Deploy
 
-# main is production: every push to it plans and applies infra/main. The
-# runbook (reading a plan, post-deploy checks, rollback) is docs/deploy.md.
+# One job, two destinations, chosen by what was pushed:
+#
+#   a push to main   -> STAGING     every merge, automatically
+#   a tag v*         -> PRODUCTION  the owner's promote: the same commit,
+#                                   only after staging has applied it
+#
+# The steps are the same for both, so production is deployed exactly the way
+# staging was. The runbook (reading a plan, promoting, post-deploy checks,
+# rollback) is docs/deploy.md.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       plan_only:
         description: "Plan only: stop before apply"
         type: boolean
-        # Tick it to see what a merge would do without doing it. Applies
-        # were turned on on 2026-10-30 (docs/MANUAL_STEPS.md, 6d.2).
+        # Run it from main for staging, or from a v* tag for production, to
+        # see what a deploy of that ref would do without doing it.
         default: false
 
-# One deploy at a time, and never cancel one that has started: a half-done
-# apply is worse than a late one. A second push waits its turn.
+# One deploy per environment at a time, and never cancel one that has
+# started: a half-done apply is worse than a late one.
 concurrency:
-  group: deploy-production
+  group: deploy-${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
   cancel-in-progress: false
 
 permissions:
   id-token: write # the OIDC token the deploy role is assumed with
   contents: read
-
-env:
-  # Push-triggered runs have no inputs, so they read this instead.
-  PLAN_ONLY_ON_PUSH: "false"
+  statuses: write # the "deployed/<environment>" mark on the commit
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # The only thing that lets this job assume the deploy role: the role
-    # trusts `sub = ...:environment:production`, and GitHub lets only main
-    # deploy to this environment. Its secrets are the infra/main variables.
-    environment: production
+    # The only thing that lets this job assume a deploy role. Each account's
+    # role trusts `sub = ...:environment:<its name>`, and GitHub decides
+    # which refs may claim an environment: only main for staging, only v*
+    # tags for production. A tag ruleset lets only the owner create those
+    # tags. Each environment's secrets are its infra/main variables.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
+    env:
+      BGUCATS_ENV: ${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
+      BACKEND: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'staging' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the promote check below needs main's history
+
+      # Production gets a commit only if it is on main and staging has
+      # applied it. This is a check for the owner, who is the only one who
+      # can tag: it catches a tag put on a commit whose staging deploy
+      # failed or is still running.
+      - name: Promote only what staging runs
+        if: env.BGUCATS_ENV == 'production'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::$GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main."
+            exit 1
+          fi
+          state=$(gh api "repos/$REPO/commits/$GITHUB_SHA/statuses?per_page=100" \
+            --jq '[.[] | select(.context == "deployed/staging")][0].state // "none"')
+          if [ "$state" != success ]; then
+            echo "::error::Staging has not applied $GITHUB_SHA (deployed/staging: $state). Tag a commit with a green deployed/staging mark."
+            exit 1
+          fi
+          echo "Promoting $GITHUB_REF_NAME ($GITHUB_SHA): on main, applied on staging." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -49,19 +84,15 @@ jobs:
           # `terraform output -raw` inside make site-invalidate.
           terraform_wrapper: false
 
+      # Only a hand-started run can be plan-only; a push always applies.
       - name: Decide whether to apply
         id: mode
         env:
-          EVENT: ${{ github.event_name }}
           INPUT_PLAN_ONLY: ${{ inputs.plan_only }}
         run: |
-          if [ "$EVENT" = workflow_dispatch ]; then
-            plan_only="$INPUT_PLAN_ONLY"
-          else
-            plan_only="$PLAN_ONLY_ON_PUSH"
-          fi
+          plan_only="${INPUT_PLAN_ONLY:-false}"
           echo "plan_only=$plan_only" >> "$GITHUB_OUTPUT"
-          echo "Plan only: $plan_only" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Environment: $BGUCATS_ENV** · plan only: $plan_only" >> "$GITHUB_STEP_SUMMARY"
 
       # Again on the merged code, before anything holds AWS credentials:
       # the tests use moto and must never reach a real account.
@@ -71,14 +102,14 @@ jobs:
       - name: Build Lambda packages
         run: make build
 
-      # An environment variable of `production`, so only this job sees it.
-      # The role's trust is what actually limits who can assume it.
+      # A variable of the environment, so each one names its own account's
+      # role. The role's trust is what actually limits who can assume it.
       - name: Check the deploy role is configured
         env:
           ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
         run: |
           if [ -z "$ROLE" ]; then
-            echo "::error::Environment variable AWS_DEPLOY_ROLE_ARN is not set on production (docs/MANUAL_STEPS.md)."
+            echo "::error::Environment variable AWS_DEPLOY_ROLE_ARN is not set on $BGUCATS_ENV (docs/MANUAL_STEPS.md)."
             exit 1
           fi
 
@@ -87,20 +118,18 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
 
-      # The account the role belongs to must be the one the state file is
-      # for. A variable pointing at another account fails here, not halfway
-      # through an apply.
+      # The account the role belongs to must be the one this environment's
+      # state file is for (BGUCATS_ENV). A variable pointing at the other
+      # account fails here, not halfway through an apply.
       - name: Check the account
-        env:
-          BGUCATS_ENV: production
         run: infra/scripts/aws-guard.sh
 
       - name: Plan
         env:
-          TF_VAR_environment: production
           TF_VAR_bootstrap_admin_email: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
         run: |
-          terraform -chdir=infra/main init -input=false -backend-config=backend/prod.hcl
+          export TF_VAR_environment="$BGUCATS_ENV"
+          terraform -chdir=infra/main init -input=false -backend-config="backend/$BACKEND.hcl"
           terraform -chdir=infra/main plan -input=false -out=tfplan
           terraform -chdir=infra/main show -no-color tfplan | grep -E '^(Plan:|No changes)' >> "$GITHUB_STEP_SUMMARY" || true
 
@@ -126,3 +155,17 @@ jobs:
       - name: Invalidate the landing page
         if: steps.mode.outputs.plan_only != 'true' && steps.site.outputs.changed == 'true'
         run: make site-invalidate
+
+      # A green "deployed/staging" on a commit is what the promote check
+      # above looks for, and what tells the owner which commits can be
+      # tagged. Never set by a plan-only run.
+      - name: Mark the commit as deployed
+        if: steps.mode.outputs.plan_only != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api "repos/$REPO/statuses/$GITHUB_SHA" --silent \
+            -f state=success -f context="deployed/$BGUCATS_ENV" \
+            -f description="Applied by Deploy #$GITHUB_RUN_NUMBER" -f target_url="$RUN_URL"

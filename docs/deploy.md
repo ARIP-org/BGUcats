@@ -1,13 +1,19 @@
 # Deploying
 
-`main` is production. Every change reaches AWS the same way:
+`main` is what **staging** runs. **Production** runs the commit of the
+latest `v*` tag. Every change reaches AWS the same way:
 
 ```
 short-lived branch → pull request → CI (ruff, pytest, terraform plan)
   → the owner reads the plan and merges → push to main
-  → .github/workflows/deploy.yml (environment "production", OIDC deploy role)
-  → terraform plan → terraform apply → CloudFront invalidation if the landing page changed
+  → deploy.yml, environment "staging": plan → apply → the commit gets "deployed/staging"
+  → the owner tries it on staging, then tags that commit v…
+  → deploy.yml, environment "production": the same steps, the same commit
 ```
+
+Until 2026-11-10 a merge deployed production directly. Staging is a copy of
+the app in an account of its own (`586943192664`): no Telegram bot, its own
+Google client, never real contributor photos.
 
 Nobody runs `make tf-apply` by hand any more, and no machine holds an AWS
 access key. The roles, and why there are three of them: `infra/README.md`.
@@ -15,11 +21,15 @@ The owner's one-time setup: `docs/MANUAL_STEPS.md`.
 
 ## What the deploy job does
 
-`deploy.yml` runs on every push to `main`, and by hand from the Actions tab
-(*Deploy → Run workflow*). One run at a time (`concurrency: deploy-production`),
-and a run that has started is never cancelled: a half-finished apply is worse
-than a late one.
+`deploy.yml` is one job with two destinations, chosen by what was pushed:
+a push to `main` deploys staging, a `v*` tag deploys production. The steps
+are the same, so production is deployed exactly the way staging was. One
+run per environment at a time, and a run that has started is never
+cancelled: a half-finished apply is worse than a late one.
 
+0. For production only, **"Promote only what staging runs"**: the tagged
+   commit must be on `main` and carry a green `deployed/staging` mark. A
+   tag on anything else fails here, before any AWS credentials exist.
 1. `make lint && make test`: the same checks as CI, again on the merged code.
 2. `make build`: the Lambda zips.
 3. `terraform plan -out=tfplan` on `infra/main`. It needs no secrets: the
@@ -28,11 +38,36 @@ than a late one.
 5. If the plan changed any `aws_s3_object.site[...]`: `make site-invalidate`.
    The landing page is cached for up to a day; the admin app is not cached,
    so it never needs this.
+6. The commit gets the status `deployed/staging` or `deployed/production`,
+   a green mark next to it on GitHub that links to the run.
 
-`workflow_dispatch` has a `plan_only` input that stops after step 3. It is
-how the pipeline was proven before its first apply. Applies have been on
-since 2026-10-30 (`PLAN_ONLY_ON_PUSH: "false"`): every merge to `main`
-applies.
+By hand (*Actions → Deploy → Run workflow*), with `plan_only` ticked, it
+stops after step 3: run it from `main` to see what staging would get, or
+from a `v*` tag to see what production would.
+
+What decides which run may touch which account is not this file:
+
+- each account's deploy role trusts only jobs in the GitHub environment of
+  its own name (`infra/bootstrap`);
+- GitHub lets only `main` claim `staging` and only `v*` tags claim
+  `production` (*Settings → Environments*);
+- a tag ruleset lets only the owner create `v*` tags.
+
+## Promoting to production
+
+1. On GitHub, open the commit list of `main`. The commit to promote has a
+   green check whose details include **deployed/staging**.
+2. Try it on the staging app.
+3. *Releases → Draft a new release → Choose a tag*: type a new tag
+   (`v2026.11.10`, or `v2026.11.10.2` for a second one that day), target
+   that commit (or `main` if it is the latest), *Publish release*. From a
+   terminal: `git tag v2026.11.10 <commit> && git push origin v2026.11.10`.
+4. *Actions → Deploy*: the run for the tag shows its plan in the summary
+   and applies it. Then the post-deploy checks below, on production.
+
+The production plan holds everything merged since the last promote, not
+one PR. Read it in the run's summary; the stop list in "Reading the plan"
+applies to it just the same.
 
 ## Reading the plan
 
@@ -80,7 +115,8 @@ Dependabot PR failed with `Error acquiring the state lock` while Deploy ran.
 ## Post-deploy checks
 
 On a phone with the installed app, signed in as an admin, unless a step
-says otherwise:
+says otherwise. On staging, skip step 2 (there is no bot), and steps 3–5
+need its own cats and model (`docs/MANUAL_STEPS.md`, 12g):
 
 1. The Actions run is green, and the apply summary has the same numbers as
    the plan.
@@ -105,8 +141,12 @@ If a model or photo fetch fails, check the media bucket's CORS rule first
 git revert -m 1 <merge-commit>     # on a branch, then a PR like any other
 ```
 
-Merge the PR and the pipeline deploys the previous state. There is no
-second path. What a revert does not undo:
+Merge the PR, staging gets the previous state, and a new tag promotes it.
+**Faster, when production is broken and staging's history is fine:** tag
+the last good commit again under a new name (`v2026.11.10.rollback`). It
+is on `main` and has its `deployed/staging` mark, so the promote check
+passes and production goes back to it without waiting for a revert. `main`
+still needs the revert before the next promote. What neither undoes:
 
 - **Data.** Items and photos written by the newer code stay. Every change so
   far has been additive (new item types, new GSI2 entries), so the older

@@ -17,7 +17,8 @@ The addendum supersedes the spec's "no machine learning of any kind" in
 phase 1: a frozen recognition model runs in the browser today (1c below). It
 ranks; it never decides.
 
-**`main` is production.** How changes reach it: "Workflow" below.
+**`main` is staging; production is the latest `v*` tag.** How changes reach
+them: "Workflow" below.
 
 ## What this project is
 
@@ -88,16 +89,21 @@ blocked on someone else.
 
 ## Workflow
 
-- **`main` is production.** What is on `main` is what runs in AWS. There are
+- **`main` is what staging runs; production runs the latest `v*` tag**
+  (since 2026-11-10; before that a merge deployed production). There are
   no long-lived feature or "preprod" branches. The old stack
   (`admin-labeling-tool` → `app-preprod` → `recognition-labeling`) was merged
   into `main` on 2026-10-29 and survives as `rollback/*` tags only.
 - **Work on a short-lived branch**, one change per branch, and open a pull
   request to `main`. CI runs lint, tests and `terraform plan` on it. The owner
   reads the plan and merges.
-- **Merging is deploying.** A push to `main` runs `.github/workflows/deploy.yml`,
-  which plans and applies `infra/main` under a GitHub OIDC role. Runbook,
-  post-deploy checks and rollback: `docs/deploy.md`.
+- **Merging deploys staging; a tag promotes.** A push to `main` runs
+  `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
+  the staging account under a GitHub OIDC role and marks the commit
+  `deployed/staging`. Production gets a commit only when the owner tags it
+  `v*`, and only if it is on `main` with that mark: the same job, the same
+  steps. Only the owner creates those tags (a tag ruleset); Claude never
+  does. Runbook, promoting, post-deploy checks and rollback: `docs/deploy.md`.
 - **Never deploy by hand and never push to `main`.** No `terraform apply`,
   `make tf-apply` or `make site-invalidate` on `infra/main` from a codespace
   or a Claude session. The codespace holds no AWS keys; credentials come only
