@@ -71,10 +71,23 @@ applies to it just the same.
 
 ## Reading the plan
 
-CI posts a summary on every PR as one comment, updated on each push: the
-`Plan:` line and every resource that changes, destroys first. The full plan is
-in the CI run (job `terraform`) and again in the deploy run. Read it before
-merging. The CI plan and the deploy plan should match.
+CI plans both accounts on every PR and posts one comment, updated on each
+push, with two parts (since 2026-11-10; before that it planned production
+only, which after the move to promote-by-tag was no longer what a merge
+deploys):
+
+- **Staging: what merging this deploys.** Read it before merging. It and
+  the staging deploy's plan should match.
+- **Production: what the next promote would deploy.** This change and
+  every merged change not promoted yet, so it grows between promotes. It
+  and the plan of the next tag's deploy should match.
+
+Each part has the `Plan:` line and every resource that changes, destroys
+first. The full plans are in the CI run (job `terraform`) and again in the
+deploy runs. Each plan is followed by the plan check (`scripts/check_plan.py`).
+The same two plans by hand, read-only: `make build`, then
+`AWS_PROFILE=bgucats-staging-ro scripts/ci_plan.sh staging` (or
+`bgucats-prod-ro` and `production`).
 
 The comment carries actions and addresses only, never values, and says which
 commit it describes. If it is missing or names an older commit, read the log

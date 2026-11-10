@@ -95,8 +95,9 @@ blocked on someone else.
   (`admin-labeling-tool` → `app-preprod` → `recognition-labeling`) was merged
   into `main` on 2026-10-29 and survives as `rollback/*` tags only.
 - **Work on a short-lived branch**, one change per branch, and open a pull
-  request to `main`. CI runs lint, tests and `terraform plan` on it. The owner
-  reads the plan and merges.
+  request to `main`. CI runs lint, tests and `terraform plan` for both
+  accounts on it (staging: what the merge deploys; production: what the
+  next promote would). The owner reads the plans and merges.
 - **Merging deploys staging; a tag promotes.** A push to `main` runs
   `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
   the staging account under a GitHub OIDC role and marks the commit
