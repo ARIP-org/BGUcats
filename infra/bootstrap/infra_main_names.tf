@@ -38,4 +38,8 @@ locals {
   cloudfront_distribution_arns = "arn:aws:cloudfront::${local.account_id}:distribution/*"
   cloudfront_oac_arns          = "arn:aws:cloudfront::${local.account_id}:origin-access-control/*"
   cognito_user_pool_arns       = "arn:aws:cognito-idp:us-east-1:${local.account_id}:userpool/*"
+
+  # alarms.tf: one topic and alarms named bgucats-*.
+  alerts_topic_arn = "arn:aws:sns:us-east-1:${local.account_id}:bgucats-alerts"
+  alarm_arns       = "arn:aws:cloudwatch:us-east-1:${local.account_id}:alarm:bgucats-*"
 }

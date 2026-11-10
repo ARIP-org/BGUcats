@@ -267,6 +267,20 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Resource = "*"
       },
       {
+        # alarms.tf. Read-only: the topic's settings, the subscription's
+        # (not a resource IAM can name, hence "*"), and the alarms.
+        Sid    = "DescribeAlertsForPlan"
+        Effect = "Allow"
+        Action = [
+          "sns:GetTopicAttributes",
+          "sns:ListTagsForResource",
+          "sns:GetSubscriptionAttributes",
+          "cloudwatch:DescribeAlarms",
+          "cloudwatch:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
         # The bootstrap admin row is a Terraform-managed table item, so plan
         # has to read it back. Scoped to the one table.
         Sid      = "ReadBootstrapAdminItem"

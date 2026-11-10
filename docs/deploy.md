@@ -157,6 +157,38 @@ still needs the revert before the next promote. What neither undoes:
   opened. Say in the PR if a change bumps a store and the old code cannot
   read it.
 
+## When an alert email arrives
+
+Each account emails the bootstrap admin when the app breaks
+(`infra/main/alarms.tf`, since 2026-11-10). The subject starts with
+`ALARM:` and names the alarm; an `OK:` email follows when five minutes
+pass without another failure.
+
+| Alarm | Means | Look at |
+|---|---|---|
+| `bgucats-process-errors` | a photo was stored but not processed: no thumbnail, not in the queue | log group `/aws/lambda/bgucats-process`; Stats → Bot health lists photos still pending |
+| `bgucats-admin-errors`, `bgucats-admin-presignup-errors` | a request from the app, or a sign-in, got a 500 | `/aws/lambda/bgucats-admin`, `/aws/lambda/bgucats-admin-presignup` |
+| `bgucats-ingest-errors` (production only) | a Telegram photo was not taken in; the sender was not told | `/aws/lambda/bgucats-ingest` |
+| `bgucats-beacon-errors` | a landing-page visit was not counted; nobody noticed | `/aws/lambda/bgucats-beacon` |
+| `bgucats-api-5xx` | the API answered 5xx, whatever the cause, including a Lambda that could not be invoked | the Lambda alarms above; then API Gateway's metrics |
+
+Reading a log without the console:
+
+```bash
+aws logs tail /aws/lambda/bgucats-process --since 30m --profile bgucats-prod-ro
+```
+
+If it started right after a promote, roll back first ("Rollback" above)
+and read the log afterwards.
+
+**The first deploy into an account sends a confirmation email** ("AWS
+Notification - Subscription Confirmation"). Nothing is delivered until its
+link is clicked, once per account. Staging's alarms say `staging` in their
+description; the subject only names the account's topic.
+
+Not alarmed on purpose: 4xx answers, throttles and slow answers. Each
+account's first ten alarms and thousand emails a month are free.
+
 ## When a red "plan check" stops a pull request
 
 `terraform` in CI runs `scripts/check_plan.py` on the plan. It fails when

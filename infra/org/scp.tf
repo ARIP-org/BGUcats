@@ -43,9 +43,14 @@ resource "aws_organizations_policy_attachment" "deny_leave_and_close" {
 # effect of a pull request to the app.
 #
 # Not on the list, on purpose, until something needs them: acm and route53
-# (a custom domain), sns and events (alarms, schedules), wafv2,
-# secretsmanager, sqs. route53domains, shield, aws-marketplace and
-# savingsplans must stay off it: each is a purchase in one API call.
+# (a custom domain), events (schedules), wafv2, secretsmanager, sqs.
+# route53domains, shield, aws-marketplace and savingsplans must stay off
+# it: each is a purchase in one API call.
+#
+# sns was added on 2026-11-10 for the alarms' topic (infra/main/alarms.tf).
+# It can also send text messages, which cost money: a new account's SMS
+# spending limit is $1 a month, and raising it is a quota increase, which
+# is denied below.
 locals {
   allowed_actions = [
     # The app and its deploys (infra/main, infra/bootstrap).
@@ -59,6 +64,7 @@ locals {
     "lambda:*",
     "logs:*",
     "s3:*",
+    "sns:*",
     "ssm:*",
     "sts:*",
     # Looking: metrics, the audit trail, bills, limits, the console itself.

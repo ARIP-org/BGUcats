@@ -16,6 +16,7 @@ aws_apigatewayv2_route
 aws_apigatewayv2_stage
 aws_cloudfront_distribution
 aws_cloudfront_origin_access_control
+aws_cloudwatch_metric_alarm
 aws_cognito_managed_login_branding
 aws_cognito_user_pool
 aws_cognito_user_pool_client
@@ -36,3 +37,5 @@ aws_s3_bucket_public_access_block
 aws_s3_bucket_server_side_encryption_configuration
 aws_s3_bucket_versioning
 aws_s3_object
+aws_sns_topic
+aws_sns_topic_subscription

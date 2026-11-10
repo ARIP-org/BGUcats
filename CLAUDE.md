@@ -151,6 +151,10 @@ blocked on someone else.
   in `docs/deploy.md`, "When a budget action fires". The table stays
   `PAY_PER_REQUEST` and Lambdas stay small (`scripts/check_plan.py`):
   nothing in AWS can enforce those two.
+- **The app says when it breaks** (`infra/main/alarms.tf`, 2026-11-10): an
+  email to the bootstrap admin on any Lambda error or API 5xx, in each
+  account. What each alarm means: `docs/deploy.md`, "When an alert email
+  arrives". A new Lambda is added to `alarmed_functions` in the same PR.
 - **Four things CI does not do:** `infra/bootstrap` (the state backend and
   the GitHub roles; it cannot deploy itself), `infra/org` (the
   organization's guardrails; no GitHub role exists in the management
