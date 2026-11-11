@@ -306,10 +306,11 @@ offers it. The owner starts it; Claude never does.
 
 **Cost.** A macOS runner is $0.062 a minute against $0.006 for Linux
 (2026-11), taken from the $18 of Actions usage GitHub Team includes each
-month. A pull request's check is one job, an upload is two: about $1 to
-$1.50. That is why nothing here runs on every merge, and why a change to a
-screen is checked in the PWA and in `tests/web` (which opens the packed
-app too, `test_native.py`), not by building.
+month. A pull request's check is one job and took under three minutes on
+2026-11-11, about $0.20. An upload is that job and a second one, not
+timed yet. That is why nothing here runs on every merge, and why a change
+to a screen is checked in the PWA and in `tests/web` (which opens the
+packed app too, `test_native.py`), not by building.
 
 **Signing.** No certificate or profile is stored anywhere. The job hands
 Xcode an App Store Connect API key (three secrets of the `testflight`

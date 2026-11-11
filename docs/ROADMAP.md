@@ -425,9 +425,10 @@ Decided 2026-11-10: as early as possible, not Phase 4 of `CLAUDE.md`.
 - **Feedback:** TestFlight's own feedback becomes a second source for the
   2d pipeline, as the owner's original spec had it.
 - **Cost to plan for:** GitHub Team includes $18 of Actions usage a
-  month. A macOS minute is $0.062 and a Linux one $0.006 (2026-11), so a
-  check of the shell is about $0.50 and a TestFlight build $1 to $1.50.
-  iOS builds run for a release candidate or on request, never on every
+  month. A macOS minute is $0.062 and a Linux one $0.006 (2026-11). The
+  check of the shell took under three minutes on 2026-11-11, about $0.20;
+  a TestFlight build is that job and a second one, not timed yet. iOS
+  builds run for a release candidate or on request, never on every
   merge.
 - **The slow loop, and what keeps it short.** With no Mac there is no
   simulator on a desk and no console to attach: a try of anything

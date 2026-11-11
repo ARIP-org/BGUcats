@@ -1216,13 +1216,13 @@ here is done in a browser; the builds run on GitHub's macOS runners
    only, with three secrets: `APP_STORE_CONNECT_ISSUER_ID`,
    `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_PRIVATE_KEY` (the whole
    `.p8` file, with its BEGIN and END lines).
-
-### 15b. Still to do, before the first upload
-
 5. **The Team ID,** as a *variable* of the same environment (it is not a
    secret): developer.apple.com → *Account* → *Membership details* → Team
    ID, ten characters. GitHub → *Settings* → *Environments* → `testflight`
    → *Environment variables* → `APPLE_TEAM_ID`.
+
+### 15b. Still to do, for the first upload
+
 6. **Merge the pull request** that adds `native/` and `ios.yml`: GitHub
    offers *Run workflow* only for a workflow that is on `main`.
 7. **Run it:** *Actions* → *iOS* → *Run workflow* → `main`.
