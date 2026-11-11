@@ -99,6 +99,37 @@ def test_the_cats_screen_lists_every_cat_with_its_cover(open_app, shot):
     shot(page, "cats")
 
 
+def test_a_screen_that_loads_late_does_not_draw_over_the_one_opened_since(open_app):
+    """The Queue waits for its data; tapping Cats meanwhile showed Cats, and
+    then the Queue's late answer drew over it (one CI run in six, 2026-11-11).
+    Here the Queue's answer is held until Cats is on screen."""
+    page = open_app(ADMIN)
+    held = []
+    page.route(
+        lambda url: url.split("?")[0].endswith("/api/queue"),
+        lambda route: held.append(route),
+    )
+    # An action forgets every cached answer, so the Queue asks again.
+    go(page, "stats", "Photos & videos")
+    page.get_by_role("button", name="Refresh").click()
+    shows(page, "Photos & videos")
+    page.click(".tab[data-view=queue]")
+    for _ in range(100):  # until the Queue's request is waiting on us
+        if held:
+            break
+        page.wait_for_timeout(50)
+    assert held, "the Queue did not ask for its data"
+    go(page, "cats", "3 cats known")
+
+    with page.expect_response(lambda res: res.url.split("?")[0].endswith("/api/queue")):
+        for route in held:
+            route.continue_()
+    page.wait_for_timeout(500)  # time for a late draw, if there were one
+    text = page.inner_text("#main")
+    assert "3 cats known" in text
+    assert "Labeling queue" not in text
+
+
 def test_the_stats_screen_counts_what_is_there(open_app, shot):
     page = open_app(ADMIN)
     go(page, "stats", "Photos & videos")

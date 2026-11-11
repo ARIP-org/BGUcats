@@ -699,7 +699,9 @@ export function createCapture(ui) {
 
   // ---- screen -----------------------------------------------------------
 
-  async function render() {
+  // isCurrent: from the app's render (app.js, stillShown); false once another
+  // screen was opened while this one waited for its data.
+  async function render(isCurrent = () => true) {
     if (encounter && cameraOpen) return renderCamera();
     if (inReview()) return renderReview();
     leave();
@@ -742,7 +744,9 @@ export function createCapture(ui) {
           button("Start an encounter", "btn btn-primary btn-lg", startEncounter),
         ]);
 
-    main.replaceChildren(head, guessSettingCard() || "", current, outboxPanel(), await recentPanel());
+    const recent = await recentPanel();
+    if (!isCurrent()) return;
+    main.replaceChildren(head, guessSettingCard() || "", current, outboxPanel(), recent);
     drawStrip();
   }
 

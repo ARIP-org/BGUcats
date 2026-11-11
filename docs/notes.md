@@ -134,6 +134,12 @@ an hour that a sentence would have saved.
 
 ## Testing
 
+- **A test that fails one run in six is a race, not bad luck.**
+  `test_the_cats_screen_lists_every_cat_with_its_cover` failed in CI
+  because a screen that waited for its data drew over the one opened since:
+  the Queue's late answer replaced Cats. Every screen now checks
+  `stillShown()` after its fetch (`web/app.js`), and a test holds the
+  Queue's answer back to make the race happen every time (2026-11-11).
 - **A seed that goes through the front door is the best first test.**
   `make seed-staging` fills staging by calling its real API, and found the
   dropped-photo bug on its first run. The same code is the smoke test

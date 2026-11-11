@@ -439,8 +439,19 @@ function forgetResponses() {
 const comparable = (data) => JSON.stringify(data).replace(/\?[^"]*Signature=[^"]*/g, "");
 
 // Bumped whenever a different screen is drawn, so a late refresh redraws
-// only the screen it was fetched for.
+// only the screen it was fetched for, and a screen whose data arrives after
+// another one was opened does not draw over it (stillShown, below).
 let screen = 0;
+
+// For a screen about to draw: true while no other screen has been started
+// since it was. Every screen waits for its data first, and the first one
+// can take seconds on a weak signal. An admin who tapped Cats while the
+// Queue was loading saw Cats, then the Queue's late answer drew over it
+// (found by tests/web on 2026-11-11, one run in six).
+function stillShown() {
+  const shown = screen;
+  return () => screen === shown;
+}
 
 async function cachedGet(path, redraw = render) {
   const hit = responses.get(path);
@@ -526,7 +537,7 @@ function setView(view) {
 }
 
 const VIEWS = {
-  capture: () => capture.render(),
+  capture: (isCurrent) => capture.render(isCurrent),
   queue: renderQueue,
   cats: renderCats,
   stats: renderStats,
@@ -545,7 +556,7 @@ const render = guard(async function render() {
   if (main.childElementCount) main.classList.add("loading");
   else main.replaceChildren(el("div", { className: "spinner", textContent: "Loading…" }));
   try {
-    await VIEWS[state.view]();
+    await VIEWS[state.view](stillShown());
   } finally {
     main.classList.remove("loading");
   }
@@ -670,8 +681,9 @@ function closeOnBackdrop(dialog) {
 // Queue
 // --------------------------------------------------------------------------
 
-async function renderQueue() {
+async function renderQueue(isCurrent = () => true) {
   const [{ sessions }] = await Promise.all([cachedGet("/queue"), refreshCats()]);
+  if (!isCurrent()) return;
   const main = $("#main");
 
   if (!sessions.length) {
@@ -1085,8 +1097,9 @@ function openPicker({ session, photos }) {
 // Cats
 // --------------------------------------------------------------------------
 
-async function renderCats() {
+async function renderCats(isCurrent = () => true) {
   await refreshCats();
+  if (!isCurrent()) return;
   const main = $("#main");
 
   const create = button("+ New cat", "btn btn-primary", async () => {
@@ -1147,7 +1160,9 @@ async function renderCats() {
 
 async function openCat(catId, { redrawn = false } = {}) {
   screen += 1;
+  const isCurrent = stillShown();
   const { cat, photos } = await cachedGet(`/cats/${catId}`, guard(() => openCat(catId, { redrawn: true })));
+  if (!isCurrent()) return;
 
   const rename = button("Rename", "btn", async () => {
     const answer = await ask({
@@ -1212,12 +1227,13 @@ const UNLINKABLE = new Set(["direct", "none", "referral", "telegram", "whatsapp"
 
 const sourceName = (row) => row.link?.label || SOURCE_NAMES[row.referral]?.[0] || row.referral;
 
-async function renderStats() {
+async function renderStats(isCurrent = () => true) {
   const [data, guesses] = await Promise.all([
     cachedGet("/insights"),
     cachedGet("/recognition/predictions").catch(() => null),
     refreshCats(),
   ]);
+  if (!isCurrent()) return;
   const s = data.summary;
 
   const refresh = button("Refresh", "btn btn-sm", () => {
@@ -1883,8 +1899,9 @@ const ROLE_HELP = {
   collaborator: "Photographs cats in the app and browses the cats. No labeling, no deleting.",
 };
 
-async function renderAdmins() {
+async function renderAdmins(isCurrent = () => true) {
   const { admins } = await cachedGet("/admins");
+  if (!isCurrent()) return;
 
   const input = el("input", {
     type: "email",
