@@ -1,6 +1,32 @@
+# The iPhone app (native/) is the same pages as the PWA, packed inside the
+# app, where their address is capacitor://localhost and not the CloudFront
+# one. To the web view the API is then another origin, and it will not hand
+# the page an answer unless the API says it may (CORS).
+locals {
+  # What the pages are served from inside the app. Capacitor's default.
+  native_app_origin = "capacitor://localhost"
+  # Where Cognito answers the app's sign-in: the bundle ID as a scheme.
+  native_app_redirect = "org.arip.bgucats://signin"
+}
+
 resource "aws_apigatewayv2_api" "main" {
   name          = "bgucats-api"
   protocol_type = "HTTP"
+
+  # Any origin, because API Gateway accepts only http(s) origins or "*" here
+  # and the app's is neither. It gives nothing away: no route takes a cookie.
+  # Every /api/ call must carry a token in a header the page adds itself,
+  # which another site's page does not have, and the authorizer still checks
+  # it on every call. What CORS decides is only whether a page may read the
+  # answer to a request it was able to make. Credentials stay off, so a
+  # browser never attaches anything on its own. With this, API Gateway
+  # answers the web view's preflight itself, before the authorizer.
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["GET", "POST", "PATCH", "DELETE"]
+    allow_headers = ["authorization", "content-type"]
+    max_age       = 3600
+  }
 }
 
 # The Telegram webhook: production only (variables.tf, telegram_bot).

@@ -118,6 +118,12 @@ jobs:
             echo "::error::The page threw a JavaScript error on launch (the log above)."
             exit 1
           fi
+          # The page says at start whether it found the sign-in plugin
+          # (web/app.js, boot). A build without it cannot sign anyone in.
+          if ! grep -q "native sign-in: ready" build/ios/app.log; then
+            echo "::error::The sign-in plugin (native/plugins/web-auth) did not register with the page."
+            exit 1
+          fi
 
       - name: keep the screenshot and the log
         if: always()

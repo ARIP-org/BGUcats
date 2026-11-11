@@ -235,20 +235,51 @@ class LocalApp:
             def log_message(self, *args):
                 pass
 
-            def _send(self, status, body, content_type):
+            def _send(self, status, body, content_type, headers=()):
                 self.send_response(status)
                 self.send_header("content-type", content_type)
                 self.send_header("content-length", str(len(body)))
                 self.send_header("cache-control", "no-store")
+                for name, value in headers:
+                    self.send_header(name, value)
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _send_api(self, status, payload):
+                # API Gateway adds this to every answer, its own 401 too,
+                # once the API has a CORS configuration (infra/main/api.tf).
+                self._send(
+                    status,
+                    json.dumps(payload).encode(),
+                    "application/json",
+                    [("access-control-allow-origin", "*")],
+                )
+
+            def do_OPTIONS(self):
+                """A web view's preflight, which the iPhone app's pages send
+                because the API is not at their own address. API Gateway
+                answers it before the authorizer, with what api.tf allows."""
+                if not urlsplit(self.path).path.startswith("/api/"):
+                    self._send(404, b"not found", "text/plain")
+                    return
+                self._send(
+                    204,
+                    b"",
+                    "text/plain",
+                    [
+                        ("access-control-allow-origin", "*"),
+                        ("access-control-allow-methods", "GET,POST,PATCH,DELETE"),
+                        ("access-control-allow-headers", "authorization,content-type"),
+                        ("access-control-max-age", "3600"),
+                    ],
+                )
 
             def _api(self):
                 url = urlsplit(self.path)
                 email = _email_from(self.headers.get("authorization"))
                 if not email:
                     # What the JWT authorizer answers before any Lambda runs.
-                    self._send(401, b'{"message":"Unauthorized"}', "application/json")
+                    self._send_api(401, {"message": "Unauthorized"})
                     return
                 length = int(self.headers.get("content-length") or 0)
                 raw = self.rfile.read(length).decode() if length else None
@@ -259,7 +290,7 @@ class LocalApp:
                     email,
                     dict(parse_qsl(url.query)),
                 )
-                self._send(status, json.dumps(payload).encode(), "application/json")
+                self._send_api(status, payload)
 
             def do_GET(self):
                 path = urlsplit(self.path).path

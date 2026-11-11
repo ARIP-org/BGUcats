@@ -333,9 +333,29 @@ exist in App Store Connect, or the build number was used before.
 The first upload, build 3, went through on 2026-11-11: an unsigned
 archive, signed at export with the certificate Apple keeps.
 
-**What the first builds cannot do** (`docs/ROADMAP.md`, 2e): sign in. The
-sign-in screen says so. Google refuses to sign in inside an app's web
-view, and the API does not answer another origin yet.
+**Signing in, in the app.** Google refuses to sign anyone in inside an
+app's web view, so the app opens iOS's own sign-in sheet
+(`native/plugins/web-auth`, `ASWebAuthenticationSession`). iOS asks first
+whether "BGU Cats" may use "amazoncognito.com" to sign in. Cognito answers
+at `org.arip.bgucats://signin`, which the sheet hands back to the page,
+and the page trades the code for tokens as the browser does. Three
+settings in `infra/main` exist only for the app, and **a build signs in
+only against a deployment that has them**, so the Terraform is merged and
+deployed before the build that needs it:
+
+| Where | What | Why |
+|---|---|---|
+| `cognito.tf` | `org.arip.bgucats://signin` on the client's callback list | Cognito refuses a sign-in that asks to be answered anywhere else |
+| `api.tf` | a CORS configuration on the API, any origin | inside the app the pages' address is `capacitor://localhost`, so the API is another origin to them. API Gateway accepts only `http(s)` origins or `*`. No route takes a cookie; every call still needs its token |
+| `s3.tf` | `capacitor://localhost` beside the web address in the media bucket's CORS | uploads go from the page straight to the bucket |
+
+The account that signs in must be on that deployment's allowlist, and for
+staging also among its Google project's *Test users*
+(`docs/MANUAL_STEPS.md`, 12d).
+
+**What the builds cannot do yet** (`docs/ROADMAP.md`, 2e): the cat
+guesses (the model's files are fetched from `/model/`, which inside the
+app is not the server), and uploads with the app closed.
 
 **Changing the shell.** `native/ios` is Capacitor's generated project with
 a few edits (`native/README.md`). The Xcode project is edited as text and

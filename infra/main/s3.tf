@@ -65,15 +65,19 @@ resource "aws_s3_bucket_lifecycle_configuration" "media" {
 # POST, see src/admin/handler.py), so the browser needs the bucket to answer
 # its CORS preflight. GET is for the in-browser recognition model
 # (web/recognition.js), which has to read a photo's pixels: without CORS the
-# canvas is "tainted" and refuses to hand them over. One origin — the admin
-# app's own CloudFront address. CORS only lets that page read a response it
-# was already allowed to fetch: every read and write still needs a URL the
-# API signed, and nothing is listable.
+# canvas is "tainted" and refuses to hand them over. Two origins: the admin
+# app's own CloudFront address, and the address the same pages have when
+# they are packed inside the iPhone app (native/). CORS only lets those
+# pages read a response they were already allowed to fetch: every read and
+# write still needs a URL the API signed, and nothing is listable.
 resource "aws_s3_bucket_cors_configuration" "media" {
   bucket = aws_s3_bucket.media.id
 
   cors_rule {
-    allowed_origins = ["https://${aws_cloudfront_distribution.web.domain_name}"]
+    allowed_origins = [
+      "https://${aws_cloudfront_distribution.web.domain_name}",
+      local.native_app_origin,
+    ]
     allowed_methods = ["GET", "POST"]
     allowed_headers = ["*"]
     max_age_seconds = 3600

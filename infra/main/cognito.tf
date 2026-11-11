@@ -95,8 +95,15 @@ resource "aws_cognito_user_pool_client" "web" {
   # passwords, so every one of these would be dead surface area.
   explicit_auth_flows = ["ALLOW_REFRESH_TOKEN_AUTH"]
 
-  callback_urls = ["https://${aws_cloudfront_distribution.web.domain_name}/"]
-  logout_urls   = ["https://${aws_cloudfront_distribution.web.domain_name}/"]
+  # The second address is the iPhone app's (native/): iOS's sign-in sheet
+  # watches for that scheme and hands the answer to the app, which trades
+  # the code for tokens with the same PKCE as the browser. The scheme is the
+  # app's bundle ID; scripts/native_bundle.py packs the same address.
+  callback_urls = [
+    "https://${aws_cloudfront_distribution.web.domain_name}/",
+    local.native_app_redirect,
+  ]
+  logout_urls = ["https://${aws_cloudfront_distribution.web.domain_name}/"]
 
   access_token_validity  = 1
   id_token_validity      = 1
