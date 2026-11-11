@@ -33,6 +33,8 @@ it instead.
 | 2026-11-10 | **Interactive cloud sessions act on GitHub as a machine user,** not as the owner (2d, option B). The owner creates the account; one more seat on GitHub Team. |
 | 2026-11-10 | **Alerts by email through SNS** (2f): `sns` goes onto the service allowlist. |
 | 2026-11-10 | **The platform is the point.** The owner is more interested in the platform than in the product, so platform work is not held back until the product asks for it. |
+| 2026-11-11 | **The iPhone app carries `web/` inside it; it never loads it from the server.** Capacitor documents the remote mode for development only, Apple's review can refuse "a website in a wrapper", and Capture must open with no signal. The cost: a merged change reaches the iPhone app only with a new build. Live update (the app downloads a newer copy of `web/` from our own server) comes once the app works. |
+| 2026-11-11 | **iPhone builds on GitHub Actions, not Xcode Cloud.** Xcode Cloud is free up to 25 hours a month and signs by itself, but its first workflow can only be created in Xcode on a Mac, it needs Apple's GitHub app on the private repo, and its settings live in App Store Connect where no pull request reviews them. A build on Actions costs about $1. |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -118,7 +120,8 @@ needs.
 | **First promote (a `v*` tag)** | **never exercised.** Production still lacks the alarms, Pillow 13, the consistent-read fix (#53) and the photo-count fix (#59) |
 | The freeze policy's exemption for the Lambda roles | not proven yet (12g) |
 | The owner signing in to the staging app on a phone | not done |
-| Apple Developer Program | paid 2026-11-10, enrollment pending |
+| Apple Developer Program | approved 2026-11-11. Bundle ID `org.arip.bgucats`, the app's record, an API key and the `testflight` environment (with `APPLE_TEAM_ID`) are made (`docs/MANUAL_STEPS.md`, step 15) |
+| 2e, the iPhone app | **started 2026-11-11:** the Capacitor shell (`native/`) and the build workflow (`ios.yml`); the app starts in a simulator on the runner. No build has reached TestFlight yet, and the app cannot sign in yet |
 
 **Next, in order:**
 
@@ -126,18 +129,17 @@ needs.
    `deployed/staging`. The production plan will show the alarms, the
    Lambda updates and nothing else. Then one confirmation email from AWS
    for production's alerts.
-2. **2e, the native apps.** Proposed 2026-11-10, waiting for the owner's
-   go and two permanent choices: the bundle ID (suggested
-   `org.arip.bgucats`) and the app's name. Only the last step needs
-   Apple's approval:
-   1. wrap `web/` with Capacitor, pointing at staging;
-   2. an Android debug build in CI (an installable file, no store account);
-   3. sign-in through the system browser, the hard part: Google refuses
-      an embedded web view; Cognito's callback and the media bucket's CORS
-      must accept the app's origin;
-   4. an iOS build for the simulator in CI, on request only (macOS minutes);
-   5. after Apple's approval: signing, the App Store Connect key, upload
-      to TestFlight.
+2. **2e, the iPhone app** (started 2026-11-11, the owner's go; bundle
+   ID `org.arip.bgucats`). The shell, the simulator check and the upload
+   job are written. In order from here (the list under 2e, below):
+   1. the first TestFlight build, the owner's step: *Actions* → *iOS* →
+      *Run workflow* on `main`, then a TestFlight group with yourself in
+      it (`docs/MANUAL_STEPS.md`, 15b). The upload job has never run;
+   2. sign-in through the system browser, the hard part: Google refuses
+      an embedded web view; Cognito's callback, the API and the media
+      bucket's CORS must accept the app's origin;
+   3. live update, then uploads with the app closed;
+   4. Android, after TestFlight works (the owner's order, 2026-11-11).
 3. **The reviewer agent:** comments on every pull request.
 4. **12g, the rest:** the freeze policy attached to staging for a minute;
    the API must keep answering. An organization change, so the owner's
@@ -422,12 +424,48 @@ Decided 2026-11-10: as early as possible, not Phase 4 of `CLAUDE.md`.
   for new personal accounts before planning a public release).
 - **Feedback:** TestFlight's own feedback becomes a second source for the
   2d pipeline, as the owner's original spec had it.
-- **State, 2026-11-10:** the owner has paid for the Apple Developer
-  Program; the enrollment is pending. Nothing is built yet.
-- **Cost to plan for:** GitHub Team includes 3,000 Actions minutes a
-  month and a macOS minute counted as ten when this was written (check
-  the current rate), so an iOS build of 15 minutes costs 150. iOS builds run for a release candidate or on request, never
-  on every merge.
+- **Cost to plan for:** GitHub Team includes $18 of Actions usage a
+  month. A macOS minute is $0.062 and a Linux one $0.006 (2026-11). The
+  check of the shell took under three minutes on 2026-11-11, about $0.20;
+  a TestFlight build is that job and a second one, not timed yet. iOS
+  builds run for a release candidate or on request, never on every
+  merge.
+- **The slow loop, and what keeps it short.** With no Mac there is no
+  simulator on a desk and no console to attach: a try of anything
+  native-only is build → Apple's processing → TestFlight → the phone,
+  20 to 30 minutes. So the native layer stays thin, screens stay web and
+  are checked in the PWA and `tests/web`, and the workflow starts the app
+  in a simulator and keeps its screenshot and log.
+
+**State, 2026-11-11.** Apple approved the enrollment. Built, in one pull
+request: `native/` (Capacitor 8, the generated Xcode project, the app's
+icon), `scripts/native_bundle.py` (packs `web/` with staging's config and
+the API's address), the few lines of `web/` that know they are packed
+(`isNative` in `install.js`), and `.github/workflows/ios.yml`. How it is
+built and run: `docs/deploy.md`, "The iPhone app".
+
+**Not proven:** the `testflight` job. It needs the App Store Connect key,
+which only a run from `main` can read, so its first run is after the
+merge. Expect a fix or two.
+
+**What is left, in order:**
+
+1. **The first build on the owner's phone.** It opens on the sign-in
+   screen and says sign-in is not connected.
+2. **Sign-in.** The system browser sheet (`ASWebAuthenticationSession`)
+   and a link back into the app; Cognito's callback list gains the app's
+   address; the API and the media bucket answer the app's origin
+   (`capacitor://localhost`) with CORS. Terraform, so staging first.
+3. **The recognition model in the app.** Its files are fetched from
+   `/model/`, which inside the app is not the server. Until then the
+   packed app runs without guesses, as it does when a model is missing.
+4. **Live update:** the app downloads a newer copy of `web/` from our own
+   server, so a merge reaches it without a build.
+5. **Uploads with the app closed** (`URLSession` background uploads): the
+   reason to wrap at all (`docs/app-backlog.md`).
+6. **Location without a second question.** A web view asks for the
+   location once as the app and once as the page.
+7. **Android,** after TestFlight works.
 
 **Done when:** a merge produces a TestFlight build and an Android internal
 test build of the same commit, both signed in against staging.

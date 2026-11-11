@@ -1195,6 +1195,50 @@ aws lambda invoke --function-name bgucats-process --payload '{"Records":"not-a-l
 
 ---
 
+## 15. The iPhone app: Apple's side (Phase 2e, 2026-11-11)
+
+Apple approved the Developer Program enrollment on 2026-11-11. Everything
+here is done in a browser; the builds run on GitHub's macOS runners
+(`docs/deploy.md`, "The iPhone app").
+
+### 15a. Done by the owner, 2026-11-11
+
+1. **The bundle ID** `org.arip.bgucats`: developer.apple.com →
+   *Certificates, Identifiers & Profiles* → *Identifiers* → App IDs. It is
+   permanent once a build is uploaded.
+2. **The app's record:** App Store Connect → *Apps* → *New App* (iOS, that
+   bundle ID). This cannot be done by a script.
+3. **An API key:** App Store Connect → *Users and Access* → *Integrations*
+   → *App Store Connect API* → a team key with the role **Admin** (Xcode
+   needs it to create the signing certificate). Apple offers the `.p8`
+   file once: it lives in the owner's password manager.
+4. **The GitHub environment `testflight`,** deployment branch rule `main`
+   only, with three secrets: `APP_STORE_CONNECT_ISSUER_ID`,
+   `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_PRIVATE_KEY` (the whole
+   `.p8` file, with its BEGIN and END lines).
+5. **The Team ID,** as a *variable* of the same environment (it is not a
+   secret): developer.apple.com → *Account* → *Membership details* → Team
+   ID, ten characters. GitHub → *Settings* → *Environments* → `testflight`
+   → *Environment variables* → `APPLE_TEAM_ID`.
+
+### 15b. Still to do, for the first upload
+
+6. **Merge the pull request** that adds `native/` and `ios.yml`: GitHub
+   offers *Run workflow* only for a workflow that is on `main`.
+7. **Run it:** *Actions* → *iOS* → *Run workflow* → `main`.
+8. **A group to receive the builds,** once, after the first build is
+   processed: App Store Connect → the app → *TestFlight* → *Internal
+   Testing* → "+" → a group with yourself in it, automatic distribution
+   on. Install TestFlight on the iPhone and sign in with the same Apple
+   ID.
+
+Internal testers are people on the App Store Connect team and get every
+build with no review. Inviting anyone else (by email or a public link)
+needs Apple's beta review first, and the reviewer must be able to sign in
+past the allowlist: to be solved when outside testers are wanted.
+
+---
+
 ## Known gap: the CI role can read production secrets
 
 CI runs `terraform plan` on every PR, and a PR runs **its own** copy of

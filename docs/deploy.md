@@ -274,9 +274,69 @@ month, so fix the cause before anything else. `FullAWSAccess` and
 `bgucats-service-allowlist` (once it is on the root it will not be listed
 here) are not budget policies: leave them.
 
+## The iPhone app
+
+The iPhone app is `web/` packed with Capacitor (`native/`), built on
+GitHub's macOS runners and delivered through TestFlight. Nobody needs a
+Mac. It is **not** part of a deploy: a merge still reaches staging's PWA at
+once, and reaches the iPhone app only with the next build.
+
+```
+web/ ──scripts/native_bundle.py──> native/www ──npx cap sync ios──> the Xcode project
+     (+ staging's config.json,                                   (native/ios, committed)
+        + apiBase)
+  → xcodebuild on a macOS runner → App Store Connect → TestFlight → the phone
+```
+
+**The builds talk to staging** (`SITE` in `.github/workflows/ios.yml`).
+The app carries that deployment's public `config.json` and the address of
+its API; nothing secret is packed into it.
+
+`ios.yml` has two jobs:
+
+| Job | Runs | Needs | Does |
+|---|---|---|---|
+| `simulator` | on a pull request that changes `native/`, the bundle script or the workflow; and before every upload | nothing | builds the app unsigned, starts it in an iPhone simulator, fails if it crashes, if the page does not load or if it throws an error. Keeps a screenshot and the app's log: the run's page → *Artifacts* → `ios-simulator` |
+| `testflight` | only when started by hand, from `main` | the `testflight` environment | archives, signs and uploads. The build number is the run's number |
+
+**To put a build on the phone:** GitHub → *Actions* → *iOS* → *Run
+workflow* → branch `main`. About ten minutes later the run is green; Apple
+then processes the build for some minutes more, and TestFlight on the phone
+offers it. The owner starts it; Claude never does.
+
+**Cost.** A macOS runner is $0.062 a minute against $0.006 for Linux
+(2026-11), taken from the $18 of Actions usage GitHub Team includes each
+month. A pull request's check is one job and took under three minutes on
+2026-11-11, about $0.20. An upload is that job and a second one, not
+timed yet. That is why nothing here runs on every merge, and why a change
+to a screen is checked in the PWA and in `tests/web` (which opens the
+packed app too, `test_native.py`), not by building.
+
+**Signing.** No certificate or profile is stored anywhere. The job hands
+Xcode an App Store Connect API key (three secrets of the `testflight`
+environment, typed by the owner) and Xcode signs with a distribution
+certificate that Apple keeps. The environment's branch rule admits `main`
+only, so a pull request's code can never read the key. The Team ID is the
+environment's variable `APPLE_TEAM_ID`. The owner's one-time setup:
+`docs/MANUAL_STEPS.md`, step 15.
+
+**When the upload fails.** The job prints Xcode's own account of it (the
+step "why the export failed"). The usual causes: the API key's role is not
+Admin (Xcode cannot create the certificate), the app record or the bundle
+ID `org.arip.bgucats` does not exist in App Store Connect, or the build
+number was used before.
+
+**What the first builds cannot do** (`docs/ROADMAP.md`, 2e): sign in. The
+sign-in screen says so. Google refuses to sign in inside an app's web
+view, and the API does not answer another origin yet.
+
+**Changing the shell.** `native/ios` is Capacitor's generated project with
+a few edits (`native/README.md`). The Xcode project is edited as text and
+proven by the `simulator` job on the pull request.
+
 ## Actions and Dependabot
 
-Every action in `ci.yml` and `deploy.yml` is pinned to a full commit SHA, with
+Every action in `ci.yml`, `deploy.yml` and `ios.yml` is pinned to a full commit SHA, with
 the version in a comment: a tag can be moved, a commit cannot, and `deploy.yml`
 holds the deploy role. Nobody edits the SHAs by hand. Dependabot
 (`.github/dependabot.yml`) opens grouped PRs once a month: one for actions, one

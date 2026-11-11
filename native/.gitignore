@@ -1,0 +1,3 @@
+# npm packages, and the copy of web/ that scripts/native_bundle.py makes.
+node_modules/
+www/

@@ -240,7 +240,15 @@ const T = {
 // Installed or not
 // --------------------------------------------------------------------------
 
+// Packed inside the iPhone app (native/, Capacitor), the page's own address
+// is capacitor://localhost and the bridge Capacitor injects says so. Never
+// true in a browser.
+export function isNative() {
+  return Boolean(window.Capacitor?.isNativePlatform?.());
+}
+
 export function isInstalled() {
+  if (isNative()) return true;
   const modes = ["standalone", "fullscreen", "minimal-ui", "window-controls-overlay"];
   if (modes.some((mode) => matchMedia(`(display-mode: ${mode})`).matches)) return true;
   if (navigator.standalone === true) return true; // iOS before display-mode support
