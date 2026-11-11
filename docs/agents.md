@@ -26,6 +26,11 @@ not what their prompt says.
 | **Triage** (`claude-triage.yml`) | an issue is opened | GitHub's job token | read the code, comment on and label issues | push, open or merge a pull request, start another workflow, reach AWS |
 | **Fix** (`claude-fix.yml`) | a repository admin adds `approved` | Claude's own GitHub App | push a branch, open a pull request, comment | change `.github/workflows/` (the App has no `workflows` permission), approve or merge its own pull request, reach AWS |
 
+**Which model:** each workflow names its own in `claude_args` (`--model`):
+Fix runs on Opus, Triage on Sonnet. The token in the `claude` environment
+decides whose Claude plan pays, not which model runs, and neither depends
+on the model of the session the token was made in.
+
 Planned, not built: a **reviewer** on every pull request (comments only), a
 **verifier** that runs a smoke test against staging after each deploy and
 posts screenshots, and **in-app feedback** that becomes issues.

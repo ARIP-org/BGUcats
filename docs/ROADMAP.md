@@ -99,59 +99,58 @@ and Claude:
 
 ---
 
-## Next session starts here (2026-11-10, evening)
+## Next session starts here (2026-11-10, night)
 
-Phases 0, 1 and 2a are done. 2b, 2c and the first half of 2d are done
-except for the rows marked below.
+Phases 0, 1, 2a, 2b, 2c and 2d are done, except the rows marked below.
+The whole loop has run at least once: an issue became a pull request by
+the Fix agent (#59), a cloud session opened one as the machine user
+(#57), merges deploy staging, and the smoke test gates the mark a promote
+needs.
 
 | | State |
 |---|---|
-| 12f deploy to staging, promote by tag (#40) | done; staging has been deployed by every merge since |
-| 13c the allowlist onto the root (#47) | **applied 2026-11-10** by the owner, together with `sns` for the alerts. Production runs under the allowlist |
-| Alerts (#51) | live on staging, proven (an email at ALARM and at OK). Production gets them with the first promote |
-| Tests of the app's screens (#52), Pillow 13.0.0 (#50), CI plans both accounts (#48) | merged |
-| Consistent reads (#53) | merged: a real bug the seed found, a photo could be dropped right after its encounter was made |
-| Smoke test after every staging deploy | built: through the API, as the seed does (the owner's choice, 2026-11-10). A commit gets `deployed/staging` only if it passes |
-| Machine user `arip-dev-bot` | works: PR #57 came from a cloud session and is authored by it. Next: the required approval on `main` |
-| The model on staging | published 2026-11-10 |
-| 12g seed data | done 2026-11-10: `make seed-staging`, six made-up cats, through staging's own API |
-| 12g the freeze policy's exemption for the Lambda roles | not proven yet |
-| First promote (a `v*` tag) | never exercised. Expected production plan: no changes |
-| Claude triage | works |
-| Claude fix | never run: label one small issue `approved` |
-| Required approval on `main` | off until a pull request exists that the owner did not author |
-| Apple Developer Program | approved 2026-11-11. Bundle ID `org.arip.bgucats`, the app's record, an API key and the `testflight` environment are made (`docs/MANUAL_STEPS.md`, step 15) |
-| 2e, the iPhone app | **started 2026-11-11:** the Capacitor shell (`native/`) and the build workflow (`ios.yml`). No build has reached TestFlight yet; the app cannot sign in yet |
+| Staging | deployed by every merge, seeded (`make seed-staging`), model published, alarms live and proven |
+| Smoke test after every staging deploy (#58) | live; passed in the deploy job |
+| Guardrails | the allowlist (with `sns`) is on the root; production runs under it |
+| Triage and Fix agents | both have run. Fix's first pull request, #59, was merged |
+| Hands-on cloud sessions as `arip-dev-bot` | work (#57) |
+| Required approval on `main` | **on** (1 approval). "Require review from Code Owners" is still off |
+| The owner's personal token in the codespace | deleted; the codespace has the bot's token instead (it loads when the codespace next starts) |
+| Headless models | branch `claude/headless-models`: Fix on Opus, Triage on Sonnet by name. Needs a pull request opened as the bot |
+| **First promote (a `v*` tag)** | **never exercised.** Production still lacks the alarms, Pillow 13, the consistent-read fix (#53) and the photo-count fix (#59) |
+| The freeze policy's exemption for the Lambda roles | not proven yet (12g) |
+| The owner signing in to the staging app on a phone | not done |
+| Apple Developer Program | approved 2026-11-11. Bundle ID `org.arip.bgucats`, the app's record, an API key and the `testflight` environment (with `APPLE_TEAM_ID`) are made (`docs/MANUAL_STEPS.md`, step 15) |
+| 2e, the iPhone app | **started 2026-11-11:** the Capacitor shell (`native/`) and the build workflow (`ios.yml`); the app starts in a simulator on the runner. No build has reached TestFlight yet, and the app cannot sign in yet |
 
-**Claude's next jobs, in order:**
+**Next, in order:**
 
-1. **12g, the rest:** the freeze policy attached to staging for a minute:
-   the app's API must keep answering.
-2. **The codespace without the owner's token:** the bot's token for
-   `gh` there, so pull requests from infrastructure sessions have an
-   author the owner can approve.
-3. **Hands-on sessions in the cloud** (2d, below), once the machine user
-   exists: the session setup hook, then one trial session.
-4. **The reviewer** agent: comments on every pull request.
-5. **2e** (started 2026-11-11): the shell and the workflow are written.
-   Next, in order: the first upload proven from `main`; sign-in through
-   the system browser; live update; uploads with the app closed; Android.
+1. **The first promote** (the owner): tag a commit with a green
+   `deployed/staging`. The production plan will show the alarms, the
+   Lambda updates and nothing else. Then one confirmation email from AWS
+   for production's alerts.
+2. **2e, the iPhone app** (started 2026-11-11, the owner's go; bundle
+   ID `org.arip.bgucats`). The shell, the simulator check and the upload
+   job are written. In order from here (the list under 2e, below):
+   1. the first TestFlight build, the owner's step: *Actions* → *iOS* →
+      *Run workflow* on `main`, then a TestFlight group with yourself in
+      it (`docs/MANUAL_STEPS.md`, 15b). The upload job has never run;
+   2. sign-in through the system browser, the hard part: Google refuses
+      an embedded web view; Cognito's callback, the API and the media
+      bucket's CORS must accept the app's origin;
+   3. live update, then uploads with the app closed;
+   4. Android, after TestFlight works (the owner's order, 2026-11-11).
+3. **The reviewer agent:** comments on every pull request.
+4. **12g, the rest:** the freeze policy attached to staging for a minute;
+   the API must keep answering. An organization change, so the owner's
+   command.
+5. Tick "Require review from Code Owners" on the `main` ruleset.
 
-**The owner's steps:**
-
-- On branch `alerts`: `echo yes | infra/scripts/org-apply.sh`, then merge
-  #51. Merge #48, #49, #50 and #52.
-- Create the machine user (2d, below) and give it write access.
-- Click the link in AWS's two confirmation emails, one per account, after
-  #51 is deployed.
-- Label a small issue `approved`, to see the first **Claude fix** run.
-- Sign in to the staging app on a phone (the Google account must be in
-  the staging Google project's *Test users*).
-- Tag the first release, to exercise the promote (`docs/deploy.md`,
-  "Promoting to production").
-- For the first TestFlight build (`docs/MANUAL_STEPS.md`, 15b): the
-  variable `APPLE_TEAM_ID` in the `testflight` environment, merge the
-  pull request, *Run workflow*, and a TestFlight group with yourself in it.
+**Where work happens from here:** cloud sessions for anything that ends
+in a pull request; the codespace only for jobs that need AWS by hand
+(`docs/agents.md`). A cloud session knows what is in this repo and
+nothing else, which is why this section and `docs/notes.md` are kept
+current.
 
 **Photos backup:** the owner downloaded `~/bgucats-media-backup` to a
 computer (2026-11-07), the one copy outside production.
@@ -612,6 +611,29 @@ one pin.
 - Product phases 2–4 from `CLAUDE.md` run on top of this platform.
 - **WAF** in front of API Gateway and CloudFront, once the app is public
   (Phase 2c, DDoS).
+- **Rewriting the backend in a faster language** (Rust, or C), the
+  owner's idea of 2026-11-10: the Lambdas are Python today. Measured in
+  production over the two weeks before that day, so the decision starts
+  from numbers:
+
+  | Lambda | Calls | Average | 95th percentile | Cold start adds |
+  |---|---|---|---|---|
+  | admin (the API) | 962 | 225 ms | 692 ms | about 540 ms, roughly one call in ten |
+  | process (per photo) | 450 | 151 ms | 804 ms | about 860 ms |
+  | ingest (the bot) | 30 | 743 ms | 1.8 s | |
+
+  What a rewrite would buy: Rust on Lambda starts cold in tens of
+  milliseconds instead of half a second, and uses a fraction of the
+  memory. That is the part a person feels, on the first tap after a
+  pause. What it would not buy: most of a warm call is spent waiting for
+  DynamoDB and S3, which no language shortens, and the image work is
+  already C (Pillow, libwebp). Cheaper things to try first, each one
+  line of Terraform or a few of Python: `arm64`, more memory (which is
+  also more CPU), fewer round trips per request. If it is done, it is
+  done one Lambda at a time behind the same API, with the browser tests
+  and the smoke test as the proof that nothing changed: `process` or
+  `beacon` first, the API last. As a learning project it needs no other
+  reason.
 
 ## Never
 

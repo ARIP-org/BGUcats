@@ -11,7 +11,9 @@ Read both before non-trivial work. For **how** the project is built, deployed
 and worked on — accounts, environments, repos, people — `docs/ROADMAP.md`
 is the plan; read it before any infra, CI/CD, repo-layout or access work.
 This file is the short version of the
-constraints that are easy to violate by reflex.
+constraints that are easy to violate by reflex. `docs/notes.md` is the
+traps behind them, each with where its story is: read it before touching
+DynamoDB reads, the pipeline or the agents, and add to it.
 
 The addendum supersedes the spec's "no machine learning of any kind" in
 phase 1: a frozen recognition model runs in the browser today (1c below). It
