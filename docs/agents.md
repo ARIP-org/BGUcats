@@ -135,7 +135,7 @@ plan, and nothing to keep running.
 | Acts on GitHub as | the machine user `arip-dev-bot`: write access, not an admin, not a code owner. Its credential stays outside the session's machine, behind a proxy that is part of the product; that proxy refuses tag pushes and branch deletions |
 | AWS | none. SSO sign-in is not possible in a cloud session |
 | Rules | the same `CLAUDE.md` and the same deny rules (`.claude/settings.json`) |
-| Tools | `scripts/cloud_session_setup.sh` runs when the session starts: the dev dependencies and Terraform. A Chrome is already there, so `make screenshots` works |
+| Tools | `scripts/cloud_session_setup.sh` runs when the session starts: the dev dependencies in a virtual environment (`~/.venvs/bgucats`, first on PATH, because the system Python's Debian packages cannot be upgraded by pip) and Terraform. Its message names whatever did not install ("setup INCOMPLETE"), and the session starts anyway; the log is `/tmp/bgucats-cloud-setup.log`. A Chrome is already there, so `make screenshots` works |
 | Ends in | a branch `claude/<topic>` and a pull request authored by the bot, which the owner approves and merges |
 
 **How a session goes:** describe the change, attach screenshots, sketches

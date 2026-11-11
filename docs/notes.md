@@ -173,6 +173,12 @@ an hour that a sentence would have saved.
 - **In a cloud session:** no AWS at all; GitHub goes through a proxy that
   refuses tag pushes, branch deletions and GraphQL, so `gh pr create`
   fails and `gh api repos/...` works; a Chrome is at `$CHROME_PATH`.
+- **A cloud session's system Python cannot take `pip install`.** Debian
+  installed `blinker` there, pip cannot uninstall it to upgrade it, and the
+  whole install stopped: no boto3, moto or playwright, and an older ruff
+  that reported a false import-order error. The setup hook said "set up"
+  anyway (2026-11-11). It now installs into `~/.venvs/bgucats`, puts that
+  first on PATH, and its message says what did not install.
 - **A command typed with `!` has no keyboard.** A script that asks "type
   yes" gets nothing and stops. `echo yes | script` answers it.
 - **Claude Code refuses some things whoever asks,** and the owner runs
