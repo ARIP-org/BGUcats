@@ -367,7 +367,10 @@ curl -si -X OPTIONS https://d2rysfyl47qmmz.cloudfront.net/api/cats -H "Origin: c
 
 **What the builds cannot do yet** (`docs/ROADMAP.md`, 2e): the cat
 guesses (the model's files are fetched from `/model/`, which inside the
-app is not the server), and uploads with the app closed.
+app is not the server), and uploads with the app closed. The app does not
+try: it has no model strip on the Queue, no guesses in Capture (Done
+closes the encounter) and no replay on Stats (`web/app.js`, `isNative()`;
+`tests/web/test_native.py`).
 
 **Changing the shell.** `native/ios` is Capacitor's generated project with
 a few edits (`native/README.md`). The Xcode project is edited as text and
