@@ -13,7 +13,7 @@
 
 import { createCapture } from "./capture.js";
 import { barList, columnChart, formatNumber, funnel, meter } from "./charts.js";
-import { isInstalled, showInstallPage } from "./install.js";
+import { isInstalled, isNative, showInstallPage } from "./install.js";
 import { createRecognition, scoreRow, summarize } from "./recognition.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -247,7 +247,9 @@ async function api(path, options = {}) {
     showLogin();
     throw new Error("not signed in");
   }
-  const res = await fetch(`/api${path}`, {
+  // The PWA and its API share an address. The iPhone app's files are packed
+  // inside it, so its config says where the API is (scripts/native_bundle.py).
+  const res = await fetch(`${config.apiBase || ""}/api${path}`, {
     // A request that hangs on a weak signal would hold up whatever waits on
     // it — the upload outbox included — until the app is closed. API Gateway
     // gives up at 30 s anyway.
@@ -448,6 +450,13 @@ function showLogin() {
     sessionStorage.removeItem(LOGIN_NOTE_KEY);
   } catch {
     /* no note to show */
+  }
+  // Google refuses to sign in inside an app's web view, and Cognito only
+  // sends people back to the web address. Until the iPhone app signs in
+  // through the system browser (docs/ROADMAP.md, 2e), it says so here.
+  if (isNative()) {
+    note = "Sign-in is not connected in the iPhone app yet. Use the web app for now.";
+    $("#login-button").disabled = true;
   }
   $("#login-alert").textContent = note || "";
   $("#login-alert").hidden = !note;
@@ -2155,7 +2164,8 @@ async function boot() {
 // Installable, and the app shell opens without a connection. sw.js never
 // touches /api/ or photos, and fetches code from the network first, so a
 // deploy still reaches everyone on their next load (web.tf).
-if ("serviceWorker" in navigator) {
+// The iPhone app needs none of it: its files are already on the phone.
+if ("serviceWorker" in navigator && !isNative()) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 

@@ -106,6 +106,13 @@ blocked on someone else.
   only when the owner tags it `v*`, and only if it is on `main` with that
   mark: the same job, the same steps, without the smoke test. Only the owner creates those tags (a tag ruleset); Claude never
   does. Runbook, promoting, post-deploy checks and rollback: `docs/deploy.md`.
+- **The iPhone app is built on request, not by a merge**
+  (`.github/workflows/ios.yml`, since 2026-11-11). The owner starts it from
+  `main` (*Actions* → *iOS* → *Run workflow*); Claude never does. A macOS
+  runner costs ten times a Linux one, so a pull request gets the simulator
+  check only when it touches `native/`. The App Store Connect key lives in
+  the `testflight` environment, which admits `main` alone.
+  `docs/deploy.md`, "The iPhone app".
 - **Never deploy by hand and never push to `main`.** No `terraform apply`,
   `make tf-apply` or `make site-invalidate` on `infra/main` from a codespace
   or a Claude session. The codespace holds no AWS keys; credentials come only
@@ -246,6 +253,14 @@ product). Its old sessions and photos stay in the table with
   Russian, Arabic) instead of the app. It is a front door, not security: the
   API still checks every call. `?browser` opens the app in a tab anyway, for
   when the installed app cannot sign in on some phone.
+- **The iPhone app is the same `web/`, packed** (`native/`, Capacitor,
+  since 2026-11-11; `docs/ROADMAP.md`, 2e). One codebase, never a platform
+  branch: `web/` keeps no build step, and the only thing it knows is
+  `isNative()` (install.js). The app carries a copy of `web/` made at build
+  time (`scripts/native_bundle.py`), so a merge reaches it only with a new
+  build, and its API is at `config.apiBase`, not at the page's own address.
+  It counts as installed and registers no service worker. It never loads
+  `web/` from the server instead. It cannot sign in yet.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`
   in cognito.tf). Sign-out only forgets the app's tokens and stays in the
@@ -528,6 +543,9 @@ environment can get. No long-lived AWS keys anywhere (`infra/README.md`).
 
 **Research:** Python 3.12 · PyTorch · timm · wildlife-datasets · kornia. Local
 only; no AWS.
+
+**iPhone app:** Capacitor 8 around `web/` (`native/`), Swift packages, built
+and signed on GitHub's macOS runners. No Mac, no stored certificate.
 
 **In the browser:** MegaDescriptor-T-224, int8 ONNX, on ONNX Runtime Web 1.17.3
 (WebAssembly, one thread) — self-hosted under the admin site's `model/`.

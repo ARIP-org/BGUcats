@@ -1,0 +1,241 @@
+name: iOS
+
+# The iPhone app: web/ packed with Capacitor (native/). GitHub's macOS
+# runners stand in for the Mac nobody here owns.
+#
+# - simulator: builds the app unsigned and starts it in an iPhone simulator.
+#   No secrets. Runs on a pull request that touches the native shell, and
+#   before every upload.
+# - testflight: archives, signs and uploads to TestFlight. Only from main and
+#   only when started by hand (Actions → iOS → Run workflow): the
+#   `testflight` environment holds the App Store Connect key and accepts
+#   `main` alone.
+#
+# A macOS minute costs about ten Linux ones, so nothing here runs on every
+# merge. docs/deploy.md, "The iPhone app".
+
+on:
+  pull_request:
+    paths:
+      - "native/**"
+      - "scripts/native_bundle.py"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  # A newer push replaces a check; an upload is never cut off half-way.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Which deployment the app belongs to: staging. Its public config.json is
+  # packed into the app (scripts/native_bundle.py).
+  SITE: https://d2rysfyl47qmmz.cloudfront.net
+  PROJECT: native/ios/App/App.xcodeproj
+  BUNDLE_ID: org.arip.bgucats
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - name: pack web/ into the Xcode project
+        run: |
+          python3 scripts/native_bundle.py --site "$SITE"
+          cd native
+          npm ci
+          npx cap sync ios
+
+      - name: choose a simulator
+        run: |
+          xcodebuild -version
+          udid=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [
+              device["udid"]
+              for runtime in sorted(runtimes)
+              if ".iOS-" in runtime
+              for device in runtimes[runtime]
+              if device["name"].startswith("iPhone")
+          ]
+          print(phones[-1] if phones else "")
+          ')
+          if [ -z "$udid" ]; then
+            echo "::error::This runner has no iPhone simulator."
+            xcrun simctl list devices available
+            exit 1
+          fi
+          xcrun simctl list devices available | grep "$udid"
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+
+      - name: build
+        run: |
+          xcodebuild -list -project "$PROJECT"
+          xcodebuild build -quiet \
+            -project "$PROJECT" -scheme App -configuration Debug \
+            -destination "id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/derived" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # What a person would do with a Mac: start the app and look. A Debug
+      # build prints the page's console and its uncaught errors, so the log
+      # says whether the page loaded, and the screenshot shows what a phone
+      # would.
+      - name: start it and look
+        run: |
+          mkdir -p build/ios
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/App.app"
+          xcrun simctl launch --console-pty "$UDID" "$BUNDLE_ID" > build/ios/app.log 2>&1 &
+          console=$!
+          sleep 30
+          xcrun simctl io "$UDID" screenshot build/ios/launch.png
+          running=$(xcrun simctl spawn "$UDID" launchctl list | grep -F "$BUNDLE_ID" || true)
+          kill "$console" 2>/dev/null || true
+          echo "--- the app's log"
+          cat build/ios/app.log
+          echo "---"
+          if [ -z "$running" ]; then
+            echo "::error::The app was not running 30 seconds after launch: it crashed or never started."
+            exit 1
+          fi
+          if ! grep -q "WebView loaded" build/ios/app.log; then
+            echo "::error::The web view never finished loading the page."
+            exit 1
+          fi
+          if grep -q "JS ERROR\|JS Eval error" build/ios/app.log; then
+            echo "::error::The page threw a JavaScript error on launch (the log above)."
+            exit 1
+          fi
+
+      - name: keep the screenshot and the log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-simulator
+          path: build/ios/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  testflight:
+    needs: simulator
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 45
+    # Holds the App Store Connect key; its branch rule admits `main` only.
+    environment: testflight
+    env:
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - name: what this job needs from the testflight environment
+        env:
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in TEAM_ID KEY_ID ISSUER_ID PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::The testflight environment has no $name (docs/deploy.md, \"The iPhone app\")."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: pack web/ into the Xcode project
+        run: |
+          python3 scripts/native_bundle.py --site "$SITE"
+          cd native
+          npm ci
+          npx cap sync ios
+
+      # Unsigned on purpose. Signing an archive by itself needs a development
+      # certificate and a registered device; the export below signs it for
+      # distribution with a certificate Apple keeps, so no certificate or
+      # profile is ever stored here. The build number is this run's number:
+      # App Store Connect wants a new one every time, and it says which run
+      # made a build.
+      - name: archive
+        run: |
+          xcodebuild -version
+          xcodebuild archive -quiet \
+            -project "$PROJECT" -scheme App -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: sign and upload to TestFlight
+        env:
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$KEY_ID.p8"
+          (umask 077 && printf '%s\n' "$PRIVATE_KEY" > "$key")
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>teamID</key>
+            <string>$TEAM_ID</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$key" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+          {
+            echo "### Uploaded to App Store Connect"
+            echo
+            echo "Build **$GITHUB_RUN_NUMBER** of commit \`${GITHUB_SHA::7}\`, talking to $SITE."
+            echo "Apple processes a build for some minutes before TestFlight offers it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Xcode's own account of a failed signing or upload. Without it the
+      # job log only says that the export failed.
+      - name: why the export failed
+        if: failure()
+        run: |
+          find /var/folders "$HOME/Library/Logs" -name "IDEDistribution.critical.log" 2>/dev/null |
+            while read -r log; do
+              echo "== $log"
+              tail -n 200 "$log"
+            done
+
+      - name: forget the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
