@@ -44,7 +44,9 @@ Everything else in `ios/` is Capacitor's template, untouched.
 - `App/App.xcodeproj/project.pbxproj`: iPhone only
   (`TARGETED_DEVICE_FAMILY = 1`) and version `0.1.0`.
 - `App/App/Assets.xcassets`: the icon and the launch image, drawn from
-  `web/icon.svg` by `scripts/native_assets.py`.
+  `web/icon.svg` by `scripts/native_assets.py`. The icon's sheet is ginger
+  where the PWA's is paper, so the two can be told apart on one home
+  screen.
 
 `tests/native` checks the three that App Store Connect refuses a build
 over.

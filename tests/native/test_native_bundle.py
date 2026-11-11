@@ -152,3 +152,6 @@ def test_the_icon_has_no_transparency():
     )
     assert icon.size == (1024, 1024)
     assert icon.mode == "RGB"
+    # Ginger where the PWA's icon is paper, to tell the two apart at a
+    # glance (scripts/native_assets.py).
+    assert icon.getpixel((8, 8)) == (224, 123, 47)
