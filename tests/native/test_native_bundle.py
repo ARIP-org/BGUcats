@@ -27,7 +27,12 @@ def test_the_bundle_is_web_plus_a_config_that_says_where_the_api_is(tmp_path):
     n.bundle("https://app.example/", CONFIG, out)
 
     packed = json.loads((out / "config.json").read_text())
-    assert packed == {**CONFIG, "apiBase": "https://app.example"}
+    assert packed == {
+        **CONFIG,
+        "apiBase": "https://app.example",
+        # Not the web address: Cognito answers the app at its own.
+        "redirectUri": "org.arip.bgucats://signin",
+    }
     web = {p.name for p in (REPO / "web").iterdir()}
     assert {p.name for p in out.iterdir()} == web | {"config.json"}
     assert (out / "app.js").read_bytes() == (REPO / "web" / "app.js").read_bytes()
@@ -78,6 +83,42 @@ def test_the_site_address_is_reduced_to_its_origin():
     assert n.site_origin("http://127.0.0.1:8000") == "http://127.0.0.1:8000"
 
 
+# ------------------------------------------------------------ sign-in
+
+
+def test_cognito_lists_the_address_the_app_is_packed_with():
+    """Cognito refuses a sign-in whose redirect address is not on the
+    client's list, with a page that says nothing useful."""
+    api = (REPO / "infra" / "main" / "api.tf").read_text()
+    cognito = (REPO / "infra" / "main" / "cognito.tf").read_text()
+    assert f'native_app_redirect = "{n.app_redirect()}"' in api
+    callbacks = re.search(r"callback_urls = \[(.*?)\]", cognito, re.DOTALL).group(1)
+    assert "local.native_app_redirect" in callbacks
+
+
+def test_the_page_and_the_plugin_agree_on_their_names():
+    """web/app.js calls Capacitor.Plugins.WebAuth.start; the Swift class
+    must offer exactly that, under the class name `cap sync` registers."""
+    plugin = REPO / "native" / "plugins" / "web-auth"
+    swift = (plugin / "ios/Sources/WebAuthPlugin/WebAuthPlugin.swift").read_text()
+    assert 'jsName = "WebAuth"' in swift
+    assert 'CAPPluginMethod(name: "start"' in swift
+    # The first @objc(...) in the file is what the CLI lists as the class.
+    assert re.search(r"@objc\((\w+)\)", swift).group(1) == "WebAuthPlugin"
+    page = (REPO / "web" / "app.js").read_text()
+    assert "window.Capacitor?.Plugins?.WebAuth" in page
+    assert "nativeSignIn().start(" in page
+
+    # The Swift package is named as the CLI names it from the npm name.
+    npm = json.loads((plugin / "package.json").read_text())["name"]
+    assert npm == "bgucats-web-auth"
+    assert 'name: "BgucatsWebAuth"' in (plugin / "Package.swift").read_text()
+    app_package = (IOS / "CapApp-SPM" / "Package.swift").read_text()
+    assert '.product(name: "BgucatsWebAuth", package: "BgucatsWebAuth")' in app_package
+    lock = json.loads((REPO / "native" / "package-lock.json").read_text())
+    assert lock["packages"]["node_modules/bgucats-web-auth"]["link"] is True
+
+
 # ------------------------------------------------- the Xcode project
 
 
@@ -111,3 +152,6 @@ def test_the_icon_has_no_transparency():
     )
     assert icon.size == (1024, 1024)
     assert icon.mode == "RGB"
+    # Ginger where the PWA's icon is paper, to tell the two apart at a
+    # glance (scripts/native_assets.py).
+    assert icon.getpixel((8, 8)) == (224, 123, 47)

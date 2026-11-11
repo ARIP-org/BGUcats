@@ -9,7 +9,11 @@ page takes for granted in a browser have to be told to it:
   is downloaded from that deployment's public address;
 * where the API is: in a browser `/api/` is the page's own address. Inside
   the app the page's address is capacitor://localhost, so the config gains
-  `apiBase`, which web/app.js puts in front of every API call.
+  `apiBase`, which web/app.js puts in front of every API call;
+* where Cognito sends people back to after a sign-in: not the web address
+  but the app's own, `org.arip.bgucats://signin`, which iOS's sign-in sheet
+  watches for (native/plugins/web-auth). The packed `redirectUri` is that
+  one, and the user pool's client lists it (infra/main/cognito.tf).
 
     python scripts/native_bundle.py --site https://d2rysfyl47qmmz.cloudfront.net
 
@@ -29,6 +33,7 @@ from urllib.parse import urlsplit
 REPO = Path(__file__).resolve().parents[1]
 WEB = REPO / "web"
 OUT = REPO / "native" / "www"
+CAPACITOR = REPO / "native" / "capacitor.config.json"
 
 # What the page needs to reach sign-in. The keys infra/main/web.tf writes.
 REQUIRED = ("userPoolClientId", "cognitoDomain", "redirectUri")
@@ -46,6 +51,12 @@ def site_origin(site):
     if url.path not in ("", "/") or url.query or url.fragment:
         raise ValueError(f"the site's address, without a path: {site!r}")
     return f"{url.scheme}://{url.netloc}"
+
+
+def app_redirect():
+    """The address Cognito answers the app's sign-in at: the bundle ID as a
+    scheme, so it can only ever mean this app."""
+    return f"{json.loads(CAPACITOR.read_text())['appId']}://signin"
 
 
 def fetch_config(origin):
@@ -68,7 +79,7 @@ def bundle(site, config, out=OUT, web=WEB):
         shutil.rmtree(out)
     shutil.copytree(web, out)
 
-    packed = {**config, "apiBase": origin}
+    packed = {**config, "apiBase": origin, "redirectUri": app_redirect()}
     (out / "config.json").write_text(json.dumps(packed, indent=2) + "\n")
     return packed
 

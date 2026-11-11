@@ -1221,12 +1221,16 @@ here is done in a browser; the builds run on GitHub's macOS runners
    ID, ten characters. GitHub → *Settings* → *Environments* → `testflight`
    → *Environment variables* → `APPLE_TEAM_ID`.
 
-### 15b. Still to do, for the first upload
+6. **The first upload:** *Actions* → *iOS* → *Run workflow* → `main`.
+   Build 3 reached App Store Connect on 2026-11-11. Its first attempts
+   stopped on the Team ID, which had been added as a secret: the workflow
+   reads the *variable* `APPLE_TEAM_ID`. A secret named `TEAM_ID` or
+   `APPLE_TEAM_ID` in that environment is read by nothing and can be
+   deleted.
 
-6. **Merge the pull request** that adds `native/` and `ios.yml`: GitHub
-   offers *Run workflow* only for a workflow that is on `main`.
-7. **Run it:** *Actions* → *iOS* → *Run workflow* → `main`.
-8. **A group to receive the builds,** once, after the first build is
+### 15b. Still to do
+
+7. **A group to receive the builds,** once, after the first build is
    processed: App Store Connect → the app → *TestFlight* → *Internal
    Testing* → "+" → a group with yourself in it, automatic distribution
    on. Install TestFlight on the iPhone and sign in with the same Apple

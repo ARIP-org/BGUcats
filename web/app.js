@@ -84,9 +84,13 @@ async function pkce() {
   return { verifier, challenge: b64url(new Uint8Array(digest)) };
 }
 
+// The iPhone app's way to Cognito and back: iOS's own sign-in sheet, opened
+// by a small native plugin (native/plugins/web-auth). Google refuses to sign
+// anyone in inside an app's web view, so the page cannot simply go there.
+const nativeSignIn = () => window.Capacitor?.Plugins?.WebAuth;
+
 async function login() {
   const { verifier, challenge } = await pkce();
-  sessionStorage.setItem(VERIFIER_KEY, verifier);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: config.userPoolClientId,
@@ -103,7 +107,31 @@ async function login() {
     // this on to Google only with managed login (infra/main/cognito.tf).
     prompt: "select_account",
   });
-  location.assign(`https://${config.cognitoDomain}/oauth2/authorize?${params}`);
+  const authorize = `https://${config.cognitoDomain}/oauth2/authorize?${params}`;
+  if (!isNative()) {
+    sessionStorage.setItem(VERIFIER_KEY, verifier);
+    location.assign(authorize);
+    return;
+  }
+
+  // The sheet watches for the scheme of the address Cognito sends people
+  // back to (the packed config's redirectUri, scripts/native_bundle.py) and
+  // hands that whole address over, where a browser would have loaded it.
+  let answer;
+  try {
+    answer = await nativeSignIn().start({
+      url: authorize,
+      callbackScheme: new URL(config.redirectUri).protocol.slice(0, -1),
+    });
+  } catch (err) {
+    if (err?.code === "CANCELLED") return; // the person closed the sheet
+    throw new Error(err?.message || "Sign-in did not finish.");
+  }
+  if (await finishSignIn(new URL(answer.url).searchParams, verifier)) {
+    location.replace("/"); // start again, signed in
+  } else {
+    showLogin(); // with the reason, if Cognito gave one
+  }
 }
 
 // Signing out forgets this app's tokens and stays inside the app. There is no
@@ -211,9 +239,10 @@ async function idToken() {
   }
 }
 
-async function consumeCallback() {
-  const params = new URLSearchParams(location.search);
-  const code = params.get("code");
+// What Cognito answered a sign-in with: a code to trade for tokens, or why
+// not. True once the tokens are stored. The browser finds the answer in its
+// own address after the redirect; the iPhone app is handed it by the sheet.
+async function finishSignIn(params, verifier) {
   if (params.get("error")) {
     // Cognito rejected the sign-up — almost always the pre-sign-up trigger
     // refusing an email that is not on the allowlist. Cognito prefixes the
@@ -222,19 +251,26 @@ async function consumeCallback() {
       .replace(/^PreSignUp failed with error\s*/i, "")
       .trim();
     forgetSignIn(`${reason} Sign in with a different Google account.`);
-    history.replaceState({}, "", location.pathname);
+    return false;
   }
-  if (!code) return;
-  const verifier = sessionStorage.getItem(VERIFIER_KEY);
-  sessionStorage.removeItem(VERIFIER_KEY);
-  history.replaceState({}, "", location.pathname);
-  if (!verifier) return;
+  const code = params.get("code");
+  if (!code || !verifier) return false;
   await exchangeToken({
     grant_type: "authorization_code",
     code,
     redirect_uri: config.redirectUri,
     code_verifier: verifier,
   });
+  return true;
+}
+
+async function consumeCallback() {
+  const params = new URLSearchParams(location.search);
+  if (!params.get("code") && !params.get("error")) return;
+  const verifier = sessionStorage.getItem(VERIFIER_KEY);
+  sessionStorage.removeItem(VERIFIER_KEY);
+  history.replaceState({}, "", location.pathname);
+  await finishSignIn(params, verifier);
 }
 
 // --------------------------------------------------------------------------
@@ -451,11 +487,10 @@ function showLogin() {
   } catch {
     /* no note to show */
   }
-  // Google refuses to sign in inside an app's web view, and Cognito only
-  // sends people back to the web address. Until the iPhone app signs in
-  // through the system browser (docs/ROADMAP.md, 2e), it says so here.
-  if (isNative()) {
-    note = "Sign-in is not connected in the iPhone app yet. Use the web app for now.";
+  // A build of the iPhone app without its sign-in plugin has no way to
+  // Google at all. It says so, and offers no button that leads nowhere.
+  if (isNative() && !nativeSignIn()) {
+    note = "This build of the app cannot sign in. Use the web app for now.";
     $("#login-button").disabled = true;
   }
   $("#login-alert").textContent = note || "";
@@ -2095,6 +2130,9 @@ async function boot() {
     return;
   }
   config = await (await fetch("/config.json")).json();
+  // Read by the simulator check (.github/workflows/ios.yml): a build whose
+  // sign-in plugin did not register must not reach TestFlight.
+  if (isNative()) console.info(`native sign-in: ${nativeSignIn() ? "ready" : "missing"}`);
 
   $("#login-button").onclick = guard(login);
   $("#logout").onclick = () => logout();

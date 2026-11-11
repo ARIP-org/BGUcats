@@ -262,7 +262,13 @@ product). Its old sessions and photos stay in the table with
   time (`scripts/native_bundle.py`), so a merge reaches it only with a new
   build, and its API is at `config.apiBase`, not at the page's own address.
   It counts as installed and registers no service worker. It never loads
-  `web/` from the server instead. It cannot sign in yet.
+  `web/` from the server instead. It signs in through iOS's own sign-in
+  sheet (`native/plugins/web-auth`), never inside the web view: Google
+  refuses that. Cognito answers at `org.arip.bgucats://signin`. To the
+  packed pages the API and the bucket are other origins, so the API has a
+  CORS configuration (any origin: API Gateway takes only `http(s)` or `*`,
+  and every call still needs its token) and the media bucket lists
+  `capacitor://localhost`. No cat guesses in the app yet.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`
   in cognito.tf). Sign-out only forgets the app's tokens and stays in the

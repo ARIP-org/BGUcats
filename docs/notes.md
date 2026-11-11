@@ -80,6 +80,26 @@ an hour that a sentence would have saved.
   The tag rule lets the admin role create `v*` tags. Any session acting as
   the owner is an admin. This is the reason the machine user exists.
 
+## The iPhone app
+
+- **API Gateway's CORS takes only `http://`, `https://` or `*` as an
+  origin.** An app's web view has neither: Capacitor serves the pages
+  from `capacitor://localhost`, and iOS does not let an app serve them
+  from `https`. A plan cannot show this; the apply fails with "Invalid
+  format for origin". S3's CORS takes the origin as it is, and Cognito's
+  token endpoint answers any origin.
+- **`*` on an API that takes a token in a header gives nothing away.**
+  CORS decides whether a page may read an answer, and matters where a
+  browser attaches credentials by itself (cookies). Here the page adds the
+  token, another site's page has none, and credentials are off.
+- **Everything behind the `testflight` environment is tested only from
+  `main`.** The first upload job could not run before its merge. Keep
+  what needs the key small, and put everything else in the `simulator`
+  job, which a pull request can run.
+- **An error message should use the name the reader has to type.** The
+  workflow said "no TEAM_ID", its own name for the variable
+  `APPLE_TEAM_ID`, and a secret called `TEAM_ID` was added.
+
 ## GitHub
 
 - **The author of a pull request cannot approve it.** So whoever writes

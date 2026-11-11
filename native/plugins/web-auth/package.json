@@ -1,0 +1,11 @@
+{
+  "name": "bgucats-web-auth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sign-in through iOS's own browser sheet (ASWebAuthenticationSession), for the BGU Cats app.",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

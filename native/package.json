@@ -4,7 +4,8 @@
   "description": "The Capacitor shell around web/: the same app, packaged for TestFlight.",
   "dependencies": {
     "@capacitor/core": "8.6.0",
-    "@capacitor/ios": "8.6.0"
+    "@capacitor/ios": "8.6.0",
+    "bgucats-web-auth": "file:plugins/web-auth"
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.0"

@@ -121,7 +121,7 @@ needs.
 | The freeze policy's exemption for the Lambda roles | not proven yet (12g) |
 | The owner signing in to the staging app on a phone | not done |
 | Apple Developer Program | approved 2026-11-11. Bundle ID `org.arip.bgucats`, the app's record, an API key and the `testflight` environment (with `APPLE_TEAM_ID`) are made (`docs/MANUAL_STEPS.md`, step 15) |
-| 2e, the iPhone app | **started 2026-11-11:** the Capacitor shell (`native/`) and the build workflow (`ios.yml`); the app starts in a simulator on the runner. No build has reached TestFlight yet, and the app cannot sign in yet |
+| 2e, the iPhone app | **started 2026-11-11:** the Capacitor shell (`native/`) and the build workflow (`ios.yml`). The first build (3) was signed and uploaded to App Store Connect the same day and runs on the owner's phone. Sign-in through iOS's sign-in sheet is written; it works from the first build made after its Terraform is deployed |
 
 **Next, in order:**
 
@@ -132,12 +132,12 @@ needs.
 2. **2e, the iPhone app** (started 2026-11-11, the owner's go; bundle
    ID `org.arip.bgucats`). The shell, the simulator check and the upload
    job are written. In order from here (the list under 2e, below):
-   1. the first TestFlight build, the owner's step: *Actions* → *iOS* →
-      *Run workflow* on `main`, then a TestFlight group with yourself in
-      it (`docs/MANUAL_STEPS.md`, 15b). The upload job has never run;
-   2. sign-in through the system browser, the hard part: Google refuses
-      an embedded web view; Cognito's callback, the API and the media
-      bucket's CORS must accept the app's origin;
+   1. the first build on the owner's phone: it is uploaded (build 3,
+      2026-11-11); what is left is a TestFlight group with yourself in it
+      (`docs/MANUAL_STEPS.md`, 15b);
+   2. sign-in through the system browser: written (2026-11-11). Merge,
+      let staging deploy, then make a new build and sign in on the phone.
+      The Swift part has only ever been compiled, never run by a person;
    3. live update, then uploads with the app closed;
    4. Android, after TestFlight works (the owner's order, 2026-11-11).
 3. **The reviewer agent:** comments on every pull request.
@@ -427,9 +427,9 @@ Decided 2026-11-10: as early as possible, not Phase 4 of `CLAUDE.md`.
 - **Cost to plan for:** GitHub Team includes $18 of Actions usage a
   month. A macOS minute is $0.062 and a Linux one $0.006 (2026-11). The
   check of the shell took under three minutes on 2026-11-11, about $0.20;
-  a TestFlight build is that job and a second one, not timed yet. iOS
-  builds run for a release candidate or on request, never on every
-  merge.
+  a TestFlight build is that job and a second one of under two minutes,
+  about $0.30 together. iOS builds run for a release candidate or on
+  request, never on every merge.
 - **The slow loop, and what keeps it short.** With no Mac there is no
   simulator on a desk and no console to attach: a try of anything
   native-only is build → Apple's processing → TestFlight → the phone,
@@ -444,18 +444,23 @@ the API's address), the few lines of `web/` that know they are packed
 (`isNative` in `install.js`), and `.github/workflows/ios.yml`. How it is
 built and run: `docs/deploy.md`, "The iPhone app".
 
-**Not proven:** the `testflight` job. It needs the App Store Connect key,
-which only a run from `main` can read, so its first run is after the
-merge. Expect a fix or two.
+**Proven the same day:** the `testflight` job. Build 3 was archived
+unsigned, signed at export with a certificate Apple keeps, and uploaded,
+with no change to the workflow. What stopped the first attempts was a
+setting, not the code: the Team ID had been added as a secret, and the
+workflow reads the variable `APPLE_TEAM_ID`.
 
 **What is left, in order:**
 
-1. **The first build on the owner's phone.** It opens on the sign-in
-   screen and says sign-in is not connected.
-2. **Sign-in.** The system browser sheet (`ASWebAuthenticationSession`)
-   and a link back into the app; Cognito's callback list gains the app's
-   address; the API and the media bucket answer the app's origin
-   (`capacitor://localhost`) with CORS. Terraform, so staging first.
+1. **The first build on the owner's phone.** Uploaded; it needs a
+   TestFlight group. It opens on the sign-in screen and says sign-in is
+   not connected.
+2. **Sign-in.** Written 2026-11-11, not yet tried on a phone. iOS's
+   sign-in sheet (`ASWebAuthenticationSession`) through a small plugin of
+   our own, `native/plugins/web-auth`; Cognito answers at
+   `org.arip.bgucats://signin`; the API has a CORS configuration and the
+   media bucket lists the app's origin (`docs/deploy.md`, "The iPhone
+   app"). Terraform, so staging first, then the build.
 3. **The recognition model in the app.** Its files are fetched from
    `/model/`, which inside the app is not the server. Until then the
    packed app runs without guesses, as it does when a model is missing.
