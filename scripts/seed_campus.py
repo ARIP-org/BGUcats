@@ -49,12 +49,24 @@ SEED_COLLABORATOR = "seed-collaborator@bgucats.invalid"
 CATS = ("Mitzi", "Shunra", "Pilpel", "Gingi", "Luna", "Kotik")
 
 
+# Enough for the largest seed there is: a salt below 10**8 plus ten times
+# the clock, about 2**35 until the year 2500.
+SEED_BITS = 48
+
+
 def sample_photo(seed, size=(1200, 900), cat=None):
     """A JPEG that is clearly not a cat: flat shapes, different per seed.
 
     With `cat` (a number) the colours belong to that cat, so its photos
     look alike and unlike another cat's, which is all a made-up identity
     needs. The process Lambda only needs something Pillow can decode.
+
+    Two seeds never give the same bytes. The shapes alone repeat every
+    1,800 seeds, so the seed is also written along the bottom edge as a row
+    of dark and light squares, one per bit. Without it the smoke test, which
+    seeds its photo with the clock, now and then uploaded an exact copy of a
+    seeded photo (in the tests, four seconds in every 180); a copy is a
+    duplicate and leaves the queue.
     """
     if cat is None:
         palette = [(214, 122, 61), (63, 94, 135), (96, 140, 88), (150, 84, 140)]
@@ -73,6 +85,14 @@ def sample_photo(seed, size=(1200, 900), cat=None):
         y = (seed * 61 + i * 131) % (size[1] - 300)
         colour = palette[(seed + i + 1) % len(palette)]
         draw.ellipse([x, y, x + 180 + 20 * i, y + 180 + 20 * i], fill=colour)
+    cell = 16
+    for bit in range(SEED_BITS):
+        x, y = bit * cell, size[1] - cell
+        on = seed >> bit & 1
+        draw.rectangle(
+            [x, y, x + cell - 1, y + cell - 1],
+            fill=(20, 20, 20) if on else (235, 235, 235),
+        )
     out = io.BytesIO()
     image.save(out, "JPEG", quality=85)
     return out.getvalue()
