@@ -151,13 +151,21 @@ jobs:
         env:
           PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
+          # Says what to add under the name it has in GitHub's settings, not
+          # under this job's own name for it. The first run said "no TEAM_ID"
+          # when the missing thing was the variable APPLE_TEAM_ID, and a
+          # secret called TEAM_ID was added, which nothing reads.
           missing=0
-          for name in TEAM_ID KEY_ID ISSUER_ID PRIVATE_KEY; do
-            if [ -z "${!name}" ]; then
-              echo "::error::The testflight environment has no $name (docs/deploy.md, \"The iPhone app\")."
+          need() {
+            if [ -z "$1" ]; then
+              echo "::error::The testflight environment has no $2. GitHub → Settings → Environments → testflight (docs/MANUAL_STEPS.md, step 15)."
               missing=1
             fi
-          done
+          }
+          need "$TEAM_ID" "variable APPLE_TEAM_ID (under Environment variables, not secrets)"
+          need "$KEY_ID" "secret APP_STORE_CONNECT_KEY_ID"
+          need "$ISSUER_ID" "secret APP_STORE_CONNECT_ISSUER_ID"
+          need "$PRIVATE_KEY" "secret APP_STORE_CONNECT_PRIVATE_KEY"
           exit "$missing"
 
       - name: pack web/ into the Xcode project

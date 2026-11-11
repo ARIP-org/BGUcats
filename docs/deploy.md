@@ -306,11 +306,12 @@ offers it. The owner starts it; Claude never does.
 
 **Cost.** A macOS runner is $0.062 a minute against $0.006 for Linux
 (2026-11), taken from the $18 of Actions usage GitHub Team includes each
-month. A pull request's check is one job and took under three minutes on
-2026-11-11, about $0.20. An upload is that job and a second one, not
-timed yet. That is why nothing here runs on every merge, and why a change
-to a screen is checked in the PWA and in `tests/web` (which opens the
-packed app too, `test_native.py`), not by building.
+month. Measured on 2026-11-11: a pull request's check is one job of under
+three minutes, about $0.20; an upload is that job and a second one of
+under two minutes, about $0.30 together. That is why nothing here runs on
+every merge, and why a change to a screen is checked in the PWA and in
+`tests/web` (which opens the packed app too, `test_native.py`), not by
+building.
 
 **Signing.** No certificate or profile is stored anywhere. The job hands
 Xcode an App Store Connect API key (three secrets of the `testflight`
@@ -320,11 +321,17 @@ only, so a pull request's code can never read the key. The Team ID is the
 environment's variable `APPLE_TEAM_ID`. The owner's one-time setup:
 `docs/MANUAL_STEPS.md`, step 15.
 
-**When the upload fails.** The job prints Xcode's own account of it (the
-step "why the export failed"). The usual causes: the API key's role is not
-Admin (Xcode cannot create the certificate), the app record or the bundle
-ID `org.arip.bgucats` does not exist in App Store Connect, or the build
-number was used before.
+**When the upload fails.** If the job stops at its first step, the
+`testflight` environment lacks a value, and the error names it as GitHub's
+settings do. The Team ID is a *variable*, `APPLE_TEAM_ID`; a secret of
+that name, or of any other, is not read. Past that step, the job prints
+Xcode's own account of a failure (the step "why the export failed"). The
+usual causes: the API key's role is not Admin (Xcode cannot create the
+certificate), the app record or the bundle ID `org.arip.bgucats` does not
+exist in App Store Connect, or the build number was used before.
+
+The first upload, build 3, went through on 2026-11-11: an unsigned
+archive, signed at export with the certificate Apple keeps.
 
 **What the first builds cannot do** (`docs/ROADMAP.md`, 2e): sign in. The
 sign-in screen says so. Google refuses to sign in inside an app's web
