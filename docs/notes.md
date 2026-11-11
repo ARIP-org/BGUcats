@@ -115,6 +115,16 @@ an hour that a sentence would have saved.
   lives for the whole process: reset it between app starts.
 - **A screen is drawn after its data arrives.** Wait for the words the
   screen should say, not for the tab to look selected.
+- **A test seeded with the clock fails at some seconds and passes at the
+  rest.** The smoke test's photo was "different every run" by taking the
+  time as its seed, but the made-up pictures repeated every 1,800 seeds.
+  Four seconds in every 180 it uploaded a byte-for-byte copy of a seeded
+  photo, which is a duplicate and leaves the queue: the deploy of #62
+  failed on "the new encounter is not in the queue" while CI passed on the
+  same commit. Staging's real smoke test had the same odds per seeded
+  encounter. Every sample photo now carries its whole seed
+  (`sample_photo` in `scripts/seed_campus.py`). A red run that a re-run
+  turns green still has a cause.
 - **pytest collects anything named `test_*` that a test module imports,**
   including a helper that makes sample photos.
 - **Chrome's headless shell never fires Background Sync.** A test of
