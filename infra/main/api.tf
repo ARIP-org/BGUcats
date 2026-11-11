@@ -20,7 +20,8 @@ resource "aws_apigatewayv2_api" "main" {
   # it on every call. What CORS decides is only whether a page may read the
   # answer to a request it was able to make. Credentials stay off, so a
   # browser never attaches anything on its own. With this, API Gateway
-  # answers the web view's preflight itself, before the authorizer.
+  # answers the web view's preflight itself, but only on a route without an
+  # authorizer: admin_api.tf has one for OPTIONS.
   cors_configuration {
     allow_origins = ["*"]
     allow_methods = ["GET", "POST", "PATCH", "DELETE"]

@@ -208,6 +208,23 @@ resource "aws_apigatewayv2_route" "admin_api" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+# The iPhone app's preflight. Its pages are at capacitor://localhost, so a
+# call to the API is cross-origin and the web view first sends an OPTIONS
+# that carries no token. `ANY` above matches OPTIONS too, and its authorizer
+# answered that preflight 401, before the CORS configuration (api.tf) could;
+# the web view then refused the real call, which an iPhone shows as "Load
+# failed". A more specific method wins, so this route takes every OPTIONS,
+# and with CORS configured API Gateway answers it itself: the Lambda is
+# never invoked. If it ever were, a request without a token is refused there
+# too (_caller_email in src/admin/handler.py). Found on 2026-11-11, the first
+# TestFlight build's first sign-in.
+resource "aws_apigatewayv2_route" "admin_api_preflight" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "OPTIONS /api/{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "NONE"
+}
+
 resource "aws_lambda_permission" "apigw_admin" {
   statement_id  = "AllowAPIGatewayInvokeAdmin"
   action        = "lambda:InvokeFunction"

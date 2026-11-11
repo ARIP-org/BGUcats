@@ -96,6 +96,24 @@ def test_cognito_lists_the_address_the_app_is_packed_with():
     assert "local.native_app_redirect" in callbacks
 
 
+def test_the_api_answers_a_preflight_without_a_token():
+    """The packed pages are another origin to the API, so the web view sends
+    an OPTIONS first, with no token. The catch-all `ANY` route's authorizer
+    answered it 401 and every call failed with "Load failed" (2026-11-11).
+    API Gateway answers a preflight from its CORS configuration only on a
+    route without an authorizer."""
+    tf = (REPO / "infra" / "main" / "admin_api.tf").read_text()
+    routes = {}
+    for block in tf.split('resource "aws_apigatewayv2_route"')[1:]:
+        key = re.search(r'route_key\s*=\s*"([^"]+)"', block).group(1)
+        auth = re.search(r'authorization_type\s*=\s*"(\w+)"', block)
+        routes[key] = auth.group(1) if auth else "NONE"
+    assert routes["ANY /api/{proxy+}"] == "JWT"
+    assert routes["OPTIONS /api/{proxy+}"] == "NONE"
+    api = (REPO / "infra" / "main" / "api.tf").read_text()
+    assert re.search(r"cors_configuration\s*\{", api)
+
+
 def test_the_page_and_the_plugin_agree_on_their_names():
     """web/app.js calls Capacitor.Plugins.WebAuth.start; the Swift class
     must offer exactly that, under the class name `cap sync` registers."""

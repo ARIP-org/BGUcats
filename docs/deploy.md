@@ -347,11 +347,23 @@ deployed before the build that needs it:
 |---|---|---|
 | `cognito.tf` | `org.arip.bgucats://signin` on the client's callback list | Cognito refuses a sign-in that asks to be answered anywhere else |
 | `api.tf` | a CORS configuration on the API, any origin | inside the app the pages' address is `capacitor://localhost`, so the API is another origin to them. API Gateway accepts only `http(s)` origins or `*`. No route takes a cookie; every call still needs its token |
+| `admin_api.tf` | an `OPTIONS /api/{proxy+}` route without the authorizer | the web view asks first (a preflight, with no token), and on the authorized `ANY` route the answer was 401: every call failed with "Load failed". API Gateway answers this route from the CORS configuration; the Lambda never runs |
 | `s3.tf` | `capacitor://localhost` beside the web address in the media bucket's CORS | uploads go from the page straight to the bucket |
 
 The account that signs in must be on that deployment's allowlist, and for
 staging also among its Google project's *Test users*
-(`docs/MANUAL_STEPS.md`, 12d).
+(`docs/MANUAL_STEPS.md`, 12d). The app is built against staging, whose
+allowlist is its own: an admin of production is refused there ("This
+Google account is not an admin or collaborator of BGU cats") until added
+on staging, in the staging app's People screen or with
+`make admin-add EMAIL=... PROFILE=bgucats-staging-admin`.
+
+To check a deployment answers the app's preflight (an empty 204 with the
+`access-control-*` headers; a 401 means every call from the app fails):
+
+```bash
+curl -si -X OPTIONS https://d2rysfyl47qmmz.cloudfront.net/api/cats -H "Origin: capacitor://localhost" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization" | head -1
+```
 
 **What the builds cannot do yet** (`docs/ROADMAP.md`, 2e): the cat
 guesses (the model's files are fetched from `/model/`, which inside the

@@ -88,6 +88,14 @@ an hour that a sentence would have saved.
   from `https`. A plan cannot show this; the apply fails with "Invalid
   format for origin". S3's CORS takes the origin as it is, and Cognito's
   token endpoint answers any origin.
+- **A CORS configuration does not answer a preflight on a route with an
+  authorizer.** `ANY /api/{proxy+}` matches `OPTIONS` too, so the web
+  view's preflight, which never carries a token, got the JWT authorizer's
+  401 and every call from the first TestFlight build failed with Safari's
+  "Load failed" (2026-11-11). `OPTIONS /api/{proxy+}` without an authorizer
+  (`admin_api.tf`) is the fix. The local test server answered preflights
+  itself, so the tests passed; `curl -X OPTIONS` against the real API with
+  an `Origin` header is the check (`docs/deploy.md`, "The iPhone app").
 - **`*` on an API that takes a token in a header gives nothing away.**
   CORS decides whether a page may read an answer, and matters where a
   browser attaches credentials by itself (cookies). Here the page adds the
