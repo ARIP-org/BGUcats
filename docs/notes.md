@@ -88,6 +88,14 @@ an hour that a sentence would have saved.
   from `https`. A plan cannot show this; the apply fails with "Invalid
   format for origin". S3's CORS takes the origin as it is, and Cognito's
   token endpoint answers any origin.
+- **A CORS configuration does not answer a preflight on a route with an
+  authorizer.** `ANY /api/{proxy+}` matches `OPTIONS` too, so the web
+  view's preflight, which never carries a token, got the JWT authorizer's
+  401 and every call from the first TestFlight build failed with Safari's
+  "Load failed" (2026-11-11). `OPTIONS /api/{proxy+}` without an authorizer
+  (`admin_api.tf`) is the fix. The local test server answered preflights
+  itself, so the tests passed; `curl -X OPTIONS` against the real API with
+  an `Origin` header is the check (`docs/deploy.md`, "The iPhone app").
 - **`*` on an API that takes a token in a header gives nothing away.**
   CORS decides whether a page may read an answer, and matters where a
   browser attaches credentials by itself (cookies). Here the page adds the
@@ -126,6 +134,12 @@ an hour that a sentence would have saved.
 
 ## Testing
 
+- **A test that fails one run in six is a race, not bad luck.**
+  `test_the_cats_screen_lists_every_cat_with_its_cover` failed in CI
+  because a screen that waited for its data drew over the one opened since:
+  the Queue's late answer replaced Cats. Every screen now checks
+  `stillShown()` after its fetch (`web/app.js`), and a test holds the
+  Queue's answer back to make the race happen every time (2026-11-11).
 - **A seed that goes through the front door is the best first test.**
   `make seed-staging` fills staging by calling its real API, and found the
   dropped-photo bug on its first run. The same code is the smoke test
@@ -165,6 +179,12 @@ an hour that a sentence would have saved.
 - **In a cloud session:** no AWS at all; GitHub goes through a proxy that
   refuses tag pushes, branch deletions and GraphQL, so `gh pr create`
   fails and `gh api repos/...` works; a Chrome is at `$CHROME_PATH`.
+- **A cloud session's system Python cannot take `pip install`.** Debian
+  installed `blinker` there, pip cannot uninstall it to upgrade it, and the
+  whole install stopped: no boto3, moto or playwright, and an older ruff
+  that reported a false import-order error. The setup hook said "set up"
+  anyway (2026-11-11). It now installs into `~/.venvs/bgucats`, puts that
+  first on PATH, and its message says what did not install.
 - **A command typed with `!` has no keyboard.** A script that asks "type
   yes" gets nothing and stops. `echo yes | script` answers it.
 - **Claude Code refuses some things whoever asks,** and the owner runs

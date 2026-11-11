@@ -267,7 +267,9 @@ product). Its old sessions and photos stay in the table with
   refuses that. Cognito answers at `org.arip.bgucats://signin`. To the
   packed pages the API and the bucket are other origins, so the API has a
   CORS configuration (any origin: API Gateway takes only `http(s)` or `*`,
-  and every call still needs its token) and the media bucket lists
+  and every call still needs its token), answered on an `OPTIONS` route
+  without the authorizer (a preflight carries no token; on the `ANY` route
+  it got 401, "Load failed"), and the media bucket lists
   `capacitor://localhost`. No cat guesses in the app yet.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`

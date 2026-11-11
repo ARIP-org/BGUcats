@@ -258,7 +258,10 @@ class LocalApp:
             def do_OPTIONS(self):
                 """A web view's preflight, which the iPhone app's pages send
                 because the API is not at their own address. API Gateway
-                answers it before the authorizer, with what api.tf allows."""
+                answers it with what api.tf allows, but only because
+                OPTIONS has a route of its own without the authorizer
+                (admin_api.tf; tests/native checks it). Without that route
+                the real API answered 401 and this stand-in did not."""
                 if not urlsplit(self.path).path.startswith("/api/"):
                     self._send(404, b"not found", "text/plain")
                     return

@@ -10,16 +10,30 @@
 # of the product (docs/agents.md, "Hands-on sessions in the cloud").
 #
 # It never fails the session: a missing tool is something Claude can see
-# and say, a session that does not start is not.
+# and say, a session that does not start is not. So the last line it prints,
+# which the session shows, names whatever did not install.
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0
 cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/..}" || exit 0
 
 log="${TMPDIR:-/tmp}/bgucats-cloud-setup.log"
+missing=()
 {
   echo "== $(date -u +%FT%TZ) cloud session setup"
 
-  # pip skips what is already there, so a resumed session pays seconds.
-  pip install --quiet -r requirements-dev.txt || echo "pip install failed"
+  # A virtual environment, not the system Python. There Debian installed some
+  # packages pip cannot replace ("Cannot uninstall blinker ... installed by
+  # debian"), the whole install stopped, and boto3, moto, playwright and the
+  # pinned ruff were missing (2026-11-11). Outside the repo, so no check
+  # reads it. pip skips what is already there, so a resumed session pays
+  # seconds.
+  venv="${BGUCATS_VENV:-$HOME/.venvs/bgucats}"
+  if { [ -x "$venv/bin/pip" ] || python3 -m venv "$venv"; } &&
+    "$venv/bin/pip" install --quiet --disable-pip-version-check -r requirements-dev.txt; then
+    echo "dev dependencies installed in $venv"
+  else
+    echo "pip install failed"
+    missing+=("the dev dependencies (pytest, ruff, boto3, moto, playwright)")
+  fi
 
   # The same version CI pins (.github/workflows/ci.yml), checked against
   # HashiCorp's published checksum. `make lint` needs it for `terraform fmt`.
@@ -29,18 +43,30 @@ log="${TMPDIR:-/tmp}/bgucats-cloud-setup.log"
   if ! "$bin/terraform" version 2>/dev/null | grep -q "v$version"; then
     zip=$(mktemp)
     if curl -fsSLo "$zip" "https://releases.hashicorp.com/terraform/$version/terraform_${version}_linux_amd64.zip" &&
-      echo "$sha256  $zip" | sha256sum --check --status; then
-      mkdir -p "$bin" && unzip -oq "$zip" terraform -d "$bin" && echo "terraform $version installed"
+      echo "$sha256  $zip" | sha256sum --check --status &&
+      mkdir -p "$bin" && unzip -oq "$zip" terraform -d "$bin"; then
+      echo "terraform $version installed"
     else
       echo "terraform: download failed or checksum did not match; not installed"
+      missing+=("Terraform $version")
     fi
     rm -f "$zip"
   fi
-  # For the commands Claude runs in this session.
+
+  # For the commands Claude runs in this session: the venv first, so its
+  # python, pytest and ruff win over any older ones already on PATH.
   if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-    echo "export PATH=\"$bin:\$PATH\"" >>"$CLAUDE_ENV_FILE"
+    path="$bin"
+    [ -d "$venv/bin" ] && path="$venv/bin:$path"
+    echo "export PATH=\"$path:\$PATH\"" >>"$CLAUDE_ENV_FILE"
   fi
 } >>"$log" 2>&1
 
-echo "Cloud session: dev dependencies and Terraform set up (log: $log). No AWS access here; AWS work belongs to a codespace session with the owner signed in."
+no_aws="No AWS access here; AWS work belongs to a codespace session with the owner signed in."
+if [ ${#missing[@]} -eq 0 ]; then
+  echo "Cloud session: dev dependencies and Terraform set up (log: $log). $no_aws"
+else
+  what=$(printf '%s and ' "${missing[@]}")
+  echo "Cloud session setup INCOMPLETE: ${what% and } did not install, so the checks that need them will fail (log: $log). $no_aws"
+fi
 exit 0
