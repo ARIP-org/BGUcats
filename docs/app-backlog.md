@@ -47,6 +47,22 @@ Things decided to leave for later, so they are not lost. Newest first.
 
 ## Recognition (phase 1c)
 
+- **"92% match" in the prototype promises a calibration we do not have.**
+  The scanner screen shows 92 / 74 / 61 per cent over "Closest matches from
+  48 campus cats". The manifest ships `"thresholds": null` because the top
+  scores of right guesses, wrong guesses and never-seen cats overlap, and
+  the first guess is right on 3–5 of 13 sessions. A cosine similarity is not
+  a probability. Either show rank with no number, or earn a calibrated one.
+  `docs/moderation.md`, "The honest-percentage problem". *(Raised 2026-11-12.)*
+- **Pairwise verification as a reranker (1b experiment).** Ask a calibrated
+  yes/no — "are these two photos the same individual cat?" — once per
+  candidate over the embedding search's top-k. It is the local-feature
+  rerank slot in the recognition architecture, needs no labels and no BGU
+  training data, and is the only use of an outside decision model that does
+  not collide with the no-classifier rule. Research track, measured against
+  the same replay as everything else. `docs/moderation.md`, "Where it must
+  not go". *(Raised 2026-11-12.)*
+
 - **Mark labels made with the guess in view.** Since 2026-10-29 the admin sees
   the model's guess before labeling. The prediction records when the guess
   was made, but not whether the labeler had seen it. If anchoring ever
@@ -80,6 +96,20 @@ Things decided to leave for later, so they are not lost. Newest first.
   face helps" could become specific once there are thresholds: ask for the
   face only when the top three are close together.
 - **Translate the guess card.** It is English, like the rest of Capture.
+
+## Moderation (phase 4)
+
+- **The moderation layer is designed, not built, and not decided.**
+  `docs/moderation.md` has the surface the phase 4 prototype exposes (a
+  24-character cat name, a 30-character display name, an avatar, the photos,
+  and no caption field anywhere), the questions each needs, an assessment of
+  Google's Decision 1 as the primitive, the four conditions for building it,
+  and the one place it must not go. Nothing in it has been agreed.
+  *(Raised 2026-11-12.)*
+- **Two scope changes hidden in the prototype.** It collects a phone number,
+  which is PII the project does not collect today, and its scanner offers
+  "Add a new cat" to a contributor, against "cats are admin-curated". Both
+  are product decisions, not UI details. *(Raised 2026-11-12.)*
 
 ## Design
 

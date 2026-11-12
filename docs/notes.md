@@ -195,6 +195,49 @@ an hour that a sentence would have saved.
   cannot write code; Fix starts only on an admin's label
   (`docs/agents.md`).
 
+## Models from outside
+
+Nothing here is built; these came out of assessing Google's Decision 1 as a
+moderation layer for phase 4 (`docs/moderation.md`, 2026-11-12). They are
+the traps that assessment turned up.
+
+- **A cosine similarity is not a probability.** The phase 4 prototype's
+  scanner shows "92% match". The manifest ships `"thresholds": null`
+  precisely because right guesses, wrong guesses and never-seen cats overlap
+  on BGU photos, and the first guess is right on 3–5 of 13 sessions. A
+  number rendered as a percentage promises a calibration the system does not
+  have. Rank is honest; per cent is a claim.
+- **A calibrated model is calibrated on someone else's data.** "Calibrated"
+  means 0.7 is right 70% of the time *on the distribution it was measured
+  on*. That distribution is not 24-character cat names in Hebrew, Russian
+  and Arabic. Same rule as public-dataset accuracy in `CLAUDE.md`: the
+  number is well-formed, and its accuracy here is unknown until it is
+  measured against what an admin decided.
+- **The cheapest moderation is the field nobody added.** The prototype has
+  no caption and no comments, so the entire text surface is a 24-character
+  name and a 30-character display name. That single absence is why this is a
+  bounded problem instead of a staffed one. It was found by grepping the
+  design for `<textarea>` and finding none — worth checking before costing
+  any moderation work.
+- **A single-select over our cats is the banned classifier with an API in
+  front of it.** Decision 1 takes its options per request, so it dodges
+  "needs retraining per cat" — the objection most people remember — while
+  keeping the other two: no embedding space, no enrollment template, no
+  honest "I don't know this one". Recognise the shape, not the wording; the
+  ban holds.
+- **A model with no output tokens is a smaller injection target.** A cat
+  name is attacker-controlled text going into a model. Where the job is a
+  verdict, a model that cannot emit text or call a tool bounds the worst
+  case at a flipped probability. Prefer that shape over asking a chat model
+  for JSON.
+- **An outside HTTPS call is cheaper here than an AWS service.** Bedrock or
+  Rekognition needs `allowed-resource-types.txt`, the bootstrap deploy role
+  and `infra/org/scp.tf` all widened — three owner decisions. A call out to
+  a vendor needs none: Lambda has full internet outside a VPC, and
+  `set-secret.sh` already puts keys in SSM. The guardrails make the
+  not-AWS option the path of least resistance, which is worth knowing before
+  reaching for the AWS-native one by reflex.
+
 ## Money
 
 What this costs, measured on 2026-11-10, so nobody has to work it out
