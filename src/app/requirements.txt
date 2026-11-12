@@ -1,3 +1,7 @@
 # The member API (docs/app-plan/, milestone F4). boto3 comes with the
 # runtime. common.ids makes ULIDs.
 python-ulid==4.1.0
+# The cat of the day and an encounter's day are Israel days; zoneinfo falls
+# back to this package when the runtime image has no system tz database.
+# Missing here until B3b: the module made its ZoneInfo at import.
+tzdata==2026.6

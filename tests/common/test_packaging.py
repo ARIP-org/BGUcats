@@ -66,3 +66,24 @@ def test_the_campus_places_go_with_the_shared_code():
     # common.regions reads regions.json from beside itself in a Lambda.
     recipe = re.search(r"^copy-common = (.*)$", MAKEFILE, flags=re.MULTILINE).group(1)
     assert "web/regions.json" in recipe
+
+
+def uses_zoneinfo(function):
+    pattern = re.compile(r"^\s*from zoneinfo import|^\s*import zoneinfo", re.MULTILINE)
+    sources = list((REPO / "src" / function).glob("*.py"))
+    if f"$(call copy-common,{function})" in build_recipe(function):
+        sources += list((REPO / "src" / "common").glob("*.py"))
+    return any(pattern.search(path.read_text()) for path in sources)
+
+
+def test_a_function_that_needs_time_zones_ships_them():
+    # The Lambda image may have no system tz database; zoneinfo then falls
+    # back to the tzdata package, or fails at import. The member API went to
+    # staging without it (B2, found in B3b).
+    for function in functions():
+        if not uses_zoneinfo(function):
+            continue
+        requirements = REPO / "src" / function / "requirements.txt"
+        assert requirements.exists(), function
+        assert re.search(r"^tzdata==", requirements.read_text(), re.MULTILINE), function
+        assert f"-r src/{function}/requirements.txt" in build_recipe(function), function

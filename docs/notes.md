@@ -79,6 +79,12 @@ an hour that a sentence would have saved.
 - **CloudWatch cannot publish to a topic encrypted with AWS's own SNS
   key.** The alerts topic is unencrypted for that reason
   (`infra/main/alarms.tf`).
+- **A Lambda that uses `zoneinfo` ships `tzdata`.** The runtime image
+  may have no system time zones, and then `ZoneInfo("Asia/Jerusalem")`
+  at import fails every call. The member API went to staging without it
+  (B2), and nothing noticed: the smoke test goes through the desk's
+  pipeline, not `/api/v1`. `tests/common/test_packaging.py` checks it
+  since B3b.
 - **Revoking the bot's token also dropped its webhook,** silently
   (2026-10-31). A script that sets a secret must check what depended on
   the old one.
