@@ -1604,9 +1604,11 @@ will need this step with `bgucats-prod-admin` before its first promote.
 
 ---
 
-## 18. The smoke test may call the member API, on staging (B3c)
+## 18. The smoke test may call the member API, on staging (done 2026-11-12)
 
-**Not done yet.** For milestone B3c (`docs/app-plan/08-milestones.md`).
+**Done on 2026-11-12**, after B3c merged: the failed deploy (run 63) was
+re-run and passed, and the next merge's smoke test (run 64) passed all
+seven steps. For milestone B3c (`docs/app-plan/08-milestones.md`).
 **Staging only:** the smoke role does not exist in production.
 
 **What this is for.** After every merge, staging's smoke test

@@ -115,3 +115,16 @@ def test_screens_do_not_fetch_for_themselves():
         if path.name not in allowed and re.search(r"\bfetch\(", path.read_text())
     ]
     assert not found, found
+
+
+def test_the_service_worker_keeps_every_file_the_member_app_loads():
+    # The installed app opens with no signal only if every module of it is
+    # in the shell the service worker keeps (web/sw.js).
+    shell = set(re.findall(r'"(/[^"]+)"', (WEB / "sw.js").read_text().split("];")[0]))
+    needed = {
+        "/" + str(path.relative_to(WEB))
+        for folder in ("social", "lib", "i18n", "vendor")
+        for path in (WEB / folder).iterdir()
+        if path.suffix in {".js", ".css", ".json", ".woff2"}
+    } | {"/app.html", "/tokens.css"}
+    assert needed <= shell, sorted(needed - shell)

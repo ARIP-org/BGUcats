@@ -102,3 +102,538 @@ body {
   padding-inline: 14px;
   font-size: 14px;
 }
+
+/* ------------------------------------------------------------ the frame (E1)
+   Values from the prototype's Feed.dc.html, made to flow: its fixed 402 px
+   frame becomes percentages and the safe-area insets. */
+
+:root {
+  --dir: 1; /* which way "forward" is, for transforms */
+  --bar-gap: max(28px, env(safe-area-inset-bottom));
+}
+:root[dir="rtl"] {
+  --dir: -1;
+}
+
+.icon.mirror:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+body:has(.frame) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.frame {
+  position: fixed;
+  inset: 0;
+}
+
+.tab-page,
+.page {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+}
+
+.tab-page:not(.shown) {
+  visibility: hidden;
+}
+
+.scroller {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding-block: calc(env(safe-area-inset-top) + 24px) 140px;
+  padding-inline: 16px;
+}
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-content {
+  max-inline-size: 640px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ------------------------------------------------------------ the tab bar */
+
+.tabbar {
+  --w: calc((100% - 12px) / 3);
+  position: fixed;
+  z-index: 10;
+  inset-inline-start: 16px;
+  inset-block-end: var(--bar-gap);
+  inline-size: min(370px, calc(100% - 32px));
+  block-size: 68px;
+  border-radius: 36px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--bar-shadow);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    inline-size var(--dur-spring) var(--ease-spring),
+    block-size var(--dur-spring) var(--ease-spring),
+    inset-block-end var(--dur-spring) var(--ease-spring);
+}
+
+.tabbar .lens {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-start: calc(6px + var(--active) * var(--w));
+  inline-size: var(--w);
+  block-size: 56px;
+  border-radius: 28px;
+  background: var(--lens);
+  pointer-events: none;
+  transition:
+    inset-inline-start var(--dur-spring) var(--ease-spring),
+    inset-block-start var(--dur-spring) var(--ease-spring),
+    inline-size var(--dur-spring) var(--ease-spring),
+    block-size var(--dur-spring) var(--ease-spring),
+    border-radius var(--dur-spring) var(--ease-spring),
+    scale 0.35s var(--ease-lens-press),
+    background 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.tabbar[data-dragging] .lens {
+  inset-inline-start: calc(6px + clamp(0, var(--drag) * 3 - 0.5, 2) * var(--w));
+  background: var(--lens-drag);
+  box-shadow: var(--lens-drag-shadow);
+  -webkit-backdrop-filter: blur(2px) saturate(200%);
+  backdrop-filter: blur(2px) saturate(200%);
+  scale: 1.14;
+  transition:
+    scale 0.3s var(--ease-lens-press),
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.tabbar button {
+  position: absolute;
+  inset-block-start: 6px;
+  inline-size: var(--w);
+  block-size: 56px;
+  padding: 6px 0 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    inset-inline-start var(--dur-spring) var(--ease-spring),
+    inset-block-start var(--dur-spring) var(--ease-spring),
+    opacity 0.3s ease,
+    color 0.2s ease;
+}
+.tabbar button:nth-of-type(1) {
+  --i: 0;
+}
+.tabbar button:nth-of-type(2) {
+  --i: 1;
+}
+.tabbar button:nth-of-type(3) {
+  --i: 2;
+}
+.tabbar button {
+  inset-inline-start: calc(6px + var(--i) * var(--w));
+}
+/* The open tab is in the accent; while the lens is dragged, the tab under
+   it is instead. */
+.tabbar button[aria-current="page"] {
+  color: var(--accent);
+}
+.tabbar[data-over] button[aria-current="page"] {
+  color: var(--ink);
+}
+.tabbar[data-over="0"] button:nth-of-type(1),
+.tabbar[data-over="1"] button:nth-of-type(2),
+.tabbar[data-over="2"] button:nth-of-type(3) {
+  color: var(--accent);
+}
+.tab-label {
+  font-size: 12px;
+  font-weight: 600;
+  transition: opacity 0.2s ease;
+}
+
+/* Shrunk while scrolling: a round button with the open tab's icon. */
+.tabbar.collapsed {
+  inline-size: 60px;
+  block-size: 60px;
+  inset-block-end: calc(var(--bar-gap) + 4px);
+  cursor: pointer;
+}
+.tabbar.collapsed .lens {
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 58px;
+  block-size: 58px;
+  border-radius: 29px;
+}
+.tabbar.collapsed button {
+  inline-size: 116px;
+  inset-block-start: 10px;
+  inset-inline-start: calc(-29px + (var(--i) - var(--active)) * 120px);
+  opacity: 0;
+  pointer-events: none;
+}
+.tabbar.collapsed button[aria-current="page"] {
+  opacity: 1;
+}
+.tabbar.collapsed .tab-label {
+  opacity: 0;
+}
+
+/* ------------------------------------------------------------ pages */
+
+.page {
+  z-index: 5;
+  box-shadow: var(--drawer-shadow);
+  touch-action: pan-y;
+  transform: translateX(calc(var(--dir) * var(--swipe, 0px)));
+  transition: transform var(--dur-page) var(--ease-page);
+}
+.page[data-state="entering"],
+.page[data-state="leaving"] {
+  transform: translateX(calc(var(--dir) * 100%));
+}
+.page[data-swiping] {
+  transition: none;
+}
+
+/* "Reduce motion": a page fades instead of sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .page[data-state] {
+    transform: none;
+    transition: opacity 0.2s ease;
+  }
+  .page[data-state="entering"],
+  .page[data-state="leaving"] {
+    opacity: 0;
+  }
+}
+
+.page-top {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: calc(env(safe-area-inset-top) + 12px);
+  inset-inline-start: 16px;
+}
+.page .scroller {
+  padding-block-start: calc(env(safe-area-inset-top) + 76px);
+}
+
+/* The prototype's round glass button (back, search, +). */
+.glass-icon {
+  inline-size: 48px;
+  block-size: 48px;
+  padding: 0;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  cursor: pointer;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-button,
+.glass-icon {
+  background:
+    radial-gradient(70% 90% at var(--gx, 30%) var(--gy, 0%), color-mix(in srgb, var(--knob) calc(var(--gs, 0) * 100%), transparent), transparent 70%),
+    var(--glass-bg);
+}
+
+/* ------------------------------------------------------------ lists of rows */
+
+.group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  overflow: hidden;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  inline-size: 100%;
+  min-block-size: 54px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-align: start;
+  cursor: pointer;
+}
+.row-icon {
+  flex: none;
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 9px;
+  background: var(--chip);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.row-icon.neutral {
+  background: var(--chip-neutral);
+  color: var(--ink);
+}
+.row-label {
+  flex: none;
+  font-weight: 500;
+}
+.row-value {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.row > .icon:last-child {
+  flex: none;
+  color: var(--muted);
+}
+.divider {
+  block-size: 1px;
+  margin-inline-start: 60px;
+  background: var(--divider);
+}
+.swatch {
+  display: inline-block;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.swatch.small {
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 8px;
+}
+
+/* ------------------------------------------------------------ the menu */
+
+.menu-away {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  border: none;
+  background: transparent;
+}
+.menu {
+  position: fixed;
+  z-index: 21;
+  inline-size: 240px;
+  padding: 6px;
+  border-radius: 22px;
+  background: var(--menu-bg);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  transform-origin: calc(100% - 30px) 0;
+  animation: pop-in 0.34s var(--ease-pop);
+}
+.menu button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  inline-size: 100%;
+  block-size: 50px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+.menu button:hover,
+.menu button:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.menu-lead {
+  flex: none;
+  inline-size: 22px;
+  block-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.menu-label {
+  flex: 1;
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-check {
+  flex: none;
+  display: flex;
+  color: var(--accent);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+/* ------------------------------------------------------------ the dialog */
+
+.dim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  padding: 0;
+  border: none;
+  background: var(--dim);
+  animation: fade-in 0.25s ease;
+}
+.dialog {
+  position: fixed;
+  z-index: 31;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: calc(var(--dir) * -50%) -50%;
+  inline-size: min(300px, calc(100% - 32px));
+  padding: 22px 18px 16px;
+  border-radius: 30px;
+  background: var(--island-bg);
+  -webkit-backdrop-filter: blur(34px) saturate(180%);
+  backdrop-filter: blur(34px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  animation: pop-in 0.36s cubic-bezier(0.3, 1.2, 0.45, 1);
+}
+.dialog h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.dialog p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.dialog-buttons {
+  display: flex;
+  gap: 10px;
+}
+.dialog-buttons button {
+  flex: 1;
+  block-size: 48px;
+  border: none;
+  border-radius: 24px;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.dialog-cancel {
+  background: var(--chip-neutral);
+  color: var(--ink);
+  font-weight: 600;
+}
+.dialog-go {
+  background: var(--heart);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.dialog-go.danger {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ------------------------------------------------------------ the toast */
+
+.toast {
+  position: fixed;
+  z-index: 40;
+  inset-block-start: calc(env(safe-area-inset-top) + 62px);
+  inset-inline-start: 50%;
+  translate: calc(var(--dir) * -50%) -14px;
+  scale: 0.92;
+  block-size: 46px;
+  padding-block: 0;
+  padding-inline: 12px 20px;
+  border-radius: 23px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--menu-bg);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--menu-shadow);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 0.25s ease,
+    translate 0.45s var(--ease-toast),
+    scale 0.45s var(--ease-toast);
+}
+.toast.on {
+  opacity: 1;
+  translate: calc(var(--dir) * -50%) 0;
+  scale: 1;
+}
+.toast-tick {
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: 13px;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
