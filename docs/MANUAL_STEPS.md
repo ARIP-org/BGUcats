@@ -1438,7 +1438,13 @@ work needs `acm` on the organization's allowlist for the member accounts;
 against a stand-in for the `aws` command (`tests/infra_scripts`): every
 refusal, and the exact request it sends.
 
-## 17. The guardrails learn the app's shapes, on staging (written 2026-11-12, not done)
+## 17. The guardrails learn the app's shapes, on staging (done 2026-11-12)
+
+**Done on 2026-11-12**, from PR #66's branch at `c2d8b4d`: the plan was
+the four updates below and nothing else (`0 to add, 4 to change, 0 to
+destroy`); the state was saved to the bucket at serial 32, and a second
+plan said `No changes`. Every simulator check in step 4 gave the expected
+answer. Production does not have it yet.
 
 `docs/app-plan/OWNER_STEPS.md`, O4, for milestone F1. **Staging only.**
 Production waits for its first promote, which the owner postponed

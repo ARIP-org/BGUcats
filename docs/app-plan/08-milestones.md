@@ -16,7 +16,7 @@ A session ticks its row in the pull request that finishes it.
 
 | ID | Milestone | State |
 |---|---|---|
-| F1 | The guardrails learn the new shapes | built 2026-11-12; staging apply waits for the owner (`docs/MANUAL_STEPS.md`, step 17) |
+| F1 | The guardrails learn the new shapes | built 2026-11-12; **applied on staging 2026-11-12** and proven (`docs/MANUAL_STEPS.md`, step 17); production with its first promote |
 | F2 | Shared code, and one catalogue of every key | |
 | F3 | The social table, the events Lambda, the seed | |
 | F4 | The member API: who you are, flags, who may sign up | |
