@@ -63,13 +63,19 @@ export function stablePhotoUrl(value) {
   return value;
 }
 
-// Every "...Url" field in a response: thumbUrl, mediumUrl, coverUrl, videoUrl.
+// Every "...Url" field in a response: thumbUrl, mediumUrl, coverUrl, videoUrl;
+// and the member API's photos, {thumb, medium} (since E2).
+const PHOTO_KEYS = new Set(["thumb", "medium"]);
 export function keepPhotoUrls(data) {
   if (Array.isArray(data)) {
     for (const item of data) keepPhotoUrls(item);
   } else if (data && typeof data === "object") {
     for (const [key, value] of Object.entries(data)) {
-      if (typeof value === "string" && key.endsWith("Url") && value.startsWith("https://")) {
+      if (
+        typeof value === "string" &&
+        (key.endsWith("Url") || PHOTO_KEYS.has(key)) &&
+        value.startsWith("https://")
+      ) {
         data[key] = stablePhotoUrl(value);
       } else if (value && typeof value === "object") {
         keepPhotoUrls(value);

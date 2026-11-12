@@ -39,3 +39,24 @@ export function t(key, values = {}) {
 }
 
 export const language = () => lang;
+
+// "Just now", "5 min ago", "yesterday": a time as a person says it.
+const UNITS = [
+  ["year", 31536000],
+  ["month", 2592000],
+  ["week", 604800],
+  ["day", 86400],
+  ["hour", 3600],
+  ["minute", 60],
+];
+
+export function ago(iso, now = Date.now()) {
+  const seconds = (Date.parse(iso) - now) / 1000;
+  if (!Number.isFinite(seconds)) return "";
+  if (Math.abs(seconds) < 60) return t("time.justNow");
+  const format = new Intl.RelativeTimeFormat(lang, { numeric: "auto", style: "short" });
+  for (const [unit, size] of UNITS) {
+    if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
+  }
+  return "";
+}
