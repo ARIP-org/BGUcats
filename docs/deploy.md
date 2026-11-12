@@ -201,6 +201,9 @@ pass without another failure.
 | `bgucats-ingest-errors` (production only) | a Telegram photo was not taken in; the sender was not told | `/aws/lambda/bgucats-ingest` |
 | `bgucats-beacon-errors` | a landing-page visit was not counted; nobody noticed | `/aws/lambda/bgucats-beacon` |
 | `bgucats-api-5xx` | the API answered 5xx, whatever the cause, including a Lambda that could not be invoked | the Lambda alarms above; then API Gateway's metrics |
+| `bgucats-events-errors` | the events Lambda (`infra/main/events.tf`) crashed on a whole batch of changes to `bgucats-social`. A single record that fails is not this: it is retried on its own, see the last row | `/aws/lambda/bgucats-events` |
+| `bgucats-events-behind` | the events Lambda is more than five minutes behind the table's changes: almost always a record being retried. What it would have done after a post or a vote (moderation, counters, push) is waiting | `/aws/lambda/bgucats-events`; then expect the email in the next row |
+| **Not an alarm:** an email from the topic whose body is JSON with `"condition": "RetryAttemptsExhausted"` (or `RecordAgeExceeded`) and `DDBStreamBatchInfo` | a change to `bgucats-social` failed three times and was skipped so the rest could go on. The item itself is as it was written; what failed is what should have happened after it | the log at the time in the body; `DDBStreamBatchInfo` names the shard and the sequence numbers. The item's own key is in the log's error line |
 
 Reading a log without the console:
 
@@ -217,7 +220,8 @@ link is clicked, once per account. Staging's alarms say `staging` in their
 description; the subject only names the account's topic.
 
 Not alarmed on purpose: 4xx answers, throttles and slow answers. Each
-account's first ten alarms and thousand emails a month are free.
+account's first ten alarms and thousand emails a month are free; there
+are eight in production and seven in staging since F3 of the app plan.
 
 ## When a red "plan check" stops a pull request
 

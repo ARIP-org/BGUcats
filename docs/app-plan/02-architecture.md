@@ -135,15 +135,20 @@ environment: a helper that needs a table is given one.
 
 **Who is the caller:** the token's email claim, as today. The member API
 maps it to a user id through one strongly consistent read
-(`IDENTITY#{email}`), creating the user on their first call. The existing
-handler's `_require_member` learns a third role: on the allowlist → admin
-or collaborator as today; otherwise an active user → `member`. Members
-reach the capture routes and nothing else there.
+(`IDENTITY#{email}`), creating the user on their first call.
+
+**Two roles, `user` and `admin`** (the owner, R1). An admin is on the
+allowlist as today. Everyone else who is admitted is a user, and a
+collaborator is a user: `role = collaborator` on an allowlist item is
+read as `user`. In the existing handler, the access level `ANYONE`
+becomes "any user", which admits users to the capture routes, and
+`ADMINS` is unchanged.
 
 ## What happens after a write: the events Lambda
 
 Decision A3. The social table has a stream; `bgucats-events` reads it
-through an event source mapping whose **filter** passes only the kinds of
+through an event source mapping (built in F3, `infra/main/events.tf`)
+whose **filter** (`src/events/filters.json`) passes only the kinds of
 item that have consequences (posts, names, votes, likes, friend edges,
 proposals, reports, users). One dispatcher, small handlers:
 

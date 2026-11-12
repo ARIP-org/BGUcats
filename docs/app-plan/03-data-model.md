@@ -5,10 +5,9 @@ Two tables. `bgucats-data` is the dataset and stays as spec §6.3 and
 item to it, all written by the existing API. `bgucats-social` is new and
 holds everything people do in the app.
 
-Since F2, `docs/data-model.md` lists every key of the existing table,
-taken from the code and kept true by `tests/test_data_model_doc.py`. The
-social table's keys below move there in F3, in the pull request that
-creates the table; until then this file is their only description.
+`docs/data-model.md` lists every key of both tables, the existing one
+taken from the code and kept true by `tests/test_data_model_doc.py`, the
+social one since F3 created it.
 
 ## The rule that shapes everything
 
@@ -28,120 +27,9 @@ dataset.
 
 ## `bgucats-social`
 
-Same shape as the first table: `PK`, `SK`, three indexes (`GSI1`,
-`GSI2`, `GSI3`, each `…PK` / `…SK`), `expiresAt` as the TTL attribute,
-on-demand billing, point-in-time recovery, deletion protection,
-`prevent_destroy`. A stream with new and old images.
-
-Ids: a user id is a ULID made by the server at first sign-in. Post,
-proposal and report ids are ULIDs made on the phone, so the outbox can
-retry and land on the same record. Cat, session and photo ids are the
-dataset's.
-
-### People
-
-| Item | PK | SK | Holds |
-|---|---|---|---|
-| User | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName`, `avatarKey`, `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
-| Sign-in lookup | `IDENTITY#{email}` | `META` | `userId` |
-| Username lookup | `USERNAME#{username}` | `META` | `userId` |
-| Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |
-| Invite code | `INVITE#{code}` | `META` | `userId`. The code is random, not derived from the username |
-| Friend | `USER#{a}` | `FRIEND#{b}` | `since`, `via` (`invite` / `request` / `contacts`). Always written with its mirror (`USER#{b}` / `FRIEND#{a}`) |
-| Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
-| Block | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
-| Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
-| Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters`, `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
-| A cat met | `USER#{id}` | `MET#{catId}` | `firstAt`, `lastAt`, `days` (different days), `lastDay`. And `METM#{yyyy-mm}#{catId}` for the month's count |
-| Badge | `USER#{id}` | `BADGE#{badgeId}` | `at` |
-| An encounter, as the app counts it | `USER#{id}` | `ENC#{sessionId}` | `claimedCatId`, `labelCatId`, `rejected`, `day`, `regionId`, `postId`, `counted` (what the counters were last given for it) |
-
-`ENC` is the bridge between the tables. The capture route that records a
-pick writes it; the desk routes that assign, unassign, merge or reject an
-app encounter update `labelCatId` or `rejected` on it. The events Lambda
-sees the change and corrects `MET`, `STATS`, points and the post's cat.
-That is how D8's "taken back if the label disagrees" happens without a
-stream on the dataset table.
-
-### Posts
-
-| Item | PK | SK | Holds |
-|---|---|---|---|
-| Post | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason`, `likeCount`, `createdAt`, `visibleAt` |
-| Like | `POST#{postId}` | `LIKE#{userId}` | `at` |
-
-A post's `status`: `pending` (written, not yet checked) → `visible` |
-`hidden` (waiting for an admin, or reported past the threshold) |
-`removed` (by its author or an admin).
-
-A post made with a new-cat proposal stays `pending` while the proposal is
-`open`, whatever moderation says (D7: nothing about a new cat is public
-before an admin approves). The events Lambda publishes it when the
-proposal becomes `approved` or `merged`, under that cat, and leaves it
-unpublished if the proposal is `rejected`. So a post is visible only
-when all of these hold: its text passed, every photo passed, and it has
-no open proposal.
-
-Its index keys:
-
-- `GSI1`: `AUTHOR#{authorId}` / `createdAt`. Always, so the author sees
-  their own pending post.
-- `GSI2`: `FEED#{yyyy-mm}` / `{createdAt}#P#{postId}`. **Only while
-  visible.** Hiding a post removes these two attributes and it leaves
-  every feed.
-- `GSI3`: `CATPOST#{catId}` / `createdAt`. Only while visible and a cat
-  is shown. The prefix is not `CAT#`, which is the dataset's
-  photos-of-a-cat index on the other table and must never be confused
-  with it.
-
-### Cats, as the app sees them
-
-| Item | PK | SK | Holds |
-|---|---|---|---|
-| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `nameLocked` |
-| Name option | `CAT#{catId}` | `NAME#{nameKey}` | `name` (as typed), `votes`, `suggestedBy`, `status` (`pending` / `live` / `rejected` / `removed`), `createdAt` |
-| Vote | `CAT#{catId}` | `VOTE#{userId}` | `nameKey`, `at`. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds |
-| Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `feedingId` (from the phone), `spotId`, `removed` |
-
-There is no grade item: nobody grades a cat (D9). GPA is worked out from
-`pop` when the cats are read (`01-product.md`, "GPA"). `pop` is kept by
-the events Lambda from the same `ENC.counted` bookkeeping as "met", so a
-label that corrects an encounter corrects the cat's popularity too.
-
-`lastFedAt` is the newest feeding that has not been removed. Removing a
-feeding re-reads the partition's last `FED#` item rather than trusting a
-stored "previous" value.
-
-`nameKey` is the name normalised (NFKC, case-folded, spaces collapsed),
-so "mango" and "Mango " are one option.
-
-A cat's description, usual region, coat and status are the admin's and
-live on the cat's item in `bgucats-data` (below). The member API reads
-them there and adds the counters from here.
-
-**The cat's shown name:** the admin's locked name if `nameLocked`; else
-the leading live option; else the admin's `displayName`; else nothing
-(D6).
-
-### Proposals, reports, moderation
-
-| Item | PK | SK | Holds |
-|---|---|---|---|
-| New-cat proposal | `PROPOSAL#{proposalId}` | `META` | `proposerId`, `sessionId`, `nameIdea`, `coat`, `regionId`, `traits`, `status` (`open` / `approved` / `merged` / `rejected`), `catId` (the result), `decidedBy`, `decidedAt`. On `GSI2` as `PROPOSALS#{status}` / `createdAt` |
-| Report | `REPORT#{reportId}` | `META` | `reporterId`, `targetType` (`post` / `user` / `name` / `avatar`), `targetId`, `reason`, `note`, `status` (`open` / `actioned` / `dismissed`), `decidedBy`. On `GSI2` as `REPORTS#{status}` / `createdAt` |
-| One report per person per target | `REPORTED#{targetType}#{targetId}` | `BY#{reporterId}` | `at`. Counting the partition gives "different people who reported this" |
-| Moderation run | `MOD#{kind}#{subjectId}` | `RUN#{at}` | `policy`, `model`, `mode`, `answers` (each question's probability), `outcome` (`pass` / `flag` / `block` / `error`), `acted`, `human`, `humanBy`, `humanAt`, `tokens`, `ms`. On `GSI2` as `MODQ#open` / `at` while it waits for an admin, then `MODRUN#{yyyy-mm}` / `at` |
-
-`kind` is one of `POSTTEXT`, `NAME`, `PROPNAME`, `DISPLAYNAME`,
-`USERNAME`, `AVATAR`, `PHOTO`.
-
-### Limits
-
-| Item | PK | SK | Holds |
-|---|---|---|---|
-| A person's counter for an action | `RATE#{userId}#{action}#{bucket}` | `META` | `count`, `expiresAt` |
-| Decision 1 use today (K3) | `SPEND#{yyyy-mm-dd}` | `DECISIONS` | `calls`, `tokens`, `expiresAt` |
-| Pushes sent to a person today | `USER#{id}` | `PUSHED#{yyyy-mm-dd}` | `count`, `expiresAt` |
+Its items and keys are in `docs/data-model.md`, "bgucats-social", since
+the table was created (F3). This file keeps what is not a list of keys:
+the rules, the transactions, the invariants.
 
 ## Added to `bgucats-data`
 

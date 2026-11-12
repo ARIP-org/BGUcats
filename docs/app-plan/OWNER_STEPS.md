@@ -20,7 +20,7 @@ set its row here to done with the date.
 
 | ID | Step | Needed before | Where | State |
 |---|---|---|---|---|
-| O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | **done 2026-11-12:** all 34 |
+| O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | **done 2026-11-12:** all 35 |
 | O2 | Freeze the design | E0 | the prototype | |
 | O3 | The first production promote | L3 (was: F1) | GitHub, a `v*` tag | **postponed by the owner, 2026-11-12.** Blocks nothing until production is wanted |
 | O4 | Apply the guardrail changes | F3 deploys | AWS: staging now, production with its first promote | **staging done 2026-11-12** (`docs/MANUAL_STEPS.md`, step 17); production before its first promote |
