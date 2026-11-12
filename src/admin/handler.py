@@ -219,7 +219,9 @@ def _role_of(item):
 
 
 def _get_me(email, role, **_):
-    return {"email": email, "role": role}
+    # `social`: whether this account's member app is open, so the desk can
+    # offer the way there (web/app.js, #new-app).
+    return {"email": email, "role": role, "social": SOCIAL}
 
 
 def _get_stats(**_):

@@ -78,6 +78,13 @@ export function Profile() {
     </section>
 
     <section class="group" aria-label=${t("profile.account")}>
+      <a class="row" href="/?desk" data-row="desk">
+        <span class="row-icon neutral" aria-hidden="true"><${Icon} name="camera" /></span>
+        <span class="row-label">${t("profile.desk")}</span>
+        <span class="row-value"></span>
+        <${Icon} name="chevron" size=${16} width=${2.2} />
+      </a>
+      <div class="divider" aria-hidden="true"></div>
       <button type="button" class="row" onClick=${signOut}>
         <span class="row-icon neutral" aria-hidden="true"><${Icon} name="signOut" /></span>
         <span class="row-label">${t("signOut.button")}</span>
