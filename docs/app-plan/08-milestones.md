@@ -63,7 +63,7 @@ A session ticks its row in the pull request that finishes it.
 ## The order
 
 ```
-O1 decisions ─► O3 first promote ─► F1 ─► (O4) ─► F2 ─► F3 ─► F4
+O1 decisions (done) ─► F1 ─► (O4, staging) ─► F2 ─► F3 ─► F4
                                                               │
         ┌──────────────────────┬──────────────────────────────┤
         ▼                      ▼                              ▼
@@ -94,7 +94,9 @@ gets there first and recorded there.
 
 ### F1. The guardrails learn the new shapes
 
-- **Needs:** A1, A2, A3, P2 answered. O3 done.
+- **Needs:** nothing. A1, A2, A3 and P2 are answered (2026-11-12), and
+  the first production promote (O3) was postponed by the owner and no
+  longer comes first. **This is the next thing to build.**
 - **Builds:** only `infra/bootstrap`, `infra/main/allowed-resource-types.txt`
   and their tests. Exactly the list in `02-architecture.md`, "What the
   guardrails must learn". No resource in `infra/main` yet.
@@ -102,8 +104,8 @@ gets there first and recorded there.
   `infra/main`; a test proves the plan check accepts an event source
   mapping and still refuses, say, `aws_db_instance`; the owner has applied
   bootstrap to **staging**.
-- **Owner:** O4, with the full brief. Production's apply can wait until
-  F3 has proven staging's.
+- **Owner:** O4 for **staging**, with the full brief. Production's apply
+  waits for production's first promote (P2, O3) and must come before it.
 
 ### F2. Shared code, and one catalogue of every key
 
@@ -132,7 +134,7 @@ gets there first and recorded there.
   events Lambda's log; a record made to fail arrives as an alert email
   and does not block the next one.
 - **Owner:** the alert email's confirmation, if a new subscription was
-  made. Then O4 for production.
+  made.
 
 ### F4. The member API: who you are, flags, who may sign up
 
@@ -545,8 +547,11 @@ Strangers. Apple reviews the build.
 
 ### L3. Production on
 
+- **O3, the first production promote,** which the owner postponed on
+  2026-11-12 to here. It will be the first ever and the largest: read
+  its plan line by line.
 - The plan for production shows what staging has run.
-- O4, O5, O7 done for production; O6.
+- O4, O5, O7 done for production, O4 before the promote; O6.
 - `social` on, `frontDoor = app`, by pull requests, promoted by tag.
 - The existing collaborators can still do everything they did.
 - Rollback is the flag, then `git revert`.

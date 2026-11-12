@@ -299,8 +299,12 @@ control is, and what a feeding spot looks like on the map.
 
 ## What the design leaves out
 
-Gaps a session must not fill by guessing. "Plan" is what to build
-meanwhile; "Ask" is the owner's (`DECISIONS.md`) or the designer's.
+What the prototype does not draw. The owner's decision of 2026-11-12:
+these are closed while each feature is built, not beforehand. The
+session that meets one proposes the missing piece from the prototype's
+own components, and the owner accepts or changes it in that pull request
+(`README.md`, rule 4). "Plan meanwhile" below is the starting proposal,
+not a reason to wait.
 
 | # | Gap | Plan meanwhile |
 |---|---|---|

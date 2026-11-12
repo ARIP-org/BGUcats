@@ -1241,6 +1241,180 @@ build with no review. Inviting anyone else (by email or a public link)
 needs Apple's beta review first, and the reviewer must be able to sign in
 past the allowlist: to be solved when outside testers are wanted.
 
+## 16. A domain name, bought through AWS (written 2026-11-12, not done)
+
+`docs/app-plan/OWNER_STEPS.md`, O9. The owner's decision of 2026-11-12:
+buy the domain now, on AWS, with Claude doing the work once the owner has
+signed in.
+
+**What this is for.** A name of our own for invite links
+(`bgucats.app/i/…` in the prototype), for links that open the iPhone
+app, for the privacy policy's address, and so printed QR codes survive
+any future change underneath. Nothing waits on it today; the links
+milestone (N4 of the plan) will.
+
+**Where it is bought: the management account, and nothing is unblocked.**
+The decision was "unblock only what is needed to buy". What is needed
+turns out to be nothing, and that is better than a narrow opening:
+
+- A service control policy never applies to the management account. The
+  member accounts keep `route53domains` denied, as `infra/org/scp.tf`
+  says it must stay: it buys in one call.
+- Each member account's budget counts everything billed to it. A domain
+  costs about what the $20 line is, and crossing it freezes every change
+  in that account until the month ends (`infra/org/budgets.tf`). Bought
+  in production, the domain could stop production's deploys. The
+  management account has no such action.
+- A domain outlives accounts, and production has changed account once
+  already.
+
+If the owner would still rather hold it in production, it can be moved
+between the organization's accounts later at no charge. Buying there
+directly would need the allowlist opened for the purchase and closed
+again, two `infra/org` applies, and the budget lines raised for that
+month.
+
+**Where it is run: a codespace.** A cloud session (claude.ai/code) has no
+AWS sign-in at all. In a codespace the owner signs in and Claude runs the
+rest.
+
+### Before you start
+
+- A codespace on this repo, on a branch that has
+  `infra/scripts/domain.sh`.
+- About ten minutes, plus waiting for AWS (minutes to a few hours).
+- Cost: the first year's price, which the script prints before anything
+  is bought; the same order of amount every year after, charged
+  automatically; and $0.50 a month for the hosted zone Route 53 makes for
+  the name. `.app` was on Route 53's list of names it sells on
+  2026-11-12; its price was not checked that day, the script reads it
+  live.
+- An email address you read: AWS sends it a link that must be clicked.
+
+### The steps
+
+1. In the codespace's own terminal (not through Claude), sign in to the
+   management account:
+
+   ```bash
+   aws sso login --profile mgmt-admin --use-device-code
+   ```
+
+2. Make the contact file. A registrar must be given a name, a postal
+   address, a phone number and an email. It goes in a file **outside the
+   repo**; the script refuses one inside it and never prints it.
+
+   ```bash
+   mkdir -p ~/.config/bgucats
+   ```
+
+   ```bash
+   infra/scripts/domain.sh contact-template > ~/.config/bgucats/domain-contact.json
+   ```
+
+   Open that file in the editor and fill every field. The phone number is
+   written `+972.501234567`: country code, a dot, the number. Claude does
+   not need to see this file; do not paste it into the chat.
+
+3. Ask Claude: **"check the domain bgucats.app"**. It runs:
+
+   ```bash
+   infra/scripts/domain.sh check bgucats.app
+   ```
+
+   You should see `bgucats.app: AVAILABLE` and the price for the first
+   year and for each year after.
+
+4. Ask Claude: **"buy it, up to $N"**, with N a little over the price you
+   just saw. It runs the purchase and answers the script's "yes" for you:
+
+   ```bash
+   echo yes | infra/scripts/domain.sh buy bgucats.app --max-usd N
+   ```
+
+   Before buying, the script prints the name, the account and the price,
+   and refuses if the price is over N, if the name is not free, or if the
+   contact file is incomplete. You should see `Requested. Operation …`.
+
+   To press the button yourself instead, run the same command without
+   `echo yes |` in the terminal and type `yes` when asked.
+
+5. Open the email from AWS at the contact's address and click the
+   verification link. Without it the domain is suspended after 15 days.
+
+6. Later, ask Claude **"domain status"**:
+
+   ```bash
+   infra/scripts/domain.sh status bgucats.app
+   ```
+
+   The request should read `SUCCESSFUL`, and the domain should show an
+   expiry date a year away, `autoRenew: true` and four name servers.
+
+7. Sign out:
+
+   ```bash
+   aws sso logout
+   ```
+
+### If it goes wrong
+
+- **`UNAVAILABLE`:** someone owns the name. Check another:
+  `infra/scripts/domain.sh check <other>.app`. The plan does not depend
+  on this exact name; the prototype's link text would change with it.
+- **`UNAVAILABLE_PREMIUM`:** the registry sells this name at its own
+  price, and Route 53's API does not sell those. Choose another name, or
+  buy that one elsewhere and tell the next session (then the DNS is not
+  in AWS and N4's brief changes).
+- **`DONT_KNOW`:** the registry did not answer. Run the check again in a
+  minute.
+- **The request ends `FAILED` or `ERROR`,** with a message about the
+  account, billing or verification: AWS sometimes holds a first domain
+  purchase in an account for a manual check. The message says what it
+  wants; a support case in the management account's billing category is
+  the usual way through. Nothing is charged for a failed registration.
+- **"… is account X, but the organization's management account is Y":**
+  the profile is signed in to the wrong account. Sign in again with
+  `--profile mgmt-admin`.
+
+### How to undo it
+
+A registration cannot be taken back, and no refund should be expected.
+What can be changed afterwards: auto-renew can be turned off (the name
+then lapses at the end of its year), and the domain can be moved to
+another account in the organization.
+
+### What never goes into chat or git
+
+The contact file: a name, a home address and a phone number. Delete it
+from the codespace when the domain shows as registered:
+
+```bash
+rm ~/.config/bgucats/domain-contact.json
+```
+
+There is no secret in this step.
+
+### What to tell the next session
+
+The domain's name, the date, and that its DNS is the hosted zone Route 53
+made in the management account. The session that buys it records those
+in `docs/app-plan/OWNER_STEPS.md` (O9), adds the domain to the list of
+what the management account holds in `CLAUDE.md`, and marks this step
+done.
+
+### What this step does not do
+
+It buys the name and nothing else. The certificate, the DNS records that
+point the name at the app, Apple's file for links, and Cognito's and
+Google's lists of allowed addresses are N4's, with their own brief. That
+work needs `acm` on the organization's allowlist for the member accounts;
+`route53domains` never does.
+
+**Not tried against AWS.** `domain.sh` is tested against a stand-in for
+the `aws` command (`tests/infra_scripts`): every refusal, and the exact
+request it sends. Its first real run is step 3 above, which only looks.
+
 ---
 
 ## Known gap: the CI role can read production secrets

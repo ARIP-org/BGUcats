@@ -98,9 +98,13 @@ Things decided to leave for later, so they are not lost. Newest first.
   2026-11-12 to build everything the prototype shows, for TestFlight, with
   moderation and re-ranking on Google's Decision 1. The plan holds the
   work in order, the owner's decisions (`DECISIONS.md`) and the owner's
-  manual steps (`OWNER_STEPS.md`). The owner answered 32 of the 34
-  decisions the same day; the foundations wait only on the first
-  production promote. *(2026-11-12.)*
+  manual steps (`OWNER_STEPS.md`). The owner answered all 34 decisions
+  the same day and postponed production's first promote, so nothing waits:
+  the next thing to build is milestone F1. *(2026-11-12.)*
+- **The domain is ready to be bought, not bought.** Through AWS, in the
+  management account, by `infra/scripts/domain.sh` from a codespace with
+  the owner signed in: `docs/MANUAL_STEPS.md`, step 16. The script has
+  only ever run against a stand-in for `aws`. *(2026-11-12.)*
 - **What the design does not draw yet** is listed once, in
   `docs/app-plan/01-product.md`, "What the design leaves out": sign-in and
   first run, reporting a post, the control that logs a feeding and how a

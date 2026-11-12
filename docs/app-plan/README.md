@@ -82,9 +82,16 @@ These bind every session, whatever its prompt says. They are on top of
    same pull request and say so.
 4. **Port the design; do not invent it.** Colours, sizes, radii, timing
    curves and copy come from the frozen prototype
-   (`docs/design/prototype/`). Where the design is silent, the gap is
-   listed in `01-product.md` with what to do. A gap that is not listed is
-   a question for the owner, not a place to improvise.
+   (`docs/design/prototype/`). **Where the design is silent, the gap is
+   closed inside the milestone that needs it** (the owner, 2026-11-12:
+   "we will implement during the feature implementation"). The gaps are
+   listed in `01-product.md`. For each one a milestone meets, the session
+   proposes the missing piece out of the prototype's own components and
+   tokens, builds it behind the feature's flag, and shows it in the pull
+   request as screenshots with one line saying "not in the design:
+   proposed". The owner accepts or changes it there. A gap is never
+   closed silently, and never by a new visual idea the prototype does not
+   already use.
 5. **Flags.** A feature that is not finished ships behind its flag, off in
    production (`02-architecture.md`, "Flags"). The desk, Capture and the
    bot must behave exactly as before with every flag off, and the existing

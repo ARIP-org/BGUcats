@@ -20,18 +20,18 @@ set its row here to done with the date.
 
 | ID | Step | Needed before | Where | State |
 |---|---|---|---|---|
-| O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | 32 of 34 answered 2026-11-12. Open: D2, D18, and one line of D7 to confirm |
+| O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | **done 2026-11-12:** all 34 |
 | O2 | Freeze the design | E0 | the prototype | |
-| O3 | The first production promote | F1 | GitHub, a `v*` tag | |
-| O4 | Apply the guardrail changes | F3 deploys | AWS, both accounts | |
+| O3 | The first production promote | L3 (was: F1) | GitHub, a `v*` tag | **postponed by the owner, 2026-11-12.** Blocks nothing until production is wanted |
+| O4 | Apply the guardrail changes | F3 deploys | AWS: staging now, production with its first promote | |
 | O5 | Google: a Gemini API key per account | C1, R0 | Google AI Studio / Cloud | |
 | O6 | Google: sign-in open to more than test users | F4 on production | Google Cloud console | |
 | O7 | Apple: push | N2 | Apple Developer | |
 | O8 | Apple: Sign in with Apple | N6 | Apple Developer, Cognito | |
-| O9 | A domain, its DNS, its certificate | buying: now (A6, 2026-11-12). Wiring: N4 | a registrar, AWS | the owner is buying it |
+| O9 | A domain, its DNS, its certificate | buying: now (A6). Wiring: N4 | AWS, the management account, from a codespace | **ready to run:** `docs/MANUAL_STEPS.md`, step 16 |
 | O10 | Privacy policy, terms, a support address | L1 (draft), L2 (final) | the landing site | |
 | O11 | The blocklist and the gold set | C3 | files in the repo | |
-| O12 | The campus regions and the feeding spots | B2, B7c | a file in the repo | |
+| O12 | The campus regions and the feeding spots | nothing: made-up ones until the owner sends them | a file in the repo | later (the owner, 2026-11-12) |
 | O13 | Each cat's public text | E4 looks right | the labeling desk | |
 | O14 | Translations read by native speakers | E10 | files in the repo | |
 | O15 | TestFlight builds and phone checks | every N milestone | GitHub Actions, a phone | |
@@ -73,8 +73,14 @@ frozen design still has, as questions.
 
 `docs/ROADMAP.md` has had it as the next step since 2026-11-10: no `v*`
 tag has ever been pushed, and production lacks the alarms and three
-fixes. Do it before the app's work starts, so the first promote ever is
-not also the one that carries a new table and two new Lambdas.
+fixes. The plan asked for it before the app's work starts, so the first
+promote ever is not also the one that carries a new table and two new
+Lambdas.
+
+**Postponed by the owner on 2026-11-12:** staging works, production is
+fixed later. Nothing in the plan waits for it now. What follows from
+that is in `DECISIONS.md`, P2: guardrail changes go to staging only, and
+when the promote does come, production's O4 comes first.
 
 **The brief must cover:** which commit carries `deployed/staging` and how
 to see that; the tag command; what production's plan should show and what
@@ -178,30 +184,34 @@ it; trying it on a phone.
 
 ## O9. A domain, its DNS, its certificate
 
-A6, answered 2026-11-12: the owner buys the domain now. The
-organization's allowlist keeps `route53domains` off on purpose (one API
-call buys a domain), so the domain is bought outside AWS.
+A6, answered 2026-11-12: the owner buys the domain now, **through AWS**,
+with Claude doing the work in the owner's signed-in session.
 
-**Buying it now needs nothing from the repo and nothing from AWS.** Two
-things to get right at the till, because they are awkward to change
-later:
+**The buying half is written and ready:** `docs/MANUAL_STEPS.md`, step
+16, and `infra/scripts/domain.sh`. In short:
 
-- Buy it at a registrar outside AWS, and check before paying that its
-  DNS (or the DNS host you will use with it) can point the **bare**
-  domain, with no `www`, at a CloudFront address. That feature is
-  usually called ALIAS, ANAME or CNAME flattening. Without it only
-  `www.…` can reach the app.
-- The prototype's invite link is `bgucats.app/i/…`. A `.app` address
-  works over HTTPS only, which is what this project serves anyway.
+- It is bought in the **management account**. No service control policy
+  applies there, so nothing is unblocked, and `route53domains` stays
+  denied in production and staging. A member account's budget would also
+  count the purchase, and a domain costs about what the $20 freeze line
+  is.
+- It is run from a **codespace**. A cloud session has no AWS sign-in.
+- You sign in (`mgmt-admin`), fill a contact file that stays outside the
+  repo and out of chat, and ask Claude to check the name and then to buy
+  it up to a price you name. You click one link in an email from AWS.
+- Route 53 can point the bare domain at CloudFront, so the worry about a
+  registrar's DNS does not arise.
 
-After buying: do nothing else yet. Tell the next session the domain's
-name and where its DNS is hosted; it records both here. The certificate,
-the DNS records, Apple's file and the allowlist change are the brief
-below, written when N4 is reached.
+The other half, the brief below, is written when N4 is reached: the
+certificate, the DNS records, Apple's file, the allowed addresses. That
+half needs `acm` on the organization's allowlist for the member accounts.
 
-**The brief must cover:** a registrar and the yearly price; that `.app`
-addresses work over HTTPS only; the `infra/org` change that adds `acm`
-to the allowlist and its apply (O4's routine, management account); the
+**The N4 brief must cover:** that `.app` addresses work over HTTPS only;
+the `infra/org` change that adds `acm` to the allowlist and its apply
+(O4's routine, management account); where the DNS records live (the
+hosted zone Route 53 made in the management account, managed from
+`infra/org`, or a zone in production that the domain is pointed at:
+decided in N4, with the reasons) and what that needs opened; the
 certificate request and the DNS records that validate it; the records
 that point the name at the two CloudFront distributions, including the
 bare domain; the file Apple reads for universal links

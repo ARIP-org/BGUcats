@@ -231,8 +231,17 @@ Lambda can have, whatever a pull request writes):
   covers the two new secret names.
 
 **`infra/org`, the service allowlist:** nothing for F1. Every service
-used is already allowed. Later, each its own owner step: `acm` for a
-custom domain (A6, O9); the SMS spending limit if D5 chooses codes (O17).
+used is already allowed. Later, each its own owner step: `acm` for the
+domain's certificate in the member accounts (N4, O9); the SMS spending
+limit if D5 ever chooses codes (O17).
+
+The domain itself (A6) is bought in the management account, where no
+service control policy applies, so `route53domains` is never opened for
+the member accounts (`docs/MANUAL_STEPS.md`, step 16).
+
+**Staging only, for now.** The owner postponed production's first
+promote (P2), so every guardrail change here is applied to staging and
+waits, for production, until that promote.
 
 **`scripts/check_plan.py`:** already refuses a provisioned table and an
 oversized Lambda for any table or function; add tests that say so for

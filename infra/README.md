@@ -22,6 +22,13 @@ Three Terraform root modules, applied by different hands.
   in `org/scp.tf` and applied **before** the PR that uses it can deploy.
   Runbook, proofs and the way back: `docs/MANUAL_STEPS.md`, step 13.
 
+  The project's domain name is also the management account's, and is not
+  Terraform: `infra/scripts/domain.sh` checks a name, buys it (a price
+  ceiling, then "yes") and shows its state. Bought there so that
+  `route53domains` never has to be allowed in a member account, and so
+  the purchase cannot trip a member account's budget. Step by step:
+  `docs/MANUAL_STEPS.md`, step 16.
+
 - **`bootstrap/`**: the state backend (S3 bucket + DynamoDB lock table), the
   GitHub Actions OIDC provider and its two roles, the permissions boundary
   for every role in `main/`, and the account's monthly cost alert. Local state, since it creates the

@@ -19,14 +19,14 @@ an answer.
 | **A3** | How do side effects run: table stream, or async invoke? | Stream | blocks F1 | Recommendation (2026-11-12) |
 | A4 | How is the client rendered? | No build step, a small vendored renderer | may proceed | Recommendation (2026-11-12) |
 | A5 | Push: straight to Apple, or through SNS? | Straight to Apple | may proceed until B9 | Recommendation (2026-11-12) |
-| A6 | A custom domain now? | Buy it now, wire it when N4 needs it | may proceed until N4 | Recommendation: the owner buys the domain now (2026-11-12) |
+| A6 | A custom domain now? | Buy it now, wire it when N4 needs it | may proceed until N4 | **Changed:** buy it now, **through AWS** (Route 53), with Claude running it in the owner's session. In the management account, where nothing needs unblocking (2026-11-12; `docs/MANUAL_STEPS.md`, step 16) |
 | **D1** | Who may sign up? Sign in with Apple? | BGU Google accounts + invited others; Apple for external TestFlight | blocks F4 | Recommendation (2026-11-12) |
-| **D2** | TestFlight: internal only, or external (a public link)? | Internal first, external at L2 | may proceed | **open** |
+| **D2** | TestFlight: internal only, or external (a public link)? | Internal first, external at L2 | may proceed | Recommendation (2026-11-12) |
 | **D3** | Whose posts are in the feed? | The whole campus, friends marked | blocks B3 | Recommendation (2026-11-12) |
 | **D4** | Friends: instant, or by request? | Invite link instant; everything else by request | blocks B5 | Recommendation (2026-11-12) |
 | **D5** | Phone number and contact matching | Not in the first build; invite links only | blocks B5b only | Recommendation (2026-11-12) |
 | **D6** | Who names a cat: the poll, or an admin? | The poll leads; an admin can lock or remove | blocks B4 | Recommendation (2026-11-12) |
-| D7 | Is a proposed new cat public before an admin approves? | The post is; the cat joins the gallery on approval | blocks B6 | **Changed:** nothing about a new cat is public until an admin approves it, the post included (2026-11-12) |
+| D7 | Is a proposed new cat public before an admin approves? | The post is; the cat joins the gallery on approval | blocks B6 | **Changed:** nothing about a new cat is public until an admin approves it, the post included. The form keeps "& create a post"; the post is held (confirmed 2026-11-12) |
 | D8 | When does "met" count? | At once, taken back if the label disagrees | blocks B7 | Recommendation (2026-11-12) |
 | **D9** | GPA: what is graded, and where? | Design it first | blocks B7b | **Changed:** no grading by people. GPA is a popularity grade the app computes (2026-11-12) |
 | **D10** | The feeding log | Design it first; check campus policy | blocks B7c | **Changed:** build it. Feeding spots on the map; each cat shows when it was last fed (2026-11-12) |
@@ -37,7 +37,7 @@ an answer.
 | **D15** | Reporting a post; reasons; who answers within a day | Add it to the design | blocks B8 | Recommendation (2026-11-12) |
 | D16 | Age and terms | 16+, a short terms page | blocks L2 | 16+ (2026-11-12) |
 | D17 | Languages at the first external build | English and Hebrew; Russian and Arabic after | may proceed | Recommendation (2026-11-12) |
-| D18 | What sends a notification | A friend's post, a friend request, your name idea leading | blocks B9 | **open** |
+| D18 | What sends a notification | A friend's post, a friend request, your name idea leading | blocks B9 | Recommendation (2026-11-12) |
 | **M1** | Sending people's photos and text to Google | Yes, paid tier only, said in the privacy policy | blocks C1 | Recommendation (2026-11-12) |
 | M2 | When moderation starts acting | After a gold set and two weeks of shadow | may proceed (shadow) | Recommendation (2026-11-12) |
 | M3 | If Google is down | Hold for an admin; never publish unchecked | may proceed | Recommendation (2026-11-12) |
@@ -46,21 +46,26 @@ an answer.
 | K2 | The bar the experiment must clear | In `07-rerank.md` | may proceed | Recommendation (2026-11-12) |
 | K3 | Daily ceiling on Decision 1 spend | $2 a day per account | may proceed | Recommendation (2026-11-12) |
 | P1 | Budgets for a public app | Keep $10 / $20 / $40 until L2; revisit there | may proceed | Recommendation (2026-11-12) |
-| **P2** | When does the app reach production? | Dark behind flags from the start; on at L3 | blocks F1 | Recommendation (2026-11-12) |
+| **P2** | When does the app reach production? | Dark behind flags from the start; on at L3 | blocks F1 | Recommendation, and **the first production promote is postponed**: staging works, production is fixed later (2026-11-12) |
 | **P3** | Changing `CLAUDE.md`'s hard constraints | Agree in principle now; each pull request changes its own rule | blocks F4 | Recommendation (2026-11-12) |
 
 Bold is what blocks the first milestones.
 
-**State, 2026-11-12:** the owner answered 32 of 34 in one session.
-Everything that blocks the foundations and the backend is answered. Three
-answers differ from the recommendation and are written out in their
-sections below: **D7, D9, D10**. Two are open: **D2** (may proceed on
-internal TestFlight) and **D18** (blocks only B9, push).
+**State, 2026-11-12: all 34 are answered.** Four answers differ from the
+recommendation and are written out in their sections below: **A6, D7,
+D9, D10**. With P2 the owner also postponed the first production promote.
+Nothing in the plan now waits on a decision. What still needs the owner
+is in `OWNER_STEPS.md`.
 
-One answer was read with an assumption that the owner should confirm:
-D7, whether a person may still write a post for a new cat that is then
-held (assumed), or whether the new-cat form loses its "create a post"
-button altogether.
+Two things the owner said that day that are not a row here:
+
+- **The gaps in the design are closed while each feature is built,** not
+  beforehand by a designer. The session building a feature proposes what
+  the design left out, in the prototype's own components, shows it as
+  screenshots, and the owner accepts or changes it in that pull request
+  (`README.md`, rule 4; `01-product.md`, "What the design leaves out").
+- **The feeding spots come later and block nothing.** Made-up spots
+  until then (O12).
 
 ---
 
@@ -155,6 +160,28 @@ onto the allowlist for the certificate (an `infra/org` change).
 - *Buy now, wire at N4 (recommended).* Until then invite links use the
   CloudFront address.
 - *Later.* Invite links are ugly for the beta; universal links wait.
+
+**Answered 2026-11-12: buy it now, through AWS, and have Claude do it
+once the owner has signed in.** The owner expected this to mean opening
+the organization's allowlist for the one thing needed.
+
+It needs nothing opened, because of where it is bought: **the management
+account**, to which no service control policy applies. That is also the
+right place for two other reasons. A member account's budget counts the
+purchase, a domain costs about what the $20 line is, and crossing it
+freezes every change in that account for the rest of the month; and a
+domain should outlive accounts. So `route53domains` stays denied in
+production and staging, exactly as `infra/org/scp.tf` says it must.
+
+Built the same day: `infra/scripts/domain.sh` (check, buy with a price
+ceiling and a typed "yes", status) and the step-by-step,
+`docs/MANUAL_STEPS.md`, step 16. It runs in a codespace: a cloud session
+has no AWS sign-in.
+
+If the owner prefers the domain to sit in the production account after
+all, say so: it can be moved between the organization's accounts later,
+or bought there directly at the cost of two `infra/org` applies and a
+raised budget for that month.
 
 ---
 
@@ -276,10 +303,8 @@ What that means in the build:
 - The toast "New cat added — thanks!" is no longer true at that moment.
   It needs new words ("Sent to the admins"); the designer's.
 
-**To confirm with the owner:** the other reading of the same sentence is
-that the new-cat form should not offer "Add cat & create a post" at all.
-The build above keeps the button and holds the post. Removing the button
-is a smaller build; say which.
+**Confirmed by the owner, 2026-11-12:** the form keeps "Add cat & create
+a post", and the post is held as described.
 
 ### D8. When "met" counts
 
@@ -521,6 +546,26 @@ real numbers; a stopped API is then an outage for real users.
 
 The first promote has still never been made (`docs/ROADMAP.md`). Do it
 before F1 (O3).
+
+**Answered 2026-11-12: the recommendation, and the first promote is
+postponed.** The owner: staging works; production is fixed later. So F1
+does not wait for O3, and the app is built and tried on staging, where
+the iPhone builds already point.
+
+What that changes, so it is not a surprise later:
+
+- Production stays where it is (no alarms, without the three fixes of
+  early November) until the owner promotes.
+- The guardrail changes (O4) are applied to staging only for now.
+  Production's apply comes with its first promote, and must come before
+  it: the deploy role there cannot create the new table or Lambdas until
+  then.
+- CI still plans production on every pull request. Those plans will
+  show more and more to add. That is expected, not an error.
+- The first promote ever will also be the largest. The rule that every
+  feature ships behind a flag, off in production, is what keeps that
+  safe, and is why it stays in force even though nothing is being
+  promoted.
 
 ### P3. `CLAUDE.md`'s rules
 
