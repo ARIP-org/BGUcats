@@ -22,7 +22,7 @@ A session ticks its row in the pull request that finishes it.
 | F4 | The member API: who you are, flags, who may sign up | merged 2026-11-12 |
 | B1 | Profiles | |
 | B2 | Cats for members, regions | merged 2026-11-12 |
-| B3 | Posts, the feed, likes | **B3a** merged 2026-11-12; **B3b** built 2026-11-12, in review (encounters, "met", labels correcting a post's cat); **B3c** built 2026-11-12, in review (the local app and the seed with the member app; the smoke test posting; needs `docs/MANUAL_STEPS.md` step 18 before its merge) |
+| B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | |
 | B5 | Friends and invites (B5b: phone and contacts) | |
 | B6 | New-cat proposals | |
@@ -38,8 +38,8 @@ A session ticks its row in the pull request that finishes it.
 | R1 | Re-rank: shadow | |
 | R2 | Re-rank: measured | |
 | R3 | Re-rank: live | |
-| E0 | Client groundwork | built 2026-11-12, in review (`web/lib/`, the renderer and font in `web/vendor/`, `tokens.css`, `t()`, the CSS rules, `app.html`'s empty frame, `frontDoor`) |
-| E1 | The frame: tabs, navigation, themes | |
+| E0 | Client groundwork | merged 2026-11-12 |
+| E1 | The frame: tabs, navigation, themes | built 2026-11-12, in review |
 | E2 | The feed | |
 | E3 | The capture flow | |
 | E4 | The gallery, a cat's page, the poll | |
@@ -490,6 +490,21 @@ English file.
   dialog, the toast, theme switching, the store.
 - **Done when:** screenshots of the frame in four themes; "reduce
   motion" turns slides into fades.
+- **Built (2026-11-12):** `web/social/` gains `store.js` (one store:
+  who you are, the theme, the tab, the page stack, the bar's state),
+  `theme.js` (the four themes by the prototype's names, kept on the
+  phone), `motion.js` (`makeSpring` and the glass press, ported),
+  `ui.js` (icons, the toast, `confirm()`, `openMenu()`), `tabbar.js`
+  (Cats, Scan a cat, Home; the lens, its drag, the shrink on scroll),
+  `stack.js` (pages slide in from the end edge and go back by the back
+  button or a swipe from the start edge; a fade with "reduce motion"),
+  and the Home tab with the profile page's settings (language, theme)
+  and sign-out. Tested: tabs and lens, the page slide and both ways
+  back, reduce motion, the theme menu kept across a reload, Escape and
+  arrows in a menu, sign-out asked first, the bar shrinking and coming
+  back, three widths, right-to-left. **Not built, on purpose:** the
+  bottom sheet, until its first user (E3); the top buttons (search, +)
+  with the feed (E2); "Scan a cat" says it is coming until E3.
 
 ### E2. The feed
 

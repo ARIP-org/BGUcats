@@ -16,13 +16,19 @@ import {
   forgetSignIn,
   idToken,
   login,
-  logout,
   readTokens,
   saveTokens,
   useConfig,
 } from "../lib/auth.js";
 import { html, render } from "../vendor/preact-htm.js";
+import { Feed } from "./feed.js";
+import { Home, Profile } from "./home.js";
 import { loadLanguage, t } from "./i18n.js";
+import { Stack } from "./stack.js";
+import { set, useStore } from "./store.js";
+import { TabBar, watchScroll } from "./tabbar.js";
+import { applyTheme, savedTheme } from "./theme.js";
+import { Overlays, toast } from "./ui.js";
 
 const HOME = "/app.html";
 const root = document.getElementById("root");
@@ -65,20 +71,30 @@ function NotOpen() {
   `;
 }
 
-// The empty frame. E1 gives it the tab bar, navigation and the theme menu.
-function Frame({ me }) {
+// The frame (E1): the tabs' pages, the pages pushed over them, the tab
+// bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
+const TAB_PAGES = { feed: Feed, home: Home };
+const PAGES = { profile: Profile };
+const onScroll = watchScroll();
+
+function Frame() {
+  const tab = useStore((s) => s.tab);
+  const stacked = useStore((s) => s.stack.length > 0);
   return html`
     <div class="frame" data-screen="frame">
-      <header class="top">
-        <span class="brand">${t("app.name")}</span>
-        <button class="glass-button small" type="button" onClick=${() => logout(HOME)}>
-          ${t("frame.signOut")}
-        </button>
-      </header>
-      <main class="screen">
-        <h1 class="title">${t("frame.hello", { name: me.displayName || me.username })}</h1>
-        <p class="lead">${t("frame.empty")}</p>
-      </main>
+      ${Object.entries(TAB_PAGES).map(
+        ([id, View]) => html`<div
+          class=${id === tab ? "tab-page shown" : "tab-page"}
+          data-tab-page=${id}
+          aria-hidden=${id === tab && !stacked ? undefined : "true"}
+          inert=${id !== tab || stacked}
+        >
+          <div class="scroller" onScroll=${onScroll}><${View} /></div>
+        </div>`,
+      )}
+      <${Stack} pages=${PAGES} />
+      <${TabBar} onScan=${() => toast(t("scan.soon"))} />
+      <${Overlays} />
     </div>
   `;
 }
@@ -90,6 +106,7 @@ async function boot() {
     location.replace("/");
     return;
   }
+  applyTheme(savedTheme());
   await loadLanguage("en");
   useConfig(await (await fetch("/config.json")).json());
   onSignedOut(() => show(html`<${SignIn} note=${takeNote()} />`));
@@ -118,7 +135,8 @@ async function boot() {
     }
     throw err;
   }
-  show(html`<${Frame} me=${me} />`);
+  set({ me });
+  show(html`<${Frame} />`);
 }
 
 boot().catch((err) => show(html`<${SignIn} note=${t("error.generic", { message: err.message })} />`));

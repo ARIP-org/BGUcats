@@ -205,3 +205,33 @@
     --dur-spring: 0s;
   }
 }
+
+/* The same in every theme (the prototype writes them as literals). */
+:root {
+  --danger: #E5534B;
+  --on-danger: #ffffff;
+  --on-accent: #1a1a1a;
+  --knob: #ffffff;
+  --dim: rgba(0,0,0,0.45);
+  --sheen: rgba(255,255,255,0.22);
+  --clear: rgba(255,255,255,0);
+  /* The bouncier springs of menus, the toast and the dialog. */
+  --ease-pop: cubic-bezier(0.3, 1.25, 0.45, 1);
+  --ease-toast: cubic-bezier(0.3, 1.3, 0.5, 1);
+  --ease-lens-press: cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+/* The theme menu's swatches: each theme's background and accent, whatever
+   theme is showing. */
+.swatch[data-swatch="bgu-light"] {
+  background: linear-gradient(135deg, #E9E8E5 50%, #94500C 50%);
+}
+.swatch[data-swatch="bgu-dark"] {
+  background: linear-gradient(135deg, #141414 50%, #E8913A 50%);
+}
+.swatch[data-swatch="cats-light"] {
+  background: linear-gradient(135deg, #F8F5F0 50%, #8A4720 50%);
+}
+.swatch[data-swatch="cats-dark"] {
+  background: linear-gradient(135deg, #0D0D0E 50%, #E29A5E 50%);
+}
