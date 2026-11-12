@@ -30,7 +30,7 @@ work is a frozen copy (`OWNER_STEPS.md`, O2).
 | `07-rerank.md` | the re-ranking layer on Decision 1 | milestones R0–R3 |
 | `08-milestones.md` | the work, in order, one pull request each | choosing what to do next |
 
-## The plan in twelve lines
+## The plan in thirteen lines
 
 1. **No relational database.** Every screen of the prototype is a key
    lookup or a short list. DynamoDB serves all of it at campus scale
@@ -63,6 +63,10 @@ work is a frozen copy (`OWNER_STEPS.md`, O2).
     order, its outbox and its measurement of the "pick from 3" loop.
 12. **`CLAUDE.md` changes with the first milestone that lifts a rule,** in
     that pull request, never ahead of it.
+13. **Users first** (the owner, 2026-11-12, R1). Two roles, user and
+    admin; a collaborator is a user. Admin screens are the smallest thing
+    that lets an admin act, in the existing desk, until the admin desk is
+    designed.
 
 ## Rules for a session that builds from this plan
 

@@ -1,0 +1,9 @@
+{
+  "comment": "Which changes to bgucats-social reach the events Lambda (infra/main/events.tf). Only items whose change has consequences; never the ones the Lambda itself writes (counters, badges, met, pushes), or it would trigger itself. tests/events/test_filters.py holds this file to src/events/handler.py's KINDS and SELF_WRITTEN. At most five patterns: a mapping's default limit.",
+  "patterns": [
+    {"dynamodb": {"Keys": {"PK": {"S": [{"prefix": "POST#"}]}, "SK": {"S": ["META"]}}}},
+    {"dynamodb": {"Keys": {"PK": {"S": [{"prefix": "CAT#"}]}, "SK": {"S": [{"prefix": "NAME#"}, {"prefix": "VOTE#"}, {"prefix": "FED#"}]}}}},
+    {"dynamodb": {"Keys": {"PK": {"S": [{"prefix": "USER#"}]}, "SK": {"S": ["PROFILE", {"prefix": "FRIEND#"}, {"prefix": "FREQ#IN#"}, {"prefix": "ENC#"}]}}}},
+    {"dynamodb": {"Keys": {"PK": {"S": [{"prefix": "PROPOSAL#"}, {"prefix": "REPORT#"}]}, "SK": {"S": ["META"]}}}}
+  ]
+}

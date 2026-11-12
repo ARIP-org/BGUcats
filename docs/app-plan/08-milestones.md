@@ -18,7 +18,7 @@ A session ticks its row in the pull request that finishes it.
 |---|---|---|
 | F1 | The guardrails learn the new shapes | built 2026-11-12; **applied on staging 2026-11-12** and proven (`docs/MANUAL_STEPS.md`, step 17); production with its first promote |
 | F2 | Shared code, and one catalogue of every key | built 2026-11-12, in review |
-| F3 | The social table, the events Lambda, the seed | |
+| F3 | The social table, the events Lambda, the seed | built 2026-11-12, in review. The local app and the seed learn the table in B1, with its first writes |
 | F4 | The member API: who you are, flags, who may sign up | |
 | B1 | Profiles | |
 | B2 | Cats for members, regions | |
@@ -147,16 +147,27 @@ gets there first and recorded there.
   and does not block the next one.
 - **Owner:** the alert email's confirmation, if a new subscription was
   made.
+- **State, 2026-11-12:** built: the table with its stream, the events
+  Lambda (sorts changes by kind, logs one line per batch, reports a failed
+  record alone), its role, the stream mapping with its filter, the
+  failure path to the alerts topic, two alarms. The filter is a file
+  (`src/events/filters.json`) with a test that every kind the handler
+  knows reaches it and that nothing it writes does (the guard against the
+  Lambda starting itself in a loop). Tested against records from a real
+  DynamoDB stream in moto. **Moved to B1:** the local app's second table
+  and the seed's people, because nothing writes the table until B1, so
+  there is nothing yet for either to show.
 
 ### F4. The member API: who you are, flags, who may sign up
 
 - **Needs:** D1, P3. F3.
 - **Builds:** `bgucats-app` at `/api/v1/` with its `OPTIONS` route;
   `GET /me` creating the user; `POST /me/terms`; the flags, from
-  settings to the response; the three access levels in the existing
-  handler and members admitted to the capture routes; the pre-sign-up
-  Lambda following `signup_policy` (staging stays `allowlist`);
-  `social` off in production. `CLAUDE.md`'s "two roles" becomes three in
+  settings to the response; two roles, `user` and `admin` (R1:
+  `collaborator` is read as `user`), and every user admitted to the
+  capture routes; the pre-sign-up Lambda following `signup_policy`
+  (staging stays `allowlist`); `social` off in production. `CLAUDE.md`'s
+  "two roles on the one allowlist item" is rewritten as user and admin in
   this pull request.
 - **Done when:** on staging, a test account signs in, `GET /api/v1/me`
   answers with a user id and flags, and that account can open an
@@ -565,7 +576,7 @@ Strangers. Apple reviews the build.
 - The plan for production shows what staging has run.
 - O4, O5, O7 done for production, O4 before the promote; O6.
 - `social` on, `frontDoor = app`, by pull requests, promoted by tag.
-- The existing collaborators can still do everything they did.
+- Today's collaborators, now users, can still do everything they did.
 - Rollback is the flag, then `git revert`.
 
 ## After this plan

@@ -1,4 +1,4 @@
-.PHONY: fmt lint test screenshots local-app seed-staging build build-ingest build-process build-admin build-beacon \
+.PHONY: fmt lint test screenshots local-app seed-staging build build-ingest build-process build-admin build-beacon build-events \
 	tf-init tf-plan site-invalidate admin-add poster \
 	model-export model-publish
 
@@ -53,7 +53,7 @@ local-app:
 seed-staging:
 	AWS_PROFILE=bgucats-staging-admin python scripts/seed_campus.py
 
-build: build-ingest build-process build-admin build-beacon
+build: build-ingest build-process build-admin build-beacon build-events
 
 # Always rebuilt rather than tracked as file targets: a directory's mtime
 # doesn't change when a source file inside it is edited, so a file-target
@@ -94,6 +94,15 @@ build-beacon:
 	$(LAMBDA_PIP) --target build/beacon -r src/beacon/requirements.txt
 	cp src/beacon/__init__.py src/beacon/handler.py build/beacon/beacon/
 	$(call lambda-compile,beacon)
+
+# What happens after a write to bgucats-social (infra/main/events.tf). No
+# dependencies beyond the runtime's boto3, so nothing to install; the
+# stream filter ships beside the handler.
+build-events:
+	rm -rf build/events && mkdir -p build/events/events
+	cp src/events/__init__.py src/events/handler.py src/events/filters.json \
+		build/events/events/
+	$(call lambda-compile,events)
 
 # Every target that calls AWS from a person's shell takes the profile by
 # name, PROFILE=bgucats-prod-ro or PROFILE=bgucats-staging-ro (or -admin),

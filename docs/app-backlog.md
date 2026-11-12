@@ -98,7 +98,7 @@ Things decided to leave for later, so they are not lost. Newest first.
   2026-11-12 to build everything the prototype shows, for TestFlight, with
   moderation and re-ranking on Google's Decision 1. The plan holds the
   work in order, the owner's decisions (`DECISIONS.md`) and the owner's
-  manual steps (`OWNER_STEPS.md`). The owner answered all 34 decisions
+  manual steps (`OWNER_STEPS.md`). The owner answered all 35 decisions
   the same day and postponed production's first promote, so nothing waits:
   the next thing to build is milestone F1. *(2026-11-12.)*
 - **The domain is ready to be bought, not bought.** Through AWS, in the

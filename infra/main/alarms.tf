@@ -11,7 +11,7 @@
 # slow answers. Add those when the app is public and has traffic to judge.
 #
 # Cost: each account's first ten alarms and first thousand emails a month
-# are free; this is six alarms in production and five in staging.
+# are free; this is eight alarms in production and seven in staging.
 
 # Not encrypted with a KMS key: CloudWatch cannot publish to a topic under
 # the AWS-managed SNS key, and a key of our own costs $1 a month to protect
@@ -43,6 +43,7 @@ locals {
       admin           = aws_lambda_function.admin.function_name
       admin-presignup = aws_lambda_function.admin_presignup.function_name
       beacon          = aws_lambda_function.beacon.function_name
+      events          = aws_lambda_function.events.function_name
       process         = aws_lambda_function.process.function_name
     },
     { for f in aws_lambda_function.ingest : "ingest" => f.function_name },
@@ -91,6 +92,29 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx" {
 
   comparison_operator = "GreaterThanThreshold"
   threshold           = 0
+  evaluation_periods  = 1
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+}
+
+# The events Lambda has fallen behind the social table's stream: the oldest
+# change it has not handled is more than five minutes old. A change waits
+# there while its record is retried, so this is also the first sign of a
+# record that keeps failing, before it reaches the alerts topic itself.
+resource "aws_cloudwatch_metric_alarm" "events_behind" {
+  alarm_name        = "bgucats-events-behind"
+  alarm_description = "bgucats-events (${var.environment}) is more than five minutes behind the bgucats-social stream. Logs: CloudWatch, log group /aws/lambda/bgucats-events."
+
+  namespace   = "AWS/Lambda"
+  metric_name = "IteratorAge"
+  dimensions  = { FunctionName = aws_lambda_function.events.function_name }
+  statistic   = "Maximum"
+  period      = 300
+
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 300000 # milliseconds
   evaluation_periods  = 1
   treat_missing_data  = "notBreaching"
 

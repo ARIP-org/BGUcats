@@ -48,10 +48,11 @@ an answer.
 | P1 | Budgets for a public app | Keep $10 / $20 / $40 until L2; revisit there | may proceed | Recommendation (2026-11-12) |
 | **P2** | When does the app reach production? | Dark behind flags from the start; on at L3 | blocks F1 | Recommendation, and **the first production promote is postponed**: staging works, production is fixed later (2026-11-12) |
 | **P3** | Changing `CLAUDE.md`'s hard constraints | Agree in principle now; each pull request changes its own rule | blocks F4 | Recommendation (2026-11-12) |
+| **R1** | Roles: how many, and what a collaborator is | — | blocks F4 | **The owner, 2026-11-12:** two roles. A collaborator is a user, with nothing extra. An admin is an admin. Admin screens are designed later; user-facing work comes first. Below |
 
 Bold is what blocks the first milestones.
 
-**State, 2026-11-12: all 34 are answered.** Four answers differ from the
+**State, 2026-11-12: all 35 are answered (R1, roles, was added by the owner).** Four answers differ from the
 recommendation and are written out in their sections below: **A6, D7,
 D9, D10**. With P2 the owner also postponed the first production promote.
 Nothing in the plan now waits on a decision. What still needs the owner
@@ -567,10 +568,43 @@ What that changes, so it is not a surprise later:
   safe, and is why it stays in force even though nothing is being
   promoted.
 
+### R1. Roles (the owner, 2026-11-12)
+
+Not a question the plan asked; the owner settled it unprompted:
+
+> Collaborators are users. They don't have any other extensive
+> permissions. An admin is an admin. We haven't designed an admin desk
+> with statistics yet; we will do this later. For now we concentrate on
+> the user's perspective.
+
+What it means for the build:
+
+- **Two roles, `user` and `admin`.** The plan's three levels (admin,
+  collaborator, member) become two. Everyone who signs in and is
+  admitted (D1) is a user; an admin is an admin on the allowlist.
+- **Today's collaborators become users** with no loss: everything a
+  collaborator can do today (Capture, the cat guesses, browsing the
+  cats) is something every user can do. The stored value
+  `role = collaborator` is read as `user`, so no allowlist item has to be
+  rewritten; items written from F4 on say `user`.
+- **Until sign-up opens, the allowlist is still the door.** With
+  `signup_policy = allowlist` (staging, and production until L3), being
+  on the allowlist is what admits a user, whatever the item's role.
+- **Admin screens stay minimal and in the existing desk** until the
+  admin desk is designed. The plan's desk additions (the moderation,
+  reports and proposals queues, the people list) are needed for the app
+  to work at all, because held posts and new cats wait for an admin
+  (D7, M3). They are built as plain lists with approve and reject, in
+  the desk's current style, and replaced when the admin desk has a
+  design. No admin statistics are added beyond what Stats already has.
+- **The order of work favours the user:** where a milestone has a user
+  half and an admin half, the user half is built first and the admin
+  half is the smallest thing that lets an admin act.
+
 ### P3. `CLAUDE.md`'s rules
 
 This plan lifts "no browse, identify, voting or polls yet", amends "cats
-are admin-curated" with proposals, and adds a third role. Recommended:
+are admin-curated" with proposals, and replaces "collaborator" with "user" (R1). Recommended:
 you agree in principle now; each pull request that lifts a rule edits
 that rule in the same change, so the file never promises something the
 code does not do.

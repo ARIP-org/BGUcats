@@ -149,14 +149,19 @@ phone, as today.
 
 | Route | Change |
 |---|---|
-| every capture route (`/api/encounters*`, `/api/photos/{id}/complete`, `GET /api/recognition/vectors`) | open to members, not only to the allowlist. The handler's access levels become three: admins; admins and collaborators; anyone active |
+| every capture route (`/api/encounters*`, `/api/photos/{id}/complete`, `GET /api/recognition/vectors`) | open to every user, not only to the allowlist. Two access levels, as today: admins, and any user (a collaborator is a user, R1) |
 | `POST /api/encounters/{id}/pick` | accepts `new`; writes `ENC` |
 | the desk's assign, unassign, merge and reject | for an app encounter, also update `ENC` (`labelCatId`, `rejected`), which is what corrects the person's counters and their post's cat |
 | `PATCH /api/cats/{id}` | accepts `bio` and `usualRegionId` |
 | `GET /api/me` | unchanged for the desk. The member client uses `/api/v1/me` |
 
-The desk's own `GET /api/cats` keeps returning everything, to admins and
-collaborators only. Members get cats from `/api/v1/cats`.
+The desk's own `GET /api/cats` keeps returning everything, to admins
+only from F4 (collaborators, who are now users, get cats from
+`/api/v1/cats` like every user).
+
+**The desk routes below are the minimum that lets an admin act** on what
+users send (R1). They are plain lists with approve and reject in the
+desk's current style, until the admin desk is designed.
 
 ## New desk routes (admins only)
 
