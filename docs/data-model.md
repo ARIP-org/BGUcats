@@ -131,8 +131,8 @@ stream on the dataset table.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Post | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason`, `likeCount`, `createdAt`, `visibleAt` |
-| Like | `POST#{postId}` | `LIKE#{userId}` | `at` |
+| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason`, `likeCount`, `createdAt`, `visibleAt` |
+| Like **(since B3a)** | `POST#{postId}` | `LIKE#{userId}` | `at`. Written with the post's `likeCount` and the cat's `likes` in one transaction |
 
 A post's `status`: `pending` (written, not yet checked) → `visible` |
 `hidden` (waiting for an admin, or reported past the threshold) |
@@ -223,8 +223,8 @@ the permissions boundary in `infra/bootstrap`:
 
 | Lambda | `bgucats-social` |
 |---|---|
-| events (since F3) | reads the stream; no item yet. Each milestone adds the items its work touches |
-| app, the member API (since F4) | items of the table and its indexes. Today it writes the account (`IDENTITY#`, `USER#` / `PROFILE`, `USERNAME#`, `INVITE#`, in one transaction) and the terms on it |
+| events (since F3) | reads the stream; since B3a publishes a post (its status and feed keys, and `CAT#` / `PUBLIC` `posts` and `lastSeenAt`) |
+| app, the member API (since F4) | items of the table and its indexes: the account (`IDENTITY#`, `USER#` / `PROFILE`, `USERNAME#`, `INVITE#`, in one transaction), the terms; since B3a posts as `pending`, likes, removal, and the cat's counters that a like or a removal changes |
 
 The member API (`bgucats-app`, since F4) **reads** `bgucats-data` (the
 allowlist today; cats and photos from B2) and never writes it:

@@ -105,15 +105,16 @@ def social():
         yield table
 
 
-def test_records_as_the_stream_gives_them(social, caplog):
+def test_records_as_the_stream_gives_them(social, caplog, monkeypatch):
     # The record shape is DynamoDB's, not one written by hand above.
     caplog.set_level(logging.INFO)
-    social.put_item(Item={"PK": "POST#P1", "SK": "META", "status": "pending"})
+    monkeypatch.setattr(handler, "social_table", social)
+    social.put_item(Item={"PK": "POST#P1", "SK": "META", "status": "draft"})
     social.update_item(
         Key={"PK": "POST#P1", "SK": "META"},
         UpdateExpression="SET #s = :v",
         ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={":v": "visible"},
+        ExpressionAttributeValues={":v": "removed"},
     )
     streams = boto3.client("dynamodbstreams", region_name="us-east-1")
     shard = streams.describe_stream(StreamArn=social.latest_stream_arn)[
