@@ -39,7 +39,7 @@ from boto3.dynamodb.conditions import Key
 from ulid import ULID
 
 from admin import insights
-from common import admission, api, encounters, media, regions, tables, text
+from common import admission, api, encounters, media, proposals, regions, tables, text
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -141,7 +141,8 @@ VECTOR_WRITE_BATCH = 25
 VECTOR_PAGE = 400
 VECTOR_DIMENSIONS = range(64, 4097)
 # What a contributor can answer when the app shows its three guesses.
-PICK_CHOICES = ("cat", "none", "unsure")
+# "new": a cat that is not on the list, proposed in the member app (B6).
+PICK_CHOICES = ("cat", "none", "unsure", "new")
 PICK_SHOWN = 5
 
 dynamodb = boto3.resource("dynamodb")
@@ -510,9 +511,11 @@ def _partner_number(body, field):
 # --------------------------------------------------------------------------
 
 
-def _create_cat(body, email, **_):
+def _create_cat(body, email, cat_id=None, **_):
+    """A new cat. `cat_id` is given only by an approved proposal, whose id
+    becomes the cat's, so approving twice makes one cat (B6)."""
     name = _required_string(body, "name", maximum=80)
-    cat_id = str(ULID())
+    cat_id = cat_id or str(ULID())
     now = _now_iso()
     table.put_item(
         Item={
@@ -546,6 +549,11 @@ def _update_cat(cat_id, body, **_):
         updates["bio"] = text.clean(
             body.get("bio"), "bio", 280, required=False, multiline=True
         )
+    if "coat" in body:
+        coat = body.get("coat") or None
+        if coat is not None and coat not in proposals.COATS:
+            raise ApiError(400, f"coat is one of {', '.join(proposals.COATS)}")
+        updates["coat"] = coat
     if "usualRegionId" in body:
         region = body.get("usualRegionId") or None
         if region is not None and region not in regions.ids():
@@ -1115,7 +1123,7 @@ def _record_pick(session_id, body, email, **_):
     version = _model_version_param(body.get("modelVersion"))
     choice = body.get("choice")
     if choice not in PICK_CHOICES:
-        raise ApiError(400, "choice must be cat, none or unsure")
+        raise ApiError(400, "choice must be cat, none, unsure or new")
     cat_id = body.get("catId") if choice == "cat" else None
     if choice == "cat":
         if not isinstance(cat_id, str) or not re.fullmatch(ID, cat_id):
@@ -1245,6 +1253,151 @@ def _sync_encounters(session_id, photos):
     merged = {p.get("mergedFromSessionId") for p in photos} - {None, session_id}
     for source in sorted(merged):
         _sync_encounter(source)
+
+
+# --------------------------------------------------------------------------
+# New-cat proposals (B6): the desk's minimum, until the admin desk is
+# designed (docs/app-plan/04-api.md, "New desk routes")
+# --------------------------------------------------------------------------
+#
+# A person in the member app says "a cat that isn't here". Nothing about it
+# is public until an admin decides (D7): approve (a new cat, named by the
+# admin, from the person's idea), merge (it is a cat we know), or reject.
+# Approve and merge label the encounter the way the queue does, which is
+# also what corrects the person's counters (ENC). The events Lambda then
+# releases or hides the post that waited.
+
+
+def _get_proposals(query, **_):
+    if not SOCIAL:
+        return {"proposals": []}
+    status = query.get("status") or "open"
+    if status not in proposals.STATUSES:
+        raise ApiError(400, f"status is one of {', '.join(proposals.STATUSES)}")
+    items = tables.query_all(
+        social_table,
+        IndexName="GSI2",
+        KeyConditionExpression=Key("GSI2PK").eq(f"PROPOSALS#{status}"),
+        ScanIndexForward=True,  # oldest first, like the queue
+    )
+    out = []
+    for item in items:
+        person = (
+            social_table.get_item(
+                Key={"PK": f"USER#{item['proposerId']}", "SK": "PROFILE"}
+            ).get("Item")
+            or {}
+        )
+        photos = [
+            _photo_payload(photo)
+            for photo in _session_photos(item["sessionId"])
+            if photo.get("status") not in UNASSIGNABLE_STATUSES
+        ]
+        out.append(
+            {
+                "proposalId": item["proposalId"],
+                "sessionId": item["sessionId"],
+                "nameIdea": item.get("nameIdea") or "",
+                "coat": item.get("coat"),
+                "regionId": item.get("regionId"),
+                "traits": list(item.get("traits") or []),
+                "status": item["status"],
+                "catId": item.get("catId"),
+                "createdAt": item["createdAt"],
+                "proposer": {
+                    "username": person.get("username"),
+                    "email": person.get("email"),
+                },
+                "photos": photos,
+            }
+        )
+    return {"proposals": out}
+
+
+def _require_proposal(proposal_id):
+    if not SOCIAL:
+        raise ApiError(404, "no such proposal")
+    item = social_table.get_item(
+        Key={"PK": f"PROPOSAL#{proposal_id}", "SK": "META"}, ConsistentRead=True
+    ).get("Item")
+    if item is None:
+        raise ApiError(404, "no such proposal")
+    return item
+
+
+def _decide(proposal, status, cat_id, email):
+    """Record the decision, once: a second, different decision is refused."""
+    if proposal["status"] != "open":
+        if proposal["status"] == status and proposal.get("catId") == cat_id:
+            return  # the same decision again: the outbox of the desk, a retry
+        raise ApiError(409, f"this proposal was {proposal['status']} already")
+    now = _now_iso()
+    try:
+        social_table.update_item(
+            Key={"PK": proposal["PK"], "SK": "META"},
+            UpdateExpression=(
+                "SET #s = :status, catId = :cat, decidedBy = :by, decidedAt = :now, "
+                "GSI2PK = :queue"
+            ),
+            ConditionExpression="#s = :open",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":status": status,
+                ":cat": cat_id,
+                ":by": email,
+                ":now": now,
+                ":queue": f"PROPOSALS#{status}",
+                ":open": "open",
+            },
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        raise ApiError(409, "this proposal was decided meanwhile") from None
+
+
+def _approve_proposal(proposal_id, body, email, **_):
+    proposal = _require_proposal(proposal_id)
+    if proposal["status"] == "approved":
+        return {"proposalId": proposal_id, "catId": proposal["catId"]}
+    if proposal["status"] != "open":
+        raise ApiError(409, f"this proposal was {proposal['status']} already")
+    name = (body.get("name") or proposal.get("nameIdea") or "").strip()
+    if not name:
+        raise ApiError(400, "a new cat needs a name; this proposal has no idea for one")
+    # The proposal's id is the cat's: a retry finds the cat it made.
+    cat_id = proposal_id
+    if not _item(f"CAT#{cat_id}"):
+        try:
+            _create_cat({"name": name}, email, cat_id=cat_id)
+        except table.meta.client.exceptions.ConditionalCheckFailedException:
+            pass
+    public = {}
+    if proposal.get("coat"):
+        public["coat"] = proposal["coat"]
+    if proposal.get("regionId") in regions.ids():
+        public["usualRegionId"] = proposal["regionId"]
+    if public:
+        _update_cat(cat_id, public)
+    _assign_session(proposal["sessionId"], {"catId": cat_id}, email)
+    _decide(proposal, "approved", cat_id, email)
+    return {"proposalId": proposal_id, "catId": cat_id, "name": name}
+
+
+def _merge_proposal(proposal_id, body, email, **_):
+    proposal = _require_proposal(proposal_id)
+    cat_id = _required_string(body, "catId", maximum=64)
+    _assert_cat_exists(cat_id)
+    if proposal["status"] == "open":
+        _assign_session(proposal["sessionId"], {"catId": cat_id}, email)
+    _decide(proposal, "merged", cat_id, email)
+    return {"proposalId": proposal_id, "catId": cat_id}
+
+
+def _reject_proposal(proposal_id, email, **_):
+    """Not a new cat. The encounter stays in the queue, to be labeled or
+    rejected there like any other; only the proposal is closed."""
+    proposal = _require_proposal(proposal_id)
+    _decide(proposal, "rejected", None, email)
+    return {"proposalId": proposal_id, "status": "rejected"}
 
 
 # --------------------------------------------------------------------------
@@ -1769,6 +1922,20 @@ ROUTES = (
     # Ahead of the /{session_id} patterns: "merge" would otherwise be read
     # as a session id.
     ("POST", r"^/api/sessions/merge$", _merge_sessions, ADMINS),
+    ("GET", r"^/api/proposals$", _get_proposals, ADMINS),
+    (
+        "POST",
+        rf"^/api/proposals/(?P<proposal_id>{ID})/approve$",
+        _approve_proposal,
+        ADMINS,
+    ),
+    ("POST", rf"^/api/proposals/(?P<proposal_id>{ID})/merge$", _merge_proposal, ADMINS),
+    (
+        "POST",
+        rf"^/api/proposals/(?P<proposal_id>{ID})/reject$",
+        _reject_proposal,
+        ADMINS,
+    ),
     ("GET", rf"^/api/sessions/(?P<session_id>{ID})$", _get_session, ADMINS),
     ("POST", rf"^/api/sessions/(?P<session_id>{ID})/assign$", _assign_session, ADMINS),
     (

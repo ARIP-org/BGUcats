@@ -116,7 +116,8 @@ place and its region. The map is drawn from it; no route.
 | `GET /posts/{postId}` | One post. Its author also gets its state, which is how "being checked" is shown and polled |
 | `DELETE /posts/{postId}` | The author removes it |
 | `PUT /posts/{postId}/like`, `DELETE …/like` | Like, unlike. Answers with the new count |
-| `POST /proposals` | `{proposalId, sessionId, nameIdea?, coat?, regionId?, traits?}`. A new-cat proposal for an encounter of the caller's. Coat, region and traits are from fixed lists. Nothing about it is public until an admin decides; a post that names it is held until then (D7) |
+| `POST /proposals` | `{proposalId, sessionId, nameIdea?, coat?, regionId?, traits?}`. A new-cat proposal for an encounter of the caller's. Coat, region and traits are from fixed lists (`src/common/proposals.py`; region may be `elsewhere`). Nothing about it is public until an admin decides; a post that names it is held until then (D7). One per encounter (`already_proposed`, 409) unless the earlier one was rejected; 10 a day. Since B6 |
+| `GET /me/proposals` | The caller's proposals, newest first, with their status and, once decided, the cat. Since B6 |
 
 **The area on a post** is never taken from the phone's word. When
 `shareRegion` is true the server takes the session's stored location
@@ -136,7 +137,7 @@ post". Steps 1–4 exist today and keep their write order.
 | 3 | upload to S3 | | then the process Lambda, on the S3 event |
 | 4 | `POST /api/photos/{id}/complete` | admin | flips to `unlabeled`, conditional on `pending` |
 | 5 | `POST /api/encounters/{id}/rerank` | admin | only if `rerank_mode` is not off; the phone never waits on it (`07-rerank.md`) |
-| 6 | `POST /api/encounters/{id}/pick` | admin | the answer and the ranking that was shown. **New:** `choice` may be `new`; the route also writes the `ENC` item in the social table |
+| 6 | `POST /api/encounters/{id}/pick` | admin | the answer and the ranking that was shown. `choice` may be `new` (since B6); the route also writes the `ENC` item in the social table (since B3b) |
 | 7 | `PUT /api/v1/cats/{catId}/vote` | app | if they voted on the "You met" page |
 | 8 | `POST /api/v1/proposals` | app | only for a new cat |
 | 9 | `POST /api/v1/posts` | app | only if posting |
@@ -175,7 +176,7 @@ desk's current style, until the admin desk is designed.
 | `POST /api/moderation/{kind}/{id}/rerun` | Asks for a fresh run of a stuck item |
 | `GET /api/moderation/stats` | Per question: how often the model and the admin agreed at the current thresholds, and what other thresholds would have done |
 | `GET /api/reports`, `POST /api/reports/{id}/resolve` | The queue; `{action: dismiss \| hide \| remove \| ban}` |
-| `GET /api/proposals`, `POST /api/proposals/{id}/approve`, `…/merge`, `…/reject` | Approve creates the cat with the existing create and labels the proposal's session; merge labels it as an existing cat; both update `ENC` and the proposal |
+| `GET /api/proposals`, `POST /api/proposals/{id}/approve`, `…/merge`, `…/reject` | Since B6. `GET ?status=` (default `open`), oldest first, with the session's photos and the proposer's username. Approve `{name?}` (default the name idea) creates the cat with the proposal's id, sets its coat and usual place from the proposal, and labels the session with the queue's assign; merge `{catId}` labels it as that cat; reject closes only the proposal (the session stays in the queue). Labeling updates `ENC` as any label does; the events Lambda then publishes the waiting post under the cat, or hides it on reject. A second, different decision is 409. Shown at the top of the desk's Queue |
 | `GET /api/people`, `POST /api/people/{userId}/ban`, `…/unban` | The list of users; a ban refuses every write and hides their posts |
 | `POST /api/posts/{postId}/hide`, `…/restore`, `…/remove` | |
 | `POST /api/cats/{catId}/names/{nameKey}/remove` | Removes an option; its votes go with it |

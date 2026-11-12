@@ -314,12 +314,21 @@ function closeOnBackdrop(dialog) {
 // --------------------------------------------------------------------------
 
 async function renderQueue(isCurrent = () => true) {
-  const [{ sessions }] = await Promise.all([cachedGet("/queue"), refreshCats()]);
+  const [{ sessions }, { proposals }, places] = await Promise.all([
+    cachedGet("/queue"),
+    // New cats people proposed in the member app (B6). An older API, or
+    // the app's table being unreachable, leaves the queue as it was.
+    cachedGet("/proposals").catch(() => ({ proposals: [] })),
+    regionsList().catch(() => []),
+    refreshCats(),
+  ]);
   if (!isCurrent()) return;
   const main = $("#main");
+  const proposed = proposalSection(proposals, places);
 
   if (!sessions.length) {
     main.replaceChildren(
+      proposed,
       sectionHead("Labeling queue"),
       modelStrip(),
       emptyState(
@@ -339,6 +348,7 @@ async function renderQueue(isCurrent = () => true) {
 
   const total = sessions.reduce((n, s) => n + s.photos.length, 0);
   main.replaceChildren(
+    proposed,
     sectionHead(
       "Labeling queue",
       `${plural(sessions.length, "session")} · ${plural(total, "photo")} · oldest first`,
@@ -375,6 +385,97 @@ function modelStrip() {
   paint(recognition.state);
   const stop = recognition.onChange((s) => (node.isConnected ? paint(s) : stop()));
   return node;
+}
+
+// --------------------------------------------------------------------------
+// New cats proposed in the member app (B6)
+// --------------------------------------------------------------------------
+//
+// The desk's minimum until the admin desk is designed (docs/app-plan/,
+// R1): each proposal with its photos and what the person said, and the
+// three answers. Nothing about the cat is public until one is given.
+
+const COATS = {
+  ginger: "Ginger",
+  black: "Black",
+  white: "White",
+  gray: "Gray",
+  tabby: "Tabby",
+  calico: "Calico",
+  tuxedo: "Tuxedo",
+};
+
+function proposalSection(proposals, places) {
+  if (!proposals?.length) return null;
+  return el("section", { className: "proposals" }, [
+    sectionHead("New cats proposed", `${plural(proposals.length, "proposal")} · oldest first`),
+    el("div", { className: "session-list" }, proposals.map((p) => proposalCard(p, places))),
+  ]);
+}
+
+function proposalCard(p, places) {
+  const place = places.find((r) => r.id === p.regionId)?.names?.en;
+  const said = [
+    p.nameIdea ? `“${p.nameIdea}”` : "no name idea",
+    COATS[p.coat],
+    place ? `near ${place}` : p.regionId === "elsewhere" ? "somewhere else" : null,
+    p.traits.length ? p.traits.join(", ") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const approve = button("Add as a new cat", "btn btn-primary", async () => {
+    const answer = await ask({
+      title: "Add a new cat",
+      text: "Its name, as everyone will see it until a poll names it. The encounter is labeled with it.",
+      fields: [{ name: "name", label: "Name", value: p.nameIdea, required: true, maxLength: 80 }],
+      ok: "Add cat",
+    });
+    if (!answer) return;
+    await post(`/proposals/${p.proposalId}/approve`, { name: answer.name.trim() });
+    toast(`${answer.name.trim()} added`);
+    render();
+  });
+  const merge = button("It's a cat we know…", "btn", async () => {
+    const answer = await ask({
+      title: "Which cat is it?",
+      text: "The encounter is labeled with that cat, and the person's post goes out under it.",
+      fields: [
+        {
+          name: "catId",
+          label: "Cat",
+          options: state.cats.map((c) => [c.catId, c.name]),
+          value: state.cats[0]?.catId,
+        },
+      ],
+      ok: "That's the cat",
+    });
+    if (!answer) return;
+    await post(`/proposals/${p.proposalId}/merge`, { catId: answer.catId });
+    toast("Merged into a known cat");
+    render();
+  });
+  const reject = button("Not a new cat", "btn btn-danger", async () => {
+    const ok = await confirmAction({
+      title: "Turn this proposal down?",
+      text: "No cat is added and its post is never published. The encounter stays in the queue, to label or delete there.",
+      ok: "Turn down",
+    });
+    if (!ok) return;
+    await post(`/proposals/${p.proposalId}/reject`);
+    toast("Proposal turned down");
+    render();
+  });
+
+  return el("article", { className: "card session proposal", attrs: { "data-proposal": p.proposalId } }, [
+    el("header", { className: "card-head" }, [
+      el("div", { className: "card-title", textContent: `New cat from @${p.proposer.username || "someone"}` }),
+      el("div", { className: "meta", textContent: said }),
+      el("div", { className: "meta", textContent: fmtDate(p.createdAt) }),
+    ]),
+    el("div", { className: "grid" }, p.photos.map((photo) => thumb(photo, p.photos))),
+    el("footer", { className: "card-actions" }, [approve, merge, reject]),
+  ]);
 }
 
 function sessionCard({ session, photos }, allSessions) {

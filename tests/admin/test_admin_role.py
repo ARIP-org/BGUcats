@@ -1,8 +1,9 @@
 """What the desk's API may do in the app's table (infra/main/admin_api.tf).
 
 Since B3b it keeps a person's encounter item there (docs/data-model.md,
-"ENC"): it reads the sign-in lookup and updates `USER#…` items, nothing
-else. Read from the Terraform itself, so a wider grant fails here.
+"ENC"): it reads the sign-in lookup and updates `USER#…` items. Since B6
+it reads the new-cat proposals' queue and decides them. Nothing else.
+Read from the Terraform itself, so a wider grant fails here.
 """
 
 import re
@@ -25,11 +26,18 @@ def test_one_statement_reaches_the_app_table():
     (statement,) = on_social
     assert 'Sid    = "EncountersInTheApp"' in statement
     actions = set(re.findall(r"\"(dynamodb:[A-Za-z]+)\",", statement))
-    assert actions == {"dynamodb:GetItem", "dynamodb:UpdateItem"}
-    # The table only: no index, and only these partitions.
-    assert "/index/" not in statement
+    assert actions == {"dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"}
+    # The table and the one index the proposals' queue is on; only these
+    # partitions. No Put, no Delete: nothing is made or removed there.
+    indexes = re.findall(r"/index/([^\"]+)\"", statement)
+    assert indexes == ["GSI2"]
     keys = re.search(r'"dynamodb:LeadingKeys" = \[([^\]]*)\]', statement).group(1)
-    assert set(re.findall(r'"([^"]+)"', keys)) == {"IDENTITY#*", "USER#*"}
+    assert set(re.findall(r'"([^"]+)"', keys)) == {
+        "IDENTITY#*",
+        "USER#*",
+        "PROPOSAL#*",
+        "PROPOSALS#*",
+    }
     assert '"ForAllValues:StringLike"' in statement
 
 

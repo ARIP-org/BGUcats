@@ -10,7 +10,8 @@ keep the write order of spec §10.
 Since milestone F4: who you are (`GET /me`, which makes your account on
 the first call) and accepting the terms. Since B2: the cats. Since B3a:
 posts, likes and the feed. Since B3b: what a person met, on `/me` and on
-each cat. Each later milestone adds its routes to ROUTES.
+each cat. Since B6: new-cat proposals, and posts held until an admin
+decides one. Each later milestone adds its routes to ROUTES.
 
 With the `social` flag off (production until the app opens), every route
 answers 404, and nothing here runs.
@@ -29,7 +30,18 @@ from zoneinfo import ZoneInfo
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from common import admission, api, encounters, ids, limits, media, tables, text
+from common import (
+    admission,
+    api,
+    encounters,
+    ids,
+    limits,
+    media,
+    proposals,
+    regions,
+    tables,
+    text,
+)
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -530,11 +542,16 @@ def _create_post(user, body, **_):
     for photo_id in photo_ids:
         api.ulid_param({"id": photo_id}, "id")
     claim = body.get("claim") or {}
-    if not isinstance(claim, dict) or set(claim) - {"catId"}:
-        raise ApiError(400, "claim is {catId} or nothing (new cats come with B6)")
+    if (
+        not isinstance(claim, dict)
+        or len(claim) > 1
+        or set(claim) - {"catId", "proposalId"}
+    ):
+        raise ApiError(400, "claim is {catId}, {proposalId} or nothing")
     cat_id = claim.get("catId")
     if cat_id is not None and tables.get_one(data_table, f"CAT#{cat_id}") is None:
         raise ApiError(400, "no such cat")
+    proposal = _claimed_proposal(claim.get("proposalId"), user, session_id)
     words = text.clean(
         body.get("text"), "text", POST_TEXT_MAX, required=False, multiline=True
     )
@@ -567,6 +584,9 @@ def _create_post(user, body, **_):
         "photoIds": photo_ids,
         "claimedCatId": cat_id,
         "catId": cat_id,
+        # A post for a new cat waits for an admin's decision (D7): the
+        # events Lambda publishes it under the decided cat, or never.
+        "proposalId": proposal["proposalId"] if proposal else None,
         "text": words,
         "regionId": region,
         "status": "pending",
@@ -599,6 +619,144 @@ def _create_post(user, body, **_):
         keep=("claimedCatId",),
     )
     return {"post": _cards([post], user)[0]}
+
+
+def _claimed_proposal(proposal_id, user, session_id):
+    """The caller's own proposal for this encounter, if the post names one."""
+    if proposal_id is None:
+        return None
+    api.ulid_param({"proposalId": proposal_id}, "proposalId")
+    proposal = tables.get_one(social_table, f"PROPOSAL#{proposal_id}")
+    if (
+        proposal is None
+        or proposal["proposerId"] != user["userId"]
+        or proposal["sessionId"] != session_id
+    ):
+        raise ApiError(400, "no such proposal for this encounter")
+    if proposal["status"] == "rejected":
+        raise ApiError(400, "this new cat was not accepted", code="not_accepted")
+    return proposal
+
+
+# --------------------------------------------------------------------------
+# New-cat proposals (B6)
+# --------------------------------------------------------------------------
+
+PROPOSALS_PER_DAY = 10
+
+
+def proposal_view(item):
+    """What the proposer sees of their proposal. Nobody else sees it until an
+    admin decides, and then they see the cat, not the proposal (D7)."""
+    return {
+        "proposalId": item["proposalId"],
+        "sessionId": item["sessionId"],
+        "nameIdea": item.get("nameIdea") or "",
+        "coat": item.get("coat"),
+        "regionId": item.get("regionId"),
+        "traits": list(item.get("traits") or []),
+        "status": item["status"],
+        "catId": item.get("catId"),
+        "createdAt": item["createdAt"],
+    }
+
+
+def _own_session(session_id, email):
+    session = tables.get_one(data_table, f"SESSION#{session_id}")
+    if session is None or session.get("channel") != "app":
+        raise ApiError(404, "no such encounter", code="gone")
+    if session.get("startedBy") != email:
+        raise ApiError(403, "this encounter is someone else's", code="not_yours")
+    return session
+
+
+def _create_proposal(user, body, **_):
+    """ "A cat that isn't here": a new cat for an admin to approve, merge into
+    a known one, or reject. Its id, made on the phone, becomes the cat's id
+    if approved. One proposal per encounter."""
+    require_terms(user)
+    proposal_id = api.ulid_param(body, "proposalId")
+    session_id = api.ulid_param(body, "sessionId")
+    idea = text.clean(body.get("nameIdea"), "nameIdea", 24, required=False)
+    coat = body.get("coat")
+    if coat is not None and coat not in proposals.COATS:
+        raise ApiError(400, f"coat is one of {', '.join(proposals.COATS)}")
+    region = body.get("regionId")
+    if (
+        region is not None
+        and region != proposals.ELSEWHERE
+        and region not in regions.ids()
+    ):
+        raise ApiError(400, "regionId is not one of the campus places")
+    traits = body.get("traits") or []
+    if not isinstance(traits, list) or not set(traits) <= set(proposals.TRAITS):
+        raise ApiError(400, f"traits are from {', '.join(proposals.TRAITS)}")
+    traits = [t for t in proposals.TRAITS if t in traits]  # one order, no repeats
+
+    existing = tables.get_one(social_table, f"PROPOSAL#{proposal_id}")
+    if existing is not None:
+        if existing["proposerId"] != user["userId"]:
+            raise ApiError(409, "that proposal id is taken")
+        return {"proposal": proposal_view(existing)}  # the same request, again
+
+    session = _own_session(session_id, user["email"])
+    enc = tables.get_one(social_table, user["PK"], f"ENC#{session_id}") or {}
+    if enc.get("proposalId") and enc["proposalId"] != proposal_id:
+        earlier = tables.get_one(social_table, f"PROPOSAL#{enc['proposalId']}") or {}
+        if earlier.get("status") != "rejected":
+            raise ApiError(
+                409, "this encounter has a proposal already", code="already_proposed"
+            )
+    limits.take(social_table, f"{user['userId']}#proposals", PROPOSALS_PER_DAY, 86400)
+
+    now = api.now_iso()
+    item = {
+        "PK": f"PROPOSAL#{proposal_id}",
+        "SK": "META",
+        "proposalId": proposal_id,
+        "proposerId": user["userId"],
+        "sessionId": session_id,
+        "nameIdea": idea,
+        "coat": coat,
+        "regionId": region,
+        "traits": traits,
+        "status": "open",
+        "createdAt": now,
+        # The desk's queue, by status; and the proposer's own list.
+        "GSI2PK": "PROPOSALS#open",
+        "GSI2SK": now,
+        "GSI1PK": f"PROPOSER#{user['userId']}",
+        "GSI1SK": now,
+    }
+    try:
+        social_table.put_item(Item=item, ConditionExpression="attribute_not_exists(PK)")
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        item = tables.get_one(social_table, f"PROPOSAL#{proposal_id}")
+        return {"proposal": proposal_view(item)}
+    # The encounter's claim is "a new cat": nobody, until an admin decides.
+    encounters.update(
+        social_table,
+        user["userId"],
+        session_id,
+        {
+            **encounters.place_fields(session),
+            "userId": user["userId"],
+            "claimedCatId": None,
+            "proposalId": proposal_id,
+            "updatedAt": now,
+        },
+    )
+    return {"proposal": proposal_view(item)}
+
+
+def _my_proposals(user, **_):
+    items = tables.query_all(
+        social_table,
+        IndexName="GSI1",
+        KeyConditionExpression=Key("GSI1PK").eq(f"PROPOSER#{user['userId']}"),
+        ScanIndexForward=False,
+    )
+    return {"proposals": [proposal_view(i) for i in items]}
 
 
 def _visible_or_own(post, user):
@@ -822,6 +980,15 @@ def _cards(posts, user):
         }
         if mine:
             card["state"] = p["status"]
+            if p.get("proposalId"):
+                # Only its author sees that a post waits for a new cat (D7).
+                proposal = tables.get_one(social_table, f"PROPOSAL#{p['proposalId']}")
+                if proposal:
+                    card["proposal"] = {
+                        "proposalId": proposal["proposalId"],
+                        "status": proposal["status"],
+                        "nameIdea": proposal.get("nameIdea") or "",
+                    }
         cards.append(card)
     return cards
 
@@ -898,6 +1065,8 @@ ROUTES = (
     ("PUT", rf"^/api/v1/posts/(?P<post_id>{ID})/like$", _like, "user"),
     ("DELETE", rf"^/api/v1/posts/(?P<post_id>{ID})/like$", _unlike, "user"),
     ("GET", r"^/api/v1/me/posts$", _my_posts, "user"),
+    ("POST", r"^/api/v1/proposals$", _create_proposal, "user"),
+    ("GET", r"^/api/v1/me/proposals$", _my_proposals, "user"),
 )
 
 

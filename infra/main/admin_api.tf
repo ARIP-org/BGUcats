@@ -93,15 +93,21 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
         Effect = "Allow"
         # Since B3b: a pick and a label keep the person's encounter item in
         # the app's table (docs/data-model.md, "ENC"). It finds the person
-        # by their sign-in and touches nothing else there.
+        # by their sign-in. Since B6: the new-cat proposals' queue
+        # (PROPOSALS#{status} on GSI2) and deciding one (PROPOSAL#{id}).
+        # Nothing else there.
         Action = [
           "dynamodb:GetItem",
           "dynamodb:UpdateItem",
+          "dynamodb:Query",
         ]
-        Resource = aws_dynamodb_table.social.arn
+        Resource = [
+          aws_dynamodb_table.social.arn,
+          "${aws_dynamodb_table.social.arn}/index/GSI2",
+        ]
         Condition = {
           "ForAllValues:StringLike" = {
-            "dynamodb:LeadingKeys" = ["IDENTITY#*", "USER#*"]
+            "dynamodb:LeadingKeys" = ["IDENTITY#*", "USER#*", "PROPOSAL#*", "PROPOSALS#*"]
           }
         }
       },
