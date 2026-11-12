@@ -1,0 +1,3 @@
+# The member API (docs/app-plan/, milestone F4). boto3 comes with the
+# runtime. common.ids makes ULIDs.
+python-ulid==4.1.0

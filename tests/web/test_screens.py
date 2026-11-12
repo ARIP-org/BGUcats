@@ -57,7 +57,7 @@ def test_signed_out_shows_the_sign_in_button(open_app, shot):
 def test_someone_not_on_the_list_is_sent_back_to_sign_in(open_app):
     page = open_app("stranger@example.com", member=False)
     page.wait_for_selector("#login:not([hidden])")
-    assert "not an admin or collaborator" in page.inner_text("#login-alert")
+    assert "cannot sign in to BGU Cats yet" in page.inner_text("#login-alert")
     # The tokens are forgotten, or every launch would try them again.
     assert page.evaluate("localStorage.getItem('bgucats.tokens')") is None
 

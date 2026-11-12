@@ -106,11 +106,11 @@ dataset's.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| User | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName`, `avatarKey`, `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
-| Sign-in lookup | `IDENTITY#{email}` | `META` | `userId` |
-| Username lookup | `USERNAME#{username}` | `META` | `userId` |
+| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName`, `avatarKey`, `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
+| Sign-in lookup **(F4)** | `IDENTITY#{email}` | `META` | `userId` |
+| Username lookup **(F4)** | `USERNAME#{username}` | `META` | `userId` |
 | Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |
-| Invite code | `INVITE#{code}` | `META` | `userId`. The code is random, not derived from the username |
+| Invite code **(F4)** | `INVITE#{code}` | `META` | `userId`. The code is random, not derived from the username |
 | Friend | `USER#{a}` | `FRIEND#{b}` | `since`, `via` (`invite` / `request` / `contacts`). Always written with its mirror (`USER#{b}` / `FRIEND#{a}`) |
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
 | Block | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
@@ -224,7 +224,10 @@ the permissions boundary in `infra/bootstrap`:
 | Lambda | `bgucats-social` |
 |---|---|
 | events (since F3) | reads the stream; no item yet. Each milestone adds the items its work touches |
+| app, the member API (since F4) | items of the table and its indexes. Today it writes the account (`IDENTITY#`, `USER#` / `PROFILE`, `USERNAME#`, `INVITE#`, in one transaction) and the terms on it |
 
-The planned member API (`bgucats-app`) and the events Lambda will be able
-to **read** `bgucats-data` and never write it
-(`docs/app-plan/02-architecture.md`).
+The member API (`bgucats-app`, since F4) **reads** `bgucats-data` (the
+allowlist today; cats and photos from B2) and never writes it:
+`tests/app/test_app_role.py` reads its policy in `infra/main/app_api.tf`
+and fails on any write to the dataset. The events Lambda will read it the
+same way.

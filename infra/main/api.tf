@@ -24,7 +24,7 @@ resource "aws_apigatewayv2_api" "main" {
   # authorizer: admin_api.tf has one for OPTIONS.
   cors_configuration {
     allow_origins = ["*"]
-    allow_methods = ["GET", "POST", "PATCH", "DELETE"]
+    allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 3600
   }

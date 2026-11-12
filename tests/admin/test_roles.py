@@ -1,4 +1,8 @@
-"""Admin vs collaborator — what each role can reach through the API."""
+"""Admin vs user — what each role can reach through the API.
+
+The people here are stored as `role = collaborator`, the name a user had
+before 2026-11-12 (R1): every allowlist item written before that day looks
+like this, and reads as a user."""
 
 import pytest
 
@@ -38,9 +42,10 @@ def people(aws):  # noqa: F811
 
 
 def test_me_reports_the_role(people):
+    # Stored as "collaborator", answered as "user".
     assert _call("GET", "/api/me", email=HELPER)[1] == {
         "email": HELPER,
-        "role": "collaborator",
+        "role": "user",
     }
 
 
@@ -116,10 +121,10 @@ def test_a_refused_assign_labels_nothing(people):
     assert "catId" not in session["Item"] or session["Item"]["catId"] is None
 
 
-def test_people_are_added_as_collaborators_unless_said_otherwise(people):
+def test_people_are_added_as_users_unless_said_otherwise(people):
     status, data = _call("POST", "/api/admins", {"email": "New@Example.com"})
     assert status == 200
-    assert data == {"email": "new@example.com", "role": "collaborator"}
+    assert data == {"email": "new@example.com", "role": "user"}
 
     status, data = _call(
         "POST", "/api/admins", {"email": "boss@example.com", "role": "admin"}
@@ -127,8 +132,18 @@ def test_people_are_added_as_collaborators_unless_said_otherwise(people):
     assert data["role"] == "admin"
 
     roles = {a["email"]: a["role"] for a in _call("GET", "/api/admins")[1]["admins"]}
-    assert roles["new@example.com"] == "collaborator"
-    assert roles["boss@example.com"] == "admin"
+    assert roles["new@example.com"] == "user"
+
+
+def test_the_old_name_for_a_user_is_still_accepted(people):
+    # The desk's people screen sent "collaborator" until F4; it is stored as
+    # a user.
+    status, data = _call(
+        "POST", "/api/admins", {"email": "old@example.com", "role": "collaborator"}
+    )
+    assert (status, data["role"]) == (200, "user")
+    item = people["table"].get_item(Key={"PK": "ADMIN#old@example.com", "SK": "META"})
+    assert item["Item"]["role"] == "user"
 
 
 def test_unknown_role_is_refused(people):
@@ -167,3 +182,33 @@ def test_every_route_declares_who_may_call_it():
     assert all(
         access in (handler.ANYONE, handler.ADMINS) for *_, access in handler.ROUTES
     )
+
+
+# ------------------------------------------------- the sign-up policy (D1)
+
+
+@pytest.fixture
+def domain_policy(monkeypatch):
+    monkeypatch.setattr(handler, "SIGNUP_POLICY", "domain")
+    monkeypatch.setattr(handler, "SIGNUP_DOMAINS", ("post.bgu.ac.il", "bgu.ac.il"))
+
+
+def test_a_bgu_address_is_a_user_under_the_domain_policy(people, domain_policy):
+    student = "student@post.bgu.ac.il"
+    assert _call("GET", "/api/me", email=student)[1] == {
+        "email": student,
+        "role": "user",
+    }
+    # A user: the capture routes yes, the desk's no.
+    assert _call("GET", "/api/encounters", email=student)[0] == 200
+    assert _call("GET", "/api/queue", email=student)[0] == 403
+
+
+def test_the_domain_policy_lets_in_nobody_else(people, domain_policy):
+    for stranger in ("someone@gmail.com", "x@notbgu.ac.il", "x@bgu.ac.il.evil.com"):
+        assert _call("GET", "/api/me", email=stranger)[0] == 403
+
+
+def test_the_allowlist_still_decides_the_role_under_any_policy(people, domain_policy):
+    assert _call("GET", "/api/me")[1]["role"] == "admin"
+    assert _call("GET", "/api/me", email=HELPER)[1]["role"] == "user"

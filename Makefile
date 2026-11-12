@@ -1,4 +1,4 @@
-.PHONY: fmt lint test screenshots local-app seed-staging build build-ingest build-process build-admin build-beacon build-events \
+.PHONY: fmt lint test screenshots local-app seed-staging build build-ingest build-process build-admin build-beacon build-events build-app \
 	tf-init tf-plan site-invalidate admin-add poster \
 	model-export model-publish
 
@@ -53,7 +53,7 @@ local-app:
 seed-staging:
 	AWS_PROFILE=bgucats-staging-admin python scripts/seed_campus.py
 
-build: build-ingest build-process build-admin build-beacon build-events
+build: build-ingest build-process build-admin build-beacon build-events build-app
 
 # Always rebuilt rather than tracked as file targets: a directory's mtime
 # doesn't change when a source file inside it is edited, so a file-target
@@ -94,6 +94,15 @@ build-beacon:
 	$(LAMBDA_PIP) --target build/beacon -r src/beacon/requirements.txt
 	cp src/beacon/__init__.py src/beacon/handler.py build/beacon/beacon/
 	$(call lambda-compile,beacon)
+
+# The member API (infra/main/app_api.tf): its own package and role, so the
+# code that answers users cannot write the dataset.
+build-app:
+	rm -rf build/app && mkdir -p build/app/app
+	$(LAMBDA_PIP) --target build/app -r src/app/requirements.txt
+	cp src/app/__init__.py src/app/handler.py build/app/app/
+	$(call copy-common,app)
+	$(call lambda-compile,app)
 
 # What happens after a write to bgucats-social (infra/main/events.tf). No
 # dependencies beyond the runtime's boto3, so nothing to install; the

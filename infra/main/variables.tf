@@ -31,12 +31,35 @@ locals {
       # The Telegram bot is a stopgap kept working for the landing page's
       # users; staging has none (docs/ROADMAP.md, 2b).
       telegram_bot = true
+      # The member app (docs/app-plan/): off until it opens (L3).
+      social        = false
+      signup_policy = "allowlist"
     }
     staging = {
       cognito_domain_prefix = "bgucats-staging"
       telegram_bot          = false
+      # Every feature on as soon as it exists; sign-up stays the allowlist,
+      # because staging never holds real contributors' photos.
+      social        = true
+      signup_policy = "allowlist"
     }
   }[var.environment]
+
+  # Who may sign in when signup_policy is "domain": BGU's Google accounts
+  # (docs/app-plan/DECISIONS.md, D1). Read by the sign-up trigger and both
+  # APIs (src/common/admission.py).
+  signup_domains = ["post.bgu.ac.il", "bgu.ac.il"]
+
+  # The terms a person accepts before writing anything. A new value asks
+  # everyone again. "draft" until the owner's terms page exists (O10).
+  terms_version = "draft"
+
+  # What the member app may offer, sent to the phone in GET /api/v1/me.
+  # Each feature adds its flag here when it is built (02-architecture.md,
+  # "Flags").
+  app_flags = {
+    social = local.settings.social
+  }
 
   # count for the bot's resources: 1 in production, 0 in staging.
   telegram_bot_count = local.settings.telegram_bot ? 1 : 0

@@ -155,9 +155,9 @@ phone, as today.
 | `PATCH /api/cats/{id}` | accepts `bio` and `usualRegionId` |
 | `GET /api/me` | unchanged for the desk. The member client uses `/api/v1/me` |
 
-The desk's own `GET /api/cats` keeps returning everything, to admins
-only from F4 (collaborators, who are now users, get cats from
-`/api/v1/cats` like every user).
+The desk's own `GET /api/cats` stays open to every user for now: today's
+Capture reads it for "Another cat…". It becomes admins only in the pull
+request that moves Capture to `/api/v1/cats` (B2 and E3), not before.
 
 **The desk routes below are the minimum that lets an admin act** on what
 users send (R1). They are plain lists with approve and reject in the

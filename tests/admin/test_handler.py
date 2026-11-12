@@ -160,7 +160,7 @@ def _session(aws, session_id=SESSION, **extra):
 def test_non_allowlisted_email_is_rejected(aws):
     status, body = _call("GET", "/api/me", email="stranger@gmail.com")
     assert status == 403
-    assert body["error"] == "not an admin or collaborator"
+    assert body["error"] == "this account is not let in to BGU Cats"
 
 
 def test_token_without_email_claim_is_rejected(aws):
