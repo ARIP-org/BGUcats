@@ -8,10 +8,15 @@
 # and this one. Whatever a pull request writes into a Lambda's policy, it
 # gets no more than what is below.
 #
-# This is the union of what the Lambdas use today (infra/main/*.tf): logs,
-# the media bucket, the data table, the /bgucats/ parameters. A Lambda that
-# needs a new service needs this policy widened first, by the owner, with a
-# bootstrap apply, before the PR that uses it can deploy.
+# This is the union of what the Lambdas use (infra/main/*.tf): logs, the
+# media bucket, the two tables, the /bgucats/ parameters. Since 2026-11-12
+# it also holds what the app plan's Lambdas will need, widened once ahead of
+# them (docs/app-plan/02-architecture.md, "What the guardrails must
+# learn"): the social table's stream, publishing to the alerts topic, and
+# deleting a person's sign-in. A Lambda gets none of these until its own
+# role in infra/main grants them. A Lambda that needs anything else needs
+# this policy widened first, by the owner, with a bootstrap apply, before
+# the PR that uses it can deploy.
 resource "aws_iam_policy" "lambda_boundary" {
   name        = "bgucats-lambda-permissions-boundary"
   description = "Permissions boundary for every role in infra/main. Applied by the owner only."
@@ -55,7 +60,10 @@ resource "aws_iam_policy" "lambda_boundary" {
         Resource = "arn:aws:s3:::bgucats-media-${local.account_id}"
       },
       {
-        Sid    = "DataTableItems"
+        # Items of both tables: the dataset and, from the app plan
+        # (docs/app-plan/), the social table. Which Lambda may touch which
+        # table is its own role's policy in infra/main; this is the ceiling.
+        Sid    = "TableItems"
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem",
@@ -70,7 +78,47 @@ resource "aws_iam_policy" "lambda_boundary" {
         Resource = [
           local.data_table_arn,
           "${local.data_table_arn}/index/*",
+          local.social_table_arn,
+          "${local.social_table_arn}/index/*",
         ]
+      },
+      {
+        # The events Lambda is fed the social table's changes by an event
+        # source mapping, which reads the stream as the function's role.
+        Sid    = "SocialTableStream"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeStream",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+        ]
+        Resource = "${local.social_table_arn}/stream/*"
+      },
+      {
+        # No resource-level scoping. It lists stream names, nothing more.
+        Sid      = "ListStreams"
+        Effect   = "Allow"
+        Action   = "dynamodb:ListStreams"
+        Resource = "*"
+      },
+      {
+        # A stream record that keeps failing is sent to the alerts topic,
+        # as the function's role, and a report emails the admins.
+        Sid      = "PublishToAlerts"
+        Effect   = "Allow"
+        Action   = "sns:Publish"
+        Resource = local.alerts_topic_arn
+      },
+      {
+        # Deleting an account signs the person out and removes their
+        # sign-in (docs/app-plan/03-data-model.md, "Deleting an account").
+        Sid    = "DeleteAppUsers"
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:AdminUserGlobalSignOut",
+          "cognito-idp:AdminDeleteUser",
+        ]
+        Resource = local.cognito_user_pool_arns
       },
       {
         Sid    = "OwnSecrets"

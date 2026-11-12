@@ -23,12 +23,12 @@ set its row here to done with the date.
 | O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | **done 2026-11-12:** all 34 |
 | O2 | Freeze the design | E0 | the prototype | |
 | O3 | The first production promote | L3 (was: F1) | GitHub, a `v*` tag | **postponed by the owner, 2026-11-12.** Blocks nothing until production is wanted |
-| O4 | Apply the guardrail changes | F3 deploys | AWS: staging now, production with its first promote | |
+| O4 | Apply the guardrail changes | F3 deploys | AWS: staging now, production with its first promote | **staging ready to run:** `docs/MANUAL_STEPS.md`, step 17 |
 | O5 | Google: a Gemini API key per account | C1, R0 | Google AI Studio / Cloud | |
 | O6 | Google: sign-in open to more than test users | F4 on production | Google Cloud console | |
 | O7 | Apple: push | N2 | Apple Developer | |
 | O8 | Apple: Sign in with Apple | N6 | Apple Developer, Cognito | |
-| O9 | A domain, its DNS, its certificate | buying: now (A6). Wiring: N4 | AWS, the management account, from a codespace | **ready to run:** `docs/MANUAL_STEPS.md`, step 16 |
+| O9 | A domain, its DNS, its certificate | buying: now (A6). Wiring: N4 | AWS, the management account, from a codespace | **registered by the owner 2026-11-12.** DNS not set up yet, on purpose: N4. Name to record |
 | O10 | Privacy policy, terms, a support address | L1 (draft), L2 (final) | the landing site | |
 | O11 | The blocklist and the gold set | C3 | files in the repo | |
 | O12 | The campus regions and the feeding spots | nothing: made-up ones until the owner sends them | a file in the repo | later (the owner, 2026-11-12) |

@@ -42,6 +42,10 @@ Three Terraform root modules, applied by different hands.
     && infra/scripts/bootstrap-apply.sh; aws sso logout
   ```
 
+  Before it plans, the script runs `infra/bootstrap/tests` (also run by
+  CI): the roles' policies against IAM's size limits, and the deploy
+  role's guards, with a mocked provider and no AWS call.
+
   Once per account: production with `bgucats-prod-admin` (the default),
   staging with `AWS_PROFILE=bgucats-staging-admin`. The profile sets
   `var.environment`, the GitHub environment the account's deploy role

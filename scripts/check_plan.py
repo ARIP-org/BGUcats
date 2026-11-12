@@ -10,8 +10,9 @@ Two checks on the plan's JSON, read from stdin:
    it takes), so a pull request that adds one goes red instead of being
    read past in a long plan.
 2. The few settings that turn a cheap resource into an expensive one stay
-   where they are: the table bills per request, and no Lambda is sized far
-   beyond what this app needs. AWS has no switch for these (DynamoDB has
+   where they are: every table bills per request, no Lambda is sized far
+   beyond what this app needs, and no event source mapping has paid
+   provisioned pollers. AWS has no switch for these (DynamoDB has
    no condition key for a table's billing mode), so this is where they are
    held.
 
@@ -70,6 +71,13 @@ def violations(plan, allowed):
                 found.append(
                     f"{address}: timeout must be at most {MAX_LAMBDA_TIMEOUT_S}"
                 )
+        # A mapping that feeds a Lambda from a stream costs only the calls it
+        # makes, unless it is given provisioned pollers, which are billed by
+        # the hour whether anything arrives or not.
+        if kind == "aws_lambda_event_source_mapping" and after.get(
+            "provisioned_poller_config"
+        ):
+            found.append(f"{address}: provisioned_poller_config must not be set")
     return found
 
 

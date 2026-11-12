@@ -129,9 +129,22 @@ if ! [[ "$TF_VAR_budget_alert_email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:spa
 fi
 
 echo
-echo "== Plan"
+echo "== Checks"
 terraform -chdir="$ROOT" init -input=false -reconfigure \
   -backend-config="path=state/$account.tfstate" >/dev/null
+# infra/bootstrap/tests: the policies' sizes against IAM's limits, and the
+# deploy role's guards. A mocked provider, so no AWS call; the local state
+# is not touched. A failure here is one AWS would otherwise give half-way
+# through the apply.
+if ! terraform -chdir="$ROOT" test -no-color >"$work/test.txt" 2>&1; then
+  cat "$work/test.txt"
+  echo "The checks in $ROOT/tests failed. Nothing planned." >&2
+  exit 1
+fi
+echo "Policies within IAM's limits; the deploy role's guards hold."
+
+echo
+echo "== Plan"
 terraform -chdir="$ROOT" plan -input=false -out="$(basename "$PLAN")" >"$work/plan.txt" ||
   { cat "$work/plan.txt"; exit 1; }
 terraform -chdir="$ROOT" show -json "$(basename "$PLAN")" >"$work/plan.json"

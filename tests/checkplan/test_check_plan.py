@@ -98,6 +98,46 @@ def test_the_limits_themselves_pass():
     assert c.violations(plan(change("aws_lambda_function", at_limit)), ALLOWED) == []
 
 
+def test_the_second_table_is_held_to_the_same_billing():
+    # docs/app-plan: bgucats-social is a second aws_dynamodb_table, so the
+    # rule above covers it by kind, not by name.
+    social = change("aws_dynamodb_table", {"billing_mode": "PROVISIONED"}, name="social")
+    found = c.violations(plan(TABLE, social), ALLOWED)
+    assert found == ["aws_dynamodb_table.social: billing_mode must be PAY_PER_REQUEST"]
+
+
+# Allowed once infra/main declares one (milestone F3 of docs/app-plan/); the
+# cost rule is in place before the kind is.
+WITH_MAPPINGS = ALLOWED | {"aws_lambda_event_source_mapping"}
+
+
+@pytest.mark.parametrize("config", [[], None])
+def test_a_plain_event_source_mapping_passes(config):
+    mapping = change(
+        "aws_lambda_event_source_mapping",
+        {"batch_size": 25, "provisioned_poller_config": config},
+    )
+    assert c.violations(plan(mapping), WITH_MAPPINGS) == []
+
+
+def test_an_event_source_mapping_with_provisioned_pollers_fails():
+    mapping = change(
+        "aws_lambda_event_source_mapping",
+        {"provisioned_poller_config": [{"minimum_pollers": 1, "maximum_pollers": 2}]},
+    )
+    assert c.violations(plan(mapping), WITH_MAPPINGS) == [
+        "aws_lambda_event_source_mapping.x: provisioned_poller_config must not be set"
+    ]
+
+
+def test_event_source_mappings_are_not_allowed_yet():
+    # The kind joins the allowlist in the pull request that declares one.
+    kind = "aws_lambda_event_source_mapping"
+    assert c.violations(plan(change(kind, {})), ALLOWED) == [
+        f"{kind}.x: `{kind}` is not an allowed resource type"
+    ]
+
+
 def run(monkeypatch, capsys, the_plan):
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(the_plan)))
     code = c.main(["check_plan.py", str(ALLOWLIST)])

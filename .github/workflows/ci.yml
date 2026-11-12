@@ -67,6 +67,9 @@ jobs:
         run: |
           terraform -chdir=infra/bootstrap init -backend=false
           terraform -chdir=infra/bootstrap validate
+          # The roles' policies against IAM's size limits, and the deploy
+          # role's guards, with a mocked provider (infra/bootstrap/tests).
+          terraform -chdir=infra/bootstrap test
           terraform -chdir=infra/main init -backend=false
           terraform -chdir=infra/main validate
           terraform -chdir=infra/org init -backend=false

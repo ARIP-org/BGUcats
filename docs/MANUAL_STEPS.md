@@ -1241,7 +1241,14 @@ build with no review. Inviting anyone else (by email or a public link)
 needs Apple's beta review first, and the reviewer must be able to sign in
 past the allowlist: to be solved when outside testers are wanted.
 
-## 16. A domain name, bought through AWS (written 2026-11-12, not done)
+## 16. A domain name, bought through AWS (done 2026-11-12)
+
+**Done by the owner on 2026-11-12.** The domain is registered; its DNS is
+not set up, on purpose: that is N4 of the app plan, and the owner will
+start it from a codespace when it is needed. Still to record here: the
+domain's name, and the account it was registered in (this step bought it
+in the management account).
+
 
 `docs/app-plan/OWNER_STEPS.md`, O9. The owner's decision of 2026-11-12:
 buy the domain now, on AWS, with Claude doing the work once the owner has
@@ -1411,9 +1418,166 @@ Google's lists of allowed addresses are N4's, with their own brief. That
 work needs `acm` on the organization's allowlist for the member accounts;
 `route53domains` never does.
 
-**Not tried against AWS.** `domain.sh` is tested against a stand-in for
-the `aws` command (`tests/infra_scripts`): every refusal, and the exact
-request it sends. Its first real run is step 3 above, which only looks.
+**Not tried against AWS** when it was written. `domain.sh` is tested
+against a stand-in for the `aws` command (`tests/infra_scripts`): every
+refusal, and the exact request it sends.
+
+## 17. The guardrails learn the app's shapes, on staging (written 2026-11-12, not done)
+
+`docs/app-plan/OWNER_STEPS.md`, O4, for milestone F1. **Staging only.**
+Production waits for its first promote, which the owner postponed
+(`docs/app-plan/DECISIONS.md`, P2), and must get this same apply before
+that promote.
+
+**What this is for.** The app plan adds a second table (`bgucats-social`)
+with a stream, and a Lambda fed from that stream. The deploy role and the
+Lambdas' permissions boundary only allow what `infra/main` has today, so
+the pull requests that add those (F3 onward) cannot deploy until the
+owner widens them. This step widens them, once, for everything the plan
+needs. Nothing is created in AWS except changed policies; no table, no
+Lambda, nothing that costs money.
+
+What changes, in plain words:
+
+| Role or policy | Gains |
+|---|---|
+| Deploy role (`bgucats-github-actions-deploy`) | create and change a table named exactly `bgucats-social` (still never delete one); create, change and delete an event source mapping **only for a function named `bgucats-*`**; read and tag those mappings |
+| CI role (`bgucats-github-actions-ci`) | read the second table's settings and the mapping, so a plan can refresh them |
+| Lambda boundary (`bgucats-lambda-permissions-boundary`) | the ceiling any Lambda role can reach: items of `bgucats-social`; reading its stream; publishing to the alerts topic (where failed stream records go); signing out and deleting an app user in this account's pool (account deletion). A Lambda gets none of these until its own role grants them |
+
+Sizes, measured offline with a mocked provider
+(`infra/bootstrap/tests`): the deploy role's inline policies go from
+8,407 to 8,983 characters of IAM's 10,240; the boundary from 1,323 to
+2,070 of 6,144.
+
+### Before you start
+
+- A codespace on the branch that holds this step (it is not merged yet:
+  bootstrap is applied **before** its pull request merges, as always).
+- About ten minutes. Nothing here is billed.
+
+### The steps
+
+1. In the codespace's own terminal, sign in to staging as admin:
+
+   ```bash
+   aws sso login --profile bgucats-staging-admin --use-device-code
+   ```
+
+2. Ask Claude: **"apply bootstrap to staging"**. It runs, and shows you,
+   first the plan:
+
+   ```bash
+   echo no | AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh
+   ```
+
+   The script first runs the offline checks ("Policies within IAM's
+   limits; the deploy role's guards hold"). The plan should list **only
+   in-place updates** (`update`) to four policies:
+   `aws_iam_role_policy.github_actions_deploy_storage`,
+   `aws_iam_role_policy.github_actions_deploy_compute`,
+   `aws_iam_role_policy.github_actions_ci_plan_read`,
+   `aws_iam_policy.lambda_boundary`, and nothing else. Anything that says
+   `create`, `delete` or `replace` is a reason to stop and ask.
+
+3. If the plan is as above, tell Claude **"apply it"**:
+
+   ```bash
+   echo yes | AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh
+   ```
+
+   It ends with `Saved: s3://bgucats-tfstate-586943192664/bootstrap/terraform.tfstate`.
+
+4. Ask Claude **"prove the staging guardrails"**. It runs the checks
+   below and shows a table. They ask IAM's policy simulator what each role
+   may do; nothing is created.
+
+   ```bash
+   acct=586943192664; deploy=arn:aws:iam::$acct:role/bgucats-github-actions-deploy
+   ```
+
+   ```bash
+   aws --profile bgucats-staging-admin iam simulate-principal-policy --policy-source-arn "$deploy" \
+     --action-names dynamodb:CreateTable dynamodb:UpdateTable dynamodb:DeleteTable \
+     --resource-arns arn:aws:dynamodb:us-east-1:$acct:table/bgucats-social \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+   ```
+
+   Expect `allowed`, `allowed`, `explicitDeny`.
+
+   ```bash
+   aws --profile bgucats-staging-admin iam simulate-principal-policy --policy-source-arn "$deploy" \
+     --action-names dynamodb:CreateTable \
+     --resource-arns arn:aws:dynamodb:us-east-1:$acct:table/anything-else \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+   ```
+
+   Expect `implicitDeny`: only the two tables by name.
+
+   ```bash
+   for fn in bgucats-events not-ours; do
+     aws --profile bgucats-staging-admin iam simulate-principal-policy --policy-source-arn "$deploy" \
+       --action-names lambda:CreateEventSourceMapping --resource-arns '*' \
+       --context-entries "ContextKeyName=lambda:FunctionArn,ContextKeyValues=arn:aws:lambda:us-east-1:$acct:function:$fn,ContextKeyType=string" \
+       --query "EvaluationResults[].['$fn',EvalDecision]" --output text
+   done
+   ```
+
+   Expect `bgucats-events allowed`, `not-ours implicitDeny`.
+
+   ```bash
+   boundary=arn:aws:iam::$acct:policy/bgucats-lambda-permissions-boundary
+   version=$(aws --profile bgucats-staging-admin iam get-policy --policy-arn "$boundary" --query Policy.DefaultVersionId --output text)
+   doc=$(aws --profile bgucats-staging-admin iam get-policy-version --policy-arn "$boundary" --version-id "$version" --query PolicyVersion.Document --output json)
+   aws --profile bgucats-staging-admin iam simulate-custom-policy --policy-input-list "$doc" \
+     --action-names dynamodb:GetRecords dynamodb:PutItem \
+     --resource-arns "arn:aws:dynamodb:us-east-1:$acct:table/bgucats-social/stream/2026-11-12T00:00:00.000" \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+   ```
+
+   Expect `GetRecords allowed` and `PutItem implicitDeny`: the boundary
+   lets a Lambda read the stream, and does not let it write through the
+   stream's address.
+
+5. Sign out:
+
+   ```bash
+   aws sso logout
+   ```
+
+6. Tell the session the step is done. It marks F1's row in
+   `docs/app-plan/08-milestones.md` and O4 (staging) in
+   `docs/app-plan/OWNER_STEPS.md` with the date, in the same pull request,
+   which you then merge.
+
+### If it goes wrong
+
+- **"The checks in infra/bootstrap/tests failed":** a policy grew past
+  IAM's size limit or lost a guard. Nothing was planned. Bring the output
+  to a session; it is a code fix, not something to apply around.
+- **`aws-guard: … is for production`:** the profile is wrong. This step
+  is `bgucats-staging-admin` only.
+- **The plan shows something other than the four updates:** stop. The
+  likeliest cause is a stale local state; the script takes the newer of
+  the local and the bucket's copy, and says which.
+- **A simulator answer differs from the expected one:** the apply did not
+  do what was meant. Nothing is broken by it (nothing uses these
+  permissions yet), but F3 must not be merged until it is explained.
+
+### How to undo it
+
+Revert the pull request's bootstrap change on a branch and run step 3
+again from it. The policies go back to what they were. Nothing created
+depends on them until F3.
+
+### What never goes into chat
+
+Nothing in this step is secret.
+
+### What to tell the next session
+
+That staging has F1's bootstrap, and the date. Production does not, and
+will need this step with `bgucats-prod-admin` before its first promote.
 
 ---
 

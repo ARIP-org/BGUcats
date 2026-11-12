@@ -49,8 +49,18 @@ an hour that a sentence would have saved.
 - **A pipe hides a failure.** A workflow `run:` step has no `pipefail`
   unless it sets it: `python smoke.py | tee log` reports tee's success.
 - **A role's inline policies share one limit,** 10,240 characters in
-  total. The deploy role is past 8,500. The next big addition needs a
-  managed policy.
+  total, and a managed policy has 6,144. IAM says so at apply, part-way
+  through. Measured offline on 2026-11-12 with a mocked provider
+  (`infra/bootstrap/tests`): the deploy role was 8,407, and 8,983 after
+  the app plan's F1. The test fails past 10,000, and both
+  `bootstrap-apply.sh` and CI run it, so the next big addition shows up
+  as a red check that says "move statements into a managed policy".
+- **A kind of resource joins the allowlist with its first resource, not
+  before.** The plan check's own test holds
+  `allowed-resource-types.txt` to exactly what `infra/main` declares, so
+  a guardrail pull request that adds a line ahead of the resource goes
+  red. The cost rule for a kind (`check_plan.py`) can and should come
+  first.
 - **Two IAM surprises in the alerts work:** an SNS subscription is not a
   resource a policy can name (`Resource: "*"` or nothing), and
   `DescribeAlarms` is checked against every alarm in the account, not the

@@ -13,8 +13,8 @@
 #   - give any role more than the Lambda permissions boundary
 #     (lambda_boundary.tf), or touch the GitHub roles, the boundary, or
 #     the OIDC provider. That is what stops it from escalating.
-#   - read or write the dataset. Its only item access is the bootstrap
-#     admin row, and only ADMIN# keys.
+#   - read or write the items of either table. Its only item access is
+#     the bootstrap admin row in the dataset, and only ADMIN# keys.
 #   - write the recognition model under model/, which the owner publishes.
 
 data "aws_iam_policy_document" "github_actions_deploy_trust" {
@@ -149,8 +149,9 @@ resource "aws_iam_role_policy" "github_actions_deploy_storage" {
         Resource = local.published_object_arns
       },
       {
-        # The table itself. No DeleteTable.
-        Sid    = "DataTable"
+        # The two tables, the dataset and the social one, by name. No
+        # DeleteTable. CreateTable and UpdateTable also turn on a stream.
+        Sid    = "AppTables"
         Effect = "Allow"
         Action = [
           "dynamodb:CreateTable",
@@ -164,7 +165,7 @@ resource "aws_iam_role_policy" "github_actions_deploy_storage" {
           "dynamodb:TagResource",
           "dynamodb:UntagResource",
         ]
-        Resource = local.data_table_arn
+        Resource = local.app_table_arns
       },
       {
         # aws_dynamodb_table_item.bootstrap_admin, and nothing else in the
@@ -212,6 +213,38 @@ resource "aws_iam_role_policy" "github_actions_deploy_compute" {
           "lambda:UntagResource",
         ]
         Resource = "arn:aws:lambda:us-east-1:${local.account_id}:function:bgucats-*"
+      },
+      {
+        # Feeding one of our functions from the social table's stream
+        # (docs/app-plan/02-architecture.md). AWS checks these three against
+        # "*" with the function as a condition key, so the condition is the
+        # scope. A mapping is billed only through the calls it makes; its
+        # paid provisioned mode is refused by scripts/check_plan.py.
+        Sid    = "MappingsToOurFunctions"
+        Effect = "Allow"
+        Action = [
+          "lambda:CreateEventSourceMapping",
+          "lambda:UpdateEventSourceMapping",
+          "lambda:DeleteEventSourceMapping",
+        ]
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "lambda:FunctionArn" = "arn:aws:lambda:us-east-1:${local.account_id}:function:bgucats-*"
+          }
+        }
+      },
+      {
+        # Reading a mapping back, and its default tags.
+        Sid    = "ReadAndTagMappings"
+        Effect = "Allow"
+        Action = [
+          "lambda:GetEventSourceMapping",
+          "lambda:ListTags",
+          "lambda:TagResource",
+          "lambda:UntagResource",
+        ]
+        Resource = local.event_source_mapping_arns
       },
       {
         Sid    = "ReadLambdaRoles"

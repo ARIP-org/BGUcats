@@ -200,35 +200,51 @@ desk, Capture and the bot pass their existing tests unchanged.
 ## What the guardrails must learn
 
 Milestone F1, applied by the owner (O4). One pull request, so the owner
-applies once per account rather than once per feature.
-
-**`infra/main/allowed-resource-types.txt`:** one line,
-`aws_lambda_event_source_mapping`. The second table and the new Lambdas
-are kinds already on the list.
+applies once per account rather than once per feature. **Built
+2026-11-12; what it holds:**
 
 **`infra/bootstrap`, the deploy role:**
 
-- the table statements cover `table/bgucats-social` as well as
-  `bgucats-data`;
-- event source mappings for `bgucats-*` functions: create, update,
-  delete, get, list, tag;
-- confirm, rather than assume, that the Lambda and role statements match
-  the new names (`bgucats-app`, `bgucats-events`, their roles) and that
-  the inline policies stay under the 10,240-character limit: the role is
-  past 8,500 (`docs/notes.md`), so this is probably the change that moves
-  some statements to a managed policy.
+- the table statement names both tables, `bgucats-data` and
+  `bgucats-social`; still no delete;
+- create, update and delete an event source mapping, only when its
+  function is `bgucats-*` (AWS checks these against `*` with the function
+  as a condition key, so the condition is the scope); read and tag
+  mappings. `ListEventSourceMappings` is not granted: Terraform reads a
+  mapping by its ID. If an apply ever stops on it, it is one line;
+- the new Lambdas and their roles (`bgucats-app`, `bgucats-events`) are
+  already covered by the `bgucats-*` statements;
+- measured offline (`infra/bootstrap/tests`, a mocked provider): its
+  inline policies go from 8,407 to 8,983 characters of IAM's 10,240. The
+  test fails past 10,000, and `bootstrap-apply.sh` and CI run it, so the
+  day a managed policy is needed is a red check, not a failed apply.
+
+**`infra/bootstrap`, the CI role:** reads the second table's settings and
+the mapping, so a plan can refresh them.
 
 **`infra/bootstrap`, the Lambda permissions boundary** (the most any
 Lambda can have, whatever a pull request writes):
 
 - items of `bgucats-social` and its indexes;
 - reading that table's stream (`DescribeStream`, `GetShardIterator`,
-  `GetRecords`, `ListStreams`);
+  `GetRecords`; `ListStreams` on `*`, which has no resource scoping);
 - `sns:Publish` on the alerts topic only;
 - for account deletion: `cognito-idp:AdminDeleteUser` and
   `AdminUserGlobalSignOut` on this account's user pool;
-- `ssm:GetParameter(s)` on `/bgucats/*` is already there: confirm it
-  covers the two new secret names.
+- `ssm:GetParameter(s)` on `/bgucats/*` was already there and covers the
+  two new secret names.
+
+From 1,323 to 2,070 characters of a managed policy's 6,144.
+
+**`scripts/check_plan.py`:** refuses an event source mapping with
+`provisioned_poller_config` (pollers billed by the hour whether anything
+arrives). In place before the kind is allowed.
+
+**`infra/main/allowed-resource-types.txt`: not in F1.** Its own test holds
+the list to exactly the kinds `infra/main` declares, so a kind cannot
+join ahead of its resource. `aws_lambda_event_source_mapping` is added in
+F3, in the same pull request as the mapping. The owner decided it with
+A3; the line is the record of that.
 
 **`infra/org`, the service allowlist:** nothing for F1. Every service
 used is already allowed. Later, each its own owner step: `acm` for the

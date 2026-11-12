@@ -16,7 +16,7 @@ A session ticks its row in the pull request that finishes it.
 
 | ID | Milestone | State |
 |---|---|---|
-| F1 | The guardrails learn the new shapes | |
+| F1 | The guardrails learn the new shapes | built 2026-11-12; staging apply waits for the owner (`docs/MANUAL_STEPS.md`, step 17) |
 | F2 | Shared code, and one catalogue of every key | |
 | F3 | The social table, the events Lambda, the seed | |
 | F4 | The member API: who you are, flags, who may sign up | |
@@ -97,13 +97,18 @@ gets there first and recorded there.
 - **Needs:** nothing. A1, A2, A3 and P2 are answered (2026-11-12), and
   the first production promote (O3) was postponed by the owner and no
   longer comes first. **This is the next thing to build.**
-- **Builds:** only `infra/bootstrap`, `infra/main/allowed-resource-types.txt`
-  and their tests. Exactly the list in `02-architecture.md`, "What the
-  guardrails must learn". No resource in `infra/main` yet.
+- **Builds:** only `infra/bootstrap`, the plan check and their tests.
+  Exactly the list in `02-architecture.md`, "What the guardrails must
+  learn". No resource in `infra/main` yet, and so not the allowlist line
+  either (it comes with the resource, in F3).
 - **Done when:** CI's plans for both accounts show no change to
-  `infra/main`; a test proves the plan check accepts an event source
-  mapping and still refuses, say, `aws_db_instance`; the owner has applied
-  bootstrap to **staging**.
+  `infra/main`; `terraform -chdir=infra/bootstrap test` passes in CI; the
+  plan check refuses a mapping with provisioned pollers and still refuses,
+  say, `aws_db_instance`; the owner has applied bootstrap to **staging**
+  and the simulator answers in `docs/MANUAL_STEPS.md`, step 17, are as
+  expected.
+- **State, 2026-11-12:** built and tested on the branch. Waiting for the
+  owner's staging apply (step 17).
 - **Owner:** O4 for **staging**, with the full brief. Production's apply
   waits for production's first promote (P2, O3) and must come before it.
 
@@ -123,7 +128,10 @@ gets there first and recorded there.
 ### F3. The social table, the events Lambda, the seed
 
 - **Needs:** F1 applied on staging, F2.
-- **Builds:** `bgucats-social` with its stream; `bgucats-events` with a
+- **Builds:** `aws_lambda_event_source_mapping` onto
+  `infra/main/allowed-resource-types.txt` (A3 decided it; the line is
+  added with the first resource of its kind); `bgucats-social` with its
+  stream; `bgucats-events` with a
   dispatcher that does nothing yet but log and count, its filter, its
   retry and failure settings, its alarms (errors, iterator age); the
   member-side roles. The local app and the tests learn the second table
