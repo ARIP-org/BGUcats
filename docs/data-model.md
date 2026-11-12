@@ -42,7 +42,7 @@ a write by a moment. Nothing is decided on an item's absence from it
 
 | Item | PK | SK | GSI keys | Written by | Notes |
 |---|---|---|---|---|---|
-| Cat | `CAT#{catId}` | `META` | GSI2 `ENTITY#CAT` / `createdAt` | admin API | name, coat, notes; `photoCount` |
+| Cat | `CAT#{catId}` | `META` | GSI2 `ENTITY#CAT` / `createdAt` | admin API | `name`, `notes` (the admins' own, never sent to a user), `photoCount`; since B2 the public `bio` (≤ 280) and `usualRegionId` (an id from `web/regions.json`) |
 | Session | `SESSION#{sessionId}` | `META` | app encounters: GSI2 `ENTITY#ENCOUNTER` / `{email}#{startedAt}` | ingest; admin API (app encounters) | one encounter with one cat. `catId` is written as `null` and set by a label: a condition on "no label" must accept absent **or** null |
 | Photo | `PHOTO#{photoId}` | `META` | GSI1 `SESSION#{sessionId}` / `createdAt`; GSI2 `STATUS#{status}` / `createdAt`; GSI3 `CAT#{catId}` / `createdAt` once labeled | ingest; admin API; process | on GSI2 as `STATUS#pending` from the moment it is written. Statuses: `pending`, `unlabeled`, `labeled`, `rejected`, `duplicate` |
 | Byte-identical photo | `SHA#{sha256}` | `META` | | process | `photoId` of the first photo with these bytes. A later one is marked `duplicate` |
@@ -131,8 +131,8 @@ stream on the dataset table.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Post | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason`, `likeCount`, `createdAt`, `visibleAt` |
-| Like | `POST#{postId}` | `LIKE#{userId}` | `at` |
+| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason`, `likeCount`, `createdAt`, `visibleAt` |
+| Like **(since B3a)** | `POST#{postId}` | `LIKE#{userId}` | `at`. Written with the post's `likeCount` and the cat's `likes` in one transaction |
 
 A post's `status`: `pending` (written, not yet checked) → `visible` |
 `hidden` (waiting for an admin, or reported past the threshold) |
@@ -162,7 +162,7 @@ Its index keys:
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `nameLocked` |
+| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `lockedName` (an admin's lock, B4) |
 | Name option | `CAT#{catId}` | `NAME#{nameKey}` | `name` (as typed), `votes`, `suggestedBy`, `status` (`pending` / `live` / `rejected` / `removed`), `createdAt` |
 | Vote | `CAT#{catId}` | `VOTE#{userId}` | `nameKey`, `at`. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds |
 | Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `feedingId` (from the phone), `spotId`, `removed` |
@@ -183,9 +183,9 @@ A cat's description, usual region, coat and status are the admin's and
 live on the cat's item in `bgucats-data` (below). The member API reads
 them there and adds the counters from here.
 
-**The cat's shown name:** the admin's locked name if `nameLocked`; else
-the leading live option; else the admin's `displayName`; else nothing
-(D6).
+**The cat's shown name** (`shown_name` in `src/app/handler.py`, since B2):
+the admin's `lockedName` if set; else the poll's `leaderName`; else the
+cat's `name` in the dataset; else nothing (D6).
 
 ### Proposals, reports, moderation
 
@@ -223,8 +223,8 @@ the permissions boundary in `infra/bootstrap`:
 
 | Lambda | `bgucats-social` |
 |---|---|
-| events (since F3) | reads the stream; no item yet. Each milestone adds the items its work touches |
-| app, the member API (since F4) | items of the table and its indexes. Today it writes the account (`IDENTITY#`, `USER#` / `PROFILE`, `USERNAME#`, `INVITE#`, in one transaction) and the terms on it |
+| events (since F3) | reads the stream; since B3a publishes a post (its status and feed keys, and `CAT#` / `PUBLIC` `posts` and `lastSeenAt`) |
+| app, the member API (since F4) | items of the table and its indexes: the account (`IDENTITY#`, `USER#` / `PROFILE`, `USERNAME#`, `INVITE#`, in one transaction), the terms; since B3a posts as `pending`, likes, removal, and the cat's counters that a like or a removal changes |
 
 The member API (`bgucats-app`, since F4) **reads** `bgucats-data` (the
 allowlist today; cats and photos from B2) and never writes it:

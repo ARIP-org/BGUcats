@@ -594,14 +594,23 @@ function ask({ title, text, fields, ok = "Save" }) {
   const dialog = $("#ask");
   const form = el("form", { method: "dialog", className: "sheet-body" });
   const inputs = fields.map((field) => {
-    const input = el("input", {
-      name: field.name,
-      type: field.type || "text",
-      value: field.value ?? "",
-      placeholder: field.placeholder || "",
-      required: !!field.required,
-      autocomplete: "off",
-    });
+    // A list to choose from (field.options: [[value, label], ...]), several
+    // lines (type "textarea"), or one line.
+    const input = field.options
+      ? el(
+          "select",
+          { name: field.name, className: "btn btn-select" },
+          field.options.map(([value, label]) => el("option", { value, textContent: label })),
+        )
+      : el(field.type === "textarea" ? "textarea" : "input", {
+          name: field.name,
+          ...(field.type === "textarea" ? { rows: 4 } : { type: field.type || "text" }),
+          value: field.value ?? "",
+          placeholder: field.placeholder || "",
+          required: !!field.required,
+          autocomplete: "off",
+        });
+    if (field.options) input.value = field.value ?? "";
     if (field.pattern) input.pattern = field.pattern;
     if (field.maxLength) input.maxLength = field.maxLength;
     if (field.type === "number") {
@@ -1158,6 +1167,16 @@ async function renderCats(isCurrent = () => true) {
   main.replaceChildren(head, filter, grid);
 }
 
+// The campus places (web/regions.json, the same file the API reads).
+let regionsCache = null;
+async function regionsList() {
+  if (!regionsCache) {
+    const res = await fetch("/regions.json", { cache: "no-cache" });
+    regionsCache = res.ok ? (await res.json()).regions : [];
+  }
+  return regionsCache;
+}
+
 async function openCat(catId, { redrawn = false } = {}) {
   screen += 1;
   const isCurrent = stillShown();
@@ -1173,6 +1192,29 @@ async function openCat(catId, { redrawn = false } = {}) {
     if (!name || name === cat.name) return;
     await patch(`/cats/${catId}`, { name });
     toast("Renamed");
+    openCat(catId);
+  });
+
+  // What every user sees on the cat's page in the app (docs/app-plan/, B2):
+  // a short description and where it usually is. Public, unlike notes.
+  const publicInfo = button("Public info", "btn", async () => {
+    const places = await regionsList();
+    const answer = await ask({
+      title: `${cat.name}, as users see it`,
+      text: "Shown to everyone who uses the app.",
+      fields: [
+        { name: "bio", label: "Description", type: "textarea", value: cat.bio || "", maxLength: 280 },
+        {
+          name: "usualRegionId",
+          label: "Usually near",
+          value: cat.usualRegionId || "",
+          options: [["", "Not set"], ...places.map((r) => [r.id, r.names.en])],
+        },
+      ],
+    });
+    if (!answer) return;
+    await patch(`/cats/${catId}`, { bio: answer.bio, usualRegionId: answer.usualRegionId || null });
+    toast("Saved");
     openCat(catId);
   });
 
@@ -1195,7 +1237,7 @@ async function openCat(catId, { redrawn = false } = {}) {
   if (!redrawn) window.scrollTo(0, 0);
   $("#main").replaceChildren(
     back,
-    sectionHead(cat.name, plural(photos.length, "photo"), isAdmin() ? [rename, remove] : []),
+    sectionHead(cat.name, plural(photos.length, "photo"), isAdmin() ? [rename, publicInfo, remove] : []),
     photos.length
       ? el("div", { className: "card" }, [
           el("div", { className: "grid" }, photos.map((p) => thumb(p, photos))),

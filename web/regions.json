@@ -1,0 +1,12 @@
+{
+  "comment": "The campus places the app names (docs/app-plan/04-api.md, 'Regions and feeding spots'). PLACEHOLDERS: the names come from the prototype, the coordinates are approximate and made up, and there are no feeding spots yet. The owner supplies the real ones (docs/app-plan/OWNER_STEPS.md, O12). Read by the map, the new-cat form and the API (src/common/regions.py); an id, once used, never changes meaning.",
+  "placeholder": true,
+  "regions": [
+    {"id": "engineering", "names": {"en": "Building 96 · Engineering"}, "near": {"en": "Building 96"}, "lat": 31.2635, "lon": 34.8005, "radiusM": 120},
+    {"id": "library", "names": {"en": "Aranne Library"}, "near": {"en": "Aranne Library"}, "lat": 31.2620, "lon": 34.8030, "radiusM": 100},
+    {"id": "union", "names": {"en": "Student Union"}, "near": {"en": "the Student Union"}, "lat": 31.2610, "lon": 34.8015, "radiusM": 100},
+    {"id": "dorms", "names": {"en": "Dorms"}, "near": {"en": "the dorms"}, "lat": 31.2655, "lon": 34.8040, "radiusM": 200},
+    {"id": "lawn", "names": {"en": "Sports lawn"}, "near": {"en": "the sports lawn"}, "lat": 31.2600, "lon": 34.8050, "radiusM": 150}
+  ],
+  "feedingSpots": []
+}

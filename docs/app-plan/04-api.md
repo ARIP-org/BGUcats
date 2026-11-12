@@ -18,10 +18,12 @@ fields and records them here.
 - **A status code is a contract with the outbox**
   (`docs/notes.md`). `web/outbox.js` drops a request on a permanent
   error. So: 400 and 403 mean "never"; 404 means "never" and is used
-  only when retrying cannot help; **409 with `"retry": true`** means
-  "not yet", and `isPermanent` in the outbox must learn it in the same
-  pull request that first returns one; 429 means "later" and carries
-  `retryAfter` in seconds.
+  only when retrying cannot help; **425 Too Early** means "not yet" (since
+  B3a: a post whose photos are still uploading, code `not_ready`); 429
+  means "later" and carries `retryAfter` in seconds. The outbox already
+  retries both: `isPermanent` in `web/outbox.js` lists 400, 403, 404 and
+  409 only. (The plan first said "409 with retry"; 409 is in that list, so
+  it would have been dropped.)
 - **Errors:** `{"error": "words for a person", "code": "machine_word"}`.
   Codes used below: `not_admitted`, `terms_required`, `banned`,
   `rate_limited`, `not_ready`, `not_yours`, `gone`, `name_taken`,

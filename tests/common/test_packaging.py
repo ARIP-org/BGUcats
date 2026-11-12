@@ -60,3 +60,9 @@ def test_common_imports_nothing_from_a_function():
             assert not re.search(
                 rf"^\s*(from|import) {function}\b", path.read_text(), re.MULTILINE
             ), f"{path.name} imports {function}"
+
+
+def test_the_campus_places_go_with_the_shared_code():
+    # common.regions reads regions.json from beside itself in a Lambda.
+    recipe = re.search(r"^copy-common = (.*)$", MAKEFILE, flags=re.MULTILINE).group(1)
+    assert "web/regions.json" in recipe

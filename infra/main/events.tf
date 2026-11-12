@@ -37,8 +37,8 @@ resource "aws_iam_role_policy_attachment" "events_lambda_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Only what it does today: read the stream, report a failed record. Each
-# milestone that gives it work adds the items that work touches.
+# What it does: read the stream, write bgucats-social (never the dataset),
+# report a failed record.
 resource "aws_iam_role_policy" "events_lambda_access" {
   name = "bgucats-events-lambda-access"
   role = aws_iam_role.events_lambda.id
@@ -62,6 +62,25 @@ resource "aws_iam_role_policy" "events_lambda_access" {
         Effect   = "Allow"
         Action   = "dynamodb:ListStreams"
         Resource = "*"
+      },
+      {
+        # Publishing a post (B3a): the post itself, and its cat's public
+        # counters, in one transaction. Later milestones add their items
+        # under the same statement: it is this table, and only this table.
+        Sid    = "SocialItems"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:ConditionCheckItem",
+        ]
+        Resource = [
+          aws_dynamodb_table.social.arn,
+          "${aws_dynamodb_table.social.arn}/index/*",
+        ]
       },
       {
         # Where a record goes after its last retry.

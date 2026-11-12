@@ -1,11 +1,6 @@
 """The member API's first routes: who you are, and the terms (F4)."""
 
 import json
-import os
-
-os.environ.setdefault("DATA_TABLE_NAME", "bgucats-data-test")
-os.environ.setdefault("SOCIAL_TABLE_NAME", "bgucats-social-test")
-os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 import boto3
 import pytest
@@ -19,6 +14,8 @@ STUDENT = "maya.levi@post.bgu.ac.il"
 
 
 def _table(dynamodb, name):
+    """A table shaped like both of the project's: PK/SK and GSI1-3."""
+    names = ["PK", "SK"] + [f"GSI{n}{k}" for n in (1, 2, 3) for k in ("PK", "SK")]
     return dynamodb.create_table(
         TableName=name,
         KeySchema=[
@@ -26,8 +23,18 @@ def _table(dynamodb, name):
             {"AttributeName": "SK", "KeyType": "RANGE"},
         ],
         AttributeDefinitions=[
-            {"AttributeName": "PK", "AttributeType": "S"},
-            {"AttributeName": "SK", "AttributeType": "S"},
+            {"AttributeName": a, "AttributeType": "S"} for a in names
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": f"GSI{n}",
+                "KeySchema": [
+                    {"AttributeName": f"GSI{n}PK", "KeyType": "HASH"},
+                    {"AttributeName": f"GSI{n}SK", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+            for n in (1, 2, 3)
         ],
         BillingMode="PAY_PER_REQUEST",
     )
@@ -51,6 +58,8 @@ def aws(monkeypatch):
             }
         )
         monkeypatch.setattr(handler, "data_table", data)
+        monkeypatch.setattr(handler, "s3", boto3.client("s3", region_name="us-east-1"))
+        monkeypatch.setattr(handler, "MEDIA_BUCKET", "bgucats-media-test")
         monkeypatch.setattr(handler, "social_table", social)
         monkeypatch.setattr(handler, "SOCIAL", True)
         monkeypatch.setattr(handler, "SIGNUP_POLICY", "allowlist")

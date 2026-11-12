@@ -40,6 +40,7 @@ const SHELL = [
   "/recognition.js",
   "/styles.css",
   "/config.json",
+  "/regions.json",
   "/manifest.webmanifest",
   "/icon.svg",
   "/icon-192.png",
