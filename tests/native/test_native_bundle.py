@@ -115,15 +115,16 @@ def test_the_api_answers_a_preflight_without_a_token():
 
 
 def test_the_page_and_the_plugin_agree_on_their_names():
-    """web/app.js calls Capacitor.Plugins.WebAuth.start; the Swift class
-    must offer exactly that, under the class name `cap sync` registers."""
+    """web/lib/auth.js (web/app.js until E0) calls Capacitor.Plugins.WebAuth
+    .start; the Swift class must offer exactly that, under the class name
+    `cap sync` registers."""
     plugin = REPO / "native" / "plugins" / "web-auth"
     swift = (plugin / "ios/Sources/WebAuthPlugin/WebAuthPlugin.swift").read_text()
     assert 'jsName = "WebAuth"' in swift
     assert 'CAPPluginMethod(name: "start"' in swift
     # The first @objc(...) in the file is what the CLI lists as the class.
     assert re.search(r"@objc\((\w+)\)", swift).group(1) == "WebAuthPlugin"
-    page = (REPO / "web" / "app.js").read_text()
+    page = (REPO / "web" / "lib" / "auth.js").read_text()
     assert "window.Capacitor?.Plugins?.WebAuth" in page
     assert "nativeSignIn().start(" in page
 

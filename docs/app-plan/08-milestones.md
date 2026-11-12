@@ -38,7 +38,7 @@ A session ticks its row in the pull request that finishes it.
 | R1 | Re-rank: shadow | |
 | R2 | Re-rank: measured | |
 | R3 | Re-rank: live | |
-| E0 | Client groundwork | |
+| E0 | Client groundwork | built 2026-11-12, in review (`web/lib/`, the renderer and font in `web/vendor/`, `tokens.css`, `t()`, the CSS rules, `app.html`'s empty frame, `frontDoor`) |
 | E1 | The frame: tabs, navigation, themes | |
 | E2 | The feed | |
 | E3 | The capture flow | |

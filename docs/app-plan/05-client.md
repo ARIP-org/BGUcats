@@ -31,6 +31,16 @@ at L3. An admin reaches the desk from a row in the profile (G14).
 `web/` still has no build step. `scripts/native_bundle.py` keeps copying
 it as it is.
 
+**Since E0:** `frontDoor` is written by `infra/main/web.tf` from
+`variables.tf` (`front_door`, `desk` in both accounts). `?desk` keeps the
+desk for the rest of the session. Cognito sends every sign-in back to the
+site's root, where the desk's boot trades the code; a sign-in started on
+`app.html` leaves its address in `sessionStorage` (`takeReturnTo` in
+`web/lib/auth.js`) and is sent back there. A browser tab on `app.html` is
+sent to the root for the install page, as the desk's tab is.
+`infra/main/web.tf` uploads every file under `web/`, typed by extension,
+instead of a list of names by hand.
+
 ## The renderer (A4)
 
 Recommended: Preact with `htm` templates, as one file under
@@ -63,12 +73,15 @@ Reused as they are, through their existing factories: `createOutbox`,
 
 ## From the prototype to code
 
-The frozen copy (`docs/design/prototype/`, O2) is the specification for
-how things look and move. Its files are the designer's tool's format,
-not code to ship, but every value in them is exact.
+The prototype canvas (`README.md`) is the specification for how things
+look and move; there is no frozen copy (O2, the owner). Its files are the
+designer's tool's format, not code to ship, but every value in them is
+exact. A milestone that copies values names the version it read.
 
 - **`tokens.css`** comes from `themes()` in `Feed.dc.html`: four themes,
-  each a set of custom properties on `:root[data-theme=…]`. No colour,
+  each a set of custom properties on `:root[data-theme=…]` (since E0,
+  generated from version `1794482957-a6b5`; 40 per theme, `bgu-dark` the
+  default as in the prototype). No colour,
   radius or shadow is written anywhere else. (This is also Phase 3 of
   `docs/ROADMAP.md`, arriving early.)
 - **Curves and timings** are in the prototype's styles and scripts: the

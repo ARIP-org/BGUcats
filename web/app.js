@@ -15,6 +15,23 @@ import { createCapture } from "./capture.js";
 import { barList, columnChart, formatNumber, funnel, meter } from "./charts.js";
 import { isInstalled, isNative, showInstallPage } from "./install.js";
 import { createRecognition, scoreRow, summarize } from "./recognition.js";
+import { api, cachedGet as sharedCachedGet, forgetResponses, onSignedOut, patch, post } from "./lib/api.js";
+import {
+  LOGIN_NOTE_KEY,
+  ROLE_KEY,
+  claims,
+  consumeCallback,
+  forgetSignIn,
+  getConfig,
+  idToken,
+  login,
+  logout,
+  nativeSignIn,
+  readTokens,
+  saveTokens,
+  takeReturnTo,
+  useConfig,
+} from "./lib/auth.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, kids = []) => {
@@ -44,7 +61,6 @@ function button(label, className, onClick) {
   return node;
 }
 
-let config = null;
 let state = { view: "queue", cats: [], email: null, role: null };
 let capture = null;
 // The recognition model (recognition.js). Admins: a guess on every queue
@@ -54,389 +70,10 @@ let recognition = null;
 
 const isAdmin = () => state.role === "admin";
 
-// --------------------------------------------------------------------------
-// Auth — Cognito hosted UI, authorization code + PKCE
-// --------------------------------------------------------------------------
-
-const TOKENS_KEY = "bgucats.tokens";
-const VERIFIER_KEY = "bgucats.pkce";
-// A message for the sign-in screen that has to survive a page load: why the
-// last sign-in was turned away, or that the person signed out.
-const LOGIN_NOTE_KEY = "bgucats.loginNote";
-// Remembered so the app opens without a connection — under a bush with no
-// signal is exactly where Capture gets used. The API still checks the real
-// role on every call.
-const ROLE_KEY = "bgucats.role";
-const API_TIMEOUT_MS = 35_000;
-
-const b64url = (bytes) =>
-  btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-async function pkce() {
-  const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(verifier),
-  );
-  return { verifier, challenge: b64url(new Uint8Array(digest)) };
-}
-
-// The iPhone app's way to Cognito and back: iOS's own sign-in sheet, opened
-// by a small native plugin (native/plugins/web-auth). Google refuses to sign
-// anyone in inside an app's web view, so the page cannot simply go there.
-const nativeSignIn = () => window.Capacitor?.Plugins?.WebAuth;
-
-async function login() {
-  const { verifier, challenge } = await pkce();
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: config.userPoolClientId,
-    redirect_uri: config.redirectUri,
-    scope: "openid email profile",
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    // Straight to Google rather than via Cognito's provider chooser — it is
-    // the only provider, so the extra page is pure friction.
-    identity_provider: "Google",
-    // Google's account chooser, every time. Without it Google silently
-    // reuses whichever account the phone is signed in to, so someone turned
-    // away, or signed out, could never pick a different one. Cognito passes
-    // this on to Google only with managed login (infra/main/cognito.tf).
-    prompt: "select_account",
-  });
-  const authorize = `https://${config.cognitoDomain}/oauth2/authorize?${params}`;
-  if (!isNative()) {
-    sessionStorage.setItem(VERIFIER_KEY, verifier);
-    location.assign(authorize);
-    return;
-  }
-
-  // The sheet watches for the scheme of the address Cognito sends people
-  // back to (the packed config's redirectUri, scripts/native_bundle.py) and
-  // hands that whole address over, where a browser would have loaded it.
-  let answer;
-  try {
-    answer = await nativeSignIn().start({
-      url: authorize,
-      callbackScheme: new URL(config.redirectUri).protocol.slice(0, -1),
-    });
-  } catch (err) {
-    if (err?.code === "CANCELLED") return; // the person closed the sheet
-    throw new Error(err?.message || "Sign-in did not finish.");
-  }
-  if (await finishSignIn(new URL(answer.url).searchParams, verifier)) {
-    location.replace("/"); // start again, signed in
-  } else {
-    showLogin(); // with the reason, if Cognito gave one
-  }
-}
-
-// Signing out forgets this app's tokens and stays inside the app. There is no
-// trip to Cognito's /logout page: leaving the app's own address is what makes
-// an installed iPhone app show Safari's address bar and toolbar, and nothing
-// is gained by it — the next sign-in asks Google which account to use anyway.
-function logout() {
-  forgetSignIn("Signed out. Choose an account to sign in again.");
-  location.replace("/");
-}
-
-function forgetSignIn(note) {
-  dropTokens();
-  localStorage.removeItem(ROLE_KEY);
-  try {
-    if (note) sessionStorage.setItem(LOGIN_NOTE_KEY, note);
-  } catch {
-    /* the note is a courtesy */
-  }
-}
-
-async function exchangeToken(body) {
-  const res = await fetch(`https://${config.cognitoDomain}/oauth2/token`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: config.userPoolClientId,
-      ...body,
-    }),
-  });
-  if (!res.ok) throw new Error(`token endpoint returned ${res.status}`);
-  const data = await res.json();
-  const tokens = {
-    idToken: data.id_token,
-    // A refresh grant does not return a new refresh token; keep the old one.
-    refreshToken: data.refresh_token || readTokens()?.refreshToken,
-    expiresAt: Date.now() + (data.expires_in - 60) * 1000,
-  };
-  saveTokens(tokens);
-  return tokens;
-}
-
-// The tokens live in localStorage for the page, and a copy in IndexedDB for
-// the service worker, which has no localStorage: it uploads a closed app's
-// photos (sw.js, Background Sync) and must sign those requests. Same origin,
-// same exposure as localStorage; dropped together on sign-out.
-const AUTH_DB = "bgucats-auth";
-
-function authStore(mode, fn) {
-  return new Promise((resolve) => {
-    try {
-      const open = indexedDB.open(AUTH_DB, 1);
-      open.onupgradeneeded = () => open.result.createObjectStore("tokens");
-      open.onsuccess = () => {
-        const tx = open.result.transaction("tokens", mode);
-        fn(tx.objectStore("tokens"));
-        tx.oncomplete = tx.onerror = () => {
-          open.result.close();
-          resolve();
-        };
-      };
-      open.onerror = () => resolve();
-    } catch {
-      resolve(); // the worker just won't upload in the background
-    }
-  });
-}
-
-function saveTokens(tokens) {
-  localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
-  authStore("readwrite", (store) => store.put(tokens, "current"));
-}
-
-function dropTokens() {
-  localStorage.removeItem(TOKENS_KEY);
-  authStore("readwrite", (store) => store.delete("current"));
-}
-
-function readTokens() {
-  try {
-    return JSON.parse(localStorage.getItem(TOKENS_KEY));
-  } catch {
-    return null;
-  }
-}
-
-async function idToken() {
-  const tokens = readTokens();
-  if (!tokens) return null;
-  if (Date.now() < tokens.expiresAt) return tokens.idToken;
-  if (!tokens.refreshToken) return null;
-  try {
-    const refreshed = await exchangeToken({
-      grant_type: "refresh_token",
-      refresh_token: tokens.refreshToken,
-    });
-    return refreshed.idToken;
-  } catch (err) {
-    // No connection is not a rejected login: keep the refresh token for when
-    // the phone is back online. The stale token fails its API call, and the
-    // upload outbox simply retries later.
-    if (err instanceof TypeError) return tokens.idToken;
-    dropTokens();
-    return null;
-  }
-}
-
-// What Cognito answered a sign-in with: a code to trade for tokens, or why
-// not. True once the tokens are stored. The browser finds the answer in its
-// own address after the redirect; the iPhone app is handed it by the sheet.
-async function finishSignIn(params, verifier) {
-  if (params.get("error")) {
-    // Cognito rejected the sign-up — almost always the pre-sign-up trigger
-    // refusing an email that is not on the allowlist. Cognito prefixes the
-    // trigger's message with its own plumbing.
-    const reason = (params.get("error_description") || params.get("error"))
-      .replace(/^PreSignUp failed with error\s*/i, "")
-      .trim();
-    forgetSignIn(`${reason} Sign in with a different Google account.`);
-    return false;
-  }
-  const code = params.get("code");
-  if (!code || !verifier) return false;
-  await exchangeToken({
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: config.redirectUri,
-    code_verifier: verifier,
-  });
-  return true;
-}
-
-async function consumeCallback() {
-  const params = new URLSearchParams(location.search);
-  if (!params.get("code") && !params.get("error")) return;
-  const verifier = sessionStorage.getItem(VERIFIER_KEY);
-  sessionStorage.removeItem(VERIFIER_KEY);
-  history.replaceState({}, "", location.pathname);
-  await finishSignIn(params, verifier);
-}
-
-// --------------------------------------------------------------------------
-// API
-// --------------------------------------------------------------------------
-
-async function api(path, options = {}) {
-  const token = await idToken();
-  if (!token) {
-    showLogin();
-    throw new Error("not signed in");
-  }
-  // The PWA and its API share an address. The iPhone app's files are packed
-  // inside it, so its config says where the API is (scripts/native_bundle.py).
-  const res = await fetch(`${config.apiBase || ""}/api${path}`, {
-    // A request that hangs on a weak signal would hold up whatever waits on
-    // it — the upload outbox included — until the app is closed. API Gateway
-    // gives up at 30 s anyway.
-    signal: AbortSignal.timeout?.(API_TIMEOUT_MS),
-    ...options,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(options.body ? { "content-type": "application/json" } : {}),
-      ...options.headers,
-    },
-  });
-  if (res.status === 401) {
-    dropTokens();
-    showLogin();
-    throw new Error("session expired");
-  }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // The status rides along so the upload outbox can tell "try again"
-    // from "this will never work".
-    throw Object.assign(new Error(data.error || `request failed (${res.status})`), {
-      status: res.status,
-    });
-  }
-  if (options.method && options.method !== "GET" && !PASSIVE_WRITES.test(path)) forgetResponses();
-  return keepPhotoUrls(data);
-}
-
-const post = (path, body) =>
-  api(path, { method: "POST", body: JSON.stringify(body || {}) });
-const patch = (path, body) =>
-  api(path, { method: "PATCH", body: JSON.stringify(body || {}) });
-
-// --------------------------------------------------------------------------
-// Caching — so switching screens does not fetch everything again
-// --------------------------------------------------------------------------
-
-// Photo URLs are presigned, so every response signs the same photo afresh,
-// and a new URL is a cache miss: every screen used to download every photo
-// again. The first URL seen for each object is reused until shortly before
-// it expires (kept across launches), and S3 serves it with a long
-// Cache-Control (handler._presign), so a photo downloads about once an hour.
-const URLS_KEY = "bgucats.photoUrls";
-const URL_MARGIN_MS = 5 * 60 * 1000;
-const photoUrls = loadPhotoUrls(); // object URL without query -> { url, expiresAt }
-let savePhotoUrlsTimer = null;
-
-function loadPhotoUrls() {
-  try {
-    const now = Date.now();
-    return new Map(
-      Object.entries(JSON.parse(localStorage.getItem(URLS_KEY)) || {}).filter(
-        ([, v]) => v.expiresAt - now > URL_MARGIN_MS,
-      ),
-    );
-  } catch {
-    return new Map();
-  }
-}
-
-function savePhotoUrls() {
-  clearTimeout(savePhotoUrlsTimer);
-  savePhotoUrlsTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(URLS_KEY, JSON.stringify(Object.fromEntries(photoUrls)));
-    } catch {
-      /* this launch still has them in memory */
-    }
-  }, 1000);
-}
-
-// When a presigned URL stops working. SigV2 (what boto3 signs with in
-// us-east-1) says so outright; SigV4 gives the signing time and lifetime.
-function urlExpiry(url) {
-  const q = url.searchParams;
-  if (q.get("Expires")) return Number(q.get("Expires")) * 1000;
-  const date = q.get("X-Amz-Date")?.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
-  if (!date || !q.get("X-Amz-Expires")) return null;
-  const [, y, mo, d, h, mi, se] = date;
-  return Date.parse(`${y}-${mo}-${d}T${h}:${mi}:${se}Z`) + Number(q.get("X-Amz-Expires")) * 1000;
-}
-
-function stablePhotoUrl(value) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    return value;
-  }
-  const expiresAt = urlExpiry(url);
-  if (!expiresAt) return value;
-  const key = url.origin + url.pathname;
-  const known = photoUrls.get(key);
-  if (known && known.expiresAt - Date.now() > URL_MARGIN_MS) return known.url;
-  photoUrls.set(key, { url: value, expiresAt });
-  savePhotoUrls();
-  return value;
-}
-
-// Every "...Url" field in a response: thumbUrl, mediumUrl, coverUrl, videoUrl.
-function keepPhotoUrls(data) {
-  if (Array.isArray(data)) {
-    for (const item of data) keepPhotoUrls(item);
-  } else if (data && typeof data === "object") {
-    for (const [key, value] of Object.entries(data)) {
-      if (typeof value === "string" && key.endsWith("Url") && value.startsWith("https://")) {
-        data[key] = stablePhotoUrl(value);
-      } else if (value && typeof value === "object") {
-        keepPhotoUrls(value);
-      }
-    }
-  }
-  return data;
-}
-
-// A kept URL that fails anyway (the signing credentials ran out first) is
-// forgotten, so the next screen uses the fresh one.
-document.addEventListener(
-  "error",
-  (event) => {
-    const src = event.target?.currentSrc || event.target?.src;
-    if (!src || !(event.target instanceof HTMLImageElement || event.target instanceof HTMLVideoElement)) return;
-    try {
-      const url = new URL(src);
-      if (photoUrls.get(url.origin + url.pathname)?.url === src) {
-        photoUrls.delete(url.origin + url.pathname);
-        savePhotoUrls();
-      }
-    } catch {
-      /* not one of ours */
-    }
-  },
-  true,
-);
-
-// Screens: a GET answered in the last few seconds is reused as is; an older
-// one is shown at once and refreshed behind it, and the screen redraws only
-// if something changed. Anything the person does (label, merge, rename…)
-// drops the lot, so an action is never followed by a stale screen.
-const FRESH_MS = 15 * 1000;
-const responses = new Map(); // path -> { data, text, at }
-// Writes that change nothing a screen shows: the model's bookkeeping and
-// the upload outbox, which would otherwise empty the cache every second.
-const PASSIVE_WRITES = /\/(prediction|vectors|media|complete|pick)$|^\/encounters$/;
-
-function forgetResponses() {
-  responses.clear();
-}
-
-// Signatures differ on every response; what is shown does not.
-const comparable = (data) => JSON.stringify(data).replace(/\?[^"]*Signature=[^"]*/g, "");
+// Signing in, the API client and the photo-address cache live in web/lib/,
+// shared with the member app (milestone E0). What stays here is the desk's
+// own: its sign-in screen, and which screen is shown.
+onSignedOut(() => showLogin());
 
 // Bumped whenever a different screen is drawn, so a late refresh redraws
 // only the screen it was fetched for, and a screen whose data arrives after
@@ -453,23 +90,9 @@ function stillShown() {
   return () => screen === shown;
 }
 
-async function cachedGet(path, redraw = render) {
-  const hit = responses.get(path);
-  if (hit && Date.now() - hit.at < FRESH_MS) return hit.data;
-  if (hit) {
-    const shown = screen;
-    api(path)
-      .then((data) => {
-        const text = comparable(data);
-        responses.set(path, { data, text, at: Date.now() });
-        if (text !== hit.text && screen === shown) redraw();
-      })
-      .catch(() => {});
-    return hit.data;
-  }
-  const data = await api(path);
-  responses.set(path, { data, text: comparable(data), at: Date.now() });
-  return data;
+function cachedGet(path, redraw = render) {
+  const shown = screen;
+  return sharedCachedGet(path, redraw, () => screen === shown);
 }
 
 // --------------------------------------------------------------------------
@@ -1444,8 +1067,8 @@ function funnelSteps(row) {
 
 function trackedLinks(row) {
   if (UNLINKABLE.has(row.referral)) return null;
-  const site = `${config.siteUrl}?src=${row.referral}`;
-  const bot = `${config.botUrl}?start=${row.referral}`;
+  const site = `${getConfig().siteUrl}?src=${row.referral}`;
+  const bot = `${getConfig().botUrl}?start=${row.referral}`;
   const copyRow = (label, url, hint) =>
     el("div", { className: "copy-row" }, [
       el("div", {}, [
@@ -2181,11 +1804,14 @@ const fmtDayLong = (day) =>
 // Boot
 // --------------------------------------------------------------------------
 
-function claims(token) {
+const DESK_KEY = "bgucats.desk";
+
+function rememberDesk() {
   try {
-    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (new URLSearchParams(location.search).has("desk")) sessionStorage.setItem(DESK_KEY, "1");
+    return sessionStorage.getItem(DESK_KEY) === "1";
   } catch {
-    return {};
+    return true; // no storage: stay where the person is
   }
 }
 
@@ -2194,12 +1820,12 @@ async function boot() {
     showInstallPage();
     return;
   }
-  config = await (await fetch("/config.json")).json();
+  useConfig(await (await fetch("/config.json")).json());
   // Read by the simulator check (.github/workflows/ios.yml): a build whose
   // sign-in plugin did not register must not reach TestFlight.
   if (isNative()) console.info(`native sign-in: ${nativeSignIn() ? "ready" : "missing"}`);
 
-  $("#login-button").onclick = guard(login);
+  $("#login-button").onclick = guard(() => login({ onRefused: showLogin }));
   $("#logout").onclick = () => logout();
   wireLightbox();
   closeOnBackdrop($("#picker"));
@@ -2208,7 +1834,21 @@ async function boot() {
     tab.onclick = () => setView(tab.dataset.view);
   }
 
+  // Which page is the front door: the desk, or the member app (frontDoor in
+  // config.json, docs/app-plan/05-client.md). `?desk` keeps the desk for
+  // the rest of the session, which is how an admin reaches it once the
+  // front door is the app.
+  const wantsDesk = rememberDesk();
   await consumeCallback();
+  const back = takeReturnTo();
+  if (back) {
+    location.replace(back); // a sign-in the member app started
+    return;
+  }
+  if (getConfig().frontDoor === "app" && !wantsDesk) {
+    location.replace("/app.html");
+    return;
+  }
 
   const token = await idToken();
   if (!token) {

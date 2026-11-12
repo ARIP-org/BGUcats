@@ -133,29 +133,30 @@ resource "aws_s3_bucket_policy" "web" {
 }
 
 locals {
+  # Every file under web/ is the site, typed by its extension. A file with
+  # an extension not listed here fails the plan rather than going out with
+  # the wrong type. Until E0 this was a list of names by hand, and a new
+  # file (web/lib/, the member app) would have been missing from the site
+  # while every local test passed.
+  #
+  # Not here: config.json, generated below, and the recognition model,
+  # which is built, not committed, and published under model/ by
+  # scripts/publish_model.py, a prefix Terraform never touches. The service
+  # worker caches the app shell only, never /api/ or photos (web/sw.js).
+  web_types = {
+    html        = "text/html; charset=utf-8"
+    js          = "text/javascript; charset=utf-8"
+    css         = "text/css; charset=utf-8"
+    json        = "application/json; charset=utf-8"
+    webmanifest = "application/manifest+json"
+    svg         = "image/svg+xml"
+    png         = "image/png"
+    woff2       = "font/woff2"
+    txt         = "text/plain; charset=utf-8"
+  }
   web_files = {
-    "index.html" = "text/html; charset=utf-8"
-    "app.js"     = "text/javascript; charset=utf-8"
-    "charts.js"  = "text/javascript; charset=utf-8"
-    "capture.js" = "text/javascript; charset=utf-8"
-    "install.js" = "text/javascript; charset=utf-8"
-    "outbox.js"  = "text/javascript; charset=utf-8"
-    # The in-browser recognition model's code. The model itself is not
-    # here: it is built, not committed, and published under model/ by
-    # scripts/publish_model.py, a prefix Terraform never touches.
-    "recognition.js" = "text/javascript; charset=utf-8"
-    "styles.css"     = "text/css; charset=utf-8"
-    # The campus places (src/common/regions.py reads the same file).
-    "regions.json" = "application/json; charset=utf-8"
-    # What makes it installable: "Add to Home Screen" opens it full-screen
-    # with its own icon. The service worker caches the app shell only —
-    # never /api/, never photos (web/sw.js).
-    "manifest.webmanifest" = "application/manifest+json"
-    "sw.js"                = "text/javascript; charset=utf-8"
-    "icon.svg"             = "image/svg+xml"
-    "icon-192.png"         = "image/png"
-    "icon-512.png"         = "image/png"
-    "apple-touch-icon.png" = "image/png"
+    for name in fileset("${path.module}/../../web", "**") :
+    name => local.web_types[reverse(split(".", name))[0]]
   }
 }
 
@@ -184,6 +185,8 @@ resource "aws_s3_object" "web_config" {
     # with ?src=, and the bot with the same slug as its /start payload.
     siteUrl = "https://${aws_cloudfront_distribution.site.domain_name}/"
     botUrl  = "https://t.me/bgucatsbot"
+    # index.html or app.html first (variables.tf, front_door).
+    frontDoor = local.settings.front_door
   })
 }
 
