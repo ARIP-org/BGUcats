@@ -39,7 +39,7 @@ from boto3.dynamodb.conditions import Key
 from ulid import ULID
 
 from admin import insights
-from common import admission, api, media, regions, tables, text
+from common import admission, api, encounters, media, regions, tables, text
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -82,6 +82,11 @@ ROLES = admission.ROLES
 # Who may sign in at all (docs/app-plan/, D1). Absent: the allowlist only.
 SIGNUP_POLICY = os.environ.get("SIGNUP_POLICY", "allowlist")
 SIGNUP_DOMAINS = admission.domains_from(os.environ.get("SIGNUP_DOMAINS"))
+# The member app (docs/app-plan/). With it on, a pick and every label of an
+# app encounter also keep the person's encounter item in the app's table
+# (B3b). With it off, nothing here touches that table.
+SOCIAL = os.environ.get("SOCIAL", "off") == "on"
+SOCIAL_TABLE_NAME = os.environ.get("SOCIAL_TABLE_NAME", "bgucats-social")
 
 # Who may call a route (see ROUTES).
 ANYONE = "anyone"  # any admitted user, admins included
@@ -141,6 +146,7 @@ PICK_SHOWN = 5
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
+social_table = dynamodb.Table(SOCIAL_TABLE_NAME)
 s3 = boto3.client("s3")
 
 
@@ -598,6 +604,7 @@ def _assign_session(session_id, body, email, **_):
         ExpressionAttributeValues={":cat": cat_id, ":now": _now_iso(), ":by": email},
     )
     _refresh_cat_photo_count(cat_id, present=assigned_ids)
+    _sync_encounters(session_id, photos)
     return {"sessionId": session_id, "catId": cat_id, "assigned": assigned}
 
 
@@ -657,6 +664,7 @@ def _unassign_session(session_id, **_):
     unassigned_ids = [p["photoId"] for p in photos if p.get("status") == "labeled"]
     for cat_id in previous:
         _refresh_cat_photo_count(cat_id, absent=unassigned_ids)
+    _sync_encounters(session_id, photos)
     return {"sessionId": session_id, "unassigned": len(photos)}
 
 
@@ -728,6 +736,9 @@ def _merge_sessions(body, email, **_):
             ],
         )
 
+    # A merge counts as a label: the source encounter is now the target's
+    # cat, or unlabeled with it.
+    _sync_encounters(source_id, photos)
     return {"merged": len(photos), "into": target_id}
 
 
@@ -805,6 +816,7 @@ def _reject_session(session_id, **_):
         UpdateExpression="SET rejectedAt = :now, photoCount = :zero",
         ExpressionAttributeValues={":now": _now_iso(), ":zero": 0},
     )
+    _sync_encounters(session_id, photos)
     return {"deleted": len(photos), "sessionId": session_id}
 
 
@@ -1099,7 +1111,7 @@ def _record_pick(session_id, body, email, **_):
     the labeling desk never reads it, so the admin's label stays blind and
     can score both the model and the contributor.
     """
-    _require_encounter(session_id, email)
+    session = _require_encounter(session_id, email)
     version = _model_version_param(body.get("modelVersion"))
     choice = body.get("choice")
     if choice not in PICK_CHOICES:
@@ -1151,7 +1163,88 @@ def _record_pick(session_id, body, email, **_):
             "GSI2SK": session_id,
         }
     )
+    _record_encounter_claim(session, cat_id, email)
     return {"sessionId": session_id, "choice": choice}
+
+
+# --------------------------------------------------------------------------
+# The person's encounter, in the app's table (B3b)
+# --------------------------------------------------------------------------
+#
+# A pick is a person's claim; a label is an admin's. The app counts the
+# claim at once and follows the label when there is one (D8). This API is
+# the one that sees both, so it keeps `ENC` (common/encounters.py) and the
+# events Lambda does the counting from there. Only for a person who has
+# opened the app: one who never has has no user to count for.
+
+# Merges chain (A into B, then B into C); following more than this many is
+# a loop or a mistake, and the encounter is left as it is.
+MERGE_HOPS = 5
+
+
+def _record_encounter_claim(session, cat_id, email):
+    if not SOCIAL:
+        return
+    user_id = encounters.user_id_for(social_table, email)
+    if user_id is None:
+        return
+    encounters.update(
+        social_table,
+        user_id,
+        session["sessionId"],
+        {
+            **encounters.place_fields(session),
+            "userId": user_id,
+            "claimedCatId": cat_id,
+            "updatedAt": _now_iso(),
+        },
+    )
+    # The label is read after the claim is written. An admin who labels in
+    # between finds the item there, or this read finds their label.
+    _sync_encounter(session["sessionId"])
+
+
+def _label_of(session):
+    """(cat, rejected) for a session, following merges to where its photos
+    went."""
+    for _ in range(MERGE_HOPS):
+        if session.get("rejectedAt"):
+            return None, True
+        target = session.get("mergedInto")
+        if not target:
+            return session.get("catId"), False
+        session = _item(f"SESSION#{target}") or {}
+    return None, False
+
+
+def _sync_encounter(session_id):
+    """The encounter's label, from the dataset as it is now. Does nothing
+    for a session that is not an app encounter of someone in the app."""
+    if not SOCIAL:
+        return
+    session = _item(f"SESSION#{session_id}")
+    if not session or session.get("channel") != APP_CHANNEL:
+        return
+    user_id = encounters.user_id_for(social_table, session.get("startedBy"))
+    if user_id is None:
+        return
+    cat_id, rejected = _label_of(session)
+    encounters.update(
+        social_table,
+        user_id,
+        session_id,
+        {"labelCatId": cat_id, "rejected": rejected, "updatedAt": _now_iso()},
+        only_if_there=True,
+    )
+
+
+def _sync_encounters(session_id, photos):
+    """This session's encounter, and those merged into it: their photos
+    carry where they came from, and their label is this one's."""
+    _sync_encounter(session_id)
+    merged = {p.get("mergedFromSessionId") for p in photos} - {None, session_id}
+    for source in sorted(merged):
+        _sync_encounter(source)
 
 
 # --------------------------------------------------------------------------

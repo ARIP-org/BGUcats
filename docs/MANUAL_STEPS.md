@@ -1604,6 +1604,115 @@ will need this step with `bgucats-prod-admin` before its first promote.
 
 ---
 
+## 18. The smoke test may call the member API, on staging (B3c)
+
+**Not done yet.** For milestone B3c (`docs/app-plan/08-milestones.md`).
+**Staging only:** the smoke role does not exist in production.
+
+**What this is for.** After every merge, staging's smoke test
+(`scripts/smoke_staging.py`) puts one made-up photo through the app.
+Since B3c it also posts that encounter in the member app and checks the
+feed, so its role must be able to call the member API's Lambda
+(`bgucats-app`) as well as the desk's (`bgucats-admin`). Today it may call
+the desk's only. Nothing is created; one policy gains one line.
+
+| Role or policy | Gains |
+|---|---|
+| Smoke role (`bgucats-github-actions-smoke`), its inline policy `bgucats-smoke-invoke-admin` | `lambda:InvokeFunction` on `bgucats-app` too. The policy keeps its old name: a new name would replace it, which the script refuses |
+| The same role's description | "…through the API Lambdas" instead of "…through the admin Lambda" |
+
+**Apply it before merging B3c's pull request.** If B3c merges first, the
+deploy itself succeeds but its smoke test fails at step 6 with "not
+allowed to invoke bgucats-app … step 18", and that commit gets no
+`deployed/staging` mark. Then do this step and re-run the failed job
+(*Actions → Deploy → the run → Re-run failed jobs*).
+
+### Before you start
+
+- A codespace on B3c's branch (`claude/busy-babbage-31alx1` while its pull
+  request is open).
+- About five minutes. Nothing here is billed.
+
+### The steps
+
+1. In the codespace's own terminal, sign in to staging as admin:
+
+   ```bash
+   aws sso login --profile bgucats-staging-admin --use-device-code
+   ```
+
+2. Ask Claude: **"apply bootstrap to staging"**. It runs, and shows you,
+   first the plan:
+
+   ```bash
+   echo no | AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh
+   ```
+
+   The plan should list **only in-place updates** (`update`) to two
+   resources: `aws_iam_role.github_actions_smoke[0]` (its description) and
+   `aws_iam_role_policy.github_actions_smoke[0]` (the second function), and
+   nothing else. Anything that says `create`, `delete` or `replace` is a
+   reason to stop and ask.
+
+3. If the plan is as above, tell Claude **"apply it"**:
+
+   ```bash
+   echo yes | AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh
+   ```
+
+   It ends with `Saved: s3://bgucats-tfstate-586943192664/bootstrap/terraform.tfstate`.
+
+4. Ask Claude to **prove it**. It asks IAM's policy simulator; nothing is
+   created:
+
+   ```bash
+   acct=586943192664; smoke=arn:aws:iam::$acct:role/bgucats-github-actions-smoke
+   for fn in bgucats-admin bgucats-app bgucats-events; do
+     aws --profile bgucats-staging-admin iam simulate-principal-policy --policy-source-arn "$smoke" \
+       --action-names lambda:InvokeFunction \
+       --resource-arns "arn:aws:lambda:us-east-1:$acct:function:$fn" \
+       --query "EvaluationResults[].['$fn',EvalDecision]" --output text
+   done
+   ```
+
+   Expect `bgucats-admin allowed`, `bgucats-app allowed`,
+   `bgucats-events implicitDeny`.
+
+5. Sign out:
+
+   ```bash
+   aws sso logout
+   ```
+
+6. Merge B3c's pull request. Its deploy's summary shows seven smoke-test
+   lines, the sixth "posted, published and in the feed".
+
+### If it goes wrong
+
+- **`aws-guard: … is for production`:** the profile is wrong; this step
+  is `bgucats-staging-admin` only.
+- **The plan shows a `replace` of the policy:** the branch is not B3c's,
+  or the policy's name was changed. Stop and bring the plan to a session.
+- **Step 6 fails with `the post was not published within 60 s`:** the
+  role works; the events Lambda did not publish. Its errors come by alarm
+  email, and its log group is `/aws/lambda/bgucats-events`.
+
+### How to undo it
+
+Revert B3c's change to `infra/bootstrap/smoke_role.tf` on a branch and
+run step 3 from it. The smoke test's step 6 then fails until B3c's
+smoke-test change is reverted too.
+
+### What never goes into chat
+
+Nothing in this step is secret.
+
+### What to tell the next session
+
+That staging's smoke role may invoke `bgucats-app`, and the date.
+
+---
+
 ## Known gap: the CI role can read production secrets
 
 CI runs `terraform plan` on every PR, and a PR runs **its own** copy of

@@ -54,6 +54,7 @@ def campus(aws, monkeypatch):  # noqa: F811
                 "sessionId": session,
                 "channel": "app",
                 "startedBy": owner,
+                "startedAt": "2026-11-12T08:00:00Z",
                 "coarseLat": Decimal("31.262"),
                 "coarseLon": Decimal("34.803"),  # at the library
             }

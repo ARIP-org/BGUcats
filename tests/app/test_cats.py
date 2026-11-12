@@ -26,7 +26,7 @@ LIST_KEYS = {
     "lastFedAt",
     "firstSeenAt",
 }
-PAGE_KEYS = LIST_KEYS | {"bio", "photos"}
+PAGE_KEYS = LIST_KEYS | {"bio", "photos", "met"}
 
 
 def add_cat(data, cat_id, name, **fields):

@@ -175,9 +175,10 @@ jobs:
           check 200 "${app}config.json"
           check 401 "${app}api/me"
 
-      # Staging only: one made-up photo through the whole pipeline, then
-      # deleted again (scripts/smoke_staging.py). Its role can invoke the
-      # admin Lambda and nothing else, and exists in the staging account
+      # Staging only: one made-up photo through the whole pipeline, posted
+      # in the member app, then deleted again (scripts/smoke_staging.py).
+      # Its role can invoke the two API Lambdas and nothing else, and
+      # exists in the staging account
       # alone (infra/bootstrap/smoke_role.tf): production never gets a
       # test photo. The account ID comes from the backend file, the one
       # place it is written.

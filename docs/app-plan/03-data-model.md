@@ -121,9 +121,12 @@ Each of these gets a test.
    `voteTotal`.
 7. A name is `live` only after a moderation run passed it or an admin
    approved it.
-8. `ENC.counted` always equals what `STATS` and `MET` were given for that
-   encounter, so correcting it is a subtraction and an addition, not a
-   recount.
+8. `STATS` and `MET` are what the person's `ENC` items add up to. The
+   events Lambda recounts them from all of a person's encounters on every
+   change (a few hundred items at most), rather than adding and
+   subtracting, so a change delivered twice, late or out of order still
+   leaves the right numbers. (The plan first kept an `ENC.counted` field
+   for adjusting; B3b found the recount simpler and safe to repeat.)
 9. A person in `deleting` or `banned` writes nothing.
 10. A post with an open proposal is never visible, and a proposed cat is
     in no member's cat list until an admin approves it (D7).

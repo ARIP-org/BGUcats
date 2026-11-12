@@ -4,8 +4,10 @@
 Fed by an event source mapping on the table's stream, through the filter in
 filters.json, in batches. It sorts each change by kind, logs one line per
 batch, and hands it to that kind's handler in HANDLERS. Since B3a, a new
-post is published (publish_post); moderation (C1), counters and badges
-(B7) and push (B9) arrive the same way.
+post is published (publish_post). Since B3b, a change to an encounter
+recounts what its person met and keeps its post's cat on the label
+(count_encounter). Moderation (C1), points and badges (B7) and push (B9)
+arrive the same way.
 
 The rules every handler keeps:
 
@@ -27,6 +29,7 @@ from collections import Counter
 from datetime import UTC, datetime
 
 import boto3
+from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.types import TypeDeserializer
 
 logger = logging.getLogger()
@@ -102,7 +105,12 @@ def publish_post(record):
     Until then a post is published at once: right for the internal beta,
     where everyone is known to the owner; production has the app off.
     """
-    post = _image(record)
+    changed = _image(record)
+    if not changed or changed.get("status") != "pending":
+        return
+    # The post as it is now, not as this change left it: its cat may have
+    # been corrected by a label since (count_encounter).
+    post = _get(changed["PK"], "META")
     if not post or post.get("status") != "pending":
         return
     created = post["createdAt"]
@@ -115,6 +123,7 @@ def publish_post(record):
         ":feed_sk": f"{created}#P#{post['postId']}",
     }
     update = "SET #s = :visible, visibleAt = :now, GSI2PK = :feed, GSI2SK = :feed_sk"
+    same_cat = _cat_is(post.get("catId"), values)
     items = []
     if post.get("catId"):
         update += ", GSI3PK = :cat, GSI3SK = :created"
@@ -137,7 +146,7 @@ def publish_post(record):
                 "TableName": social_table.name,
                 "Key": {"PK": post["PK"], "SK": "META"},
                 "UpdateExpression": update,
-                "ConditionExpression": "#s = :pending",
+                "ConditionExpression": f"#s = :pending AND {same_cat}",
                 "ExpressionAttributeNames": names,
                 "ExpressionAttributeValues": values,
             }
@@ -149,12 +158,212 @@ def publish_post(record):
     except client.exceptions.TransactionCanceledException as exc:
         reasons = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
         if reasons and reasons[0] == "ConditionalCheckFailed":
-            return  # already published, or removed meanwhile
+            # Already published, removed, or its cat corrected meanwhile:
+            # read again, by the mapping's retry.
+            fresh = _get(post["PK"], "META") or {}
+            if fresh.get("status") == "pending":
+                raise
+            return
         raise
+
+
+def _get(pk, sk):
+    return social_table.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True).get(
+        "Item"
+    )
+
+
+def _cat_is(cat_id, values):
+    """A condition that a post's `catId` is still `cat_id`; none may be
+    stored as null or be absent."""
+    if cat_id is None:
+        values[":nocat"] = None
+        return "(attribute_not_exists(catId) OR catId = :nocat)"
+    values[":wascat"] = cat_id
+    return "catId = :wascat"
+
+
+def _cat_counts(cat_id, posts, likes):
+    return {
+        "Update": {
+            "TableName": social_table.name,
+            "Key": {"PK": f"CAT#{cat_id}", "SK": "PUBLIC"},
+            "UpdateExpression": "ADD posts :p, likes :l",
+            "ExpressionAttributeValues": {":p": posts, ":l": likes},
+        }
+    }
+
+
+# --------------------------------------------------------------------------
+# Encounters (B3b): what a person met, and their post's cat
+# --------------------------------------------------------------------------
+
+
+def _shown_cat(enc):
+    """The same rule as common/encounters.py, shown_cat: the label, else the
+    claim; none if rejected. Kept here because this Lambda ships without
+    src/common, and held to it by a test."""
+    if not enc or enc.get("rejected"):
+        return None
+    return enc.get("labelCatId") or enc.get("claimedCatId")
+
+
+def _month(enc):
+    return enc["day"][:7] if enc and enc.get("day") else None
+
+
+def summarise(encs):
+    """What a person's encounters add up to. Recomputed from all of them on
+    every change rather than adjusted, so a change seen twice, late, or out
+    of order still leaves the right numbers; a person has hundreds at most.
+
+    Returns (met, months, total): met is {catId: {firstDay, lastDay, days,
+    encounters}}, months is {yyyy-mm: {encounters, catsMet}}, total is
+    {encounters, catsMet}. A rejected encounter counts for nothing; one
+    without a cat counts as an encounter but meets nobody.
+    """
+    met, months = {}, {}
+    month_cats = {}
+    total = 0
+    for enc in encs:
+        if enc.get("rejected") or not enc.get("day"):
+            continue
+        day, month = enc["day"], enc["day"][:7]
+        total += 1
+        months.setdefault(month, {"encounters": 0, "catsMet": 0})["encounters"] += 1
+        cat = _shown_cat(enc)
+        if cat is None:
+            continue
+        month_cats.setdefault(month, set()).add(cat)
+        entry = met.setdefault(
+            cat, {"firstDay": day, "lastDay": day, "days": set(), "encounters": 0}
+        )
+        entry["firstDay"] = min(entry["firstDay"], day)
+        entry["lastDay"] = max(entry["lastDay"], day)
+        entry["days"].add(day)
+        entry["encounters"] += 1
+    for month, cats in month_cats.items():
+        months[month]["catsMet"] = len(cats)
+    for entry in met.values():
+        entry["days"] = len(entry["days"])
+    return met, months, {"encounters": total, "catsMet": len(met)}
+
+
+def _encounters_of(user_pk):
+    items, start = [], None
+    while True:
+        kwargs = {
+            "KeyConditionExpression": Key("PK").eq(user_pk)
+            & Key("SK").begins_with("ENC#"),
+            "ConsistentRead": True,
+        }
+        if start:
+            kwargs["ExclusiveStartKey"] = start
+        page = social_table.query(**kwargs)
+        items.extend(page["Items"])
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def _set_counts(pk, sk, counts):
+    social_table.update_item(
+        Key={"PK": pk, "SK": sk},
+        UpdateExpression="SET encounters = :e, catsMet = :c, countedAt = :now",
+        ExpressionAttributeValues={
+            ":e": counts["encounters"],
+            ":c": counts["catsMet"],
+            ":now": _now_iso(),
+        },
+    )
+
+
+def count_encounter(record):
+    """An encounter was recorded, labeled, relabeled, rejected or posted.
+
+    Rewrites the person's `MET#` items for the cats it was and is, and
+    their `STATS#` for its months and in all; then puts its post on the
+    right cat. Writes only items the stream filter does not pass
+    (SELF_WRITTEN), and the post only when its cat is wrong.
+    """
+    pk = _keys(record)[0]
+    old, new = _image(record, "OldImage"), _image(record)
+    met, months, total = summarise(_encounters_of(pk))
+
+    for cat in sorted({_shown_cat(old), _shown_cat(new)} - {None}):
+        if cat in met:
+            social_table.put_item(
+                Item={"PK": pk, "SK": f"MET#{cat}", "catId": cat, **met[cat]}
+            )
+        else:
+            social_table.delete_item(Key={"PK": pk, "SK": f"MET#{cat}"})
+    for month in sorted({_month(old), _month(new)} - {None}):
+        _set_counts(
+            pk, f"STATS#{month}", months.get(month, {"encounters": 0, "catsMet": 0})
+        )
+    _set_counts(pk, "STATS#ALL", total)
+
+    if new and new.get("postId"):
+        correct_post(new)
+
+
+def correct_post(enc):
+    """The encounter's post shows the label once there is one, and leaves
+    every list if the encounter was rejected: its photos are gone."""
+    post = _get(f"POST#{enc['postId']}", "META")
+    if not post or post.get("status") == "removed":
+        return
+    visible = post.get("status") == "visible"
+    was = post.get("catId")
+    likes = int(post.get("likeCount", 0))
+    names = {"#s": "status"}
+    values = {":status": post["status"], ":likes": likes}
+    condition = f"#s = :status AND likeCount = :likes AND {_cat_is(was, values)}"
+
+    if enc.get("rejected"):
+        values.update({":removed": "removed", ":why": "rejected", ":now": _now_iso()})
+        update = (
+            "SET #s = :removed, hiddenReason = :why, removedAt = :now "
+            "REMOVE GSI2PK, GSI2SK, GSI3PK, GSI3SK"
+        )
+        want = was
+    else:
+        want = enc.get("labelCatId") or post.get("claimedCatId")
+        if want == was:
+            return
+        values[":cat"] = want
+        update = "SET catId = :cat"
+        if visible and want:
+            values[":catpost"] = f"CATPOST#{want}"
+            values[":created"] = post["createdAt"]
+            update += ", GSI3PK = :catpost, GSI3SK = :created"
+        elif visible:
+            update += " REMOVE GSI3PK, GSI3SK"
+
+    items = [
+        {
+            "Update": {
+                "TableName": social_table.name,
+                "Key": {"PK": post["PK"], "SK": "META"},
+                "UpdateExpression": update,
+                "ConditionExpression": condition,
+                "ExpressionAttributeNames": names,
+                "ExpressionAttributeValues": values,
+            }
+        }
+    ]
+    if visible and was:
+        items.append(_cat_counts(was, -1, -likes))
+    if visible and want and not enc.get("rejected"):
+        items.append(_cat_counts(want, 1, likes))
+    # A like or an unlike in between changes likeCount and cancels this;
+    # the mapping retries the record and it is read again.
+    social_table.meta.client.transact_write_items(TransactItems=items)
 
 
 HANDLERS = {kind: _not_built_yet for _, _, kind in KINDS}
 HANDLERS["post"] = publish_post
+HANDLERS["encounter"] = count_encounter
 
 
 def _keys(record):

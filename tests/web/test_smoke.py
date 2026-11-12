@@ -1,6 +1,7 @@
 """The smoke test staging gets after every deploy (scripts/smoke_staging.py),
 run here against the local app: the same six steps, no AWS."""
 
+import time
 import types
 
 import pytest
@@ -28,7 +29,7 @@ def test_the_smoke_test_passes_and_leaves_nothing_behind(app):
     objects = stored(app)
     said = []
     run(app.api, ADMIN, COLLABORATOR, say=said.append)
-    assert len(said) == 6
+    assert len(said) == 7
     assert app.api("GET", "/api/stats")[1] == stats
     assert stored(app) == objects
 
@@ -56,7 +57,11 @@ def test_the_smoke_test_passes_at_any_second(app, monkeypatch):
     this second, the picture came out byte for byte one of the seeded ones,
     and the job failed with "the new encounter is not in the queue"."""
     monkeypatch.setattr(
-        smoke_staging, "time", types.SimpleNamespace(time=lambda: 1794380583)
+        smoke_staging,
+        "time",
+        types.SimpleNamespace(
+            time=lambda: 1794380583, monotonic=time.monotonic, sleep=time.sleep
+        ),
     )
     run(app.api, ADMIN, COLLABORATOR, say=lambda _: None)
 
@@ -64,3 +69,23 @@ def test_the_smoke_test_passes_at_any_second(app, monkeypatch):
 def test_the_smoke_test_needs_the_seeded_members():
     with LocalApp() as empty, pytest.raises(SmokeFailure, match="make seed-staging"):
         run(empty.api, ADMIN, COLLABORATOR, say=lambda _: None)
+
+
+def test_a_role_that_cannot_reach_the_member_api_says_what_to_do():
+    """Until staging's bootstrap is applied for B3c, the smoke role may
+    invoke the desk's Lambda only. The failure names the step that fixes it."""
+    from botocore.exceptions import ClientError
+
+    from seed_campus import staging_api
+
+    class Lambda:
+        def invoke(self, FunctionName, Payload):
+            raise ClientError(
+                {"Error": {"Code": "AccessDeniedException", "Message": "no"}},
+                "Invoke",
+            )
+
+    session = types.SimpleNamespace(client=lambda name: Lambda())
+    api = staging_api(session)
+    with pytest.raises(RuntimeError, match="step 18"):
+        api("GET", "/api/v1/me", None, ADMIN)
