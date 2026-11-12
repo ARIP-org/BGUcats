@@ -46,6 +46,7 @@ def test_me_reports_the_role(people):
     assert _call("GET", "/api/me", email=HELPER)[1] == {
         "email": HELPER,
         "role": "user",
+        "social": False,  # the member app is off unless the account has it on
     }
 
 
@@ -198,6 +199,7 @@ def test_a_bgu_address_is_a_user_under_the_domain_policy(people, domain_policy):
     assert _call("GET", "/api/me", email=student)[1] == {
         "email": student,
         "role": "user",
+        "social": False,
     }
     # A user: the capture routes yes, the desk's no.
     assert _call("GET", "/api/encounters", email=student)[0] == 200

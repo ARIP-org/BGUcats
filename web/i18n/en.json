@@ -71,5 +71,6 @@
   "post.deleted": "Post deleted",
   "post.state.pending": "Being checked",
   "post.state.hidden": "Hidden",
-  "post.state.removed": "Removed"
+  "post.state.removed": "Removed",
+  "profile.desk": "Labeling desk and Capture"
 }

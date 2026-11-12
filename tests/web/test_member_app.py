@@ -283,3 +283,25 @@ def test_right_to_left_mirrors_the_frame(open_member_app, shot):
     assert cats["x"] > bar["x"] + bar["width"] / 2
     assert abs((lens["x"] + lens["width"]) - (bar["x"] + bar["width"] - 6)) < 2
     shot(page, "member-frame-rtl")
+
+
+def test_the_desk_and_the_member_app_link_to_each_other(open_app, open_member_app):
+    # An installed app has no address bar: each page offers the other.
+    desk = open_app(COLLABORATOR)
+    link = desk.get_by_role("link", name="New app")
+    assert link.is_visible()
+    link.click()
+    desk.wait_for_selector("[data-screen=frame]")
+
+    page = frame(open_member_app)
+    open_profile(page)
+    page.get_by_role("link", name="Labeling desk and Capture").click()
+    page.wait_for_selector("#app:not([hidden])")
+
+
+def test_the_desk_offers_no_new_app_where_it_is_off(open_app, monkeypatch):
+    from admin import handler as desk_handler
+
+    monkeypatch.setattr(desk_handler, "SOCIAL", False)
+    desk = open_app(ADMIN)
+    assert not desk.get_by_role("link", name="New app").is_visible()

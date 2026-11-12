@@ -385,6 +385,7 @@ body:has(.frame) {
   font: inherit;
   font-size: 16px;
   text-align: start;
+  text-decoration: none;
   cursor: pointer;
 }
 .row-icon {

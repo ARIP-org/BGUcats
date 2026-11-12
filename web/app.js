@@ -1963,7 +1963,9 @@ async function boot() {
   // The role is not in the token — it lives on the allowlist item, so a
   // change takes effect on the next load rather than at token expiry.
   try {
-    state.role = (await api("/me")).role;
+    const me = await api("/me");
+    state.role = me.role;
+    $("#new-app").hidden = !me.social;
     localStorage.setItem(ROLE_KEY, state.role);
   } catch (err) {
     if (err.status === 403) {
