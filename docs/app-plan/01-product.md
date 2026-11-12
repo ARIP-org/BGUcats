@@ -76,7 +76,11 @@ photos. A sheet names the selected habitat, "2 cats live here" or "No
 named cats here yet — spotted one? Scan it.", and lists its cats with
 their GPA.
 
-**Routes:** none of its own: `GET /cats` and the regions file.
+Not in the prototype yet, decided 2026-11-12 (D10): the campus's
+**feeding spots**, marked on the map so people know where to feed.
+
+**Routes:** none of its own: `GET /cats` and the regions file, which
+also lists the feeding spots.
 
 ## Scan a cat: the camera (`Main.dc.html`, `Scanner.dc.html`)
 
@@ -134,6 +138,14 @@ once.
 The encounter, its photos and the pick are today's Capture, unchanged:
 the same write order, the same outbox, the same measurement of "pick from
 3". The post and the proposal are new and sit on top.
+
+**A new cat is not public until an admin approves it** (D7, answered
+2026-11-12). In the two "Add cat" endings the proposal goes to the desk;
+a post written with it is held, shown only to its author as waiting, and
+published under the approved (or merged-into) cat once the admin
+decides. The toast "New cat added — thanks!" needs new words for that
+moment; and the owner is still to confirm whether the "& create a post"
+button stays at all (`DECISIONS.md`, D7).
 
 ## Home tab
 
@@ -205,10 +217,9 @@ points:** Feed a cat +10, Meet & post a cat +5, Grade a cat +1.
 
 **Routes:** `GET /achievements`.
 
-### Proposed rules (D11)
+### The rules (D11, accepted 2026-11-12, adjusted for D9 and D10)
 
-The prototype names these and does not define them. Until the owner says
-otherwise:
+The prototype names these and does not define them.
 
 | Badge | Earned when |
 |---|---|
@@ -216,18 +227,73 @@ otherwise:
 | Name Giver | a name you suggested has led its poll |
 | Night Owl | an encounter between 22:00 and 05:00, Israel time |
 | Explorer | encounters in every campus region |
-| Critic | 10 cats graded (waits for D9) |
-| Snack Giver | your first feeding (waits for D10) |
-| Dean's List | you met every cat whose GPA is 3.5 or more (waits for D9) |
+| Snack Giver | your first feeding |
+| Dean's List | you met every cat whose GPA is 3.5 or more |
 | Cat Whisperer | the same cat met on 10 different days |
+| Critic | *has no meaning since D9: nobody grades.* Proposed: you voted in 10 name polls. Not built until the designer confirms or renames it |
 
 Points: +5 for an encounter that became a post, once per cat per day, so
-ten photos of one cat in an hour are five points; +1 per grade; +10 per
-feeding. Levels: a table of thresholds in the same data file (level 5 at
-1,500 if level 4 is 1,240 with 260 to go); names for levels other than
-"Campus Scout" are the owner's.
+ten photos of one cat in an hour are five points; +10 per feeding, for at
+most two feedings a day. Levels: a table of thresholds in the same data
+file (level 5 at 1,500 if level 4 is 1,240 with 260 to go); names for
+levels other than "Campus Scout" are the owner's.
 
 "Met" follows D8: counted at once, taken back if the label disagrees.
+
+Two things the prototype shows that D9 left without a meaning, for the
+designer: the row "Grade a cat +1" and the counter "Cats graded".
+Proposed: "Vote on a name +1" (once per cat) and "Names voted". Until
+confirmed, the row is not shown and the counter shows the proposed one
+only on staging.
+
+### GPA (D9, answered 2026-11-12)
+
+Nobody grades a cat. GPA is a popularity grade the app works out, shown
+where the prototype shows it (a cat's page, the map's habitat sheet, the
+gallery's "Highest GPA" sort).
+
+- **A cat's popularity** = its counted encounters in the current month
+  and the two before, plus the points those encounters earned. One
+  person meeting the cat on one day is one encounter, however many
+  photos; if it became a post it also earned 5 points. So a met-and-posted
+  day is worth 6, a met-and-saved day 1. "Counted" follows D8: a claim
+  counts at once and is taken back if the label disagrees.
+- **The grade** = `1 + 3 × √(popularity ÷ the most popular cat's)`, to
+  one decimal. The most popular cat has 4.0. The square root keeps the
+  middle of the campus from being crushed against 1.0 by one famous cat.
+- **A cat nobody met in that time shows "—",** not a low number, and
+  sorts last.
+- Feedings do not count: they would grade the feeding spot, not the cat.
+
+Kept as a counter per cat per month by the events Lambda, corrected when
+a label corrects an encounter; the grade is worked out when the cats are
+read. One flag, `gpa`, hides it everywhere if the owner decides it is not
+needed.
+
+It is a grade of attention, not of the cat. A shy cat will always score
+low. If that reads badly once real cats have numbers, hiding it is one
+line.
+
+### Feeding (D10, answered 2026-11-12)
+
+The campus has set feeding spots. People log that they fed a cat, and
+everyone can see when a cat was last fed.
+
+- **Feeding spots** are a list the owner supplies (O12): a name and a
+  place for each. They are drawn on the map, in every region.
+- **Logging a feeding:** "I fed this cat", for one cat, optionally at one
+  spot. No photo needed.
+- **A cat's page** shows "Last fed 3 hours ago · logged by people using
+  the app", or "No feeding logged yet".
+- **Points:** +10, for at most two feedings a day per person. More can be
+  logged; they earn nothing.
+- **Limits:** six logs a day per person; one per cat per person every
+  four hours.
+- A feeding can be reported like anything else, and an admin can remove
+  one, which puts "last fed" back to the one before.
+
+Not designed, so not built on the client until it is (G6): where the
+control is, and what a feeding spot looks like on the map.
 
 ---
 
@@ -242,8 +308,8 @@ meanwhile; "Ask" is the owner's (`DECISIONS.md`) or the designer's.
 | G2 | **Report a post.** The post menu has "See the cat" and "Show on map" only. Apple's rule 1.2 needs it (D15) | Build the route and the desk queue (B8). Do not add the menu item until it is designed |
 | G3 | **Report reasons, and what the reporter sees after.** "Report" closes the menu and nothing else | Route takes a reason from a fixed list; UI waits for design |
 | G4 | **Blocked people.** One can block; there is no list to unblock from | Route exists; UI waits |
-| G5 | **Grading a cat** (D9): GPA is shown, never given | Nothing until designed. GPA shows "—" |
-| G6 | **Feeding** (D10): rewarded, no screen | Nothing until decided. "Cats fed" shows 0 |
+| G5 | **What replaces grading** (D9: GPA is computed, nobody gives one): the row "Grade a cat +1", the counter "Cats graded" and the badge "Critic" have nothing behind them | GPA itself is built. The three leftovers are hidden until the designer confirms the proposed replacements ("GPA", above) |
+| G6 | **Feeding** (D10: build it): no control to log a feeding, no drawing of a feeding spot on the map, no "last fed" line on a cat's page | The backend is built (B7c). The screens wait for the design; "Cats fed" counts from the first log |
 | G7 | **Friend requests** (D4), if not instant: no incoming list, no pending state | Wait for D4 |
 | G8 | **Entering an invite code by hand.** A link tapped before the app is installed loses its code | A "Have an invite code?" field is needed; ask |
 | G9 | **Search cats:** a button, no results screen | Filter the gallery in place as the person types; confirm with the designer |

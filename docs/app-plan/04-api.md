@@ -81,22 +81,28 @@ Search over friends is done on the phone, over the list it already has.
 
 | Route | Does |
 |---|---|
-| `GET /cats` | Every public cat: id, shown name and where it came from (poll, admin, none), cover photo, region, coat, GPA and its count, posts, likes, last seen, first seen. Plus today's cat of the day. Sorted and searched on the phone |
-| `GET /cats/{catId}` | The same, plus the description, a few more photos, the poll's summary, and the caller's own vote and grade |
+| `GET /cats` | Every public cat: id, shown name and where it came from (poll, admin, none), cover photo, region, coat, GPA (computed, or null for "—"; absent with the `gpa` flag off), posts, likes, last seen, last fed, first seen. Plus today's cat of the day. Sorted and searched on the phone. A cat that is still a proposal is never in it |
+| `GET /cats/{catId}` | The same, plus the description, a few more photos, the poll's summary, and the caller's own vote |
 | `GET /cats/{catId}/names` | Live options with votes, the leader, whether the name is locked; the caller's choice; the caller's own pending or refused suggestion with its state |
 | `POST /cats/{catId}/names` | `{name}`. Cleans it, refuses blocklisted ones (`not_accepted`), merges with an existing option, records it as pending with the caller's vote |
 | `PUT /cats/{catId}/vote` | `{nameKey}`. Moves the caller's vote |
 | `DELETE /cats/{catId}/vote` | Takes it back |
 | `GET /cats/{catId}/posts` | Visible posts of this cat |
-| `PUT /cats/{catId}/grade`, `POST /cats/{catId}/feedings` | D9, D10 only |
+| `POST /cats/{catId}/feedings` | `{feedingId, spotId?}`. Logs that the caller fed this cat (D10). Limits: six a day; one per cat every four hours. Answers with the cat's new "last fed" |
+
+There is no route to grade a cat: GPA is computed (D9).
+
+The desk gains `POST /api/cats/{catId}/feedings/{feedingId}/remove`
+(admins), for a feeding that was reported or wrong.
 
 **Cat of the day:** chosen on the server from the Israel date, so
 everyone sees the same cat and nothing is stored: among active cats seen
 in the last 30 days, the one at `hash(date) mod count`.
 
-**Regions** are a file shipped with the client and read by the API
-(`web/regions.json`, O12): id, names per language, a centre and radius.
-The map is drawn from it; no route.
+**Regions and feeding spots** are a file shipped with the client and
+read by the API (`web/regions.json`, O12): for each region an id, names
+per language, a centre and radius; for each feeding spot an id, names, a
+place and its region. The map is drawn from it; no route.
 
 ### The feed and posts
 
@@ -107,7 +113,7 @@ The map is drawn from it; no route.
 | `GET /posts/{postId}` | One post. Its author also gets its state, which is how "being checked" is shown and polled |
 | `DELETE /posts/{postId}` | The author removes it |
 | `PUT /posts/{postId}/like`, `DELETE …/like` | Like, unlike. Answers with the new count |
-| `POST /proposals` | `{proposalId, sessionId, nameIdea?, coat?, regionId?, traits?}`. A new-cat proposal for an encounter of the caller's. Coat, region and traits are from fixed lists |
+| `POST /proposals` | `{proposalId, sessionId, nameIdea?, coat?, regionId?, traits?}`. A new-cat proposal for an encounter of the caller's. Coat, region and traits are from fixed lists. Nothing about it is public until an admin decides; a post that names it is held until then (D7) |
 
 **The area on a post** is never taken from the phone's word. When
 `shareRegion` is true the server takes the session's stored location

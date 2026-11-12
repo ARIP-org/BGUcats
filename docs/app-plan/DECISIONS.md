@@ -14,44 +14,53 @@ an answer.
 
 | ID | Question, short | Recommendation | Default | Answer |
 |---|---|---|---|---|
-| **A1** | Relational database? | No. DynamoDB | blocks F1 | |
-| **A2** | One table or a second one for the social data? | A second, `bgucats-social` | blocks F1 | |
-| **A3** | How do side effects run: table stream, or async invoke? | Stream | blocks F1 | |
-| A4 | How is the client rendered? | No build step, a small vendored renderer | may proceed | |
-| A5 | Push: straight to Apple, or through SNS? | Straight to Apple | may proceed until B9 | |
-| A6 | A custom domain now? | Buy it now, wire it when N4 needs it | may proceed until N4 | |
-| **D1** | Who may sign up? Sign in with Apple? | BGU Google accounts + invited others; Apple for external TestFlight | blocks F4 | |
-| **D2** | TestFlight: internal only, or external (a public link)? | Internal first, external at L2 | may proceed | |
-| **D3** | Whose posts are in the feed? | The whole campus, friends marked | blocks B3 | |
-| **D4** | Friends: instant, or by request? | Invite link instant; everything else by request | blocks B5 | |
-| **D5** | Phone number and contact matching | Not in the first build; invite links only | blocks B5b only | |
-| **D6** | Who names a cat: the poll, or an admin? | The poll leads; an admin can lock or remove | blocks B4 | |
-| D7 | Is a proposed new cat public before an admin approves? | The post is; the cat joins the gallery on approval | blocks B6 | |
-| D8 | When does "met" count? | At once, taken back if the label disagrees | blocks B7 | |
-| **D9** | GPA: what is graded, and where? | Design it first | blocks B7b | |
-| **D10** | The feeding log | Design it first; check campus policy | blocks B7c | |
-| D11 | Badges, points, levels: the rules | The table in `01-product.md` | may proceed | |
-| D12 | Extra frames behind each photo? | Yes, three, not shown | may proceed (off) | |
-| D13 | What "Add location" off means | Not shown on the post; still recorded for the dataset; reword | blocks E3 copy | |
-| **D14** | Deleting an account: what happens to its cat photos? | Kept, cut loose from the person | blocks B10 | |
-| **D15** | Reporting a post; reasons; who answers within a day | Add it to the design | blocks B8 | |
-| D16 | Age and terms | 16+, a short terms page | blocks L2 | |
-| D17 | Languages at the first external build | English and Hebrew; Russian and Arabic after | may proceed | |
-| D18 | What sends a notification | A friend's post, a friend request, your name idea leading | blocks B9 | |
-| **M1** | Sending people's photos and text to Google | Yes, paid tier only, said in the privacy policy | blocks C1 | |
-| M2 | When moderation starts acting | After a gold set and two weeks of shadow | may proceed (shadow) | |
-| M3 | If Google is down | Hold for an admin; never publish unchecked | may proceed | |
-| M4 | A person's face in a cat photo | Hide from the feed, ask an admin | may proceed | |
-| **K1** | Re-rank: sending the query photo to Google live | Yes, same terms as M1 | blocks R3 | |
-| K2 | The bar the experiment must clear | In `07-rerank.md` | may proceed | |
-| K3 | Daily ceiling on Decision 1 spend | $2 a day per account | may proceed | |
-| P1 | Budgets for a public app | Keep $10 / $20 / $40 until L2; revisit there | may proceed | |
-| **P2** | When does the app reach production? | Dark behind flags from the start; on at L3 | blocks F1 | |
-| **P3** | Changing `CLAUDE.md`'s hard constraints | Agree in principle now; each pull request changes its own rule | blocks F4 | |
+| **A1** | Relational database? | No. DynamoDB | blocks F1 | Recommendation (2026-11-12) |
+| **A2** | One table or a second one for the social data? | A second, `bgucats-social` | blocks F1 | Recommendation (2026-11-12) |
+| **A3** | How do side effects run: table stream, or async invoke? | Stream | blocks F1 | Recommendation (2026-11-12) |
+| A4 | How is the client rendered? | No build step, a small vendored renderer | may proceed | Recommendation (2026-11-12) |
+| A5 | Push: straight to Apple, or through SNS? | Straight to Apple | may proceed until B9 | Recommendation (2026-11-12) |
+| A6 | A custom domain now? | Buy it now, wire it when N4 needs it | may proceed until N4 | Recommendation: the owner buys the domain now (2026-11-12) |
+| **D1** | Who may sign up? Sign in with Apple? | BGU Google accounts + invited others; Apple for external TestFlight | blocks F4 | Recommendation (2026-11-12) |
+| **D2** | TestFlight: internal only, or external (a public link)? | Internal first, external at L2 | may proceed | **open** |
+| **D3** | Whose posts are in the feed? | The whole campus, friends marked | blocks B3 | Recommendation (2026-11-12) |
+| **D4** | Friends: instant, or by request? | Invite link instant; everything else by request | blocks B5 | Recommendation (2026-11-12) |
+| **D5** | Phone number and contact matching | Not in the first build; invite links only | blocks B5b only | Recommendation (2026-11-12) |
+| **D6** | Who names a cat: the poll, or an admin? | The poll leads; an admin can lock or remove | blocks B4 | Recommendation (2026-11-12) |
+| D7 | Is a proposed new cat public before an admin approves? | The post is; the cat joins the gallery on approval | blocks B6 | **Changed:** nothing about a new cat is public until an admin approves it, the post included (2026-11-12) |
+| D8 | When does "met" count? | At once, taken back if the label disagrees | blocks B7 | Recommendation (2026-11-12) |
+| **D9** | GPA: what is graded, and where? | Design it first | blocks B7b | **Changed:** no grading by people. GPA is a popularity grade the app computes (2026-11-12) |
+| **D10** | The feeding log | Design it first; check campus policy | blocks B7c | **Changed:** build it. Feeding spots on the map; each cat shows when it was last fed (2026-11-12) |
+| D11 | Badges, points, levels: the rules | The table in `01-product.md` | may proceed | Recommendation (2026-11-12), adjusted for D9 and D10 |
+| D12 | Extra frames behind each photo? | Yes, three, not shown | may proceed (off) | Recommendation: on (2026-11-12) |
+| D13 | What "Add location" off means | Not shown on the post; still recorded for the dataset; reword | blocks E3 copy | Recommendation (2026-11-12) |
+| **D14** | Deleting an account: what happens to its cat photos? | Kept, cut loose from the person | blocks B10 | Recommendation (2026-11-12) |
+| **D15** | Reporting a post; reasons; who answers within a day | Add it to the design | blocks B8 | Recommendation (2026-11-12) |
+| D16 | Age and terms | 16+, a short terms page | blocks L2 | 16+ (2026-11-12) |
+| D17 | Languages at the first external build | English and Hebrew; Russian and Arabic after | may proceed | Recommendation (2026-11-12) |
+| D18 | What sends a notification | A friend's post, a friend request, your name idea leading | blocks B9 | **open** |
+| **M1** | Sending people's photos and text to Google | Yes, paid tier only, said in the privacy policy | blocks C1 | Recommendation (2026-11-12) |
+| M2 | When moderation starts acting | After a gold set and two weeks of shadow | may proceed (shadow) | Recommendation (2026-11-12) |
+| M3 | If Google is down | Hold for an admin; never publish unchecked | may proceed | Recommendation (2026-11-12) |
+| M4 | A person's face in a cat photo | Hide from the feed, ask an admin | may proceed | Recommendation (2026-11-12) |
+| **K1** | Re-rank: sending the query photo to Google live | Yes, same terms as M1 | blocks R3 | Recommendation (2026-11-12) |
+| K2 | The bar the experiment must clear | In `07-rerank.md` | may proceed | Recommendation (2026-11-12) |
+| K3 | Daily ceiling on Decision 1 spend | $2 a day per account | may proceed | Recommendation (2026-11-12) |
+| P1 | Budgets for a public app | Keep $10 / $20 / $40 until L2; revisit there | may proceed | Recommendation (2026-11-12) |
+| **P2** | When does the app reach production? | Dark behind flags from the start; on at L3 | blocks F1 | Recommendation (2026-11-12) |
+| **P3** | Changing `CLAUDE.md`'s hard constraints | Agree in principle now; each pull request changes its own rule | blocks F4 | Recommendation (2026-11-12) |
 
-Bold is what blocks the first milestones. Answering A1–A3, D1, P2 and P3
-unblocks the foundations; D3, D4, D6, D14, D15 and M1 unblock the rest of
-the backend.
+Bold is what blocks the first milestones.
+
+**State, 2026-11-12:** the owner answered 32 of 34 in one session.
+Everything that blocks the foundations and the backend is answered. Three
+answers differ from the recommendation and are written out in their
+sections below: **D7, D9, D10**. Two are open: **D2** (may proceed on
+internal TestFlight) and **D18** (blocks only B9, push).
+
+One answer was read with an assumption that the owner should confirm:
+D7, whether a person may still write a post for a new cat that is then
+held (assumed), or whether the new-cat form loses its "create a post"
+button altogether.
 
 ---
 
@@ -252,6 +261,26 @@ The open-set rule already says a false "new cat" costs one merge.
 - *The cat is public at once.* Duplicates of existing cats will appear.
 - *Nothing is public until approval.*
 
+**Answered 2026-11-12: nothing is public until an admin approves.** The
+owner's words: "a new cat has to go through admin without post."
+
+What that means in the build:
+
+- "New cat" sends a proposal to the desk. The cat is not in the gallery,
+  on the map or in any feed.
+- If the person also wrote a post, it is **held**, visible only to them
+  as "waiting for an admin to confirm the new cat". When the admin
+  approves the proposal as a new cat, or merges it into an existing one,
+  the post goes on through the normal checks and is published under that
+  cat. If the admin rejects the proposal, the post is not published.
+- The toast "New cat added — thanks!" is no longer true at that moment.
+  It needs new words ("Sent to the admins"); the designer's.
+
+**To confirm with the owner:** the other reading of the same sentence is
+that the new-cat form should not offer "Add cat & create a post" at all.
+The build above keeps the button and holds the post. Removing the button
+is a smaller build; say which.
+
 ### D8. When "met" counts
 
 "Found 23 cats", the podium and several badges count cats a person met.
@@ -272,6 +301,23 @@ changed, whether your own grade is shown. And one sentence on what is
 being graded, because a low score on a living animal reads differently
 from a low score on a photo.
 
+**Answered 2026-11-12: nobody grades a cat. If GPA stays, it is a
+popularity grade the app works out** from how many encounters a cat has
+and the points people earned from them. The owner is not sure GPA is
+needed at all, and left the formula to the plan.
+
+The formula (`01-product.md`, "GPA"): a cat's popularity is its counted
+encounters in the last three months plus the points those encounters
+earned; the grade is 1.0 to 4.0 relative to the most popular cat, and
+"—" for a cat nobody has met in that time. It costs one counter per cat
+and no screen, and one flag (`gpa`) hides it everywhere if the owner
+decides it is not needed.
+
+What this leaves without a meaning in the prototype, for the designer:
+the row "Grade a cat +1" under "How you earn points", the counter "Cats
+graded", and the badge "Critic". The plan proposes replacements
+(`01-product.md`) and builds none of them until they are confirmed.
+
 ### D10. The feeding log
 
 "Feed a cat — log food or water you left out, +10", the largest reward in
@@ -280,6 +326,30 @@ people who care for the cats want feeding encouraged? Ten points for an
 unchecked tap will also be farmed. Options: design it; drop it from the
 first build (recommended until the policy question is answered); make it
 a check-in at a known feeding spot.
+
+**Answered 2026-11-12: build it.** The campus has no policy against
+feeding. It has set feeding spots, which go on the map so people know
+where to feed. Every cat shows when it was last fed, as logged by people
+using the app.
+
+What that means in the build (`01-product.md`, "Feeding"):
+
+- the feeding spots are a list the owner supplies with the regions (O12)
+  and are drawn on the map;
+- a person logs "I fed this cat", optionally at a spot; the cat's page
+  shows "Last fed 3 hours ago";
+- points for at most two feedings a day per person, so the largest reward
+  cannot be farmed by tapping.
+
+Still needed from the designer: where the "I fed this cat" control is (a
+cat's page, the "You met" page, a feeding spot on the map), and how a
+feeding spot looks on the map. The backend does not wait for that; the
+screens do.
+
+One thing to keep in mind: "last fed" is advice people act on. A false
+log makes the next person walk past a hungry cat. So a feeding shows who
+logged it to admins, can be reported, and the page says "logged by
+people using the app", not "fed".
 
 ### D11. Badges, points, levels
 
@@ -301,6 +371,8 @@ with several frames per query a free gain.
 
 It must be said in the privacy text if on.
 
+**Answered 2026-11-12: on.** The privacy text (O10) says so.
+
 ### D13. What "Add location" off means
 
 The toggle's off state reads "the spot stays with you". Today every
@@ -312,6 +384,16 @@ dataset and the admins.
   post" (recommended).*
 - *Off means nothing is recorded.* The dataset loses territory data from
   everyone who leaves it off.
+
+**Answered 2026-11-12: the recommendation.** The owner also raised
+making the location anonymous, and set it aside ("never mind"). For when
+it comes back, what exists today: the location is rounded to about 100 m
+before it is stored, it sits on the encounter and not on the person, and
+no other member is ever sent coordinates, only an area's name, and only
+to friends. What is not anonymous: an admin can see which account an
+encounter came from. The stronger option, if wanted later, is to keep
+only the area's id for encounters made in the app; it would cost the
+dataset its territory detail.
 
 ### D14. Deleting an account
 

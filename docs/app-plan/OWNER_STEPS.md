@@ -20,7 +20,7 @@ set its row here to done with the date.
 
 | ID | Step | Needed before | Where | State |
 |---|---|---|---|---|
-| O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | |
+| O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | 32 of 34 answered 2026-11-12. Open: D2, D18, and one line of D7 to confirm |
 | O2 | Freeze the design | E0 | the prototype | |
 | O3 | The first production promote | F1 | GitHub, a `v*` tag | |
 | O4 | Apply the guardrail changes | F3 deploys | AWS, both accounts | |
@@ -28,10 +28,10 @@ set its row here to done with the date.
 | O6 | Google: sign-in open to more than test users | F4 on production | Google Cloud console | |
 | O7 | Apple: push | N2 | Apple Developer | |
 | O8 | Apple: Sign in with Apple | N6 | Apple Developer, Cognito | |
-| O9 | A domain, its DNS, its certificate | N4 | a registrar, AWS | |
+| O9 | A domain, its DNS, its certificate | buying: now (A6, 2026-11-12). Wiring: N4 | a registrar, AWS | the owner is buying it |
 | O10 | Privacy policy, terms, a support address | L1 (draft), L2 (final) | the landing site | |
 | O11 | The blocklist and the gold set | C3 | files in the repo | |
-| O12 | The campus regions | B2 | a file in the repo | |
+| O12 | The campus regions and the feeding spots | B2, B7c | a file in the repo | |
 | O13 | Each cat's public text | E4 looks right | the labeling desk | |
 | O14 | Translations read by native speakers | E10 | files in the repo | |
 | O15 | TestFlight builds and phone checks | every N milestone | GitHub Actions, a phone | |
@@ -178,9 +178,26 @@ it; trying it on a phone.
 
 ## O9. A domain, its DNS, its certificate
 
-Only if A6 says so. The organization's allowlist keeps
-`route53domains` off on purpose (one API call buys a domain), so the
-domain is bought outside AWS.
+A6, answered 2026-11-12: the owner buys the domain now. The
+organization's allowlist keeps `route53domains` off on purpose (one API
+call buys a domain), so the domain is bought outside AWS.
+
+**Buying it now needs nothing from the repo and nothing from AWS.** Two
+things to get right at the till, because they are awkward to change
+later:
+
+- Buy it at a registrar outside AWS, and check before paying that its
+  DNS (or the DNS host you will use with it) can point the **bare**
+  domain, with no `www`, at a CloudFront address. That feature is
+  usually called ALIAS, ANAME or CNAME flattening. Without it only
+  `www.…` can reach the app.
+- The prototype's invite link is `bgucats.app/i/…`. A `.app` address
+  works over HTTPS only, which is what this project serves anyway.
+
+After buying: do nothing else yet. Tell the next session the domain's
+name and where its DNS is hosted; it records both here. The certificate,
+the DNS records, Apple's file and the allowlist change are the brief
+below, written when N4 is reached.
 
 **The brief must cover:** a registrar and the yearly price; that `.app`
 addresses work over HTTPS only; the `infra/org` change that adds `acm`
@@ -237,17 +254,23 @@ could help for each language; the command that scores the gold set and
 how to read its table; that names of real private people must not be
 used as examples.
 
-## O12. The campus regions
+## O12. The campus regions and the feeding spots
 
 The map, "usually near…", the new-cat form's "where does it hang out"
 and a post's area all use five named places: Building 96 · Engineering,
 Aranne Library, Student Union, Dorms, Sports lawn, plus "somewhere else".
 
+Since D10 (2026-11-12) the same file also holds the campus's **feeding
+spots**, which only the owner knows: where each one is and what people
+call it. They go on the map so people know where to feed.
+
 **The brief must cover:** the regions file's format; for each region a
 name in each language and a centre and radius (or outline) in
-coordinates; how to check a region by standing in it with the app; what
-happens to a photo taken outside all of them; whether five is the right
-list.
+coordinates; for each feeding spot a name in each language and its
+place, and the easiest way to collect those (standing at each spot with
+the phone, or dropping pins on a map and sending the list); how to check
+a region by standing in it with the app; what happens to a photo taken
+outside all of them; whether five is the right list of regions.
 
 ## O13. Each cat's public text
 

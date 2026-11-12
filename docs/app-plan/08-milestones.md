@@ -26,7 +26,7 @@ A session ticks its row in the pull request that finishes it.
 | B4 | Name polls | |
 | B5 | Friends and invites (B5b: phone and contacts) | |
 | B6 | New-cat proposals | |
-| B7 | Achievements (B7b: grades, B7c: feedings) | |
+| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
 | B8 | Reports, blocks, bans, the desk's tools | |
 | B9 | Push | |
 | B10 | Deleting an account | |
@@ -225,15 +225,21 @@ was built.
 
 ### B6. New-cat proposals
 
-- **Needs:** D7. B3.
+- **Needs:** B3. D7 is answered: nothing about a new cat is public until
+  an admin approves. Its open half (does the form keep "& create a
+  post"?) does not block the backend; the held post is built either way.
 - **Builds:** `POST /proposals`; the desk's Proposals queue with approve
-  (creates the cat through the existing create, labels the session) and
-  merge (labels it as an existing cat); `ENC`, the post and the proposer's
-  counters following the decision; the name idea entering the new cat's
-  poll.
-- **Done when:** a proposed cat is not in `GET /cats` until approved; a
-  merged proposal's post shows the existing cat; the dataset table's
-  session is labeled by the desk route and by nothing else.
+  (creates the cat through the existing create, labels the session),
+  merge (labels it as an existing cat) and reject; a post that names an
+  open proposal held, then published under the decided cat or left
+  unpublished; `ENC` and the proposer's counters following the decision;
+  the name idea entering the new cat's poll.
+- **Done when:** a proposed cat is in no member's `GET /cats`, feed or
+  map until approved; its post is seen by its author only, with the
+  waiting state, and by a friend only after approval or merge; a merged
+  proposal's post shows the existing cat; a rejected one's post is never
+  published; the dataset table's session is labeled by the desk route and
+  by nothing else.
 
 ### B7. Achievements
 
@@ -243,8 +249,19 @@ was built.
 - **Done when:** replaying the same stream records twice changes
   nothing; a relabel takes back exactly what the claim gave; the recount
   script's result equals the stored counters on the seeded campus.
-- **B7b, grades / B7c, feedings:** only when D9 / D10 are answered and
-  designed.
+- **B7b, GPA** (D9, answered: computed, nobody grades): the per-month
+  popularity counter on each cat, kept and corrected with the same
+  bookkeeping as "met"; the grade worked out in `GET /cats`; the `gpa`
+  flag. **Done when:** the most popular seeded cat reads 4.0, a cat with
+  no encounter in three months reads null, and relabeling an encounter
+  moves both cats' grades by exactly what a recount gives.
+- **B7c, feedings** (D10, answered: build it): the feeding route and its
+  limits, `lastFedAt`, points for two a day, the desk's remove, the
+  feeding spots in the regions file. **Needs** O12 for the real spots
+  (made-up ones until then). **Done when:** a second log for the same cat
+  inside four hours is refused; a third feeding in a day earns nothing;
+  removing the newest feeding puts "last fed" back to the one before.
+  The screens for it wait for the design (G6).
 
 ### B8. Reports, blocks, bans, the desk's tools
 
@@ -400,7 +417,8 @@ English file.
 - **Needs:** E1, B3, B6. D13 for the location words.
 - **Builds:** the camera, the four pages, both entries (scan and "+"),
   every ending in `01-product.md`'s table, on the outbox; the result
-  surviving a reload.
+  surviving a reload; the three frames per press (D12: on) behind the
+  `capture_burst` flag; the waiting state of a post for a new cat (D7).
 - **Done when:** the six endings each write exactly what the table says
   (a test per ending against the local app); with the network off, an
   encounter is posted and everything arrives when it returns; the pick's
@@ -414,7 +432,9 @@ English file.
 
 - **Needs:** E4. O12 for it to be right.
 - **Builds:** the drawn campus from the regions file and the prototype's
-  shapes, dragging, the habitat sheet.
+  shapes, dragging, the habitat sheet. The feeding spots (D10) are drawn
+  once the designer has drawn one (G6); until then the file carries them
+  and the map does not show them.
 
 ### E6. Home, profile, settings
 
@@ -533,6 +553,6 @@ Strangers. Apple reviews the build.
 
 ## After this plan
 
-Android; grades and feedings once designed; live update of `web/` in the
+Android; the feeding screens once designed (G6); live update of `web/` in the
 iPhone app; CloudFront for photos if the bill asks; thresholds for the
 recognition model when the live record earns them.

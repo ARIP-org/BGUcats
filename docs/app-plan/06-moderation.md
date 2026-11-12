@@ -21,7 +21,7 @@ is what turns its probabilities into thresholds this project earned.
 |---|---|---|---|
 | `POSTTEXT` | a post's description | 280 | with the post |
 | `NAME` | a name suggested for a cat | 24 | when it enters the poll |
-| `PROPNAME` | the name idea on a new-cat proposal | 24 | when the proposal's post is shown, and again as a poll option if the cat is approved |
+| `PROPNAME` | the name idea on a new-cat proposal | 24 | never before an admin approves the cat (D7); then as the new cat's first poll option. It is still checked at once, so the admin sees the model's opinion beside the proposal |
 | `DISPLAYNAME` | a person's name | 30 | when others see the new name |
 | `USERNAME` | the @name | 20 | at once: it is restricted to `a-z 0-9 . _`, so the blocklist and reserved list do most of the work, and the model's check follows |
 | `PHOTO` | each photo of a post or proposal | | with the post |

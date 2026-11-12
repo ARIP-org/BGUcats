@@ -177,6 +177,8 @@ the owner:
 | Feed, gallery, friends, posts: empty | the mascot and one line with the next thing to do |
 | A post being sent | its photo with a progress ring; the outbox's own words for why it waits |
 | A post, name or display name being checked | visible to its owner with "Being checked" |
+| A post for a new cat, before an admin approves the cat (D7) | visible to its owner with "Waiting for an admin to confirm the new cat"; nobody else sees it |
+| A cat with no GPA yet, or no feeding logged | "—"; "No feeding logged yet" |
 | Not accepted | "This wasn't published" on the item, with no category. Removing it is one tap |
 | A photo still uploading when "Post" is pressed | allowed; the post follows the photos |
 | Sign-in refused (`not_admitted`) | the existing refusal screen, reworded |

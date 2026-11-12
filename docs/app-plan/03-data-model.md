@@ -51,7 +51,7 @@ dataset's.
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
 | Block | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
 | Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
-| Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters`, `posts`, `graded`, `fed`, `namesLed`; `points` on `ALL` only |
+| Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters`, `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
 | A cat met | `USER#{id}` | `MET#{catId}` | `firstAt`, `lastAt`, `days` (different days), `lastDay`. And `METM#{yyyy-mm}#{catId}` for the month's count |
 | Badge | `USER#{id}` | `BADGE#{badgeId}` | `at` |
 | An encounter, as the app counts it | `USER#{id}` | `ENC#{sessionId}` | `claimedCatId`, `labelCatId`, `rejected`, `day`, `regionId`, `postId`, `counted` (what the counters were last given for it) |
@@ -74,6 +74,14 @@ A post's `status`: `pending` (written, not yet checked) → `visible` |
 `hidden` (waiting for an admin, or reported past the threshold) |
 `removed` (by its author or an admin).
 
+A post made with a new-cat proposal stays `pending` while the proposal is
+`open`, whatever moderation says (D7: nothing about a new cat is public
+before an admin approves). The events Lambda publishes it when the
+proposal becomes `approved` or `merged`, under that cat, and leaves it
+unpublished if the proposal is `rejected`. So a post is visible only
+when all of these hold: its text passed, every photo passed, and it has
+no open proposal.
+
 Its index keys:
 
 - `GSI1`: `AUTHOR#{authorId}` / `createdAt`. Always, so the author sees
@@ -90,11 +98,19 @@ Its index keys:
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `gradeSum`, `gradeCount`, `voteTotal`, `leaderKey`, `leaderName`, `nameLocked` |
+| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `nameLocked` |
 | Name option | `CAT#{catId}` | `NAME#{nameKey}` | `name` (as typed), `votes`, `suggestedBy`, `status` (`pending` / `live` / `rejected` / `removed`), `createdAt` |
 | Vote | `CAT#{catId}` | `VOTE#{userId}` | `nameKey`, `at`. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds |
-| Grade (D9) | `CAT#{catId}` | `GRADE#{userId}` | `value`, `at` |
-| Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `regionId` |
+| Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `feedingId` (from the phone), `spotId`, `removed` |
+
+There is no grade item: nobody grades a cat (D9). GPA is worked out from
+`pop` when the cats are read (`01-product.md`, "GPA"). `pop` is kept by
+the events Lambda from the same `ENC.counted` bookkeeping as "met", so a
+label that corrects an encounter corrects the cat's popularity too.
+
+`lastFedAt` is the newest feeding that has not been removed. Removing a
+feeding re-reads the partition's last `FED#` item rather than trusting a
+stored "previous" value.
 
 `nameKey` is the name normalised (NFKC, case-folded, spaces collapsed),
 so "mango" and "Mango " are one option.
@@ -221,6 +237,10 @@ Each of these gets a test.
    encounter, so correcting it is a subtraction and an addition, not a
    recount.
 9. A person in `deleting` or `banned` writes nothing.
+10. A post with an open proposal is never visible, and a proposed cat is
+    in no member's cat list until an admin approves it (D7).
+11. A cat's `pop` equals what its counted encounters give, so a recount
+    reproduces every GPA.
 
 ## Deleting an account
 

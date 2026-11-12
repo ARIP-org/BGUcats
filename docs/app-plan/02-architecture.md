@@ -181,9 +181,10 @@ would need a new build to change).
 | `friend_requests` | on / off (D4) | — |
 | `contacts` | on / off (D5) | off |
 | `proposals` | on / off | — |
-| `grades`, `feedings` | on / off (D9, D10) | off |
+| `gpa` | on / off: is the computed popularity grade shown (D9) | off |
+| `feedings` | on / off (D10) | off |
 | `push` | on / off | off |
-| `capture_burst` | on / off (D12) | off |
+| `capture_burst` | on / off (D12: on, once the privacy text says so) | off |
 | `moderation_mode` | `off` / `shadow` / `enforce` | `off` |
 | `hold_unchecked` | on / off: does an item nothing has decided wait for an admin | on |
 | `rerank_mode` | `off` / `shadow` / `live` | `off` |

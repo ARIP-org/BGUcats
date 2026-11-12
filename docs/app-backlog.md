@@ -98,16 +98,17 @@ Things decided to leave for later, so they are not lost. Newest first.
   2026-11-12 to build everything the prototype shows, for TestFlight, with
   moderation and re-ranking on Google's Decision 1. The plan holds the
   work in order, the owner's decisions (`DECISIONS.md`) and the owner's
-  manual steps (`OWNER_STEPS.md`). Nothing starts before the decisions
-  marked as blocking are answered. *(2026-11-12.)*
+  manual steps (`OWNER_STEPS.md`). The owner answered 32 of the 34
+  decisions the same day; the foundations wait only on the first
+  production promote. *(2026-11-12.)*
 - **What the design does not draw yet** is listed once, in
   `docs/app-plan/01-product.md`, "What the design leaves out": sign-in and
-  first run, reporting a post, grading a cat, the feeding log, friend
-  requests, an invite code typed by hand, the empty and waiting states.
-  *(2026-11-12.)*
-- **Left out of the first build on purpose,** each until its decision:
-  the phone number and contact matching (D5), grades (D9), feedings
-  (D10), Android. *(2026-11-12.)*
+  first run, reporting a post, the control that logs a feeding and how a
+  feeding spot looks on the map, what replaces "Grade a cat" now that GPA
+  is computed, friend requests, an invite code typed by hand, the empty
+  and waiting states. *(2026-11-12.)*
+- **Left out of the first build on purpose:** the phone number and
+  contact matching (D5), Android. *(2026-11-12.)*
 
 ## Design
 
