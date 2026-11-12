@@ -47,6 +47,17 @@ Things decided to leave for later, so they are not lost. Newest first.
 
 ## Recognition (phase 1c)
 
+- **Never show a similarity as a percentage.** The morning prototype of
+  2026-11-12 showed "92% match"; the same day's redesign shows three
+  candidate photos and no numbers, which is right. Kept here so the
+  numbers do not come back: the manifest ships `"thresholds": null`
+  because right guesses, wrong guesses and never-seen cats overlap.
+  `docs/moderation.md`, "The honest-percentage problem". *(Raised and
+  resolved in the design 2026-11-12.)*
+- **Pairwise verification as a reranker.** Now planned:
+  `docs/app-plan/07-rerank.md` (an experiment first, then shadow, then
+  live). *(Raised 2026-11-12; planned the same day.)*
+
 - **Mark labels made with the guess in view.** Since 2026-10-29 the admin sees
   the model's guess before labeling. The prediction records when the guess
   was made, but not whether the labeler had seen it. If anchoring ever
@@ -80,6 +91,28 @@ Things decided to leave for later, so they are not lost. Newest first.
   face helps" could become specific once there are thresholds: ask for the
   face only when the top three are close together.
 - **Translate the guess card.** It is English, like the rest of Capture.
+
+## The app from the prototype (phase 4)
+
+- **Planned, not built: `docs/app-plan/`.** The owner decided on
+  2026-11-12 to build everything the prototype shows, for TestFlight, with
+  moderation and re-ranking on Google's Decision 1. The plan holds the
+  work in order, the owner's decisions (`DECISIONS.md`) and the owner's
+  manual steps (`OWNER_STEPS.md`). The owner answered all 34 decisions
+  the same day and postponed production's first promote, so nothing waits:
+  the next thing to build is milestone F1. *(2026-11-12.)*
+- **The domain is ready to be bought, not bought.** Through AWS, in the
+  management account, by `infra/scripts/domain.sh` from a codespace with
+  the owner signed in: `docs/MANUAL_STEPS.md`, step 16. The script has
+  only ever run against a stand-in for `aws`. *(2026-11-12.)*
+- **What the design does not draw yet** is listed once, in
+  `docs/app-plan/01-product.md`, "What the design leaves out": sign-in and
+  first run, reporting a post, the control that logs a feeding and how a
+  feeding spot looks on the map, what replaces "Grade a cat" now that GPA
+  is computed, friend requests, an invite code typed by hand, the empty
+  and waiting states. *(2026-11-12.)*
+- **Left out of the first build on purpose:** the phone number and
+  contact matching (D5), Android. *(2026-11-12.)*
 
 ## Design
 

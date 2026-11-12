@@ -1241,6 +1241,366 @@ build with no review. Inviting anyone else (by email or a public link)
 needs Apple's beta review first, and the reviewer must be able to sign in
 past the allowlist: to be solved when outside testers are wanted.
 
+## 16. A domain name, bought through AWS (done 2026-11-12)
+
+**Done by the owner on 2026-11-12, by hand, not with the script below.**
+The domain is registered and nothing else: no DNS record, no
+certificate. That is N4 of the app plan, which the owner will start from
+a codespace with Claude when it is needed.
+
+Not recorded yet: the domain's name and the account that holds it. The
+session that starts N4 finds both first, read-only, before anything
+else:
+
+```bash
+aws route53domains list-domains --region us-east-1 --profile mgmt-ro
+```
+
+The organization's policy denies domain registration in production and
+staging, so a purchase made in the AWS console can only be in the
+management account. If that list is empty, the domain was bought at
+another registrar: ask the owner which, because then its DNS is not in
+AWS and N4's brief changes.
+
+The script and the steps below stay, for a second domain or a renewal
+check (`infra/scripts/domain.sh status <name>`).
+
+
+`docs/app-plan/OWNER_STEPS.md`, O9. The owner's decision of 2026-11-12:
+buy the domain now, on AWS, with Claude doing the work once the owner has
+signed in.
+
+**What this is for.** A name of our own for invite links
+(`bgucats.app/i/…` in the prototype), for links that open the iPhone
+app, for the privacy policy's address, and so printed QR codes survive
+any future change underneath. Nothing waits on it today; the links
+milestone (N4 of the plan) will.
+
+**Where it is bought: the management account, and nothing is unblocked.**
+The decision was "unblock only what is needed to buy". What is needed
+turns out to be nothing, and that is better than a narrow opening:
+
+- A service control policy never applies to the management account. The
+  member accounts keep `route53domains` denied, as `infra/org/scp.tf`
+  says it must stay: it buys in one call.
+- Each member account's budget counts everything billed to it. A domain
+  costs about what the $20 line is, and crossing it freezes every change
+  in that account until the month ends (`infra/org/budgets.tf`). Bought
+  in production, the domain could stop production's deploys. The
+  management account has no such action.
+- A domain outlives accounts, and production has changed account once
+  already.
+
+If the owner would still rather hold it in production, it can be moved
+between the organization's accounts later at no charge. Buying there
+directly would need the allowlist opened for the purchase and closed
+again, two `infra/org` applies, and the budget lines raised for that
+month.
+
+**Where it is run: a codespace.** A cloud session (claude.ai/code) has no
+AWS sign-in at all. In a codespace the owner signs in and Claude runs the
+rest.
+
+### Before you start
+
+- A codespace on this repo, on a branch that has
+  `infra/scripts/domain.sh`.
+- About ten minutes, plus waiting for AWS (minutes to a few hours).
+- Cost: the first year's price, which the script prints before anything
+  is bought; the same order of amount every year after, charged
+  automatically; and $0.50 a month for the hosted zone Route 53 makes for
+  the name. `.app` was on Route 53's list of names it sells on
+  2026-11-12; its price was not checked that day, the script reads it
+  live.
+- An email address you read: AWS sends it a link that must be clicked.
+
+### The steps
+
+1. In the codespace's own terminal (not through Claude), sign in to the
+   management account:
+
+   ```bash
+   aws sso login --profile mgmt-admin --use-device-code
+   ```
+
+2. Make the contact file. A registrar must be given a name, a postal
+   address, a phone number and an email. It goes in a file **outside the
+   repo**; the script refuses one inside it and never prints it.
+
+   ```bash
+   mkdir -p ~/.config/bgucats
+   ```
+
+   ```bash
+   infra/scripts/domain.sh contact-template > ~/.config/bgucats/domain-contact.json
+   ```
+
+   Open that file in the editor and fill every field. The phone number is
+   written `+972.501234567`: country code, a dot, the number. Claude does
+   not need to see this file; do not paste it into the chat.
+
+3. Ask Claude: **"check the domain bgucats.app"**. It runs:
+
+   ```bash
+   infra/scripts/domain.sh check bgucats.app
+   ```
+
+   You should see `bgucats.app: AVAILABLE` and the price for the first
+   year and for each year after.
+
+4. Ask Claude: **"buy it, up to $N"**, with N a little over the price you
+   just saw. It runs the purchase and answers the script's "yes" for you:
+
+   ```bash
+   echo yes | infra/scripts/domain.sh buy bgucats.app --max-usd N
+   ```
+
+   Before buying, the script prints the name, the account and the price,
+   and refuses if the price is over N, if the name is not free, or if the
+   contact file is incomplete. You should see `Requested. Operation …`.
+
+   To press the button yourself instead, run the same command without
+   `echo yes |` in the terminal and type `yes` when asked.
+
+5. Open the email from AWS at the contact's address and click the
+   verification link. Without it the domain is suspended after 15 days.
+
+6. Later, ask Claude **"domain status"**:
+
+   ```bash
+   infra/scripts/domain.sh status bgucats.app
+   ```
+
+   The request should read `SUCCESSFUL`, and the domain should show an
+   expiry date a year away, `autoRenew: true` and four name servers.
+
+7. Sign out:
+
+   ```bash
+   aws sso logout
+   ```
+
+### If it goes wrong
+
+- **`UNAVAILABLE`:** someone owns the name. Check another:
+  `infra/scripts/domain.sh check <other>.app`. The plan does not depend
+  on this exact name; the prototype's link text would change with it.
+- **`UNAVAILABLE_PREMIUM`:** the registry sells this name at its own
+  price, and Route 53's API does not sell those. Choose another name, or
+  buy that one elsewhere and tell the next session (then the DNS is not
+  in AWS and N4's brief changes).
+- **`DONT_KNOW`:** the registry did not answer. Run the check again in a
+  minute.
+- **The request ends `FAILED` or `ERROR`,** with a message about the
+  account, billing or verification: AWS sometimes holds a first domain
+  purchase in an account for a manual check. The message says what it
+  wants; a support case in the management account's billing category is
+  the usual way through. Nothing is charged for a failed registration.
+- **"… is account X, but the organization's management account is Y":**
+  the profile is signed in to the wrong account. Sign in again with
+  `--profile mgmt-admin`.
+
+### How to undo it
+
+A registration cannot be taken back, and no refund should be expected.
+What can be changed afterwards: auto-renew can be turned off (the name
+then lapses at the end of its year), and the domain can be moved to
+another account in the organization.
+
+### What never goes into chat or git
+
+The contact file: a name, a home address and a phone number. Delete it
+from the codespace when the domain shows as registered:
+
+```bash
+rm ~/.config/bgucats/domain-contact.json
+```
+
+There is no secret in this step.
+
+### What to tell the next session
+
+The domain's name, the date, and that its DNS is the hosted zone Route 53
+made in the management account. The session that buys it records those
+in `docs/app-plan/OWNER_STEPS.md` (O9), adds the domain to the list of
+what the management account holds in `CLAUDE.md`, and marks this step
+done.
+
+### What this step does not do
+
+It buys the name and nothing else. The certificate, the DNS records that
+point the name at the app, Apple's file for links, and Cognito's and
+Google's lists of allowed addresses are N4's, with their own brief. That
+work needs `acm` on the organization's allowlist for the member accounts;
+`route53domains` never does.
+
+**Not tried against AWS** when it was written. `domain.sh` is tested
+against a stand-in for the `aws` command (`tests/infra_scripts`): every
+refusal, and the exact request it sends.
+
+## 17. The guardrails learn the app's shapes, on staging (done 2026-11-12)
+
+**Done on 2026-11-12**, from PR #66's branch at `c2d8b4d`: the plan was
+the four updates below and nothing else (`0 to add, 4 to change, 0 to
+destroy`); the state was saved to the bucket at serial 32, and a second
+plan said `No changes`. Every simulator check in step 4 gave the expected
+answer. Production does not have it yet.
+
+`docs/app-plan/OWNER_STEPS.md`, O4, for milestone F1. **Staging only.**
+Production waits for its first promote, which the owner postponed
+(`docs/app-plan/DECISIONS.md`, P2), and must get this same apply before
+that promote.
+
+**What this is for.** The app plan adds a second table (`bgucats-social`)
+with a stream, and a Lambda fed from that stream. The deploy role and the
+Lambdas' permissions boundary only allow what `infra/main` has today, so
+the pull requests that add those (F3 onward) cannot deploy until the
+owner widens them. This step widens them, once, for everything the plan
+needs. Nothing is created in AWS except changed policies; no table, no
+Lambda, nothing that costs money.
+
+What changes, in plain words:
+
+| Role or policy | Gains |
+|---|---|
+| Deploy role (`bgucats-github-actions-deploy`) | create and change a table named exactly `bgucats-social` (still never delete one); create, change and delete an event source mapping **only for a function named `bgucats-*`**; read and tag those mappings |
+| CI role (`bgucats-github-actions-ci`) | read the second table's settings and the mapping, so a plan can refresh them |
+| Lambda boundary (`bgucats-lambda-permissions-boundary`) | the ceiling any Lambda role can reach: items of `bgucats-social`; reading its stream; publishing to the alerts topic (where failed stream records go); signing out and deleting an app user in this account's pool (account deletion). A Lambda gets none of these until its own role grants them |
+
+Sizes, measured offline with a mocked provider
+(`infra/bootstrap/tests`): the deploy role's inline policies go from
+8,407 to 8,983 characters of IAM's 10,240; the boundary from 1,323 to
+2,070 of 6,144.
+
+### Before you start
+
+- A codespace on the branch that holds this step (it is not merged yet:
+  bootstrap is applied **before** its pull request merges, as always).
+- About ten minutes. Nothing here is billed.
+
+### The steps
+
+1. In the codespace's own terminal, sign in to staging as admin:
+
+   ```bash
+   aws sso login --profile bgucats-staging-admin --use-device-code
+   ```
+
+2. Ask Claude: **"apply bootstrap to staging"**. It runs, and shows you,
+   first the plan:
+
+   ```bash
+   echo no | AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh
+   ```
+
+   The script first runs the offline checks ("Policies within IAM's
+   limits; the deploy role's guards hold"). The plan should list **only
+   in-place updates** (`update`) to four policies:
+   `aws_iam_role_policy.github_actions_deploy_storage`,
+   `aws_iam_role_policy.github_actions_deploy_compute`,
+   `aws_iam_role_policy.github_actions_ci_plan_read`,
+   `aws_iam_policy.lambda_boundary`, and nothing else. Anything that says
+   `create`, `delete` or `replace` is a reason to stop and ask.
+
+3. If the plan is as above, tell Claude **"apply it"**:
+
+   ```bash
+   echo yes | AWS_PROFILE=bgucats-staging-admin infra/scripts/bootstrap-apply.sh
+   ```
+
+   It ends with `Saved: s3://bgucats-tfstate-586943192664/bootstrap/terraform.tfstate`.
+
+4. Ask Claude **"prove the staging guardrails"**. It runs the checks
+   below and shows a table. They ask IAM's policy simulator what each role
+   may do; nothing is created.
+
+   ```bash
+   acct=586943192664; deploy=arn:aws:iam::$acct:role/bgucats-github-actions-deploy
+   ```
+
+   ```bash
+   aws --profile bgucats-staging-admin iam simulate-principal-policy --policy-source-arn "$deploy" \
+     --action-names dynamodb:CreateTable dynamodb:UpdateTable dynamodb:DeleteTable \
+     --resource-arns arn:aws:dynamodb:us-east-1:$acct:table/bgucats-social \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+   ```
+
+   Expect `allowed`, `allowed`, `explicitDeny`.
+
+   ```bash
+   aws --profile bgucats-staging-admin iam simulate-principal-policy --policy-source-arn "$deploy" \
+     --action-names dynamodb:CreateTable \
+     --resource-arns arn:aws:dynamodb:us-east-1:$acct:table/anything-else \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+   ```
+
+   Expect `implicitDeny`: only the two tables by name.
+
+   ```bash
+   for fn in bgucats-events not-ours; do
+     aws --profile bgucats-staging-admin iam simulate-principal-policy --policy-source-arn "$deploy" \
+       --action-names lambda:CreateEventSourceMapping --resource-arns '*' \
+       --context-entries "ContextKeyName=lambda:FunctionArn,ContextKeyValues=arn:aws:lambda:us-east-1:$acct:function:$fn,ContextKeyType=string" \
+       --query "EvaluationResults[].['$fn',EvalDecision]" --output text
+   done
+   ```
+
+   Expect `bgucats-events allowed`, `not-ours implicitDeny`.
+
+   ```bash
+   boundary=arn:aws:iam::$acct:policy/bgucats-lambda-permissions-boundary
+   version=$(aws --profile bgucats-staging-admin iam get-policy --policy-arn "$boundary" --query Policy.DefaultVersionId --output text)
+   doc=$(aws --profile bgucats-staging-admin iam get-policy-version --policy-arn "$boundary" --version-id "$version" --query PolicyVersion.Document --output json)
+   aws --profile bgucats-staging-admin iam simulate-custom-policy --policy-input-list "$doc" \
+     --action-names dynamodb:GetRecords dynamodb:PutItem \
+     --resource-arns "arn:aws:dynamodb:us-east-1:$acct:table/bgucats-social/stream/2026-11-12T00:00:00.000" \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+   ```
+
+   Expect `GetRecords allowed` and `PutItem implicitDeny`: the boundary
+   lets a Lambda read the stream, and does not let it write through the
+   stream's address.
+
+5. Sign out:
+
+   ```bash
+   aws sso logout
+   ```
+
+6. Tell the session the step is done. It marks F1's row in
+   `docs/app-plan/08-milestones.md` and O4 (staging) in
+   `docs/app-plan/OWNER_STEPS.md` with the date, in the same pull request,
+   which you then merge.
+
+### If it goes wrong
+
+- **"The checks in infra/bootstrap/tests failed":** a policy grew past
+  IAM's size limit or lost a guard. Nothing was planned. Bring the output
+  to a session; it is a code fix, not something to apply around.
+- **`aws-guard: … is for production`:** the profile is wrong. This step
+  is `bgucats-staging-admin` only.
+- **The plan shows something other than the four updates:** stop. The
+  likeliest cause is a stale local state; the script takes the newer of
+  the local and the bucket's copy, and says which.
+- **A simulator answer differs from the expected one:** the apply did not
+  do what was meant. Nothing is broken by it (nothing uses these
+  permissions yet), but F3 must not be merged until it is explained.
+
+### How to undo it
+
+Revert the pull request's bootstrap change on a branch and run step 3
+again from it. The policies go back to what they were. Nothing created
+depends on them until F3.
+
+### What never goes into chat
+
+Nothing in this step is secret.
+
+### What to tell the next session
+
+That staging has F1's bootstrap, and the date. Production does not, and
+will need this step with `bgucats-prod-admin` before its first promote.
+
 ---
 
 ## Known gap: the CI role can read production secrets

@@ -49,8 +49,18 @@ an hour that a sentence would have saved.
 - **A pipe hides a failure.** A workflow `run:` step has no `pipefail`
   unless it sets it: `python smoke.py | tee log` reports tee's success.
 - **A role's inline policies share one limit,** 10,240 characters in
-  total. The deploy role is past 8,500. The next big addition needs a
-  managed policy.
+  total, and a managed policy has 6,144. IAM says so at apply, part-way
+  through. Measured offline on 2026-11-12 with a mocked provider
+  (`infra/bootstrap/tests`): the deploy role was 8,407, and 8,983 after
+  the app plan's F1. The test fails past 10,000, and both
+  `bootstrap-apply.sh` and CI run it, so the next big addition shows up
+  as a red check that says "move statements into a managed policy".
+- **A kind of resource joins the allowlist with its first resource, not
+  before.** The plan check's own test holds
+  `allowed-resource-types.txt` to exactly what `infra/main` declares, so
+  a guardrail pull request that adds a line ahead of the resource goes
+  red. The cost rule for a kind (`check_plan.py`) can and should come
+  first.
 - **Two IAM surprises in the alerts work:** an SNS subscription is not a
   resource a policy can name (`Resource: "*"` or nothing), and
   `DescribeAlarms` is checked against every alarm in the account, not the
@@ -194,6 +204,75 @@ an hour that a sentence would have saved.
 - **An issue is text from outside.** Triage reads it with a token that
   cannot write code; Fix starts only on an admin's label
   (`docs/agents.md`).
+
+## Models from outside
+
+Nothing here is built; these came out of assessing Google's Decision 1 as a
+moderation layer for phase 4 (`docs/moderation.md`, 2026-11-12) and out of
+planning the app (`docs/app-plan/`). They are the traps that work turned
+up.
+
+- **A design that is being edited is not a specification.** The prototype
+  was read twice on 2026-11-12. Between the reads it gained a 280-character
+  post description, a new-cat form and a second way to post, and lost the
+  "92% match" numbers. A note written from the first read said "there is no
+  caption field" and was wrong by the evening. Before costing or building
+  from a design, record its version, and have the owner freeze it
+  (`docs/app-plan/OWNER_STEPS.md`, O2).
+- **A vendor's page read through a summariser is hearsay.** The Decisions
+  API's yes/no type came back spelled `noul`, twice; the price came back as
+  $0.10 where the owner had been told $0.75. Neither is settled until a
+  real request succeeds. The plan says so where it uses them, and makes one
+  real request the first task of the milestone that depends on them.
+- **Apple reviews an external TestFlight build like a store release.** A
+  public beta link means the rules for user content apply: report a post,
+  block a person, delete an account, a privacy policy, a login for the
+  reviewer, and probably Sign in with Apple beside Google. Internal
+  testers (members of the App Store Connect team, up to 100) need none of
+  it. The prototype had report and block for friends only.
+- **A cosine similarity is not a probability.** The phase 4 prototype's
+  scanner showed "92% match" until the same day's redesign removed the
+  numbers. The manifest ships `"thresholds": null`
+  precisely because right guesses, wrong guesses and never-seen cats overlap
+  on BGU photos, and the first guess is right on 3–5 of 13 sessions. A
+  number rendered as a percentage promises a calibration the system does not
+  have. Rank is honest; per cent is a claim.
+- **A calibrated model is calibrated on someone else's data.** "Calibrated"
+  means 0.7 is right 70% of the time *on the distribution it was measured
+  on*. That distribution is not 24-character cat names in Hebrew, Russian
+  and Arabic. Same rule as public-dataset accuracy in `CLAUDE.md`: the
+  number is well-formed, and its accuracy here is unknown until it is
+  measured against what an admin decided.
+- **The cheapest moderation is the field nobody added.** The morning
+  prototype had no caption and no comments, so its whole text surface was a
+  24-character name and a 30-character display name. By the evening it had
+  a 280-character description, and moderation went from optional to
+  necessary. Grep a design for `<textarea>` before costing moderation work,
+  and again before building it. There are still no comments.
+- **A relational shape does not need a relational database.** Friends,
+  likes, votes and a feed look like joins. Written out screen by screen
+  (`docs/app-plan/02-architecture.md`), each is one key, one short list or
+  one batch read, and where two lists meet both are bounded by one campus.
+  The question to ask is not "is the data relational?" but "which query
+  needs the database to do the join?".
+- **A single-select over our cats is the banned classifier with an API in
+  front of it.** Decision 1 takes its options per request, so it dodges
+  "needs retraining per cat" — the objection most people remember — while
+  keeping the other two: no embedding space, no enrollment template, no
+  honest "I don't know this one". Recognise the shape, not the wording; the
+  ban holds.
+- **A model with no output tokens is a smaller injection target.** A cat
+  name is attacker-controlled text going into a model. Where the job is a
+  verdict, a model that cannot emit text or call a tool bounds the worst
+  case at a flipped probability. Prefer that shape over asking a chat model
+  for JSON.
+- **An outside HTTPS call is cheaper here than an AWS service.** Bedrock or
+  Rekognition needs `allowed-resource-types.txt`, the bootstrap deploy role
+  and `infra/org/scp.tf` all widened — three owner decisions. A call out to
+  a vendor needs none: Lambda has full internet outside a VPC, and
+  `set-secret.sh` already puts keys in SSM. The guardrails make the
+  not-AWS option the path of least resistance, which is worth knowing before
+  reaching for the AWS-native one by reflex.
 
 ## Money
 

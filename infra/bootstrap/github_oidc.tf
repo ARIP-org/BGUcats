@@ -169,7 +169,7 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "DescribeDataTable"
+        Sid    = "DescribeTables"
         Effect = "Allow"
         Action = [
           "dynamodb:DescribeTable",
@@ -177,7 +177,7 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "dynamodb:DescribeContinuousBackups",
           "dynamodb:ListTagsOfResource",
         ]
-        Resource = "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/bgucats-data"
+        Resource = local.app_table_arns
       },
       {
         # HeadBucket is authorized as s3:ListBucket. Bucket tags are read
@@ -223,6 +223,8 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
         Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/bgucats-*"
       },
       {
+        # The functions, and the mapping that feeds one from the social
+        # table's stream.
         Sid    = "DescribeLambdas"
         Effect = "Allow"
         Action = [
@@ -230,8 +232,13 @@ resource "aws_iam_role_policy" "github_actions_ci_plan_read" {
           "lambda:GetPolicy",
           "lambda:ListVersionsByFunction",
           "lambda:GetFunctionCodeSigningConfig",
+          "lambda:GetEventSourceMapping",
+          "lambda:ListTags",
         ]
-        Resource = "arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:bgucats-*"
+        Resource = [
+          "arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:bgucats-*",
+          local.event_source_mapping_arns,
+        ]
       },
       {
         Sid      = "DescribeApiGateway"

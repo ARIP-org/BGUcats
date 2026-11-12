@@ -28,6 +28,16 @@ locals {
 
   data_table_arn = "arn:aws:dynamodb:us-east-1:${local.account_id}:table/bgucats-data"
 
+  # The second table: everything people do in the app (docs/app-plan/,
+  # decided 2026-11-12). Kept apart so the member API's role can be given
+  # this table and not the dataset.
+  social_table_arn = "arn:aws:dynamodb:us-east-1:${local.account_id}:table/bgucats-social"
+  app_table_arns   = [local.data_table_arn, local.social_table_arn]
+
+  # The events Lambda reads the social table's stream through one of these.
+  # AWS gives each an ID, not a name we choose.
+  event_source_mapping_arns = "arn:aws:lambda:us-east-1:${local.account_id}:event-source-mapping:*"
+
   # API Gateway ARNs carry no account; the role's credentials only ever act
   # in their own account, so region-wide is account-wide.
   apigateway_arns = [

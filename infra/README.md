@@ -22,6 +22,13 @@ Three Terraform root modules, applied by different hands.
   in `org/scp.tf` and applied **before** the PR that uses it can deploy.
   Runbook, proofs and the way back: `docs/MANUAL_STEPS.md`, step 13.
 
+  The project's domain name is also the management account's, and is not
+  Terraform: `infra/scripts/domain.sh` checks a name, buys it (a price
+  ceiling, then "yes") and shows its state. Bought there so that
+  `route53domains` never has to be allowed in a member account, and so
+  the purchase cannot trip a member account's budget. Step by step:
+  `docs/MANUAL_STEPS.md`, step 16.
+
 - **`bootstrap/`**: the state backend (S3 bucket + DynamoDB lock table), the
   GitHub Actions OIDC provider and its two roles, the permissions boundary
   for every role in `main/`, and the account's monthly cost alert. Local state, since it creates the
@@ -34,6 +41,10 @@ Three Terraform root modules, applied by different hands.
   aws sso login --profile bgucats-prod-admin --use-device-code \
     && infra/scripts/bootstrap-apply.sh; aws sso logout
   ```
+
+  Before it plans, the script runs `infra/bootstrap/tests` (also run by
+  CI): the roles' policies against IAM's size limits, and the deploy
+  role's guards, with a mocked provider and no AWS call.
 
   Once per account: production with `bgucats-prod-admin` (the default),
   staging with `AWS_PROFILE=bgucats-staging-admin`. The profile sets
