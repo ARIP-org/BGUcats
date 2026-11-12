@@ -1,14 +1,14 @@
-// Admin labeling tool, and the installable app collaborators photograph cats
+// Admin labeling tool, and the installable app users photograph cats
 // with. No framework and no build step on purpose: the whole client is a few
 // files served straight from S3, which keeps the deploy path to "upload the
 // file" and keeps this readable without a toolchain.
 //
-// Two roles (src/admin/handler.py): admins see everything; collaborators see
+// Two roles (src/admin/handler.py): admins see everything; users see
 // Capture and the cats. The API enforces this on every call — hiding a button
 // here is only so nobody is offered an action that would be refused.
 //
 // It runs only as an installed app. Opened in a browser tab, it shows the
-// install page instead (install.js) — before any sign-in, so a collaborator
+// install page instead (install.js) — before any sign-in, so a user
 // never ends up half-using it in a tab that loses its outbox when closed.
 
 import { createCapture } from "./capture.js";
@@ -1896,7 +1896,7 @@ function table(columns, rows) {
 
 const ROLE_HELP = {
   admin: "Everything: labeling, new cats, merging, deleting, stats and people.",
-  collaborator: "Photographs cats in the app and browses the cats. No labeling, no deleting.",
+  user: "Photographs cats in the app and browses the cats. No labeling, no deleting.",
 };
 
 async function renderAdmins(isCurrent = () => true) {
@@ -1910,7 +1910,7 @@ async function renderAdmins(isCurrent = () => true) {
     autocomplete: "off",
     attrs: { "aria-label": "Google account email" },
   });
-  const role = roleSelect("collaborator", "Role for the new person");
+  const role = roleSelect("user", "Role for the new person");
   const form = el("form", { className: "inline-form" }, [
     input,
     role,
@@ -1920,7 +1920,7 @@ async function renderAdmins(isCurrent = () => true) {
     event.preventDefault();
     const email = input.value.trim();
     await post("/admins", { email, role: role.value });
-    toast(`${email} can now sign in as ${role.value === "admin" ? "an admin" : "a collaborator"}`);
+    toast(`${email} can now sign in as ${role.value === "admin" ? "an admin" : "a user"}`);
     render();
   });
 
@@ -1931,8 +1931,8 @@ async function renderAdmins(isCurrent = () => true) {
     el("div", { className: "card" }, [
       form,
       el("dl", { className: "role-help" }, [
-        ...["admin", "collaborator"].flatMap((r) => [
-          el("dt", { textContent: r === "admin" ? "Admin" : "Collaborator" }),
+        ...["admin", "user"].flatMap((r) => [
+          el("dt", { textContent: r === "admin" ? "Admin" : "User" }),
           el("dd", { textContent: ROLE_HELP[r] }),
         ]),
       ]),
@@ -1968,7 +1968,7 @@ async function renderAdmins(isCurrent = () => true) {
             }
           }
           await patch(`/admins/${encodeURIComponent(admin.email)}`, { role: select.value });
-          toast(`${admin.email} is now ${select.value === "admin" ? "an admin" : "a collaborator"}`);
+          toast(`${admin.email} is now ${select.value === "admin" ? "an admin" : "a user"}`);
           render();
         });
 
@@ -1989,7 +1989,7 @@ async function renderAdmins(isCurrent = () => true) {
 
 function roleSelect(value, label) {
   const select = el("select", { className: "btn btn-select btn-sm", attrs: { "aria-label": label } }, [
-    el("option", { value: "collaborator", textContent: "Collaborator" }),
+    el("option", { value: "user", textContent: "User" }),
     el("option", { value: "admin", textContent: "Admin" }),
   ]);
   select.value = value;
@@ -2186,7 +2186,7 @@ async function boot() {
       // Signed in fine, but not on the list (or taken off it). Forget the
       // tokens, or every launch would try them again and land here again.
       forgetSignIn(
-        `${state.email || "This Google account"} is not an admin or collaborator. ` +
+        `${state.email || "This Google account"} cannot sign in to BGU Cats yet. ` +
           "Sign in with a different Google account.",
       );
       showLogin();
@@ -2196,7 +2196,7 @@ async function boot() {
     if (err.status || !state.role) throw err; // refused, or never signed in here
   }
   document.body.dataset.role = state.role;
-  $("#brand-role").textContent = isAdmin() ? "labeling desk" : "collaborator";
+  $("#brand-role").textContent = isAdmin() ? "labeling desk" : "capture";
   for (const tab of document.querySelectorAll(".tab")) {
     tab.hidden = ADMIN_VIEWS.has(tab.dataset.view) && !isAdmin();
   }

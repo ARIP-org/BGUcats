@@ -15,9 +15,10 @@ constraints that are easy to violate by reflex. `docs/notes.md` is the
 traps behind them, each with where its story is: read it before touching
 DynamoDB reads, the pipeline or the agents, and add to it.
 
-**The app from the prototype is planned, not started** (the owner,
-2026-11-12): feed, posts, polls, friends, moderation and re-ranking, for
-TestFlight. `docs/app-plan/` is the plan; read its `README.md` before any
+**The app from the prototype is being built** (the owner, 2026-11-12):
+feed, posts, polls, friends, moderation and re-ranking, for TestFlight,
+behind the `social` flag. `docs/app-plan/` is the plan, and its
+`08-milestones.md` says what is built; read its `README.md` before any
 work on it. The plan lifts none of the rules below by itself: the pull
 request that lifts a rule edits that rule here, in the same change.
 
@@ -78,7 +79,7 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 | 1c Measure on BGU data | LIVE since 2026-10-29 | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; "Who did you meet?" after each encounter in Capture. No guess was recorded before the 2026-10-29 null-`catId` fix. Shared vectors appear after an admin first opens the Queue |
 | 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights. Re-encounters of known cats are what move the numbers |
 | 3 Fine-tuning on BGU data | CONDITIONAL | only if 1c numbers justify it |
-| 4 Read path + mobile app | PLANNED 2026-11-12, NOT STARTED | public API, browse UI, voting; and the feed, friends, moderation and re-ranking of `docs/app-plan/`. Waits on the owner's decisions there |
+| 4 Read path + mobile app | STARTED 2026-11-12, BEHIND A FLAG | public API, browse UI, voting; and the feed, friends, moderation and re-ranking of `docs/app-plan/`. Built milestone by milestone (`08-milestones.md`), on in staging, off in production until L3 |
 
 **1b has no dependency on 1a.** It reads public datasets from disk and touches no
 Lambda, no S3 bucket, and no DynamoDB table.
@@ -193,13 +194,14 @@ blocked on someone else.
 
 ### Collection path (spec §10)
 
-- **No browse, identify, voting, or polls in the app yet.** Phase 4 — with
-  one deliberate early piece: Capture's cat guesses after each encounter (1c), shown only
-  to signed-in collaborators and admins, never to the public. It is there
-  to reward re-encounters and to measure the "pick from 3" loop, not as the
-  Identify feature; see "Recognition in the app" below. Planned in
-  `docs/app-plan/`; this rule stands until the milestone that lifts it
-  (F4 there) changes this line.
+- **Browse, voting and polls only behind the `social` flag** (since F4 of
+  `docs/app-plan/`, 2026-11-12). The member app lives under `/api/v1/`
+  (`src/app/`, its own Lambda) and answers 404 while the account's
+  `settings.social` is false: production, until the app opens (L3);
+  staging has it on. With it off, the desk, Capture and the bot are
+  exactly what they were. Capture's cat guesses after each encounter
+  (1c) are shown to signed-in users and admins, never to the public, and
+  measure the "pick from 3" loop; see "Recognition in the app" below.
 - **Do not attach Lambdas to a VPC.** No NAT gateway, no subnets, no security
   groups. Lambda outside a VPC has full internet access; S3, DynamoDB and the
   Telegram API are all public endpoints. (§8.1)
@@ -231,13 +233,23 @@ channel (`channel = "app"`) into the same table, bucket and process Lambda.
 product). Its old sessions and photos stay in the table with
 `channel = "whatsapp"`, and the app still labels them.
 
-- **Two roles on the one allowlist item** (`ADMIN#{email}`, field `role`).
-  `admin` = everything. `collaborator` = Capture (with the cat guesses)
-  and browsing the cats, nothing else: no queue or labeling, no deleting, merging, creating or renaming cats,
-  no stats or people. **No role field means admin**, so the
-  Terraform bootstrap item and `make admin-add` keep full access. The API
-  enforces this per route (`ROUTES` in `src/admin/handler.py`, last column);
-  the UI only hides what would be refused.
+- **Two roles, `user` and `admin`** (the owner's decision R1, 2026-11-12;
+  `src/common/admission.py`). `admin` = everything. `user` = Capture
+  (with the cat guesses), browsing the cats and, behind the `social`
+  flag, the member app; no queue or labeling, no deleting, merging,
+  creating or renaming cats, no stats or people. A collaborator is a
+  user: `role = collaborator`, written before that day, is read as
+  `user`, and the people screen writes `user`. **No role field means
+  admin**, so the Terraform bootstrap item and `make admin-add` keep full
+  access. The API enforces this per route (`ROUTES` in
+  `src/admin/handler.py`, last column); the UI only hides what would be
+  refused.
+- **Who may sign in is the account's sign-up policy** (`settings.
+  signup_policy`): `allowlist` (an `ADMIN#{email}` item, as before; staging,
+  and production until L3), `domain` (also any address at BGU's domains)
+  or `open`. Checked by the Cognito pre-sign-up trigger and again by both
+  APIs on every call, so taking someone off the allowlist or tightening
+  the policy shuts them out at once.
 - **An encounter is a Session opened deliberately** ("Start an encounter" …
   "Done"), so it is an identity cluster by construction.
 - **Same write order as the bots, split across calls:** record as `pending`

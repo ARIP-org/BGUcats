@@ -114,8 +114,10 @@ resource "aws_lambda_function" "admin" {
 
   environment {
     variables = {
-      TABLE_NAME   = aws_dynamodb_table.data.name
-      MEDIA_BUCKET = aws_s3_bucket.media.id
+      TABLE_NAME     = aws_dynamodb_table.data.name
+      MEDIA_BUCKET   = aws_s3_bucket.media.id
+      SIGNUP_POLICY  = local.settings.signup_policy
+      SIGNUP_DOMAINS = join(",", local.signup_domains)
     }
   }
 }
@@ -174,7 +176,9 @@ resource "aws_lambda_function" "admin_presignup" {
 
   environment {
     variables = {
-      TABLE_NAME = aws_dynamodb_table.data.name
+      TABLE_NAME     = aws_dynamodb_table.data.name
+      SIGNUP_POLICY  = local.settings.signup_policy
+      SIGNUP_DOMAINS = join(",", local.signup_domains)
     }
   }
 }

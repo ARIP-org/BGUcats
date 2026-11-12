@@ -1,5 +1,5 @@
 """Admin labeling API — queue, session grid, merge, reject (spec §7, §10),
-and in-app capture for the collaborators who photograph cats from the PWA.
+and in-app capture for the users who photograph cats from the PWA.
 
 Sits behind an API Gateway JWT authorizer bound to the Cognito user pool, so
 every request arriving here already carries a cryptographically verified
@@ -8,12 +8,15 @@ an admin, so `_caller_email` is re-checked against the DynamoDB allowlist on
 every single call. That is the difference between revoking someone's access
 now and revoking it whenever their token happens to expire.
 
-Two roles, both on the same allowlist item (`ADMIN#{email}`):
-  admin         — everything, as before.
-  collaborator  — photographs cats in the app and browses the catalogue.
-                  Labeling stays with admins: no queue, no assigning, and
-                  nothing destructive or structural — no deleting, merging,
-                  creating or renaming cats, no managing people.
+Two roles (common.admission; the owner's decision R1, 2026-11-12):
+  admin  — everything, as before. On the allowlist (`ADMIN#{email}`) with
+           no role, or `role = admin`.
+  user   — photographs cats in the app and browses the catalogue. Labeling
+           stays with admins: no queue, no assigning, and nothing
+           destructive or structural — no deleting, merging, creating or
+           renaming cats, no managing people. On the allowlist with
+           `role = user` (or `collaborator`, the name before that day), or
+           admitted by the account's sign-up policy.
 An item with no role is an admin, so every account that existed before roles
 (the Terraform bootstrap item, `make admin-add`) keeps its access unchanged.
 
@@ -36,7 +39,7 @@ from boto3.dynamodb.conditions import Key
 from ulid import ULID
 
 from admin import insights
-from common import api, tables
+from common import admission, api, tables
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -74,12 +77,19 @@ PARTNER_MAX = 10**9
 
 BATCH_GET_LIMIT = 100
 
-ROLE_ADMIN = "admin"
-ROLE_COLLABORATOR = "collaborator"
-ROLES = (ROLE_ADMIN, ROLE_COLLABORATOR)
+# Two roles (common.admission, the owner's decision R1 of 2026-11-12): a
+# user, and an admin. `role = collaborator`, written before that day, is a
+# user.
+ROLE_ADMIN = admission.ROLE_ADMIN
+ROLE_USER = admission.ROLE_USER
+ROLES = admission.ROLES
+
+# Who may sign in at all (docs/app-plan/, D1). Absent: the allowlist only.
+SIGNUP_POLICY = os.environ.get("SIGNUP_POLICY", "allowlist")
+SIGNUP_DOMAINS = admission.domains_from(os.environ.get("SIGNUP_DOMAINS"))
 
 # Who may call a route (see ROUTES).
-ANYONE = "anyone"  # any allowlisted person, collaborators included
+ANYONE = "anyone"  # any admitted user, admins included
 ADMINS = "admins"
 
 # In-app capture. The phone uploads straight to S3 with a presigned POST —
@@ -163,7 +173,7 @@ def handler(event, context):
         role = _require_member(email)
         handler_fn, params, access = _match_route(method, path)
         if access == ADMINS and role != ROLE_ADMIN:
-            logger.warning("collaborator=%s refused %s %s", email, method, path)
+            logger.warning("user=%s refused %s %s", email, method, path)
             raise ApiError(403, "only admins can do this")
         body = _parse_body(event)
         result = handler_fn(
@@ -183,16 +193,22 @@ def _item(pk):
 
 
 def _require_member(email):
-    """The caller's role, or 403 if they are not on the allowlist at all."""
-    item = _item(f"ADMIN#{email}")
-    if not item:
-        logger.warning("rejected non-admin caller=%s", email)
-        raise ApiError(403, "not an admin or collaborator")
-    return _role_of(item)
+    """The caller's role, or 403 if the sign-up policy does not admit them.
+
+    Checked on every call, not only at sign-up: removing someone from the
+    allowlist, or tightening the policy, shuts them out at once.
+    """
+    role = admission.role_for(
+        email, _item(f"ADMIN#{email}"), SIGNUP_POLICY, SIGNUP_DOMAINS
+    )
+    if role is None:
+        logger.warning("rejected caller=%s policy=%s", email, SIGNUP_POLICY)
+        raise ApiError(403, "this account is not let in to BGU Cats")
+    return role
 
 
 def _role_of(item):
-    return item.get("role") if item.get("role") in ROLES else ROLE_ADMIN
+    return admission.role_of(item)
 
 
 # --------------------------------------------------------------------------
@@ -1163,11 +1179,11 @@ def _get_admins_with_roles(**_):
 
 def _add_admin(body, email, **_):
     """Least privilege by default: a person added without a role is a
-    collaborator. Making someone an admin is always an explicit choice."""
+    user. Making someone an admin is always an explicit choice."""
     new_email = _required_string(body, "email", maximum=254).lower()
     if "@" not in new_email:
         raise ApiError(400, "not an email address")
-    role = _role_param(body, default=ROLE_COLLABORATOR)
+    role = _role_param(body, default=ROLE_USER)
     if new_email == email:
         raise ApiError(409, "you are already on the list")
     now = _now_iso()
@@ -1209,9 +1225,10 @@ def _set_role(admin_email, body, email, **_):
 
 
 def _role_param(body, default=None):
-    role = body.get("role") or default
-    if role not in ROLES:
-        raise ApiError(400, "role must be admin or collaborator")
+    """admin or user; "collaborator", the old name for a user, is accepted."""
+    role = admission.normalise_role(body.get("role") or default)
+    if role is None:
+        raise ApiError(400, "role must be admin or user")
     return role
 
 

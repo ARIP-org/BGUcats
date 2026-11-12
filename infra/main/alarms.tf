@@ -11,7 +11,7 @@
 # slow answers. Add those when the app is public and has traffic to judge.
 #
 # Cost: each account's first ten alarms and first thousand emails a month
-# are free; this is eight alarms in production and seven in staging.
+# are free; this is nine alarms in production and eight in staging.
 
 # Not encrypted with a KMS key: CloudWatch cannot publish to a topic under
 # the AWS-managed SNS key, and a key of our own costs $1 a month to protect
@@ -42,6 +42,7 @@ locals {
     {
       admin           = aws_lambda_function.admin.function_name
       admin-presignup = aws_lambda_function.admin_presignup.function_name
+      app             = aws_lambda_function.app.function_name
       beacon          = aws_lambda_function.beacon.function_name
       events          = aws_lambda_function.events.function_name
       process         = aws_lambda_function.process.function_name

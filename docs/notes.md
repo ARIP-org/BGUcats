@@ -31,6 +31,12 @@ an hour that a sentence would have saved.
   of the editor as the characters themselves, which no reviewer can see.
   Ruff refuses them (PLE2502, PLE2515); write every such character as an
   escape, and check with `od -c` if a line looks shorter than it should.
+- **A boto3 resource's client takes plain values.** `table.meta.client`
+  is the low-level client with the resource's conversion still attached,
+  so a transaction's items are written as plain dicts, exactly as for
+  `table.put_item`. Converting them with `TypeSerializer` first converts
+  them twice; moto reports it only as "cancellation reasons [TypeError]"
+  on every item (2026-11-12, F4).
 - **Mocks are always consistent.** moto answers every read with the latest
   write, so none of the above can fail in a unit test. They were found by
   running real calls against a real table.

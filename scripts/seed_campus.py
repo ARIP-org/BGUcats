@@ -128,7 +128,7 @@ class Campus:
             raise RuntimeError(f"{method} {path} answered {status}: {out}")
         return out
 
-    def add_member(self, email, role="collaborator"):
+    def add_member(self, email, role="user"):
         self._ok("POST", "/api/admins", {"email": email, "role": role})
 
     def add_cat(self, name):

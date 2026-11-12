@@ -19,7 +19,7 @@ A session ticks its row in the pull request that finishes it.
 | F1 | The guardrails learn the new shapes | built 2026-11-12; **applied on staging 2026-11-12** and proven (`docs/MANUAL_STEPS.md`, step 17); production with its first promote |
 | F2 | Shared code, and one catalogue of every key | built 2026-11-12, in review |
 | F3 | The social table, the events Lambda, the seed | built 2026-11-12, in review. The local app and the seed learn the table in B1, with its first writes |
-| F4 | The member API: who you are, flags, who may sign up | |
+| F4 | The member API: who you are, flags, who may sign up | built 2026-11-12, in review |
 | B1 | Profiles | |
 | B2 | Cats for members, regions | |
 | B3 | Posts, the feed, likes | |
@@ -176,6 +176,17 @@ gets there first and recorded there.
   a test on the planned IAM policy proves the member API cannot write
   `bgucats-data`.
 - **Owner:** O6 only when production opens (L3).
+- **State, 2026-11-12:** built. `src/app/` behind `ANY /api/v1/{proxy+}`
+  and its `OPTIONS` route, with `GET /me` (makes the account in one
+  conditional transaction: the sign-in lookup, the user, the username,
+  the invite code) and `POST /me/terms`; `src/common/admission.py` for
+  both roles and the three policies, used by the sign-up trigger and
+  both APIs on every call; the desk's people screen says "user"; the
+  CORS configuration allows `PUT` for the likes and votes to come.
+  `social` is on in staging, off in production. Tested with moto and the
+  screen tests; the read-only rule on the dataset is a test over the
+  Terraform. Not tried by a person: signing in on staging and calling
+  `/api/v1/me`, which needs the member client (E0) or a token by hand.
 
 ---
 
