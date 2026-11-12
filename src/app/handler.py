@@ -8,22 +8,26 @@ Kept apart from src/admin on purpose: its role can read the dataset
 keep the write order of spec §10.
 
 Since milestone F4: who you are (`GET /me`, which makes your account on
-the first call) and accepting the terms. Each later milestone adds its
-routes to ROUTES.
+the first call) and accepting the terms. Since B2: the cats. Each later
+milestone adds its routes to ROUTES.
 
 With the `social` flag off (production until the app opens), every route
 answers 404, and nothing here runs.
 """
 
+import hashlib
 import json
 import logging
 import os
 import re
 import secrets
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
-from common import admission, api, ids, tables, text
+from common import admission, api, ids, media, tables, text
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -31,6 +35,7 @@ logger.setLevel(logging.INFO)
 
 DATA_TABLE_NAME = os.environ["DATA_TABLE_NAME"]
 SOCIAL_TABLE_NAME = os.environ["SOCIAL_TABLE_NAME"]
+MEDIA_BUCKET = os.environ.get("MEDIA_BUCKET", "")
 SOCIAL = os.environ.get("SOCIAL", "off") == "on"
 SIGNUP_POLICY = os.environ.get("SIGNUP_POLICY", "allowlist")
 SIGNUP_DOMAINS = admission.domains_from(os.environ.get("SIGNUP_DOMAINS"))
@@ -43,6 +48,7 @@ FLAGS = json.loads(os.environ.get("FLAGS") or "{}")
 dynamodb = boto3.resource("dynamodb")
 data_table = dynamodb.Table(DATA_TABLE_NAME)
 social_table = dynamodb.Table(SOCIAL_TABLE_NAME)
+s3 = boto3.client("s3")
 
 USERNAME_PATTERN = re.compile(r"^[a-z0-9._]{3,20}$")
 # Names nobody may hold: they would read as the app speaking.
@@ -258,9 +264,158 @@ def require_terms(user):
         raise ApiError(403, "accept the terms first", code="terms_required")
 
 
+# --------------------------------------------------------------------------
+# Cats (B2)
+# --------------------------------------------------------------------------
+
+ISRAEL = ZoneInfo("Asia/Jerusalem")
+BATCH_GET_LIMIT = 100
+CAT_PAGE_PHOTOS = 12
+# A cat of the day is one seen this recently, when there is any.
+CAT_OF_THE_DAY_DAYS = 30
+
+
+def _cats():
+    return tables.query_all(
+        data_table,
+        IndexName="GSI2",
+        KeyConditionExpression=Key("GSI2PK").eq("ENTITY#CAT"),
+        ScanIndexForward=True,
+    )
+
+
+def _counters(cat_ids):
+    """Each cat's public counters (CAT#{id} / PUBLIC in bgucats-social),
+    kept by the events Lambda. A cat with none yet has none."""
+    found = {}
+    name = social_table.name
+    client = social_table.meta.client  # plain values, like the table itself
+    keys = [{"PK": f"CAT#{c}", "SK": "PUBLIC"} for c in cat_ids]
+    for start in range(0, len(keys), BATCH_GET_LIMIT):
+        request = {name: {"Keys": keys[start : start + BATCH_GET_LIMIT]}}
+        while request:
+            answer = client.batch_get_item(RequestItems=request)
+            for item in answer["Responses"].get(name, []):
+                found[item["PK"].removeprefix("CAT#")] = item
+            request = answer.get("UnprocessedKeys") or None
+    return found
+
+
+def shown_name(cat, public):
+    """(name, where it came from): an admin's lock, else the poll's leader,
+    else the admin's name (docs/app-plan/03-data-model.md, D6)."""
+    if public.get("lockedName"):
+        return public["lockedName"], "admin"
+    if public.get("leaderName"):
+        return public["leaderName"], "poll"
+    if cat.get("name"):
+        return cat["name"], "admin"
+    return None, "none"
+
+
+def _photos_of(cat_id, newest_first, limit):
+    """Labeled photos of a cat, not videos (no derivatives exist for them)."""
+    photos, query = (
+        [],
+        {
+            "IndexName": "GSI3",
+            "KeyConditionExpression": Key("GSI3PK").eq(f"CAT#{cat_id}"),
+            "ScanIndexForward": not newest_first,
+            "Limit": max(limit * 2, 10),
+        },
+    )
+    while len(photos) < limit:
+        page = data_table.query(**query)
+        photos += [p for p in page["Items"] if p.get("mediaType") != "video"]
+        if "LastEvaluatedKey" not in page:
+            break
+        query["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+    return photos[:limit]
+
+
+def _number(value):
+    return int(value) if value is not None else 0
+
+
+def public_cat(cat, public, cover):
+    """What a user may see of a cat. The desk's own fields (notes, who
+    created it) never leave here: tests/app/test_cats.py lists every key."""
+    name, source = shown_name(cat, public)
+    return {
+        "catId": cat["catId"],
+        "name": name,
+        "nameSource": source,
+        "regionId": cat.get("usualRegionId"),
+        "coat": cat.get("coat"),
+        "cover": media.photo_urls(s3, MEDIA_BUCKET, cover["photoId"])
+        if cover
+        else None,
+        "photoCount": _number(cat.get("photoCount")),
+        "posts": _number(public.get("posts")),
+        "likes": _number(public.get("likes")),
+        "lastSeenAt": public.get("lastSeenAt"),
+        "lastFedAt": public.get("lastFedAt"),
+        "firstSeenAt": cat.get("createdAt"),
+    }
+
+
+def cat_of_the_day(cats, today):
+    """The same cat for everyone on one Israel day, and nothing stored: among
+    cats with a photo, seen in the last 30 days if any were, the one at
+    hash(date) mod count."""
+    shown = [c for c in cats if c["cover"]]
+    since = (today - timedelta(days=CAT_OF_THE_DAY_DAYS)).isoformat()
+    recent = [c for c in shown if (c["lastSeenAt"] or "") >= since]
+    pool = sorted(recent or shown, key=lambda c: c["catId"])
+    if not pool:
+        return None
+    digest = hashlib.sha256(today.isoformat().encode()).digest()
+    return pool[int.from_bytes(digest[:8], "big") % len(pool)]["catId"]
+
+
+def _israel_today():
+    return datetime.now(UTC).astimezone(ISRAEL).date()
+
+
+def _get_cats(**_):
+    cats = _cats()
+    counters = _counters([c["catId"] for c in cats])
+    listed = []
+    for cat in cats:
+        cover = next(iter(_photos_of(cat["catId"], newest_first=False, limit=1)), None)
+        listed.append(public_cat(cat, counters.get(cat["catId"], {}), cover))
+    return {"cats": listed, "catOfTheDay": cat_of_the_day(listed, _israel_today())}
+
+
+def _get_cat(cat_id, **_):
+    cat = tables.get_one(data_table, f"CAT#{cat_id}")
+    if cat is None:
+        raise ApiError(404, "no such cat", code="gone")
+    public = tables.get_one(social_table, f"CAT#{cat_id}", "PUBLIC") or {}
+    photos = _photos_of(cat_id, newest_first=True, limit=CAT_PAGE_PHOTOS)
+    oldest = next(iter(_photos_of(cat_id, newest_first=False, limit=1)), None)
+    return {
+        "cat": {
+            **public_cat(cat, public, oldest),
+            "bio": cat.get("bio") or "",
+            "photos": [
+                {
+                    "photoId": p["photoId"],
+                    **media.photo_urls(s3, MEDIA_BUCKET, p["photoId"]),
+                }
+                for p in photos
+            ],
+        }
+    }
+
+
+ID = r"[0-9A-Za-z]+"
+
 ROUTES = (
     ("GET", r"^/api/v1/me$", _get_me, "user"),
     ("POST", r"^/api/v1/me/terms$", _accept_terms, "user"),
+    ("GET", r"^/api/v1/cats$", _get_cats, "user"),
+    ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})$", _get_cat, "user"),
 )
 
 

@@ -19,7 +19,9 @@ lambda-compile = python -m compileall -q -j 0 --invalidation-mode checked-hash \
 # The code the API Lambdas share (src/common), as a `common` package beside
 # the function's own. Only into the functions that import it, so a change
 # there redeploys those and no other (tests/common/test_packaging.py).
-copy-common = mkdir -p build/$(1)/common && cp src/common/*.py build/$(1)/common/
+# web/regions.json goes with it: the campus places, one list for the
+# phone and the API (src/common/regions.py).
+copy-common = mkdir -p build/$(1)/common && cp src/common/*.py web/regions.json build/$(1)/common/
 
 fmt:
 	ruff format .

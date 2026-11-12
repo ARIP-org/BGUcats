@@ -39,7 +39,7 @@ from boto3.dynamodb.conditions import Key
 from ulid import ULID
 
 from admin import insights
-from common import admission, api, tables
+from common import admission, api, media, regions, tables, text
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -47,11 +47,6 @@ logger.setLevel(logging.INFO)
 
 TABLE_NAME = os.environ["TABLE_NAME"]
 MEDIA_BUCKET = os.environ["MEDIA_BUCKET"]
-
-# Long enough to label a session without the grid going blank mid-review,
-# short enough that a copied URL is useless by the time it leaves a chat.
-PRESIGNED_URL_TTL_SECONDS = 3600
-PHOTO_CACHE_CONTROL = "private, max-age=86400, immutable"
 
 # One page of the queue. Sessions are expanded in full after this many
 # photos are sampled from the queue index, so the real number of photos
@@ -302,19 +297,8 @@ def _photo_payload(photo):
 
 
 def _presign(key):
-    # Every object here is write-once (raw/ is never mutated, derived/ is
-    # rebuilt only under the same bytes), so the browser may keep it. The
-    # app reuses one URL per photo until it expires (web/app.js,
-    # stablePhotoUrl); without this header it would still ask S3 each time.
-    return s3.generate_presigned_url(
-        "get_object",
-        Params={
-            "Bucket": MEDIA_BUCKET,
-            "Key": key,
-            "ResponseCacheControl": PHOTO_CACHE_CONTROL,
-        },
-        ExpiresIn=PRESIGNED_URL_TTL_SECONDS,
-    )
+    """A signed address for one object (common.media)."""
+    return media.presign(s3, MEDIA_BUCKET, key)
 
 
 def _clean(item):
@@ -550,6 +534,17 @@ def _update_cat(cat_id, body, **_):
         updates["name"] = _required_string(body, "name", maximum=80)
     if "notes" in body:
         updates["notes"] = (body.get("notes") or "").strip()[:2000]
+    # Public, unlike notes: shown to every user on the cat's page (B2 of
+    # docs/app-plan/). Written by an admin, so not sent to moderation.
+    if "bio" in body:
+        updates["bio"] = text.clean(
+            body.get("bio"), "bio", 280, required=False, multiline=True
+        )
+    if "usualRegionId" in body:
+        region = body.get("usualRegionId") or None
+        if region is not None and region not in regions.ids():
+            raise ApiError(400, "usualRegionId is not one of the campus places")
+        updates["usualRegionId"] = region
     if not updates:
         raise ApiError(400, "nothing to update")
 

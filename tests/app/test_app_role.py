@@ -64,3 +64,11 @@ def test_the_writes_are_on_the_social_table():
                 "aws_dynamodb_table.social" in text
                 and "aws_dynamodb_table.data" not in text
             ), sid
+
+
+def test_the_media_bucket_is_only_read_and_only_derivatives():
+    s3 = [(sid, text) for sid, _, text in statements() if '"s3:' in text]
+    assert s3, "no S3 statement: nothing to check"
+    for sid, text in s3:
+        assert set(re.findall(r'"(s3:[A-Za-z*]+)"', text)) == {"s3:GetObject"}, sid
+        assert "/derived/*" in text, sid

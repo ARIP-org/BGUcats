@@ -42,7 +42,7 @@ a write by a moment. Nothing is decided on an item's absence from it
 
 | Item | PK | SK | GSI keys | Written by | Notes |
 |---|---|---|---|---|---|
-| Cat | `CAT#{catId}` | `META` | GSI2 `ENTITY#CAT` / `createdAt` | admin API | name, coat, notes; `photoCount` |
+| Cat | `CAT#{catId}` | `META` | GSI2 `ENTITY#CAT` / `createdAt` | admin API | `name`, `notes` (the admins' own, never sent to a user), `photoCount`; since B2 the public `bio` (≤ 280) and `usualRegionId` (an id from `web/regions.json`) |
 | Session | `SESSION#{sessionId}` | `META` | app encounters: GSI2 `ENTITY#ENCOUNTER` / `{email}#{startedAt}` | ingest; admin API (app encounters) | one encounter with one cat. `catId` is written as `null` and set by a label: a condition on "no label" must accept absent **or** null |
 | Photo | `PHOTO#{photoId}` | `META` | GSI1 `SESSION#{sessionId}` / `createdAt`; GSI2 `STATUS#{status}` / `createdAt`; GSI3 `CAT#{catId}` / `createdAt` once labeled | ingest; admin API; process | on GSI2 as `STATUS#pending` from the moment it is written. Statuses: `pending`, `unlabeled`, `labeled`, `rejected`, `duplicate` |
 | Byte-identical photo | `SHA#{sha256}` | `META` | | process | `photoId` of the first photo with these bytes. A later one is marked `duplicate` |
@@ -162,7 +162,7 @@ Its index keys:
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `nameLocked` |
+| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `lockedName` (an admin's lock, B4) |
 | Name option | `CAT#{catId}` | `NAME#{nameKey}` | `name` (as typed), `votes`, `suggestedBy`, `status` (`pending` / `live` / `rejected` / `removed`), `createdAt` |
 | Vote | `CAT#{catId}` | `VOTE#{userId}` | `nameKey`, `at`. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds |
 | Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `feedingId` (from the phone), `spotId`, `removed` |
@@ -183,9 +183,9 @@ A cat's description, usual region, coat and status are the admin's and
 live on the cat's item in `bgucats-data` (below). The member API reads
 them there and adds the counters from here.
 
-**The cat's shown name:** the admin's locked name if `nameLocked`; else
-the leading live option; else the admin's `displayName`; else nothing
-(D6).
+**The cat's shown name** (`shown_name` in `src/app/handler.py`, since B2):
+the admin's `lockedName` if set; else the poll's `leaderName`; else the
+cat's `name` in the dataset; else nothing (D6).
 
 ### Proposals, reports, moderation
 

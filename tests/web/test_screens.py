@@ -99,6 +99,27 @@ def test_the_cats_screen_lists_every_cat_with_its_cover(open_app, shot):
     shot(page, "cats")
 
 
+def test_an_admin_writes_what_users_see_of_a_cat(app, open_app, shot):
+    # B2 of docs/app-plan/: a description and the usual place, public,
+    # unlike the admins' notes.
+    page = open_app(ADMIN)
+    go(page, "cats", "3 cats known")
+    page.click(".cat-card:has-text('Mitzi')")
+    shows(page, "Public info")
+    page.click("button:has-text('Public info')")
+    page.fill("#ask textarea[name=bio]", "Naps under the library bench.")
+    page.select_option("#ask select[name=usualRegionId]", "library")
+    shot(page, "cat-public-info")
+    page.click("#ask button[value=ok]")
+    page.wait_for_selector(".toast:has-text('Saved')")
+    cat_id = app.data["cats"]["Mitzi"]
+    cat = app.api("GET", f"/api/cats/{cat_id}")[1]["cat"]
+    assert (cat["bio"], cat["usualRegionId"]) == (
+        "Naps under the library bench.",
+        "library",
+    )
+
+
 def test_a_screen_that_loads_late_does_not_draw_over_the_one_opened_since(open_app):
     """The Queue waits for its data; tapping Cats meanwhile showed Cats, and
     then the Queue's late answer drew over it (one CI run in six, 2026-11-11).

@@ -21,7 +21,7 @@ set its row here to done with the date.
 | ID | Step | Needed before | Where | State |
 |---|---|---|---|---|
 | O1 | Answer the decisions | F1 (the bold ones) | `DECISIONS.md` | **done 2026-11-12:** all 35 |
-| O2 | Freeze the design | E0 | the prototype | |
+| O2 | Freeze the design | E0 | the prototype | **not needed** (the owner, 2026-11-12): the current design is the reference; missing parts are built close to its style and the owner adjusts later |
 | O3 | The first production promote | L3 (was: F1) | GitHub, a `v*` tag | **postponed by the owner, 2026-11-12.** Blocks nothing until production is wanted |
 | O4 | Apply the guardrail changes | F3 deploys | AWS: staging now, production with its first promote | **staging done 2026-11-12** (`docs/MANUAL_STEPS.md`, step 17); production before its first promote |
 | O5 | Google: a Gemini API key per account | C1, R0 | Google AI Studio / Cloud | |
@@ -31,8 +31,8 @@ set its row here to done with the date.
 | O9 | A domain, its DNS, its certificate | buying: now (A6). Wiring: N4 | AWS, the management account, from a codespace | **registered by the owner by hand, 2026-11-12.** No DNS yet, on purpose: N4. In the management account (the owner, 2026-11-12); its name is read at N4's start (`docs/MANUAL_STEPS.md`, step 16) |
 | O10 | Privacy policy, terms, a support address | L1 (draft), L2 (final) | the landing site | |
 | O11 | The blocklist and the gold set | C3 | files in the repo | |
-| O12 | The campus regions and the feeding spots | nothing: made-up ones until the owner sends them | a file in the repo | later (the owner, 2026-11-12) |
-| O13 | Each cat's public text | E4 looks right | the labeling desk | |
+| O12 | The campus regions and the feeding spots | nothing: made-up ones until the owner sends them | `web/regions.json` (since B2, marked as placeholder) | later (the owner, 2026-11-12) |
+| O13 | Each cat's public text | E4 looks right | the labeling desk: a cat's page → **Public info** (since B2) | can start once B2 is on staging |
 | O14 | Translations read by native speakers | E10 | files in the repo | |
 | O15 | TestFlight builds and phone checks | every N milestone | GitHub Actions, a phone | |
 | O16 | App Store Connect: test information and the reviewer | L2 | App Store Connect | |
@@ -52,6 +52,16 @@ Nothing to brief. A session may be asked to explain any decision further;
 it should answer with the trade-off, not with a longer recommendation.
 
 ## O2. Freeze the design
+
+**Replaced by the owner's decision of 2026-11-12:** no freeze. "The design
+is not entirely ready ... if something is missing, make it in the style
+that is close to what we have right now. I will fix it later. We have to
+make the app working." So a client milestone ports from the prototype as
+it is on the day the work starts, records that version id in its pull
+request (and in `docs/design/prototype/README.md` when E0 creates it),
+builds what is missing from the prototype's own components, and the
+owner's later design changes arrive as ordinary pull requests. What
+follows is the original step, kept for the reasoning.
 
 The prototype was still changing on 2026-11-12 (a description field, a
 new-cat form and a "post from +" flow appeared between two reads that

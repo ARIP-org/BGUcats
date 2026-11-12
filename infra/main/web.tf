@@ -145,6 +145,8 @@ locals {
     # scripts/publish_model.py, a prefix Terraform never touches.
     "recognition.js" = "text/javascript; charset=utf-8"
     "styles.css"     = "text/css; charset=utf-8"
+    # The campus places (src/common/regions.py reads the same file).
+    "regions.json" = "application/json; charset=utf-8"
     # What makes it installable: "Add to Home Screen" opens it full-screen
     # with its own icon. The service worker caches the app shell only —
     # never /api/, never photos (web/sw.js).

@@ -21,7 +21,7 @@ A session ticks its row in the pull request that finishes it.
 | F3 | The social table, the events Lambda, the seed | built 2026-11-12, in review. The local app and the seed learn the table in B1, with its first writes |
 | F4 | The member API: who you are, flags, who may sign up | built 2026-11-12, in review |
 | B1 | Profiles | |
-| B2 | Cats for members, regions | |
+| B2 | Cats for members, regions | built 2026-11-12, in review |
 | B3 | Posts, the feed, likes | |
 | B4 | Name polls | |
 | B5 | Friends and invites (B5b: phone and contacts) | |
@@ -219,6 +219,16 @@ was built.
   day for two accounts on one day; a cat's region is its admin-set one,
   else the commonest region among its labeled sessions.
 - **Owner:** O13 can start once this is on staging.
+- **State, 2026-11-12:** built: `GET /api/v1/cats` and
+  `GET /api/v1/cats/{id}` (shown name and its source, cover and newest
+  photos, counters from the social table, cat of the day by Israel date),
+  `web/regions.json` (placeholders, O12) read by both the phone and the
+  API through `src/common/regions.py`, the desk's **Public info** on a
+  cat (a description and the usual place). The public projection is a
+  test that lists every key. **Not built, on purpose:** a cat's region
+  falling back to the commonest region of its labeled sessions. It would
+  cost a query per cat per list; it belongs with the events Lambda's
+  counters (B7). Until then the region is the admin's or none.
 
 ### B3. Posts, the feed, likes
 

@@ -58,6 +58,14 @@ resource "aws_iam_role_policy" "app_lambda_access" {
         ]
       },
       {
+        # Signing addresses for photos' thumbnails and mediums (B2). Only
+        # the derivatives: never an original, never a write.
+        Sid      = "SignDerivatives"
+        Effect   = "Allow"
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.media.arn}/derived/*"
+      },
+      {
         # Accounts, and everything people do in the app.
         Sid    = "SocialItems"
         Effect = "Allow"
@@ -95,6 +103,7 @@ resource "aws_lambda_function" "app" {
     variables = {
       DATA_TABLE_NAME   = aws_dynamodb_table.data.name
       SOCIAL_TABLE_NAME = aws_dynamodb_table.social.name
+      MEDIA_BUCKET      = aws_s3_bucket.media.id
       SOCIAL            = local.settings.social ? "on" : "off"
       SIGNUP_POLICY     = local.settings.signup_policy
       SIGNUP_DOMAINS    = join(",", local.signup_domains)
