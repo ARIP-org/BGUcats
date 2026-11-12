@@ -2,63 +2,11 @@
 are (E0), and shows the frame (E1): tabs, pages over them, the theme menu,
 sign-out. The desk stays the front door until config.json says otherwise."""
 
-import json
-
 import pytest
 
 from app import handler as app_handler
 
-from .conftest import PHONE
-from .localapp import ADMIN, COLLABORATOR, token_for
-
-
-@pytest.fixture
-def open_member_app(app, browser):
-    """open_member_app(email) -> a page on app.html for that member (None:
-    signed out). Fails the test on any JavaScript error or 5xx."""
-    contexts, problems = [], []
-
-    def open_as(email, path="/app.html?browser", wait="[data-screen]", **options):
-        context = browser.new_context(
-            **{
-                "viewport": PHONE,
-                "device_scale_factor": 2,
-                "service_workers": "block",
-                **options,
-            }
-        )
-        contexts.append(context)
-        context.route(
-            lambda url: not url.startswith("http://127.0.0.1"),
-            lambda route: route.abort(),
-        )
-        if email:
-            tokens = json.dumps(json.dumps(token_for(email)))
-            # Once per tab, as a real sign-in is: a sign-out must stick.
-            context.add_init_script(
-                "if (!sessionStorage.getItem('test.signedIn')) {"
-                f" localStorage.setItem('bgucats.tokens', {tokens});"
-                " sessionStorage.setItem('test.signedIn', '1'); }"
-            )
-        page = context.new_page()
-        page.on("pageerror", lambda err: problems.append(f"JavaScript error: {err}"))
-        page.on(
-            "response",
-            lambda res: (
-                problems.append(f"{res.status} {res.url}")
-                if res.status >= 500
-                else None
-            ),
-        )
-        page.goto(app.url + path)
-        if wait:
-            page.wait_for_selector(wait)
-        return page
-
-    yield open_as
-    for context in contexts:
-        context.close()
-    assert not problems, problems
+from .localapp import ADMIN, COLLABORATOR
 
 
 def test_a_member_sees_the_frame(open_member_app, shot):
@@ -330,7 +278,7 @@ def test_right_to_left_mirrors_the_frame(open_member_app, shot):
     page.wait_for_timeout(600)
     bar = page.locator(".tabbar").bounding_box()
     lens = page.locator(".lens").bounding_box()
-    cats = page.get_by_role("button", name="Cats").bounding_box()
+    cats = page.get_by_role("button", name="Cats", exact=True).bounding_box()
     # The first tab, and the lens on it, are at the bar's right end.
     assert cats["x"] > bar["x"] + bar["width"] / 2
     assert abs((lens["x"] + lens["width"]) - (bar["x"] + bar["width"] - 6)) < 2

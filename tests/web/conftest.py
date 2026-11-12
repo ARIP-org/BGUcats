@@ -103,3 +103,52 @@ def shot():
         page.screenshot(path=SCREENSHOTS / f"{name}.png")
 
     return save
+
+
+@pytest.fixture
+def open_member_app(app, browser):
+    """The member app (app.html). open_member_app(email) -> a page on app.html for that member (None:
+    signed out). Fails the test on any JavaScript error or 5xx."""
+    contexts, problems = [], []
+
+    def open_as(email, path="/app.html?browser", wait="[data-screen]", **options):
+        context = browser.new_context(
+            **{
+                "viewport": PHONE,
+                "device_scale_factor": 2,
+                "service_workers": "block",
+                **options,
+            }
+        )
+        contexts.append(context)
+        context.route(
+            lambda url: not url.startswith("http://127.0.0.1"),
+            lambda route: route.abort(),
+        )
+        if email:
+            tokens = json.dumps(json.dumps(token_for(email)))
+            # Once per tab, as a real sign-in is: a sign-out must stick.
+            context.add_init_script(
+                "if (!sessionStorage.getItem('test.signedIn')) {"
+                f" localStorage.setItem('bgucats.tokens', {tokens});"
+                " sessionStorage.setItem('test.signedIn', '1'); }"
+            )
+        page = context.new_page()
+        page.on("pageerror", lambda err: problems.append(f"JavaScript error: {err}"))
+        page.on(
+            "response",
+            lambda res: (
+                problems.append(f"{res.status} {res.url}")
+                if res.status >= 500
+                else None
+            ),
+        )
+        page.goto(app.url + path)
+        if wait:
+            page.wait_for_selector(wait)
+        return page
+
+    yield open_as
+    for context in contexts:
+        context.close()
+    assert not problems, problems

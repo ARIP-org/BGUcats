@@ -40,7 +40,7 @@ A session ticks its row in the pull request that finishes it.
 | R3 | Re-rank: live | |
 | E0 | Client groundwork | merged 2026-11-12 |
 | E1 | The frame: tabs, navigation, themes | built 2026-11-12, in review |
-| E2 | The feed | |
+| E2 | The feed | built 2026-11-12, in review |
 | E3 | The capture flow | |
 | E4 | The gallery, a cat's page, the poll | |
 | E5 | The map | |
@@ -511,6 +511,20 @@ English file.
 - **Needs:** E1, B3 (B4 for vote cards).
 - **Builds:** post cards, several photos, like, the photo's menu, cat of
   the day, paging, the top buttons.
+- **Built (2026-11-12):** `web/social/data.js` (the data layer: the
+  feed's pages, the cats, likes, deleting a post, the regions' names);
+  `feed.js` (the prototype's card: avatar, "met *cat*", the photos one at
+  a time with their count, the like on glass over the photo, the text,
+  the time and, for its author, the area; cat of the day at the top; the
+  next page fetched before the end is reached; empty and failed states);
+  the photo's menu ("See *cat*", and for its author "Delete post", asked
+  first); `cat.js`, a first cat page (photo, name, description, how often
+  you met it, more photos), which E4 completes; the top buttons (search,
+  +), which say what they will open until E3 and E4. A like changes on
+  screen at once and is taken back, with a toast, if it does not go
+  through. Photos from the member API keep one address per photo, like
+  the desk's (`web/lib/photos.js`). **Not built, on purpose:** vote cards
+  (B4), "Show on map" in the photo's menu (E5), reporting (B8).
 
 ### E3. The capture flow
 
