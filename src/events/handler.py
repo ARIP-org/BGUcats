@@ -6,7 +6,8 @@ filters.json, in batches. It sorts each change by kind, logs one line per
 batch, and hands it to that kind's handler in HANDLERS. Since B3a, a new
 post is published (publish_post). Since B3b, a change to an encounter
 recounts what its person met and keeps its post's cat on the label
-(count_encounter). Moderation (C1), points and badges (B7) and push (B9)
+(count_encounter). Since B6, an admin's decision on a new cat releases or
+hides the post that waited for it (decide_proposal). Moderation (C1), points and badges (B7) and push (B9)
 arrive the same way.
 
 The rules every handler keeps:
@@ -108,11 +109,28 @@ def publish_post(record):
     changed = _image(record)
     if not changed or changed.get("status") != "pending":
         return
-    # The post as it is now, not as this change left it: its cat may have
-    # been corrected by a label since (count_encounter).
-    post = _get(changed["PK"], "META")
+    release(changed["PK"])
+
+
+def release(post_pk):
+    """Publish a pending post if nothing holds it back. A post for a new cat
+    waits while its proposal is open; once an admin decides, it goes out
+    under the decided cat, or is hidden if the proposal was rejected (D7)."""
+    # The post as it is now, not as a change left it: its cat may have been
+    # corrected by a label since (count_encounter).
+    post = _get(post_pk, "META")
     if not post or post.get("status") != "pending":
         return
+    cat_id = post.get("catId")
+    if post.get("proposalId"):
+        proposal = _get(f"PROPOSAL#{post['proposalId']}", "META") or {}
+        decided = proposal.get("status", "rejected")
+        if decided == "open":
+            return  # held until an admin decides
+        if decided == "rejected":
+            _hide(post, "proposal_rejected")
+            return
+        cat_id = proposal.get("catId")
     created = post["createdAt"]
     names = {"#s": "status"}
     values = {
@@ -122,18 +140,22 @@ def publish_post(record):
         ":feed": f"FEED#{created[:7]}",
         ":feed_sk": f"{created}#P#{post['postId']}",
     }
-    update = "SET #s = :visible, visibleAt = :now, GSI2PK = :feed, GSI2SK = :feed_sk"
+    update = (
+        "SET #s = :visible, visibleAt = :now, GSI2PK = :feed, GSI2SK = :feed_sk, "
+        "catId = :newcat"
+    )
+    values[":newcat"] = cat_id
     same_cat = _cat_is(post.get("catId"), values)
     items = []
-    if post.get("catId"):
+    if cat_id:
         update += ", GSI3PK = :cat, GSI3SK = :created"
-        values[":cat"] = f"CATPOST#{post['catId']}"
+        values[":cat"] = f"CATPOST#{cat_id}"
         values[":created"] = created
         items.append(
             {
                 "Update": {
                     "TableName": social_table.name,
-                    "Key": {"PK": f"CAT#{post['catId']}", "SK": "PUBLIC"},
+                    "Key": {"PK": f"CAT#{cat_id}", "SK": "PUBLIC"},
                     "UpdateExpression": "ADD posts :one SET lastSeenAt = :created",
                     "ExpressionAttributeValues": {":one": 1, ":created": created},
                 }
@@ -165,6 +187,37 @@ def publish_post(record):
                 raise
             return
         raise
+
+
+def _hide(post, reason):
+    """A pending post that will never be published stays its author's, with
+    the reason; it is in no list."""
+    try:
+        social_table.update_item(
+            Key={"PK": post["PK"], "SK": "META"},
+            UpdateExpression="SET #s = :hidden, hiddenReason = :why",
+            ConditionExpression="#s = :pending",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":hidden": "hidden",
+                ":why": reason,
+                ":pending": "pending",
+            },
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass  # published or removed meanwhile
+
+
+def decide_proposal(record):
+    """An admin approved, merged or rejected a new cat: its encounter's post,
+    if there is one, is released or hidden (release, above). The label of
+    the encounter itself comes from the desk, which counts as for any label."""
+    proposal = _image(record)
+    if not proposal or proposal.get("status") == "open":
+        return
+    enc = _get(f"USER#{proposal['proposerId']}", f"ENC#{proposal['sessionId']}") or {}
+    if enc.get("postId"):
+        release(f"POST#{enc['postId']}")
 
 
 def _get(pk, sk):
@@ -364,6 +417,7 @@ def correct_post(enc):
 HANDLERS = {kind: _not_built_yet for _, _, kind in KINDS}
 HANDLERS["post"] = publish_post
 HANDLERS["encounter"] = count_encounter
+HANDLERS["proposal"] = decide_proposal
 
 
 def _keys(record):

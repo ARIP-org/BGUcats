@@ -25,7 +25,7 @@ A session ticks its row in the pull request that finishes it.
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | |
 | B5 | Friends and invites (B5b: phone and contacts) | |
-| B6 | New-cat proposals | |
+| B6 | New-cat proposals | built 2026-11-12, in review |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
 | B8 | Reports, blocks, bans, the desk's tools | |
 | B9 | Push | |
@@ -39,8 +39,8 @@ A session ticks its row in the pull request that finishes it.
 | R2 | Re-rank: measured | |
 | R3 | Re-rank: live | |
 | E0 | Client groundwork | merged 2026-11-12 |
-| E1 | The frame: tabs, navigation, themes | built 2026-11-12, in review |
-| E2 | The feed | built 2026-11-12, in review |
+| E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
+| E2 | The feed | merged 2026-11-12 |
 | E3 | The capture flow | |
 | E4 | The gallery, a cat's page, the poll | |
 | E5 | The map | |
@@ -325,6 +325,20 @@ was built.
   proposal's post shows the existing cat; a rejected one's post is never
   published; the dataset table's session is labeled by the desk route and
   by nothing else.
+- **Built (2026-11-12):** `POST /api/v1/proposals` and
+  `GET /api/v1/me/proposals`; posts that claim `{proposalId}`, held while
+  it is open (the author sees the post pending, with the proposal); the
+  pick's `new`; the desk's routes and, at the top of the Queue, the
+  proposals with "Add as a new cat", "It's a cat we know…" and "Not a new
+  cat". An approved proposal's id is the new cat's id, so a retried
+  approve makes one cat; its coat and usual place come from the proposal.
+  The events Lambda releases the waiting post under the decided cat, or
+  hides it on reject (`decide_proposal`, `release`). The desk's role may
+  now query `PROPOSALS#…` on `GSI2` and get and update `PROPOSAL#…`.
+  **Not built, on purpose:** the name idea entering the cat's poll
+  (polls are B4); a session labeled straight from the Queue while its
+  proposal is still open leaves the proposal open and its post waiting
+  (decide the proposal instead).
 
 ### B7. Achievements
 

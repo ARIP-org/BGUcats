@@ -118,7 +118,7 @@ dataset's.
 | Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
 | A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. (`METM#{yyyy-mm}#{catId}`, planned for the month's count, is not written: `STATS#{yyyy-mm}.catsMet` holds it) |
 | Badge | `USER#{id}` | `BADGE#{badgeId}` | `at` |
-| An encounter, as the app counts it **(since B3b)** | `USER#{id}` | `ENC#{sessionId}` | `userId`, `sessionId`, `claimedCatId` (the pick, or the post's claim if there was no pick), `labelCatId` (the session's label, following merges), `rejected`, `day` (the Israel date the encounter began), `regionId`, `postId`, `updatedAt` |
+| An encounter, as the app counts it **(since B3b)** | `USER#{id}` | `ENC#{sessionId}` | `userId`, `sessionId`, `proposalId` (B6: the encounter's new-cat proposal), `claimedCatId` (the pick, or the post's claim if there was no pick), `labelCatId` (the session's label, following merges), `rejected`, `day` (the Israel date the encounter began), `regionId`, `postId`, `updatedAt` |
 
 `ENC` is the bridge between the tables (`src/common/encounters.py`). The
 capture route that records a pick writes it, and so does `POST /posts`;
@@ -195,7 +195,7 @@ cat's `name` in the dataset; else nothing (D6).
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| New-cat proposal | `PROPOSAL#{proposalId}` | `META` | `proposerId`, `sessionId`, `nameIdea`, `coat`, `regionId`, `traits`, `status` (`open` / `approved` / `merged` / `rejected`), `catId` (the result), `decidedBy`, `decidedAt`. On `GSI2` as `PROPOSALS#{status}` / `createdAt` |
+| New-cat proposal **(since B6)** | `PROPOSAL#{proposalId}` | `META` | `proposerId`, `sessionId`, `nameIdea`, `coat`, `regionId`, `traits` (`coat` and `traits` from `src/common/proposals.py`; `regionId` a campus place or `elsewhere`), `status` (`open` / `approved` / `merged` / `rejected`), `catId` (the result; an approved proposal's id **is** the new cat's id, so approving twice makes one cat), `decidedBy`, `decidedAt`. On `GSI2` as `PROPOSALS#{status}` / `createdAt` (the desk's queue), and on `GSI1` as `PROPOSER#{userId}` / `createdAt` (the proposer's own list) |
 | Report | `REPORT#{reportId}` | `META` | `reporterId`, `targetType` (`post` / `user` / `name` / `avatar`), `targetId`, `reason`, `note`, `status` (`open` / `actioned` / `dismissed`), `decidedBy`. On `GSI2` as `REPORTS#{status}` / `createdAt` |
 | One report per person per target | `REPORTED#{targetType}#{targetId}` | `BY#{reporterId}` | `at`. Counting the partition gives "different people who reported this" |
 | Moderation run | `MOD#{kind}#{subjectId}` | `RUN#{at}` | `policy`, `model`, `mode`, `answers` (each question's probability), `outcome` (`pass` / `flag` / `block` / `error`), `acted`, `human`, `humanBy`, `humanAt`, `tokens`, `ms`. On `GSI2` as `MODQ#open` / `at` while it waits for an admin, then `MODRUN#{yyyy-mm}` / `at` |
