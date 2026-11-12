@@ -309,7 +309,18 @@ product). Its old sessions and photos stay in the table with
   uploads move only while it is open. The app keeps the screen awake while
   files are waiting (Wake Lock) and says so on screen. Three uploads run at
   once.
-- **Caching lives in app.js, not the service worker.** Presigned photo URLs
+- **The member app is `app.html` beside the desk** (`web/social/`, since
+  E0 of `docs/app-plan/`): Preact and htm and the Inter font from
+  `web/vendor/`, pinned by checksum and never from a CDN; every colour in
+  `web/tokens.css` (four themes, from the prototype); every string through
+  `t()` and `web/i18n/en.json`; only logical CSS properties
+  (`tests/web/test_client_rules.py`). Signing in, the API client and the
+  photo-address cache are shared from `web/lib/`. Which page opens first
+  is `frontDoor` in `config.json` (`desk` in both accounts until the app
+  can do something); `?desk` keeps the desk. `infra/main/web.tf` uploads
+  every file under `web/`, so a new file needs no Terraform.
+- **Caching lives in web/lib/ (since E0; app.js before), not the service
+  worker.** Presigned photo URLs
   carry a long `response-cache-control`, and the app reuses the first URL it
   saw for each object until just before it expires (`stablePhotoUrl`).
   Without that, every new signature is a cache miss and every screen

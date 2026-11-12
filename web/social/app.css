@@ -1,0 +1,104 @@
+/* The member app's own styles. Every colour, shadow and curve is a token
+   from tokens.css; only logical properties (inline/block, start/end), so
+   Hebrew and Arabic need no second stylesheet
+   (tests/web/test_client_rules.py). */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-block-size: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-block-size: 100dvh;
+  padding-block-start: env(safe-area-inset-top);
+  padding-block-end: env(safe-area-inset-bottom);
+  /* The notch and the rounded corners are the screen's own edges, not the
+     text's: in Hebrew they stay where they are. */
+  padding-left: max(16px, env(safe-area-inset-left)); /* physical: the screen's edge */
+  padding-right: max(16px, env(safe-area-inset-right)); /* physical: the screen's edge */
+}
+
+.screen {
+  max-inline-size: 640px;
+  margin-inline: auto;
+  padding-block: 24px;
+}
+
+.screen.center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 80dvh;
+  text-align: center;
+  gap: 12px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 12px;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lead {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--body);
+}
+
+.note {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--chip);
+  color: var(--ink);
+}
+
+/* The prototype's glass button; its press (bindGlass) comes with E1. */
+.glass-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 44px;
+  padding-inline: 20px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.glass-button.small {
+  min-block-size: 36px;
+  padding-inline: 14px;
+  font-size: 14px;
+}

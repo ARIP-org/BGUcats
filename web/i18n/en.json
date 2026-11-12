@@ -1,0 +1,16 @@
+{
+  "app.name": "BGU Cats",
+  "signIn.title": "Campus cats, together",
+  "signIn.lead": "Meet the cats of BGU, name them, and see who your friends have met.",
+  "signIn.button": "Sign in with Google",
+  "signIn.refused": "{email} cannot sign in to BGU Cats yet. Sign in with a different Google account.",
+  "signIn.cannot": "This build of the app cannot sign in. Use the web app for now.",
+  "notOpen.title": "Not open yet",
+  "notOpen.body": "The BGU Cats app is not open on this site yet.",
+  "notOpen.desk": "Open the labeling desk and Capture",
+  "frame.hello": "Hi, {name}",
+  "frame.empty": "Nothing here yet. The feed, the cats and your friends arrive screen by screen.",
+  "frame.signOut": "Sign out",
+  "error.generic": "Something went wrong: {message}",
+  "cats.count": { "one": "{count} cat", "other": "{count} cats" }
+}

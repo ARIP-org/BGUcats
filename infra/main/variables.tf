@@ -34,6 +34,10 @@ locals {
       # The member app (docs/app-plan/): off until it opens (L3).
       social        = false
       signup_policy = "allowlist"
+      # Which page the site opens on: "desk" (the labeling desk and
+      # Capture, index.html) or "app" (the member app, app.html). The
+      # desk until L3 (docs/app-plan/05-client.md).
+      front_door = "desk"
     }
     staging = {
       cognito_domain_prefix = "bgucats-staging"
@@ -42,6 +46,9 @@ locals {
       # because staging never holds real contributors' photos.
       social        = true
       signup_policy = "allowlist"
+      # The desk until the member app can do something (E2); app.html is
+      # open on its own address meanwhile.
+      front_door = "desk"
     }
   }[var.environment]
 

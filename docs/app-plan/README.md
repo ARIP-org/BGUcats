@@ -12,8 +12,10 @@ comes later.
 
 The prototype: `https://claude.ai/artifact/BmuxNRNA2SGsuoUXT2f9k6`. This
 plan was read from version `1794478681-698e` (26 boards, 2026-11-12). The
-design was still being edited that day, so the first step of the client
-work is a frozen copy (`OWNER_STEPS.md`, O2).
+design was still being edited that day. The plan first asked for a
+frozen copy; the owner said none is needed (O2): the canvas as it is when
+a milestone reads it is the reference, and that milestone names the
+version it read. E0 read `1794482957-a6b5`.
 
 ## The files
 
@@ -87,8 +89,9 @@ These bind every session, whatever its prompt says. They are on top of
    since 2026-11-12, the code and the design win. Fix the plan file in the
    same pull request and say so.
 4. **Port the design; do not invent it.** Colours, sizes, radii, timing
-   curves and copy come from the frozen prototype
-   (`docs/design/prototype/`). **Where the design is silent, the gap is
+   curves and copy come from the prototype (the canvas above, at the
+   version the milestone names; never copied into the repo, since its
+   sample photos are real cats' photos). **Where the design is silent, the gap is
    closed inside the milestone that needs it** (the owner, 2026-11-12:
    "we will implement during the feature implementation"). The gaps are
    listed in `01-product.md`. For each one a milestone meets, the session

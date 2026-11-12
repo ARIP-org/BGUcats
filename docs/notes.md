@@ -79,6 +79,11 @@ an hour that a sentence would have saved.
 - **CloudWatch cannot publish to a topic encrypted with AWS's own SNS
   key.** The alerts topic is unencrypted for that reason
   (`infra/main/alarms.tf`).
+- **The site's files were a list by hand in `infra/main/web.tf`.** A new
+  file in `web/` passed every local test, because the local app serves
+  the folder, and would have been missing on staging. Found in E0, when
+  `web/lib/` arrived; since then Terraform uploads every file under
+  `web/`, typed by extension, and an unknown extension fails the plan.
 - **A Lambda that uses `zoneinfo` ships `tzdata`.** The runtime image
   may have no system time zones, and then `ZoneInfo("Asia/Jerusalem")`
   at import fails every call. The member API went to staging without it

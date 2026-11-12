@@ -106,6 +106,8 @@ class LocalApp:
 
     def __init__(self):
         self._lock = threading.Lock()
+        # config.json's frontDoor: "desk" as on staging today, or "app".
+        self.front_door = "desk"
         self._processed = set()
         self._http = urllib3.PoolManager()
 
@@ -343,6 +345,7 @@ class LocalApp:
                         "redirectUri": app.url + "/",
                         "siteUrl": "https://site.invalid/",
                         "botUrl": "https://t.me/example",
+                        "frontDoor": app.front_door,
                     }
                     self._send(200, json.dumps(config).encode(), "application/json")
                 else:
