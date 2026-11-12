@@ -32,6 +32,8 @@ def test_the_bundle_is_web_plus_a_config_that_says_where_the_api_is(tmp_path):
         "apiBase": "https://app.example",
         # Not the web address: Cognito answers the app at its own.
         "redirectUri": "org.arip.bgucats://signin",
+        # The iPhone app opens on the member app (N1).
+        "frontDoor": "app",
     }
     web = {p.name for p in (REPO / "web").iterdir()}
     assert {p.name for p in out.iterdir()} == web | {"config.json"}
@@ -174,3 +176,23 @@ def test_the_icon_has_no_transparency():
     # Ginger where the PWA's icon is paper, to tell the two apart at a
     # glance (scripts/native_assets.py).
     assert icon.getpixel((8, 8)) == (224, 123, 47)
+
+
+def test_the_model_is_reachable_from_the_app_and_kept_on_the_phone():
+    """N1: the packed pages are capacitor://localhost, so the site's /model/
+    is another origin. CloudFront answers CORS there with AWS's managed
+    policy (no new kind of resource), and the model's bytes are kept in
+    IndexedDB, as the app has no service worker to keep them."""
+    web_tf = (REPO / "infra" / "main" / "web.tf").read_text()
+    behaviour = web_tf[web_tf.index('path_pattern               = "/model/*"') :]
+    behaviour = behaviour[: behaviour.index("}")]
+    assert "response_headers_policy_id = local.managed_simple_cors" in behaviour
+    assert 'managed_simple_cors = "60669652-455b-4ae9-85a4-c4c02393f86c"' in web_tf
+    assert "aws_cloudfront_response_headers_policy" not in web_tf
+
+    recognition = (REPO / "web" / "recognition.js").read_text()
+    assert "fromSite(MANIFEST_PATH)" in recognition
+    assert "createObjectStore(name)" in recognition and '"files"' in recognition
+    for page in ("app.js", "social/scan.js"):
+        text = (REPO / "web" / page).read_text()
+        assert "base: isNative() ? getConfig().apiBase" in text, page

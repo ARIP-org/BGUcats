@@ -1518,13 +1518,6 @@ function recognitionPanel(predictions, picks = []) {
     run,
     replayOut,
   ]);
-  if (!recognition) {
-    replay.replaceChildren(
-      el("h4", { textContent: "Replay" }),
-      el("p", { className: "muted small", textContent: "Replay runs in the web app, not in the iPhone app yet." }),
-    );
-  }
-
   const loop = el("div", { className: "model-block" }, [
     el("h4", { textContent: "Contributors: the app's guess, their answer" }),
     picksResults(picks, catName),
@@ -1986,11 +1979,10 @@ async function boot() {
   for (const tab of document.querySelectorAll(".tab")) {
     tab.hidden = ADMIN_VIEWS.has(tab.dataset.view) && !isAdmin();
   }
-  // Not in the iPhone app yet (docs/ROADMAP.md, 2e): the model is published
-  // to the site's /model/, which inside the app is the app's own files, so
-  // every attempt would end in an error on the screen. Without it the Queue
-  // has no model strip, Capture no guesses and Stats no replay.
-  recognition = isNative() ? null : createRecognition({ api, post });
+  // The model is published to the site's /model/. Inside the iPhone app the
+  // site is another origin (the packed config's apiBase), reached with
+  // CORS (infra/main/web.tf) and kept on the phone (recognition.js, N1).
+  recognition = createRecognition({ api, post, base: isNative() ? getConfig().apiBase || "" : "" });
   capture = createCapture({
     el,
     button,

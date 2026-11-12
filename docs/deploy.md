@@ -375,12 +375,24 @@ To check a deployment answers the app's preflight (an empty 204 with the
 curl -si -X OPTIONS https://d2rysfyl47qmmz.cloudfront.net/api/cats -H "Origin: capacitor://localhost" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization" | head -1
 ```
 
-**What the builds cannot do yet** (`docs/ROADMAP.md`, 2e): the cat
-guesses (the model's files are fetched from `/model/`, which inside the
-app is not the server), and uploads with the app closed. The app does not
-try: it has no model strip on the Queue, no guesses in Capture (Done
-closes the encounter) and no replay on Stats (`web/app.js`, `isNative()`;
-`tests/web/test_native.py`).
+**The member app and the model, in the app** (N1 of `docs/app-plan/`,
+2026-11-12). The packed config says `"frontDoor": "app"`, so the app opens
+on the member app; its profile links to the desk (`/?desk`). The model is
+published to the site's `/model/`, which inside the app is another origin:
+the pages fetch it from `config.apiBase` (the site's address), and
+CloudFront answers that path with the AWS-managed response headers policy
+*Managed-SimpleCORS* (`infra/main/web.tf`, named by its ID, so no new
+resource kind). There is no service worker in the app, so
+`web/recognition.js` keeps the model's bytes in IndexedDB (`files` store)
+and downloads a version once. A build guesses only against a deployment
+that has the policy: merge, let staging deploy, then build. To check:
+
+```bash
+curl -sI https://d2rysfyl47qmmz.cloudfront.net/model/manifest.json -H "Origin: capacitor://localhost" | grep -i access-control-allow-origin
+```
+
+**What the builds cannot do yet** (`docs/ROADMAP.md`, 2e): uploads with
+the app closed.
 
 **Changing the shell.** `native/ios` is Capacitor's generated project with
 a few edits (`native/README.md`). The Xcode project is edited as text and

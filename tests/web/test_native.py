@@ -82,7 +82,7 @@ def open_native(app, browser, tmp_path):
     contexts = []
     problems = []
 
-    def open_as(sheet="signs in", email=ADMIN):
+    def open_as(sheet="signs in", email=ADMIN, door="desk"):
         # Service workers are allowed here, unlike in conftest: one test
         # is that the packed app registers none.
         context = browser.new_context(viewport=PHONE, device_scale_factor=2)
@@ -124,8 +124,14 @@ def open_native(app, browser, tmp_path):
             ),
         )
         page.token_requests = page_tokens
-        page.goto(url)  # no ?browser: being the app is enough
-        page.wait_for_selector("#login:not([hidden])")
+        # No ?browser: being the app is enough. The packed app's front door
+        # is the member app (N1); `?desk` keeps the desk, as on the site.
+        if door == "desk":
+            page.goto(url + "?desk")
+            page.wait_for_selector("#login:not([hidden])")
+        else:
+            page.goto(url)
+            page.wait_for_selector("[data-screen=sign-in]")
         return page
 
     yield open_as
@@ -236,10 +242,23 @@ def test_a_photo_taken_in_the_packed_app_reaches_the_queue(app, open_native):
     assert [p["status"] for p in newest["photos"]] == ["unlabeled"]
 
 
-def test_the_packed_app_never_asks_for_the_model(open_native, shot):
-    """The model is published to the site's /model/, which inside the app is
-    the app's own files: every attempt would end in an error on screen. So
-    the app has no cat guesses yet, and says so instead."""
+def test_the_packed_app_opens_the_member_app_and_signs_in_there(open_native, shot):
+    page = open_native(door="app", email=COLLABORATOR)
+    assert page.url.endswith("/app.html")
+    shot(page, "native-member-sign-in")
+    page.get_by_role("button", name="Sign in with Google").click()
+    page.wait_for_selector("[data-screen=frame]")
+    asked = json.loads(page.evaluate("sessionStorage.getItem('test.sheet')"))
+    assert asked["callbackScheme"] == "org.arip.bgucats"
+    page.wait_for_selector(".feed")
+    shot(page, "native-member-feed")
+
+
+def test_the_packed_app_asks_the_site_for_the_model(app, open_native, shot):
+    """The model is published to the site's /model/, which the app's pages
+    reach at the packed config's apiBase (N1), never at their own address.
+    With no model there, nothing on the screen breaks: Capture uploads, and
+    Done asks who it was, as on the site when the model is missing."""
     page = open_native(email=ADMIN)
     asked = []
     page.on(
@@ -248,22 +267,15 @@ def test_the_packed_app_never_asks_for_the_model(open_native, shot):
     page.click("#login-button")
     page.click(".tab[data-view=queue]")
     page.wait_for_selector(".session-list")
-    assert page.locator(".model-strip:not([hidden])").count() == 0
-
-    page.click(".tab[data-view=stats]")
-    page.get_by_text("Replay runs in the web app").wait_for()
-    assert page.get_by_role("button", name="Replay on labeled sessions").count() == 0
 
     page.click(".tab[data-view=capture]")
-    assert page.locator(".guess-setting, .guess-offer").count() == 0
     page.get_by_role("button", name="Start an encounter").click()
     photo = {"name": "cat.jpg", "mimeType": "image/jpeg", "buffer": sample_photo(97)}
     page.set_input_files(".system-camera input[accept='image/*']", photo)
     camera = page.get_by_role("dialog", name="Camera")
     camera.get_by_text("Everything is uploaded.").wait_for()
     camera.get_by_role("button", name="Done").click()
-    # With no guesses, Done closes the encounter: no "Who did you meet?".
-    page.get_by_role("button", name="Start an encounter").wait_for()
-    assert page.get_by_text("Who did you meet?").count() == 0
+    page.get_by_text("Who did you meet?").wait_for()
     shot(page, "native-capture-done")
-    assert asked == []
+    assert asked, "the app never asked for the model"
+    assert all(url.startswith(app.url + "/model/") for url in asked), asked

@@ -35,7 +35,9 @@
 // [0, 1]. Normalisation and L2-norm are inside the model (research/catreid/
 // export.py), so a dot product here is a cosine similarity.
 
-const MANIFEST_URL = "/model/manifest.json";
+// Under the site's /model/. The iPhone app's pages are packed inside it, so
+// there the site is another origin (`base`, the packed config's apiBase).
+const MANIFEST_PATH = "/model/manifest.json";
 const DB_NAME = "bgucats-recognition";
 // Frames embedded per session. Evenly spaced, never the first N: a burst's
 // first frames are the same instant (research/catreid/datasets.py).
@@ -50,7 +52,9 @@ const GALLERY_REFRESH_MS = 60 * 1000;
 // Vectors per upload request (the API's VECTOR_WRITE_BATCH).
 const VECTOR_UPLOAD_BATCH = 25;
 
-export function createRecognition({ api, post }) {
+export function createRecognition({ api, post, base = "" }) {
+  // A path the manifest names, from the site that published it.
+  const fromSite = (path) => (path.startsWith("/") ? base + path : path);
   const listeners = new Set();
   const state = {
     phase: "idle", // idle | unavailable | loading | learning | guessing | ready | error
@@ -84,8 +88,14 @@ export function createRecognition({ api, post }) {
   function db() {
     dbPromise ??= new Promise((resolve) => {
       try {
-        const req = indexedDB.open(DB_NAME, 1);
-        req.onupgradeneeded = () => req.result.createObjectStore("vectors");
+        // v2: "files", the model's bytes where no service worker keeps them
+        // (the iPhone app, N1).
+        const req = indexedDB.open(DB_NAME, 2);
+        req.onupgradeneeded = () => {
+          for (const name of ["vectors", "files"]) {
+            if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
+          }
+        };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => resolve(null);
       } catch {
@@ -176,6 +186,39 @@ export function createRecognition({ api, post }) {
     return out;
   }
 
+  // The model's bytes, kept on this device where no service worker does it:
+  // the iPhone app has none, and would download 30 MB on every launch.
+  // Only one version is kept.
+  const keepsFiles = () => !navigator.serviceWorker?.controller;
+
+  async function readFile(version) {
+    if (!keepsFiles()) return null;
+    const handle = await db();
+    if (!handle) return null;
+    return new Promise((resolve) => {
+      try {
+        const req = handle.transaction("files").objectStore("files").get(version);
+        req.onsuccess = () => resolve(req.result ? new Uint8Array(req.result) : null);
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  async function keepFile(version, bytes) {
+    if (!keepsFiles()) return;
+    const handle = await db();
+    if (!handle) return;
+    try {
+      const store = handle.transaction("files", "readwrite").objectStore("files");
+      store.clear();
+      if (bytes) store.put(bytes.buffer, version);
+    } catch {
+      /* downloaded again next time */
+    }
+  }
+
   async function sha256(bytes) {
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -184,7 +227,7 @@ export function createRecognition({ api, post }) {
   function load() {
     loading ??= (async () => {
       set({ phase: "loading", detail: "checking for a model", progress: null });
-      const res = await fetch(MANIFEST_URL, { cache: "no-store" });
+      const res = await fetch(fromSite(MANIFEST_PATH), { cache: "no-store" });
       if (res.status === 403 || res.status === 404) {
         // Not published yet (scripts/publish_model.py). Not an error.
         set({ phase: "unavailable", detail: "no model published" });
@@ -195,19 +238,22 @@ export function createRecognition({ api, post }) {
       set({ version: manifest.version });
       forgetOtherVersions();
 
-      await loadScript(manifest.runtime.script);
+      await loadScript(fromSite(manifest.runtime.script));
       const ort = window.ort;
-      ort.env.wasm.wasmPaths = manifest.runtime.wasmPath;
+      ort.env.wasm.wasmPaths = fromSite(manifest.runtime.wasmPath);
       // One thread: several need cross-origin isolation headers this site
       // does not send, and one is enough for a photo every second or so.
       ort.env.wasm.numThreads = 1;
 
-      const bytes = await download(manifest.file, manifest.bytes);
+      const kept = await readFile(manifest.version);
+      const bytes = kept || (await download(fromSite(manifest.file), manifest.bytes));
       // A truncated or stale cached copy would load and silently produce
       // vectors that match nothing.
       if ((await sha256(bytes)) !== manifest.sha256) {
+        if (kept) await keepFile(manifest.version, null);
         throw new Error("model file is corrupted (checksum mismatch)");
       }
+      if (!kept) await keepFile(manifest.version, bytes);
       set({ detail: "starting the model", progress: null });
       session = await ort.InferenceSession.create(bytes, {
         executionProviders: ["wasm"],

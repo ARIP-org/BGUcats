@@ -79,7 +79,14 @@ def bundle(site, config, out=OUT, web=WEB):
         shutil.rmtree(out)
     shutil.copytree(web, out)
 
-    packed = {**config, "apiBase": origin, "redirectUri": app_redirect()}
+    # The iPhone app opens on the member app (N1 of docs/app-plan/); the desk
+    # is a row in its profile.
+    packed = {
+        **config,
+        "apiBase": origin,
+        "redirectUri": app_redirect(),
+        "frontDoor": "app",
+    }
     (out / "config.json").write_text(json.dumps(packed, indent=2) + "\n")
     return packed
 

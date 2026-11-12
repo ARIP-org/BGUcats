@@ -46,6 +46,11 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
   name = "Managed-AllViewerExceptHostHeader"
 }
 
+locals {
+  # Managed-SimpleCORS: the same ID in every account (AWS's managed policies).
+  managed_simple_cors = "60669652-455b-4ae9-85a4-c4c02393f86c"
+}
+
 resource "aws_cloudfront_distribution" "web" {
   enabled             = true
   comment             = "bgucats admin labeling tool"
@@ -92,6 +97,25 @@ resource "aws_cloudfront_distribution" "web" {
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
     compress                 = true
+  }
+
+  # The recognition model (published by scripts/publish_model.py) is read
+  # by the iPhone app too, whose pages are capacitor://localhost: another
+  # origin, so its fetches need CORS (N1 of docs/app-plan/). AWS's own
+  # Managed-SimpleCORS response headers policy answers
+  # `Access-Control-Allow-Origin: *` on this path only. Named by its ID, not
+  # looked up with a data source, so neither the CI nor the deploy role
+  # needs to read response headers policies. The files are public already;
+  # caching stays off, as everywhere here.
+  ordered_cache_behavior {
+    path_pattern               = "/model/*"
+    target_origin_id           = "s3-web"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    response_headers_policy_id = local.managed_simple_cors
+    compress                   = true
   }
 
   # No custom_error_response mapping 403/404 to index.html: the UI is a single
