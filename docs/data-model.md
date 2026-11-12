@@ -115,17 +115,21 @@ dataset's.
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
 | Block | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
 | Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
-| Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters`, `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
-| A cat met | `USER#{id}` | `MET#{catId}` | `firstAt`, `lastAt`, `days` (different days), `lastDay`. And `METM#{yyyy-mm}#{catId}` for the month's count |
+| Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
+| A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. (`METM#{yyyy-mm}#{catId}`, planned for the month's count, is not written: `STATS#{yyyy-mm}.catsMet` holds it) |
 | Badge | `USER#{id}` | `BADGE#{badgeId}` | `at` |
-| An encounter, as the app counts it | `USER#{id}` | `ENC#{sessionId}` | `claimedCatId`, `labelCatId`, `rejected`, `day`, `regionId`, `postId`, `counted` (what the counters were last given for it) |
+| An encounter, as the app counts it **(since B3b)** | `USER#{id}` | `ENC#{sessionId}` | `userId`, `sessionId`, `claimedCatId` (the pick, or the post's claim if there was no pick), `labelCatId` (the session's label, following merges), `rejected`, `day` (the Israel date the encounter began), `regionId`, `postId`, `updatedAt` |
 
-`ENC` is the bridge between the tables. The capture route that records a
-pick writes it; the desk routes that assign, unassign, merge or reject an
-app encounter update `labelCatId` or `rejected` on it. The events Lambda
-sees the change and corrects `MET`, `STATS`, points and the post's cat.
-That is how D8's "taken back if the label disagrees" happens without a
-stream on the dataset table.
+`ENC` is the bridge between the tables (`src/common/encounters.py`). The
+capture route that records a pick writes it, and so does `POST /posts`;
+the desk routes that assign, unassign, merge or reject an app encounter
+set `labelCatId` and `rejected` on it from the dataset as it is then. The
+events Lambda sees the change, recounts the person's `MET` and `STATS`
+from all their `ENC` items, and puts the post on the label's cat. That is
+how D8's "taken back if the label disagrees" happens without a stream on
+the dataset table. Only for someone who has opened the app: a person with
+no `IDENTITY` item gets no `ENC`, and with the `social` flag off the desk
+never writes this table.
 
 ### Posts
 
@@ -169,7 +173,7 @@ Its index keys:
 
 There is no grade item: nobody grades a cat (D9). GPA is worked out from
 `pop` when the cats are read (`01-product.md`, "GPA"). `pop` is kept by
-the events Lambda from the same `ENC.counted` bookkeeping as "met", so a
+the events Lambda from the same `ENC` items as "met", so a
 label that corrects an encounter corrects the cat's popularity too.
 
 `lastFedAt` is the newest feeding that has not been removed. Removing a

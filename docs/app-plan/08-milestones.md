@@ -17,12 +17,12 @@ A session ticks its row in the pull request that finishes it.
 | ID | Milestone | State |
 |---|---|---|
 | F1 | The guardrails learn the new shapes | built 2026-11-12; **applied on staging 2026-11-12** and proven (`docs/MANUAL_STEPS.md`, step 17); production with its first promote |
-| F2 | Shared code, and one catalogue of every key | built 2026-11-12, in review |
-| F3 | The social table, the events Lambda, the seed | built 2026-11-12, in review. The local app and the seed learn the table in B1, with its first writes |
-| F4 | The member API: who you are, flags, who may sign up | built 2026-11-12, in review |
+| F2 | Shared code, and one catalogue of every key | merged 2026-11-12 |
+| F3 | The social table, the events Lambda, the seed | merged 2026-11-12. The local app and the seed learn the table in B3c |
+| F4 | The member API: who you are, flags, who may sign up | merged 2026-11-12 |
 | B1 | Profiles | |
-| B2 | Cats for members, regions | built 2026-11-12, in review |
-| B3 | Posts, the feed, likes | **B3a** built 2026-11-12, in review (posts, likes, the feed, publication); **B3b** next (labels correcting a post's cat and the counts) |
+| B2 | Cats for members, regions | merged 2026-11-12 |
+| B3 | Posts, the feed, likes | **B3a** merged 2026-11-12; **B3b** built 2026-11-12, in review (encounters, "met", labels correcting a post's cat); **B3c** next (the local app and the seed with people and posts, the smoke test posting) |
 | B4 | Name polls | |
 | B5 | Friends and invites (B5b: phone and contacts) | |
 | B6 | New-cat proposals | |
@@ -257,11 +257,25 @@ was built.
     conditional transaction, so a second delivery does nothing: the
     stand-in for moderation, which C1 replaces. Until there are friends
     (B5) the area is shown to the post's author only.
-  - **B3b, next:** the pick route writing `ENC`, the desk's label routes
-    updating it, and the events Lambda correcting a post's cat and the
-    counts when a label disagrees with the claim (D8); "met" and the
-    person's counters with it; the local app and the seed with people
-    and posts; the smoke test posting on staging.
+  - **B3b, built:** `ENC` written by the pick and by `POST /posts`, and
+    kept on the label by the desk's assign, unassign, merge and reject
+    (`src/common/encounters.py`); the events Lambda recounting the
+    person's `MET` and `STATS` from all their encounters on every change,
+    and moving a post to the label's cat with its likes, or removing it
+    if the encounter was rejected; one post per encounter; `counters` on
+    `GET /me` and `met` on a cat's page; likes conditional on the post's
+    cat, so a like and a correction never count on two cats. The desk's
+    role may get and update `IDENTITY#…` and `USER#…` items in the app's
+    table and nothing else there. Found on the way: the member API
+    shipped without `tzdata` (fixed in its own pull request first).
+    **Not built, on purpose:** points and a cat's popularity (B7, from the
+    same `ENC` items); an encounter made before its person first opened
+    the app is never counted.
+  - **B3c, next:** the local app (`tests/web/localapp.py`) with the
+    second table, `/api/v1` and the stream stand-in
+    (`tests/events/stream.py`); the seed with people, picks and posts; the
+    smoke test posting on staging and finding it. That is B3's "done
+    when" above.
 
 ### B4. Name polls
 

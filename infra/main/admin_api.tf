@@ -89,6 +89,23 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
         Resource = "${aws_s3_bucket.media.arn}/raw/*"
       },
       {
+        Sid    = "EncountersInTheApp"
+        Effect = "Allow"
+        # Since B3b: a pick and a label keep the person's encounter item in
+        # the app's table (docs/data-model.md, "ENC"). It finds the person
+        # by their sign-in and touches nothing else there.
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+        ]
+        Resource = aws_dynamodb_table.social.arn
+        Condition = {
+          "ForAllValues:StringLike" = {
+            "dynamodb:LeadingKeys" = ["IDENTITY#*", "USER#*"]
+          }
+        }
+      },
+      {
         Sid    = "ListVersionsToDelete"
         Effect = "Allow"
         Action = [
@@ -114,10 +131,12 @@ resource "aws_lambda_function" "admin" {
 
   environment {
     variables = {
-      TABLE_NAME     = aws_dynamodb_table.data.name
-      MEDIA_BUCKET   = aws_s3_bucket.media.id
-      SIGNUP_POLICY  = local.settings.signup_policy
-      SIGNUP_DOMAINS = join(",", local.signup_domains)
+      TABLE_NAME        = aws_dynamodb_table.data.name
+      MEDIA_BUCKET      = aws_s3_bucket.media.id
+      SIGNUP_POLICY     = local.settings.signup_policy
+      SIGNUP_DOMAINS    = join(",", local.signup_domains)
+      SOCIAL            = local.settings.social ? "on" : "off"
+      SOCIAL_TABLE_NAME = aws_dynamodb_table.social.name
     }
   }
 }

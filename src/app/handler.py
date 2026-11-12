@@ -9,7 +9,8 @@ keep the write order of spec §10.
 
 Since milestone F4: who you are (`GET /me`, which makes your account on
 the first call) and accepting the terms. Since B2: the cats. Since B3a:
-posts, likes and the feed. Each later milestone adds its routes to ROUTES.
+posts, likes and the feed. Since B3b: what a person met, on `/me` and on
+each cat. Each later milestone adds its routes to ROUTES.
 
 With the `social` flag off (production until the app opens), every route
 answers 404, and nothing here runs.
@@ -28,7 +29,7 @@ from zoneinfo import ZoneInfo
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from common import admission, api, ids, limits, media, regions, tables, text
+from common import admission, api, encounters, ids, limits, media, tables, text
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -243,7 +244,27 @@ def _me_payload(user, role):
 
 
 def _get_me(user, role, **_):
-    return _me_payload(user, role)
+    return {**_me_payload(user, role), "counters": _counters_of(user)}
+
+
+def _counters_of(user):
+    """What the events Lambda counted from the person's encounters (B3b):
+    in all, and this month. A second or two behind a pick or a label."""
+    month = _israel_today().isoformat()[:7]
+    keys = [
+        {"PK": user["PK"], "SK": "STATS#ALL"},
+        {"PK": user["PK"], "SK": f"STATS#{month}"},
+    ]
+    found = {item["SK"]: item for item in _batch_get(social_table, keys)}
+
+    def counts(sk):
+        item = found.get(sk, {})
+        return {
+            "catsMet": _number(item.get("catsMet")),
+            "encounters": _number(item.get("encounters")),
+        }
+
+    return {"all": counts("STATS#ALL"), "month": counts(f"STATS#{month}")}
 
 
 def _accept_terms(user, role, body, **_):
@@ -388,7 +409,7 @@ def _get_cats(**_):
     return {"cats": listed, "catOfTheDay": cat_of_the_day(listed, _israel_today())}
 
 
-def _get_cat(cat_id, **_):
+def _get_cat(user, cat_id, **_):
     cat = tables.get_one(data_table, f"CAT#{cat_id}")
     if cat is None:
         raise ApiError(404, "no such cat", code="gone")
@@ -399,6 +420,7 @@ def _get_cat(cat_id, **_):
         "cat": {
             **public_cat(cat, public, oldest),
             "bio": cat.get("bio") or "",
+            "met": _met(user, cat_id),
             "photos": [
                 {
                     "photoId": p["photoId"],
@@ -407,6 +429,19 @@ def _get_cat(cat_id, **_):
                 for p in photos
             ],
         }
+    }
+
+
+def _met(user, cat_id):
+    """The caller and this cat: how often and since when (B3b), or None."""
+    item = tables.get_one(social_table, user["PK"], f"MET#{cat_id}")
+    if item is None:
+        return None
+    return {
+        "encounters": _number(item.get("encounters")),
+        "days": _number(item.get("days")),
+        "firstDay": item.get("firstDay"),
+        "lastDay": item.get("lastDay"),
     }
 
 
@@ -511,11 +546,15 @@ def _create_post(user, body, **_):
         return {"post": _cards([existing], user)[0]}  # the same request, sent again
 
     session = _post_photos_ok(session_id, photo_ids, user["email"])
-    region = None
-    if body.get("shareRegion") and session.get("coarseLat") is not None:
-        region = regions.region_at(
-            float(session["coarseLat"]), float(session["coarseLon"])
-        )
+    place = encounters.place_fields(session)
+    region = place["regionId"] if body.get("shareRegion") else None
+    enc = tables.get_one(social_table, user["PK"], f"ENC#{session_id}") or {}
+    if enc.get("postId") and enc["postId"] != post_id:
+        earlier = tables.get_one(social_table, f"POST#{enc['postId']}") or {}
+        if earlier.get("status") not in (None, "removed"):
+            raise ApiError(
+                409, "this encounter is posted already", code="already_posted"
+            )
     limits.take(social_table, f"{user['userId']}#posts", POSTS_PER_DAY, 86400)
 
     now = api.now_iso()
@@ -543,6 +582,22 @@ def _create_post(user, body, **_):
         return {
             "post": _cards([tables.get_one(social_table, f"POST#{post_id}")], user)[0]
         }
+    # The encounter learns its post, and the events Lambda puts the post on
+    # the label's cat when there is one (B3b). Posting without picking
+    # still counts as meeting the cat claimed here.
+    encounters.update(
+        social_table,
+        user["userId"],
+        session_id,
+        {
+            **place,
+            "userId": user["userId"],
+            "claimedCatId": cat_id,
+            "postId": post_id,
+            "updatedAt": now,
+        },
+        keep=("claimedCatId",),
+    )
     return {"post": _cards([post], user)[0]}
 
 
@@ -628,7 +683,7 @@ def _like(user, post_id, **_):
                 "ConditionExpression": "attribute_not_exists(PK)",
             }
         },
-        _post_likes(post_id, 1),
+        _post_likes(post_id, 1, post.get("catId")),
     ]
     if post.get("catId"):
         items.append(_cat_counts(post["catId"], likes=1))
@@ -637,6 +692,10 @@ def _like(user, post_id, **_):
     except client.exceptions.TransactionCanceledException as exc:
         reasons = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
         if reasons and reasons[0] != "ConditionalCheckFailed":
+            fresh = tables.get_one(social_table, f"POST#{post_id}") or {}
+            if fresh.get("status") == "visible":
+                # Its cat was corrected between the read and the write.
+                raise ApiError(503, "the post changed; try again", code="try_again")
             raise ApiError(404, "no such post", code="gone")
         # Already liked: the same answer as the first time.
     return _like_state(post_id, True)
@@ -655,31 +714,44 @@ def _unlike(user, post_id, **_):
                 "ConditionExpression": "attribute_exists(PK)",
             }
         },
-        _post_likes(post_id, -1),
+        _post_likes(post_id, -1, post.get("catId")),
     ]
     if post.get("catId") and post.get("status") == "visible":
         items.append(_cat_counts(post["catId"], likes=-1))
     try:
         client.transact_write_items(TransactItems=items)
-    except client.exceptions.TransactionCanceledException:
-        pass  # not liked, or the post is gone: either way, not liked now
+    except client.exceptions.TransactionCanceledException as exc:
+        reasons = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
+        fresh = tables.get_one(social_table, f"POST#{post_id}") or {}
+        if reasons and reasons[0] != "ConditionalCheckFailed" and fresh:
+            raise ApiError(503, "the post changed; try again", code="try_again")
+        # Not liked, or the post is gone: either way, not liked now.
     return _like_state(post_id, False)
 
 
-def _post_likes(post_id, delta):
+def _post_likes(post_id, delta, cat_id):
     """The post's like count, for a transaction. A like needs the post
-    visible; taking one back needs only the post."""
+    visible; taking one back needs only the post. Both need its cat to be
+    the one whose count moves with it: the events Lambda moves a post to
+    the label's cat, likes and all (B3b)."""
+    values = {":d": delta}
+    if cat_id is None:
+        values[":nocat"] = None
+        same_cat = "(attribute_not_exists(catId) OR catId = :nocat)"
+    else:
+        values[":cat"] = cat_id
+        same_cat = "catId = :cat"
     update = {
         "TableName": social_table.name,
         "Key": {"PK": f"POST#{post_id}", "SK": "META"},
         "UpdateExpression": "ADD likeCount :d",
-        "ExpressionAttributeValues": {":d": delta},
-        "ConditionExpression": "attribute_exists(PK)",
+        "ExpressionAttributeValues": values,
+        "ConditionExpression": f"attribute_exists(PK) AND {same_cat}",
     }
     if delta > 0:
-        update["ConditionExpression"] = "#s = :visible"
+        update["ConditionExpression"] = f"#s = :visible AND {same_cat}"
         update["ExpressionAttributeNames"] = {"#s": "status"}
-        update["ExpressionAttributeValues"][":visible"] = "visible"
+        values[":visible"] = "visible"
     return {"Update": update}
 
 
