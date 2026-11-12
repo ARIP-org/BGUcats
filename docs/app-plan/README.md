@@ -69,8 +69,10 @@ work is a frozen copy (`OWNER_STEPS.md`, O2).
 These bind every session, whatever its prompt says. They are on top of
 `CLAUDE.md`, not instead of it.
 
-1. **One milestone, one branch, one pull request.** Take the milestone's
-   ID from `08-milestones.md`. Do not start one whose "Needs" names a
+1. **One milestone, one branch, one pull request.** (The one exception,
+   the owner's choice of 2026-11-12: this plan, the domain script and F1
+   went in as a single pull request.) Take the milestone's ID from
+   `08-milestones.md`. Do not start one whose "Needs" names a
    decision the owner has not answered in `DECISIONS.md`, or an owner step
    not marked done in `OWNER_STEPS.md`. Say what blocks it and stop. A
    decision marked "may proceed on the default" is the exception.

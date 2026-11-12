@@ -1243,11 +1243,27 @@ past the allowlist: to be solved when outside testers are wanted.
 
 ## 16. A domain name, bought through AWS (done 2026-11-12)
 
-**Done by the owner on 2026-11-12.** The domain is registered; its DNS is
-not set up, on purpose: that is N4 of the app plan, and the owner will
-start it from a codespace when it is needed. Still to record here: the
-domain's name, and the account it was registered in (this step bought it
-in the management account).
+**Done by the owner on 2026-11-12, by hand, not with the script below.**
+The domain is registered and nothing else: no DNS record, no
+certificate. That is N4 of the app plan, which the owner will start from
+a codespace with Claude when it is needed.
+
+Not recorded yet: the domain's name and the account that holds it. The
+session that starts N4 finds both first, read-only, before anything
+else:
+
+```bash
+aws route53domains list-domains --region us-east-1 --profile mgmt-ro
+```
+
+The organization's policy denies domain registration in production and
+staging, so a purchase made in the AWS console can only be in the
+management account. If that list is empty, the domain was bought at
+another registrar: ask the owner which, because then its DNS is not in
+AWS and N4's brief changes.
+
+The script and the steps below stay, for a second domain or a renewal
+check (`infra/scripts/domain.sh status <name>`).
 
 
 `docs/app-plan/OWNER_STEPS.md`, O9. The owner's decision of 2026-11-12:

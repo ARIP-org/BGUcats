@@ -28,7 +28,7 @@ set its row here to done with the date.
 | O6 | Google: sign-in open to more than test users | F4 on production | Google Cloud console | |
 | O7 | Apple: push | N2 | Apple Developer | |
 | O8 | Apple: Sign in with Apple | N6 | Apple Developer, Cognito | |
-| O9 | A domain, its DNS, its certificate | buying: now (A6). Wiring: N4 | AWS, the management account, from a codespace | **registered by the owner 2026-11-12.** DNS not set up yet, on purpose: N4. Name to record |
+| O9 | A domain, its DNS, its certificate | buying: now (A6). Wiring: N4 | AWS, the management account, from a codespace | **registered by the owner by hand, 2026-11-12.** No DNS yet, on purpose: N4. Its name and account are found at N4's start (`docs/MANUAL_STEPS.md`, step 16) |
 | O10 | Privacy policy, terms, a support address | L1 (draft), L2 (final) | the landing site | |
 | O11 | The blocklist and the gold set | C3 | files in the repo | |
 | O12 | The campus regions and the feeding spots | nothing: made-up ones until the owner sends them | a file in the repo | later (the owner, 2026-11-12) |
