@@ -319,8 +319,9 @@ product). Its old sessions and photos stay in the table with
 
 - **The screens have tests** (`tests/web`, since 2026-11-10): a headless
   Chromium at a phone's size opens the real `web/` against the real API and
-  process handlers, with DynamoDB and S3 mocked on localhost
-  (`tests/web/localapp.py`). No AWS, no real photo. A change to a screen
+  process handlers (and, since B3c, the member API and the events Lambda,
+  fed by a stand-in for the table's stream), with DynamoDB and S3 mocked
+  on localhost (`tests/web/localapp.py`). No AWS, no real photo. A change to a screen
   comes with its test, and `make screenshots` leaves a picture of every
   screen in `build/screenshots/`; CI keeps them with each run. `make
   local-app` runs the same app to click through by hand. Sign-in and the

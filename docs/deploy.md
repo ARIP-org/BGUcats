@@ -44,10 +44,15 @@ cancelled: a half-finished apply is worse than a late one.
 7. **Staging only, the smoke test** (`scripts/smoke_staging.py`): one
    made-up photo goes through the deployed pipeline (the record, the
    upload, the process Lambda, the queue, a fetched thumbnail), a
-   collaborator is refused the queue, and the photo is deleted again. It
-   runs under a role that can invoke the admin Lambda and nothing else,
-   and that exists in the staging account alone. Its six lines are in the
-   run's summary.
+   collaborator is refused the queue, posts the encounter in the member
+   app and the admin finds it in the feed once the events Lambda has
+   published it (since B3c), and the photo is deleted again, its post
+   with it. It runs under a role that can invoke the two API Lambdas
+   (`bgucats-admin`, `bgucats-app`) and nothing else, and that exists in
+   the staging account alone. Its seven lines are in the run's summary.
+   It leaves a removed post behind in the app's table each time, and the
+   seed's collaborator may post 20 times a day, so more than 20 deploys
+   in one day would fail it at step 6 with `rate_limited`.
 8. The commit gets the status `deployed/staging` or `deployed/production`,
    a green mark next to it on GitHub that links to the run. On staging it
    means applied **and** the smoke test passed: a commit whose smoke test

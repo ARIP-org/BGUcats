@@ -10,7 +10,9 @@ Two uses of one piece of code:
 Nothing is written to the table or the bucket directly, except the one
 member row every environment starts from. Each cat, encounter and photo
 goes the way a phone sends it: the encounter's record, a presigned upload
-to storage, the confirmation, and then the label an admin gives. On
+to storage, the confirmation, and then the label an admin gives. Since
+B3c, a few made-up people also open the member app (`/api/v1/`), answer
+"Who did you meet?", post their encounter and like each other's posts. On
 staging that means the deployed admin Lambda is invoked with the event API
 Gateway would hand it, the photo is posted to the real bucket, and the
 real process Lambda is started by S3's own event. So a seed that finishes
@@ -47,6 +49,16 @@ SEED_ADMIN = "seed-admin@bgucats.invalid"
 SEED_COLLABORATOR = "seed-collaborator@bgucats.invalid"
 
 CATS = ("Mitzi", "Shunra", "Pilpel", "Gingi", "Luna", "Kotik")
+
+# Made-up people for the member app on staging: each meets one cat, says
+# which, posts it, and likes the others' posts. (cat, words) per person.
+PEOPLE = {
+    "seed-maya@bgucats.invalid": ("Mitzi", "Asleep on the library steps again."),
+    "seed-daniel@bgucats.invalid": ("Gingi", "Followed me all the way to the lab."),
+    "seed-noa@bgucats.invalid": ("Luna", "Not sure, but I think this is Luna?"),
+}
+# What a pick says made the guess: seeded picks are never the model's.
+SEED_MODEL = "seed-made-up"
 
 
 # Enough for the largest seed there is: a salt below 10**8 plus ten times
@@ -134,10 +146,10 @@ class Campus:
     def add_cat(self, name):
         return self._ok("POST", "/api/cats", {"name": name})["catId"]
 
-    def add_encounter(self, photos=2, seed=0, cat=None):
+    def add_encounter(self, photos=2, seed=0, cat=None, who=None):
         """An encounter with photos, through the same three calls the phone
         makes for each: the record, the upload to storage, the confirmation."""
-        who = self.collaborator
+        who = who or self.collaborator
         session_id = str(ULID())
         self._ok("POST", "/api/encounters", {"sessionId": session_id}, who)
         for n in range(photos):
@@ -167,6 +179,58 @@ class Campus:
     def label(self, session_id, cat_id):
         self._ok("POST", f"/api/sessions/{session_id}/assign", {"catId": cat_id})
 
+    # ---------------------------------------------------- the member app
+
+    def join(self, email):
+        """A person opens the member app: the account is made by their
+        first call, then they accept the terms."""
+        me = self._ok("GET", "/api/v1/me", None, email)
+        if me["terms"]["required"]:
+            body = {"version": me["terms"]["current"]}
+            me = self._ok("POST", "/api/v1/me/terms", body, email)
+        return me
+
+    def pick(self, session_id, cat_id, who):
+        """The answer to "Who did you meet?", as Capture sends it."""
+        self._ok(
+            "POST",
+            f"/api/encounters/{session_id}/pick",
+            {
+                "modelVersion": SEED_MODEL,
+                "choice": "cat",
+                "catId": cat_id,
+                "shown": [cat_id],
+                "ranked": [{"catId": cat_id, "score": 0.5}],
+                "photoCount": 1,
+            },
+            who,
+        )
+
+    def post(self, session_id, cat_id, words, who):
+        """The encounter, posted with its photos and a line of text."""
+        photos = self._ok("GET", f"/api/sessions/{session_id}")["photos"]
+        post_id = str(ULID())
+        self._ok(
+            "POST",
+            "/api/v1/posts",
+            {
+                "postId": post_id,
+                "sessionId": session_id,
+                "photoIds": [p["photoId"] for p in photos][:4],
+                "claim": {"catId": cat_id},
+                "text": words,
+                "shareRegion": False,
+            },
+            who,
+        )
+        return post_id
+
+    def like(self, post_id, who):
+        self._ok("PUT", f"/api/v1/posts/{post_id}/like", None, who)
+
+    def posts_of(self, email):
+        return self._ok("GET", "/api/v1/me/posts", None, email)["cards"]
+
     def wait_until_processed(self, session_id, timeout=90):
         """Until the process Lambda has measured every photo of the session.
         Where S3's event starts it, that takes a few seconds."""
@@ -184,16 +248,50 @@ class Campus:
 
     def small(self):
         """For the browser tests: three cats, two labeled encounters and two
-        waiting in the queue."""
+        waiting in the queue. The collaborator has opened the member app,
+        said the first encounter was Mitzi and posted it; the admin liked it."""
         self.add_member(self.collaborator)
+        self.join(self.collaborator)
+        self.join(self.admin)
         cats = {name: self.add_cat(name) for name in CATS[:3]}
-        self.label(self.add_encounter(photos=3, seed=1), cats["Mitzi"])
+        first = self.add_encounter(photos=3, seed=1)
+        self.pick(first, cats["Mitzi"], self.collaborator)
+        post = self.post(
+            first, cats["Mitzi"], "Asleep on the library steps.", self.collaborator
+        )
+        self.like(post, self.admin)
+        self.label(first, cats["Mitzi"])
         self.label(self.add_encounter(photos=2, seed=2), cats["Shunra"])
         queue = [
             self.add_encounter(photos=2, seed=3),
             self.add_encounter(photos=1, seed=4),
         ]
-        return {"cats": cats, "queue": queue}
+        return {"cats": cats, "queue": queue, "posts": [post]}
+
+    def people(self, cats, say=print):
+        """For staging: PEOPLE open the app, each meets their cat, says so,
+        posts it, and the others like it. A person who has a post already
+        is left alone, so running it again adds nothing."""
+        made = []
+        for number, (email, (name, words)) in enumerate(PEOPLE.items()):
+            self.add_member(email)
+            self.join(email)
+            if self.posts_of(email):
+                say(f"  {email.split('@')[0]}: posted already")
+                continue
+            session = self.add_encounter(
+                photos=2, seed=500 + number, cat=CATS.index(name), who=email
+            )
+            self.wait_until_processed(session)
+            self.pick(session, cats[name], email)
+            made.append((email, self.post(session, cats[name], words, email)))
+            self.label(session, cats[name])
+            say(f"  {email.split('@')[0]}: met {name} and posted it")
+        for email, post in made:
+            for other in PEOPLE:
+                if other != email:
+                    self.like(post, other)
+        return made
 
     def full(self, say=print):
         """For staging: six cats with two labeled encounters each, so every
@@ -238,7 +336,8 @@ class Campus:
             self.wait_until_processed(session)
             queue.append(session)
         say(f"  queue: {waiting} waiting already, {len(queue)} added")
-        return {"cats": cats, "queue": queue}
+        posts = self.people(cats, say=say)
+        return {"cats": cats, "queue": queue, "posts": posts}
 
 
 # ------------------------------------------------------------------ staging
@@ -281,19 +380,35 @@ def staging_session():
     return session
 
 
+def function_for(path):
+    """Which Lambda API Gateway hands a path to: `/api/v1/` is the member
+    API's (infra/main/app_api.tf), the rest the desk's."""
+    return "bgucats-app" if path.startswith("/api/v1/") else "bgucats-admin"
+
+
 def staging_api(session):
-    """api(method, path, body, email) against staging: the deployed admin
-    Lambda, invoked with the event API Gateway would hand it."""
+    """api(method, path, body, email) against staging: the deployed Lambda
+    for the path, invoked with the event API Gateway would hand it."""
+    from botocore.exceptions import ClientError
+
     functions = session.client("lambda")
 
     def api(method, path, body=None, email=SEED_ADMIN, query=None):
         event = gateway_event(method, path, body, email, query)
-        answer = functions.invoke(
-            FunctionName="bgucats-admin", Payload=json.dumps(event)
-        )
+        name = function_for(path)
+        try:
+            answer = functions.invoke(FunctionName=name, Payload=json.dumps(event))
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "AccessDeniedException":
+                raise
+            raise RuntimeError(
+                f"not allowed to invoke {name}. If it is bgucats-app: staging's "
+                "bootstrap has not been applied since B3c (docs/MANUAL_STEPS.md, "
+                "step 18)."
+            ) from error
         payload = json.loads(answer["Payload"].read())
         if "statusCode" not in payload:
-            raise RuntimeError(f"bgucats-admin failed on {method} {path}: {payload}")
+            raise RuntimeError(f"{name} failed on {method} {path}: {payload}")
         return payload["statusCode"], json.loads(payload["body"])
 
     return api

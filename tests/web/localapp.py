@@ -4,9 +4,13 @@ looking at a change before it is merged.
 What runs is the real thing wherever it can be:
 
 - `web/` is served as it is (the frontend has no build step);
-- every `/api/` request is handed to the real `admin.handler`, in an event
+- every `/api/` request is handed to the real `admin.handler`, and every
+  `/api/v1/` request to the real member API, `app.handler`, in an event
   shaped like API Gateway's, with the email claim read from the token the
   page sent;
+- after every request that writes, the changes to the app's table are
+  handed to the real events Lambda, the way its stream does in AWS
+  (tests/events/stream.py);
 - DynamoDB and S3 are moto's server on a local port, so the presigned URLs
   the handler signs really work in the browser: photos load, and Capture's
   upload really lands in a bucket;
@@ -37,6 +41,8 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 os.environ.setdefault("TABLE_NAME", "bgucats-data-test")
+os.environ.setdefault("DATA_TABLE_NAME", os.environ["TABLE_NAME"])
+os.environ.setdefault("SOCIAL_TABLE_NAME", "bgucats-social-test")
 os.environ.setdefault("MEDIA_BUCKET", "bgucats-media-test")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
@@ -48,8 +54,11 @@ from botocore.config import Config
 from moto.server import ThreadedMotoServer
 
 from admin import handler as admin_handler
+from app import handler as app_handler
+from events import handler as events_handler
 from process import handler as process_handler
 from seed_campus import Campus, gateway_event, sample_photo  # noqa: F401 (tests import it)
+from tests.events.stream import Stream
 
 WEB = Path(__file__).resolve().parents[2] / "web"
 
@@ -142,38 +151,57 @@ class LocalApp:
                 ]
             },
         )
+        # Both tables have the same keys and indexes (infra/main/dynamodb.tf,
+        # social.tf); the stream is played by self.stream.
         keys = ["PK", "SK", "GSI1PK", "GSI1SK", "GSI2PK", "GSI2SK", "GSI3PK", "GSI3SK"]
-        dynamodb.create_table(
-            TableName=admin_handler.TABLE_NAME,
-            AttributeDefinitions=[
-                {"AttributeName": name, "AttributeType": "S"} for name in keys
-            ],
-            KeySchema=[
-                {"AttributeName": "PK", "KeyType": "HASH"},
-                {"AttributeName": "SK", "KeyType": "RANGE"},
-            ],
-            GlobalSecondaryIndexes=[
-                {
-                    "IndexName": index,
-                    "KeySchema": [
-                        {"AttributeName": f"{index}PK", "KeyType": "HASH"},
-                        {"AttributeName": f"{index}SK", "KeyType": "RANGE"},
-                    ],
-                    "Projection": {"ProjectionType": "ALL"},
-                }
-                for index in ("GSI1", "GSI2", "GSI3")
-            ],
-            BillingMode="PAY_PER_REQUEST",
-        )
+        for name in (admin_handler.TABLE_NAME, app_handler.SOCIAL_TABLE_NAME):
+            dynamodb.create_table(
+                TableName=name,
+                AttributeDefinitions=[
+                    {"AttributeName": key, "AttributeType": "S"} for key in keys
+                ],
+                KeySchema=[
+                    {"AttributeName": "PK", "KeyType": "HASH"},
+                    {"AttributeName": "SK", "KeyType": "RANGE"},
+                ],
+                GlobalSecondaryIndexes=[
+                    {
+                        "IndexName": index,
+                        "KeySchema": [
+                            {"AttributeName": f"{index}PK", "KeyType": "HASH"},
+                            {"AttributeName": f"{index}SK", "KeyType": "RANGE"},
+                        ],
+                        "Projection": {"ProjectionType": "ALL"},
+                    }
+                    for index in ("GSI1", "GSI2", "GSI3")
+                ],
+                BillingMode="PAY_PER_REQUEST",
+            )
         self.table = dynamodb.Table(admin_handler.TABLE_NAME)
+        self.social = dynamodb.Table(app_handler.SOCIAL_TABLE_NAME)
+        self.stream = Stream(self.social)
 
-        # Both handlers bind their clients when they are imported. Point
-        # them here for as long as this app runs, then put the originals back.
+        # The handlers bind their clients and settings when they are
+        # imported. Point them here for as long as this app runs, with the
+        # app on as on staging, then put the originals back.
         self._patched = []
-        for module in (admin_handler, process_handler):
-            for name, value in (("table", self.table), ("s3", self.s3)):
-                self._patched.append((module, name, getattr(module, name)))
-                setattr(module, name, value)
+        for module, name, value in (
+            (admin_handler, "table", self.table),
+            (admin_handler, "s3", self.s3),
+            (admin_handler, "social_table", self.social),
+            (admin_handler, "SOCIAL", True),
+            (process_handler, "table", self.table),
+            (process_handler, "s3", self.s3),
+            (app_handler, "data_table", self.table),
+            (app_handler, "social_table", self.social),
+            (app_handler, "s3", self.s3),
+            (app_handler, "MEDIA_BUCKET", self.bucket),
+            (app_handler, "SOCIAL", True),
+            (app_handler, "FLAGS", {"social": True}),
+            (events_handler, "social_table", self.social),
+        ):
+            self._patched.append((module, name, getattr(module, name)))
+            setattr(module, name, value)
 
     def _stop_aws(self):
         for module, name, original in self._patched:
@@ -183,14 +211,22 @@ class LocalApp:
     # ------------------------------------------------------------- the API
 
     def api(self, method, path, body=None, email=ADMIN, query=None):
-        """One API call, as API Gateway would deliver it. Returns (status, json)."""
+        """One API call, as API Gateway would deliver it. Returns (status, json).
+
+        `/api/v1/` goes to the member API, the rest to the desk's, as the
+        two routes in infra/main/app_api.tf and admin_api.tf divide them.
+        The events Lambda has run by the time a write answers: in AWS it is
+        a second or two behind, which the app never relies on.
+        """
         event = gateway_event(method, path, body, email, query)
+        target = app_handler if path.startswith("/api/v1/") else admin_handler
         with self._lock:
             if method == "GET":
                 self._process_new_uploads()
-            response = admin_handler.handler(event, None)
+            response = target.handler(event, None)
             if method != "GET":
                 self._process_new_uploads()
+                self.stream.settle()
         return response["statusCode"], json.loads(response["body"])
 
     def _process_new_uploads(self):
@@ -271,7 +307,7 @@ class LocalApp:
                     "text/plain",
                     [
                         ("access-control-allow-origin", "*"),
-                        ("access-control-allow-methods", "GET,POST,PATCH,DELETE"),
+                        ("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE"),
                         ("access-control-allow-headers", "authorization,content-type"),
                         ("access-control-max-age", "3600"),
                     ],
@@ -323,7 +359,7 @@ class LocalApp:
                         200, file.read_bytes(), kind or "application/octet-stream"
                     )
 
-            do_POST = do_PATCH = do_DELETE = _api
+            do_POST = do_PUT = do_PATCH = do_DELETE = _api
 
         self._web = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self._web.server_address[1]}"
