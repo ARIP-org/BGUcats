@@ -15,6 +15,12 @@ constraints that are easy to violate by reflex. `docs/notes.md` is the
 traps behind them, each with where its story is: read it before touching
 DynamoDB reads, the pipeline or the agents, and add to it.
 
+**The app from the prototype is planned, not started** (the owner,
+2026-11-12): feed, posts, polls, friends, moderation and re-ranking, for
+TestFlight. `docs/app-plan/` is the plan; read its `README.md` before any
+work on it. The plan lifts none of the rules below by itself: the pull
+request that lifts a rule edits that rule here, in the same change.
+
 The addendum supersedes the spec's "no machine learning of any kind" in
 phase 1: a frozen recognition model runs in the browser today (1c below). It
 ranks; it never decides.
@@ -72,7 +78,7 @@ for animal individual discrimination exist, and MegaDescriptor is one.
 | 1c Measure on BGU data | LIVE since 2026-10-29 | the frozen v0 model guesses every queue session, shown on its card; replay over labeled sessions; "Who did you meet?" after each encounter in Capture. No guess was recorded before the 2026-10-29 null-`catId` fix. Shared vectors appear after an admin first opens the Queue |
 | 2 Enrollment + burst-query UX | NEXT | video enrollment, multi-frame query, frozen v0 weights. Re-encounters of known cats are what move the numbers |
 | 3 Fine-tuning on BGU data | CONDITIONAL | only if 1c numbers justify it |
-| 4 Read path + mobile app | DEFERRED | public API, browse UI, voting |
+| 4 Read path + mobile app | PLANNED 2026-11-12, NOT STARTED | public API, browse UI, voting; and the feed, friends, moderation and re-ranking of `docs/app-plan/`. Waits on the owner's decisions there |
 
 **1b has no dependency on 1a.** It reads public datasets from disk and touches no
 Lambda, no S3 bucket, and no DynamoDB table.
@@ -191,7 +197,9 @@ blocked on someone else.
   one deliberate early piece: Capture's cat guesses after each encounter (1c), shown only
   to signed-in collaborators and admins, never to the public. It is there
   to reward re-encounters and to measure the "pick from 3" loop, not as the
-  Identify feature; see "Recognition in the app" below.
+  Identify feature; see "Recognition in the app" below. Planned in
+  `docs/app-plan/`; this rule stands until the milestone that lifts it
+  (F4 there) changes this line.
 - **Do not attach Lambdas to a VPC.** No NAT gateway, no subnets, no security
   groups. Lambda outside a VPC has full internet access; S3, DynamoDB and the
   Telegram API are all public endpoints. (§8.1)

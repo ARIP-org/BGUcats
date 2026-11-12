@@ -1,42 +1,45 @@
 # Moderation
 
-**Nothing here is built, and the decision to build it has not been taken.**
-This is the design note for the moderation layer the phase 4 app will need,
-written 2026-11-12 after reading the prototype's screens and Google's
-Decision 1 model page. It records what the surface actually is, what a model
-can and cannot do about it, and the one place a model must not go.
+**The assessment behind the moderation layer. The build plan is
+`docs/app-plan/06-moderation.md`.**
 
-Phase 4 is DEFERRED in `CLAUDE.md` and the spec's §10 still says no public
-read path. Read those first; this does not amend them.
+Written on the morning of 2026-11-12, after reading the prototype's
+screens and Google's Decision 1 model page, when nothing had been decided.
+That evening the owner decided to build the app and this layer
+(`docs/app-plan/`). This file is kept for the reasoning: what a model can
+and cannot do here, and the one place it must not go. Where the plan and
+this file differ, the plan is newer.
 
 The prototype the surface is read from:
-`https://claude.ai/artifact/BmuxNRNA2SGsuoUXT2f9k6` (19 boards, 2026-11-11).
+`https://claude.ai/artifact/BmuxNRNA2SGsuoUXT2f9k6`.
 
-## The surface is small, and that is a design choice already made
+## The surface, and how it changed in a day
 
-Every field in the prototype a person can type into or upload:
+Every field in the prototype a person can type into or upload, as of the
+evening of 2026-11-12 (version `1794478681-698e`, 26 boards):
 
 | Surface | Where | Bound |
 |---|---|---|
+| **Post description** | New post | 280 characters |
 | Cat name suggestion | Cat profile, name poll | 24 characters |
+| **Name idea for a new cat** | New cat | 24 characters |
 | Display name | Profile page | 30 characters |
 | Phone number | Profile page | `type="tel"`, 13 characters |
 | Avatar | Profile page | `type="file"` |
-| Cat photos | Scanner → Post | image |
+| Cat photos | Camera → post, one to four | image |
 | Report / Block | Friends, the ••• menu | human-initiated, no text |
 
-Search is a seventh input and is not a surface: nothing is stored or shown
-to anyone else.
+Search is not a surface: nothing is stored or shown to anyone else.
 
-**What is not there: a caption field.** No `<textarea>` anywhere in the
-232 KB Feed component, and no comments. A post is a photo plus a cat
-identity. The name poll is a 24-character suggestion and votes.
-
-That is the cheapest moderation decision available, and the prototype
-already makes it. A caption is where the cost lives: unbounded text carries
-harassment that no 24-character name can, and it turns a bounded problem
-into a staffed one. Adding one is a product decision with a moderation bill
-attached, not a UI tweak.
+**The morning version (19 boards) had no post description**, no
+`<textarea>` anywhere, and this file said so: "the cheapest moderation
+decision available, and the prototype already makes it". By the evening
+the design had a 280-character description, a new-cat form and posting
+without scanning. The point stands, with the sign reversed: free text on a
+post is where the moderation cost lives. It carries harassment that no
+24-character name can, and it is what makes the layer below necessary
+rather than optional. There are still no comments; keeping it that way is
+worth more than any classifier.
 
 Two other things in the prototype are bigger changes than they look, and
 belong to whoever decides phase 4 rather than to this note: a phone number
@@ -159,8 +162,10 @@ production.
 
 ## Cost
 
-Input is $0.75 per million tokens (owner, 2026-11-12; the model page points
-at the pricing page rather than naming it). Output is free, there being none.
+Input is $0.75 per million tokens (owner, 2026-11-12). The pricing page,
+read the same evening, said $0.10 on the paid tier and that free-tier
+requests are used to improve Google's products, so the key must be on the
+paid tier. Output is free, there being none.
 
 - A 24-character name with six questions: a few hundred input tokens, about
   $0.0002. Ten thousand names, about $2.
@@ -179,8 +184,12 @@ nobody has measured this one on BGU names in four languages.
 
 ## The honest-percentage problem
 
-The prototype's scanner shows "92% / 74% / 61% match" over "Closest matches
-from 48 campus cats".
+**Resolved in the design the same day:** the evening version's "Which
+cat?" shows three photos and no numbers. Kept here because the reasoning
+applies to any future screen that wants to show a score.
+
+The morning prototype's scanner showed "92% / 74% / 61% match" over
+"Closest matches from 48 campus cats".
 
 The model manifest ships `"thresholds": null` on purpose, because on BGU
 photos the top scores of right guesses, wrong guesses and never-seen cats
