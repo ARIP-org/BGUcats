@@ -317,7 +317,10 @@ product). Its old sessions and photos stay in the table with
   (`tests/web/test_client_rules.py`). Signing in, the API client and the
   photo-address cache are shared from `web/lib/`. Which page opens first
   is `frontDoor` in `config.json` (`desk` in both accounts until the app
-  can do something); `?desk` keeps the desk. `infra/main/web.tf` uploads
+  can do something); `?desk` keeps the desk, and each page links to the
+  other. Its capture flow (E3, `web/social/scan.js`) writes through the
+  same outbox as Capture, in the same write order, and adds the proposal
+  and the post after the photos. `infra/main/web.tf` uploads
   every file under `web/`, so a new file needs no Terraform.
 - **Caching lives in web/lib/ (since E0; app.js before), not the service
   worker.** Presigned photo URLs

@@ -29,7 +29,8 @@ import { Stack } from "./stack.js";
 import { set, useStore } from "./store.js";
 import { TabBar, watchScroll } from "./tabbar.js";
 import { applyTheme, savedTheme } from "./theme.js";
-import { Overlays, toast } from "./ui.js";
+import { Scan, openScan, startOutbox } from "./scan.js";
+import { Overlays } from "./ui.js";
 
 const HOME = "/app.html";
 const root = document.getElementById("root");
@@ -94,7 +95,8 @@ function Frame() {
         </div>`,
       )}
       <${Stack} pages=${PAGES} />
-      <${TabBar} onScan=${() => toast(t("scan.soon"))} />
+      <${TabBar} onScan=${() => openScan("scan")} />
+      <${Scan} />
       <${Overlays} />
     </div>
   `;
@@ -137,6 +139,9 @@ async function boot() {
     throw err;
   }
   set({ me });
+  // The photos, picks, proposals and posts waiting on this phone go on
+  // uploading, and an unfinished capture flow comes back where it was.
+  startOutbox();
   show(html`<${Frame} />`);
 }
 

@@ -200,6 +200,14 @@ an hour that a sentence would have saved.
   unsigned package source in the image. Install the browser without
   `--with-deps` and the missing libraries by name.
 
+- **A sleeping browser test holds the page's requests.** The screen tests
+  filter every request through a Python function (`context.route` with a
+  callable, `tests/web/conftest.py`), and with Playwright's synchronous
+  API that function runs only while the test is inside a Playwright call.
+  A test that waited with `time.sleep` for the outbox to send a post froze
+  every request of the page, and failed by timing (E3, 2026-11-12). Wait
+  with `page.wait_for_timeout`.
+
 ## Agents and sessions
 
 - **The token does not choose the model.** It decides whose Claude plan

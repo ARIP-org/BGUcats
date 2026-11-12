@@ -7,6 +7,7 @@ import { cats, deletePost, feedPage, regionName, setLike } from "./data.js";
 import { ago, t } from "./i18n.js";
 import { glass } from "./motion.js";
 import { push, useStore } from "./store.js";
+import { openScan } from "./scan.js";
 import { Icon, confirm, openMenu, toast } from "./ui.js";
 
 const openCat = (cat) => push("cat", { catId: cat.catId, title: cat.name || t("cat.noName") });
@@ -159,6 +160,26 @@ function Card({ card, onChange, onGone }) {
   </article>`;
 }
 
+// A post still on its way: its photo from the phone, a note, no actions.
+function SendingCard({ card }) {
+  const author = card.author.displayName || card.author.username || "";
+  const waiting = card.proposal ? t("post.waitingNewCat") : t("post.sending");
+  return html`<article class="post sending" data-post=${card.postId} aria-label=${t("post.label", { name: author })}>
+    <div class="post-head">
+      <${Avatar} person=${card.author} />
+      <div class="post-who">
+        <span class="post-name">${author}</span>
+        <h2 class="post-what">
+          ${card.cat ? html`${t("post.met")} <span class="cat-link">${card.cat.name}</span>` : t("post.photoPosted")}
+          ${" "}<span class="badge">${waiting}</span>
+        </h2>
+      </div>
+    </div>
+    ${card.photos[0]?.medium && html`<img class="sending-photo" src=${card.photos[0].medium} alt=${t("post.photo")} />`}
+    ${card.text && html`<p class="post-text">${card.text}</p>`}
+  </article>`;
+}
+
 function CatOfTheDay({ cat }) {
   return html`<button type="button" class="cotd" onClick=${() => openCat(cat)} aria-label=${t("feed.cotdLabel", { name: cat.name || t("cat.noName") })}>
     ${cat.cover ? html`<img src=${cat.cover.thumb} alt="" />` : html`<span class="cotd-empty" aria-hidden="true"></span>`}
@@ -181,7 +202,7 @@ function TopButtons() {
       </svg>
       <span class="search-words">${t("feed.search")}</span>
     </button>
-    <button type="button" class="glass-icon plus" ref=${glass} aria-label=${t("feed.newPost")} onClick=${() => toast(t("scan.soon"))}>
+    <button type="button" class="glass-icon plus" ref=${glass} aria-label=${t("feed.newPost")} onClick=${() => openScan("post")}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
     </button>
   </div>`;
@@ -237,12 +258,18 @@ export function Feed() {
     return () => watch.disconnect();
   }, [cursor, cards]);
 
+  // Posts made on this phone, shown before the server has them (05-client.md,
+  // "The data layer"); each drops out once the feed carries it.
+  const sending = useStore((s) => s.sending) || [];
+  const known = new Set((cards || []).map((c) => c.postId));
+  const mineFirst = sending.filter((c) => !known.has(c.postId));
   const change = (next) => setCards((now) => now.map((c) => (c.postId === next.postId ? next : c)));
   const gone = (card) => setCards((now) => now.filter((c) => c.postId !== card.postId));
 
   return html`<${TopButtons} />
     <div class="tab-content feed">
       ${today && html`<${CatOfTheDay} cat=${today} />`}
+      ${mineFirst.map((card) => html`<${SendingCard} key=${card.postId} card=${card} />`)}
       ${cards?.map((card) => html`<${Card} key=${card.postId} card=${card} onChange=${change} onGone=${gone} />`)}
       ${cards && !cards.length && !failed && html`<p class="empty">${t("feed.empty")}</p>`}
       ${failed && html`<p class="empty" role="alert">${t("feed.failed")}</p>`}

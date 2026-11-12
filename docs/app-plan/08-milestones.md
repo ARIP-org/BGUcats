@@ -25,7 +25,7 @@ A session ticks its row in the pull request that finishes it.
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | |
 | B5 | Friends and invites (B5b: phone and contacts) | |
-| B6 | New-cat proposals | built 2026-11-12, in review |
+| B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
 | B8 | Reports, blocks, bans, the desk's tools | |
 | B9 | Push | |
@@ -41,7 +41,7 @@ A session ticks its row in the pull request that finishes it.
 | E0 | Client groundwork | merged 2026-11-12 |
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
-| E3 | The capture flow | |
+| E3 | The capture flow | built 2026-11-12, in review |
 | E4 | The gallery, a cat's page, the poll | |
 | E5 | The map | |
 | E6 | Home, profile, settings | |
@@ -551,6 +551,25 @@ English file.
   (a test per ending against the local app); with the network off, an
   encounter is posted and everything arrives when it returns; the pick's
   record is what today's Capture writes.
+- **Built (2026-11-12):** `web/social/scan.js`. "Scan a cat" opens the
+  camera (the in-page viewfinder where the browser gives one, the phone's
+  own camera through a file input everywhere); one press, one photo, then
+  "Which cat?" (the model's three when it has ranked, then every cat;
+  without a model, every cat), "You met X" with "Encounter #N", the
+  new-cat form (name idea, coat, place, traits) and the post (the photos,
+  up to four, a description, the area switch with D13's words). "+" opens
+  the post page with "Take a photo" and "Tag a cat". The endings go
+  through today's outbox in one write each (`finishEncounter`): the
+  encounter and its photos as Capture sends them, the pick (`new` for a
+  new cat), and, once every photo is confirmed, the proposal and the post
+  (`after`, sent in order; 425 waits). A post shows in its author's feed
+  at once as "Sending" or "Waiting for an admin to confirm the new cat".
+  The flow survives a reload. New terms are accepted before anything is
+  shared. Tested: every ending, "+" with no cat, a reload, a dead signal,
+  new terms. **Not built:** the camera opening as a circle from the tab,
+  the flash (no torch in an iPhone's web view), three frames per press
+  (D12, the `capture_burst` flag), the service worker sending posts with
+  the app closed (Chrome on Android only; the open app sends them).
 
 ### E4. The gallery, a cat's page, the poll
 

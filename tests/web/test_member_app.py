@@ -111,13 +111,11 @@ def test_the_tabs_switch_and_the_lens_follows(open_member_app):
     assert not page.locator("[data-tab-page=feed]").is_visible()
 
 
-def test_scan_says_it_is_coming(open_member_app, shot):
+def test_scan_opens_the_camera(open_member_app):
     page = frame(open_member_app)
     page.get_by_role("button", name="Scan a cat").click()
-    status = page.get_by_role("status")
-    page.wait_for_function("document.querySelector('.toast.on')")
-    assert "capture flow" in status.inner_text()
-    shot(page, "member-toast")
+    page.get_by_role("dialog", name="Scan a cat").wait_for()
+    assert page.locator(".scan[data-step=camera]").count() == 1
 
 
 def test_a_page_slides_in_and_the_back_button_takes_it_away(open_member_app, shot):
@@ -245,12 +243,14 @@ def test_sign_out_asks_first(open_member_app, shot):
 
 def test_the_tab_bar_shrinks_while_scrolling_down(open_member_app, shot):
     page = frame(open_member_app)
-    # Enough to scroll: the feed's posts arrive in E2.
-    page.evaluate(
-        "document.querySelector('[data-tab-page=feed] .tab-content')"
-        ".insertAdjacentHTML('beforeend', '<div style=\\'block-size: 3000px\\'></div>')"
-    )
+    # The feed has drawn its posts (E2): until then it may redraw.
+    page.wait_for_selector("article.post")
     scroller = "document.querySelector('[data-tab-page=feed] .scroller')"
+    # Room to scroll, as padding on the scroller, which the feed's redraws
+    # leave alone. A block added inside the feed was dropped by its redraw
+    # when the posts arrived late, and the test failed by timing (CI on
+    # main, 2026-11-12).
+    page.evaluate(f"{scroller}.style.paddingBlockEnd = '3000px'")
     for y in (100, 200, 300):
         page.evaluate(f"{scroller}.scrollTo(0, {y})")
         page.wait_for_timeout(50)

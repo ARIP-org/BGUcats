@@ -157,7 +157,11 @@ Three things to keep true, all from past incidents:
 The service worker's background copy of the upload steps (Chrome on
 Android) is extended to the same kinds, or the new kinds are left to the
 open app. Either is acceptable for the iPhone-first build; say which in
-the pull request.
+the pull request. **E3 chose the open app:** the worker still uploads
+photos; the proposal and the post go the next time the app is open
+(`after` in `web/outbox.js`). Each change to an encounter in the outbox is
+one IndexedDB transaction since E3: a read and a separate write let the
+queue's "pick sent" undo a post recorded in between.
 
 ## Capture, rebuilt on the same engine
 

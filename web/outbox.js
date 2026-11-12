@@ -89,6 +89,20 @@ const remove = (store, key) => tx(store, "readwrite", (s) => s.delete(key));
 const all = (store) => tx(store, "readonly", (s) => s.getAll());
 const get = (store, key) => tx(store, "readonly", (s) => s.get(key));
 
+// Read, change and write one record in one transaction, so two changes to
+// the same encounter at once (the queue marking its pick sent while the
+// page records a post) never undo each other. `change` gets the stored
+// record and returns the new one, or null to leave it.
+function patch(store, key, change) {
+  return tx(store, "readwrite", (s) => {
+    const read = s.get(key);
+    read.onsuccess = () => {
+      const next = read.result && change(read.result);
+      if (next) s.put(next);
+    };
+  });
+}
+
 // Items with their state: "failed" if a states row says so (or a v1 item
 // was saved as failed), otherwise "queued". "uploading" is memory only.
 async function itemsWithState() {
@@ -156,11 +170,11 @@ export function createOutbox({ post, onChange }) {
       });
   }
 
-  // Rewrites one encounter from its latest saved copy, so a change made
-  // while a request was in flight (Done, a new answer) is never undone.
-  async function updateEncounter(sessionId, patch) {
-    const latest = await get("encounters", sessionId);
-    if (latest) await put("encounters", { ...latest, ...patch });
+  // Changes one encounter in a single transaction, from its stored copy, so
+  // a change made while a request was in flight (Done, a new answer, a
+  // post) is never undone.
+  async function updateEncounter(sessionId, changes) {
+    await patch("encounters", sessionId, (latest) => ({ ...latest, ...changes }));
   }
 
   async function drain() {
@@ -215,11 +229,12 @@ export function createOutbox({ post, onChange }) {
           // Refused (say, the cat was merged away meanwhile): the photos
           // matter, the answer does not — drop it rather than block them.
         }
-        const latest = await get("encounters", encounter.sessionId);
         // Only if it was not changed again while this one was in flight.
-        if (latest && JSON.stringify(latest.pick) === JSON.stringify(encounter.pick)) {
-          await put("encounters", { ...latest, pickSent: true });
-        }
+        await patch("encounters", encounter.sessionId, (latest) =>
+          JSON.stringify(latest.pick) === JSON.stringify(encounter.pick)
+            ? { ...latest, pickSent: true }
+            : null,
+        );
       }
       const encounters = new Map((await all("encounters")).map((e) => [e.sessionId, e]));
       const todo = (await itemsWithState())
@@ -250,6 +265,38 @@ export function createOutbox({ post, onChange }) {
       };
       await Promise.all(Array.from({ length: PARALLEL_UPLOADS }, worker));
       if (offline) throw offline;
+      // What follows the photos (the member app, E3): a new-cat proposal,
+      // a post. After the uploads, in the same pass: each waits until every
+      // photo of its encounter is confirmed,
+      // then goes once, in order; "not yet" (425) and other passing errors
+      // wait for the next pass.
+      const waiting = new Set((await all("items")).map((i) => i.sessionId));
+      for (const encounter of await all("encounters")) {
+        if (!encounter.created || !encounter.after?.length) continue;
+        if (encounter.pick && !encounter.pickSent) continue;
+        if (waiting.has(encounter.sessionId)) continue;
+        const sent = new Set(encounter.afterSent || []);
+        for (const request of encounter.after) {
+          if (sent.has(request.key)) continue;
+          try {
+            await post(request.path, request.body);
+          } catch (err) {
+            if (isOffline(err)) throw err;
+            if (!isPermanent(err)) {
+              lastError = err.message;
+              retryLater = true;
+              break; // in order: a post never goes before its proposal
+            }
+            // Refused for good: noted, and the rest may still go.
+            lastError = err.message;
+          }
+          sent.add(request.key);
+          await patch("encounters", encounter.sessionId, (latest) => ({
+            ...latest,
+            afterSent: [...new Set([...(latest.afterSent || []), request.key])],
+          }));
+        }
+      }
       await forgetFinishedEncounters();
       if (!retryLater) {
         failures = 0;
@@ -346,9 +393,17 @@ export function createOutbox({ post, onChange }) {
     const items = await all("items");
     for (const encounter of await all("encounters")) {
       const pickPending = encounter.pick && !encounter.pickSent;
+      const sent = new Set(encounter.afterSent || []);
+      const afterPending = (encounter.after || []).some((r) => !sent.has(r.key));
       const empty = !items.some((i) => i.sessionId === encounter.sessionId);
       // Closed and sent — or closed with nothing ever captured, so never sent.
-      if (!encounter.open && !pickPending && empty && (encounter.created || !encounter.pick)) {
+      if (
+        !encounter.open &&
+        !pickPending &&
+        !afterPending &&
+        empty &&
+        (encounter.created || (!encounter.pick && !encounter.after?.length))
+      ) {
         await remove("encounters", encounter.sessionId);
       }
     }
@@ -357,6 +412,23 @@ export function createOutbox({ post, onChange }) {
   // The latest answer replaces any earlier one, sent or not.
   async function setPick(sessionId, pick) {
     await updateEncounter(sessionId, { pick, pickSent: false });
+    kick();
+  }
+
+  // Requests that go after the encounter's photos: [{key, path, body}],
+  // replacing any not sent yet (the member app's proposal and post).
+  async function setAfter(sessionId, after) {
+    await updateEncounter(sessionId, { after });
+    kick();
+  }
+
+  // An ending of the member app's capture flow, in one write: the answer,
+  // what follows the photos, and the encounter closed.
+  async function finishEncounter(sessionId, { pick, after }) {
+    const changes = { open: false };
+    if (pick) Object.assign(changes, { pick, pickSent: false });
+    if (after?.length) changes.after = after;
+    await updateEncounter(sessionId, changes);
     kick();
   }
 
@@ -446,6 +518,8 @@ export function createOutbox({ post, onChange }) {
     addEncounter,
     addItem,
     setPick,
+    setAfter,
+    finishEncounter,
     closeEncounter,
     retryFailed,
     discard,

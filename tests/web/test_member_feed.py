@@ -148,6 +148,9 @@ def test_the_top_buttons_say_what_they_will_open(open_member_app):
     page.get_by_role("button", name="Search cats").click()
     page.wait_for_function("document.querySelector('.toast.on')")
     assert "gallery" in page.get_by_role("status").inner_text()
+    # + opens a new post (E3).
+    page.get_by_role("button", name="New post").click()
+    page.get_by_role("heading", name="New post").wait_for()
 
 
 @pytest.mark.parametrize("theme", ["bgu-light", "cats-dark"])
