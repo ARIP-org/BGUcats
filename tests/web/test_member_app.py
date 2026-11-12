@@ -111,13 +111,11 @@ def test_the_tabs_switch_and_the_lens_follows(open_member_app):
     assert not page.locator("[data-tab-page=feed]").is_visible()
 
 
-def test_scan_says_it_is_coming(open_member_app, shot):
+def test_scan_opens_the_camera(open_member_app):
     page = frame(open_member_app)
     page.get_by_role("button", name="Scan a cat").click()
-    status = page.get_by_role("status")
-    page.wait_for_function("document.querySelector('.toast.on')")
-    assert "capture flow" in status.inner_text()
-    shot(page, "member-toast")
+    page.get_by_role("dialog", name="Scan a cat").wait_for()
+    assert page.locator(".scan[data-step=camera]").count() == 1
 
 
 def test_a_page_slides_in_and_the_back_button_takes_it_away(open_member_app, shot):

@@ -20,14 +20,20 @@ export const setLike = (postId, liked) =>
 
 export const deletePost = (postId) => del(`/v1/posts/${postId}`);
 
-// The campus places (web/regions.json), for an area's name.
+// The campus places (web/regions.json), for an area's name and the
+// new-cat form.
 let regions = null;
-export async function regionName(id, lang = "en") {
-  if (!id) return null;
+export async function places() {
   if (!regions) {
     const res = await fetch(new URL("../regions.json", import.meta.url));
     regions = res.ok ? (await res.json()).regions : [];
   }
+  return regions;
+}
+
+export async function regionName(id, lang = "en") {
+  if (!id) return null;
+  await places();
   const region = regions.find((r) => r.id === id);
   return region ? region.names[lang] || region.names.en : null;
 }
