@@ -5,10 +5,10 @@ Two tables. `bgucats-data` is the dataset and stays as spec §6.3 and
 item to it, all written by the existing API. `bgucats-social` is new and
 holds everything people do in the app.
 
-When F2 lands, this file's catalogue moves to `docs/data-model.md` and
-covers both tables, so there is one place that lists every key. Until
-then the keys of the existing table are in the spec and in the comment
-at the top of `dynamodb.tf`.
+Since F2, `docs/data-model.md` lists every key of the existing table,
+taken from the code and kept true by `tests/test_data_model_doc.py`. The
+social table's keys below move there in F3, in the pull request that
+creates the table; until then this file is their only description.
 
 ## The rule that shapes everything
 

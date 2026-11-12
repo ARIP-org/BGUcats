@@ -26,6 +26,11 @@ an hour that a sentence would have saved.
 - **"Not set" and "set to null" are different to a condition.** Every
   session is written with `catId = null`; a condition that only checked
   `attribute_not_exists` refused them all as already labeled (2026-10-29).
+- **Invisible characters belong in escapes.** Tests about direction
+  overrides and zero-width spaces were written with `\u202e` and came out
+  of the editor as the characters themselves, which no reviewer can see.
+  Ruff refuses them (PLE2502, PLE2515); write every such character as an
+  escape, and check with `od -c` if a line looks shorter than it should.
 - **Mocks are always consistent.** moto answers every read with the latest
   write, so none of the above can fail in a unit test. They were found by
   running real calls against a real table.

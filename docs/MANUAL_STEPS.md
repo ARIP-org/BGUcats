@@ -1248,9 +1248,10 @@ The domain is registered and nothing else: no DNS record, no
 certificate. That is N4 of the app plan, which the owner will start from
 a codespace with Claude when it is needed.
 
-Not recorded yet: the domain's name and the account that holds it. The
-session that starts N4 finds both first, read-only, before anything
-else:
+**The account:** the management account, by the owner's account of it
+(2026-11-12: bought while signed in to that account's console). Not
+recorded yet: the domain's name. The session that starts N4 confirms both
+first, read-only, before anything else:
 
 ```bash
 aws route53domains list-domains --region us-east-1 --profile mgmt-ro

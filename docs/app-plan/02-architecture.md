@@ -124,10 +124,14 @@ the `OPTIONS` route without an authorizer is repeated for it
 (`docs/notes.md`, "The iPhone app").
 
 **Shared code:** `src/common/` (reading the caller, responses, table
-helpers, ULIDs, rate limits, input cleaning, the Decisions client). Each
-function's package is built by the `Makefile` from its own folder; F2
-makes every build copy `common/` in as well, and keeps the zips
-byte-stable (`docs/notes.md`, "The same source must give the same zip").
+helpers, ULIDs, rate limits, input cleaning; later the Decisions client).
+Built in F2. Each function's package is built by the `Makefile` from its
+own folder, and `common/` is copied **only into the functions that
+import it** (`$(call copy-common,…)`), so a change to it redeploys those
+and no other; `tests/common/test_packaging.py` holds the Makefile to
+that. The zips stay byte-stable (`docs/notes.md`, "The same source must
+give the same zip"). Nothing in `common/` holds a client or reads the
+environment: a helper that needs a table is given one.
 
 **Who is the caller:** the token's email claim, as today. The member API
 maps it to a user id through one strongly consistent read

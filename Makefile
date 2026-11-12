@@ -16,6 +16,11 @@ LAMBDA_PIP = pip install --quiet --no-compile \
 lambda-compile = python -m compileall -q -j 0 --invalidation-mode checked-hash \
 	-s build/$(1) -p /var/task build/$(1)
 
+# The code the API Lambdas share (src/common), as a `common` package beside
+# the function's own. Only into the functions that import it, so a change
+# there redeploys those and no other (tests/common/test_packaging.py).
+copy-common = mkdir -p build/$(1)/common && cp src/common/*.py build/$(1)/common/
+
 fmt:
 	ruff format .
 	terraform -chdir=infra/main fmt -recursive
@@ -79,6 +84,7 @@ build-admin:
 	$(LAMBDA_PIP) --target build/admin -r src/admin/requirements.txt
 	cp src/admin/__init__.py src/admin/handler.py src/admin/insights.py \
 		src/admin/presignup.py build/admin/admin/
+	$(call copy-common,admin)
 	$(call lambda-compile,admin)
 
 # The landing page's visit counter. Its own package and its own role: the one

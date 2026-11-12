@@ -17,7 +17,7 @@ A session ticks its row in the pull request that finishes it.
 | ID | Milestone | State |
 |---|---|---|
 | F1 | The guardrails learn the new shapes | built 2026-11-12; **applied on staging 2026-11-12** and proven (`docs/MANUAL_STEPS.md`, step 17); production with its first promote |
-| F2 | Shared code, and one catalogue of every key | |
+| F2 | Shared code, and one catalogue of every key | built 2026-11-12, in review |
 | F3 | The social table, the events Lambda, the seed | |
 | F4 | The member API: who you are, flags, who may sign up | |
 | B1 | Profiles | |
@@ -116,14 +116,18 @@ gets there first and recorded there.
 
 - **Needs:** nothing from the owner.
 - **Builds:** `src/common/` (caller, responses, table helpers, ULID,
-  rate limits, text cleaning); the `Makefile` builds copy it into every
-  function's package; `src/admin/` uses it **with no change in
-  behaviour**. `docs/data-model.md`: every key of `bgucats-data`, taken
-  from spec §6.3, the comment in `dynamodb.tf` and the code, plus the
-  social table's catalogue from `03-data-model.md`.
+  rate limits, text cleaning); the `Makefile` copies it into the
+  functions that import it, today only the admin API; `src/admin/` uses
+  it **with no change in behaviour**. `docs/data-model.md`: every key of
+  `bgucats-data`, from the code, with a test that fails on a key it does
+  not name. The social table's keys join it in F3, when the table exists.
 - **Done when:** every existing test passes untouched; both accounts'
-  plans show the Lambdas' code changing and nothing else; the zips are
-  the same from two builds of the same commit.
+  plans show the admin Lambdas' code changing and nothing else; the zips
+  are the same from two builds of the same commit.
+- **State, 2026-11-12:** built. The admin tests passed unchanged (150);
+  two builds of the admin package were byte-identical, and differ from
+  the one before only in `handler.py` and the new `common/`. The plans
+  are CI's, on the pull request.
 
 ### F3. The social table, the events Lambda, the seed
 
