@@ -324,11 +324,12 @@ async function renderQueue(isCurrent = () => true) {
   ]);
   if (!isCurrent()) return;
   const main = $("#main");
-  const proposed = proposalSection(proposals, places);
+  // Spread, never passed as null: replaceChildren writes a null as "null".
+  const proposed = proposals.length ? [proposalSection(proposals, places)] : [];
 
   if (!sessions.length) {
     main.replaceChildren(
-      proposed,
+      ...proposed,
       sectionHead("Labeling queue"),
       modelStrip(),
       emptyState(
@@ -348,7 +349,7 @@ async function renderQueue(isCurrent = () => true) {
 
   const total = sessions.reduce((n, s) => n + s.photos.length, 0);
   main.replaceChildren(
-    proposed,
+    ...proposed,
     sectionHead(
       "Labeling queue",
       `${plural(sessions.length, "session")} · ${plural(total, "photo")} · oldest first`,

@@ -100,3 +100,9 @@ def test_a_user_never_sees_the_proposals(app, open_app):
     page = open_app(COLLABORATOR)
     page.wait_for_timeout(500)
     assert page.locator("article.proposal").count() == 0
+
+
+def test_with_nothing_proposed_the_queue_starts_with_its_title(open_app):
+    page = open_app(ADMIN)
+    page.wait_for_selector("#main h2")
+    assert page.locator("#main").inner_text().startswith("Labeling queue")
