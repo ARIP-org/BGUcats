@@ -513,7 +513,9 @@ actual product question.
   exports/{datasetVersion}/images/...
   ```
 - Single DynamoDB table, three GSIs: photos-in-session, labeling queue by
-  status, photos-of-a-cat for export.
+  status, photos-of-a-cat for export. Every key it holds:
+  `docs/data-model.md`, kept true by a test; a pull request that adds a
+  key adds it there.
 
 ## Processing rules
 

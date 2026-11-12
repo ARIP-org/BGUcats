@@ -24,7 +24,6 @@ the whole surface of the API in one readable table (ROUTES, below).
 
 import base64
 import hashlib
-import json
 import logging
 import math
 import os
@@ -37,6 +36,8 @@ from boto3.dynamodb.conditions import Key
 from ulid import ULID
 
 from admin import insights
+from common import api, tables
+from common.api import ApiError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -107,9 +108,8 @@ JPEG_SIGNATURE = b"\xff\xd8\xff"
 WEBM_SIGNATURE = b"\x1a\x45\xdf\xa3"
 # The IDs are minted on the phone so that a retried upload from its offline
 # outbox lands on the same records instead of creating new ones — the same
-# "idempotent on the ULID" rule the bots follow (spec §10). A ULID is 26
-# Crockford base32 characters.
-ULID_PATTERN = r"[0-9A-HJKMNP-TV-Z]{26}"
+# "idempotent on the ULID" rule the bots follow (spec §10).
+ULID_PATTERN = api.ULID_PATTERN
 # ~110 m, as everywhere else (ingest.core.COORDINATE_DECIMALS): territory,
 # not the spot the contributor was standing on.
 COORDINATE_DECIMALS = 3
@@ -139,15 +139,19 @@ table = dynamodb.Table(TABLE_NAME)
 s3 = boto3.client("s3")
 
 
-class ApiError(Exception):
-    def __init__(self, status, message):
-        super().__init__(message)
-        self.status = status
-        self.message = message
-
-
-def _now_iso():
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+# The request, the response and the reads every API Lambda shares
+# (src/common, since 2026-11-12). The names below are the ones this file has
+# always used; the tests replace `table`, `s3` and `_query_all` here.
+_now_iso = api.now_iso
+_response = api.response
+_json_default = api.json_default
+_caller_email = api.caller_email
+_parse_body = api.parse_body
+_query = api.query_params
+_ulid_param = api.ulid_param
+_iso_param = api.iso_param
+_required_string = api.required_string
+_int_param = api.int_param
 
 
 def handler(event, context):
@@ -174,32 +178,8 @@ def handler(event, context):
 
 
 def _item(pk):
-    """One record by its key, read strongly consistent.
-
-    DynamoDB's default read may answer from a copy that has not received a
-    write made milliseconds earlier. The app makes exactly such pairs of
-    calls: an encounter and then its first photo, a photo's record and then
-    its confirmation, a new cat and then its first label. A stale "not
-    there" was answered as 404, and the phone's outbox treats a 404 as
-    final, so the photo was dropped. Found on 2026-11-10 by seeding staging
-    through the API: one encounter in twelve. A consistent read of one item
-    costs one read unit instead of half of one.
-    """
-    return table.get_item(Key={"PK": pk, "SK": "META"}, ConsistentRead=True).get("Item")
-
-
-def _caller_email(event):
-    """Email claim from the token the JWT authorizer already verified."""
-    claims = (
-        event.get("requestContext", {})
-        .get("authorizer", {})
-        .get("jwt", {})
-        .get("claims", {})
-    )
-    email = (claims.get("email") or "").strip().lower()
-    if not email:
-        raise ApiError(401, "no email claim on token")
-    return email
+    """One record by its key, read strongly consistent (common.tables)."""
+    return tables.get_one(table, pk)
 
 
 def _require_member(email):
@@ -213,37 +193,6 @@ def _require_member(email):
 
 def _role_of(item):
     return item.get("role") if item.get("role") in ROLES else ROLE_ADMIN
-
-
-def _parse_body(event):
-    raw = event.get("body")
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        raise ApiError(400, "body is not valid JSON")
-    if not isinstance(parsed, dict):
-        raise ApiError(400, "body must be a JSON object")
-    return parsed
-
-
-def _query(event):
-    return event.get("queryStringParameters") or {}
-
-
-def _response(status, payload):
-    return {
-        "statusCode": status,
-        "headers": {"content-type": "application/json"},
-        "body": json.dumps(payload, default=_json_default),
-    }
-
-
-def _json_default(value):
-    if isinstance(value, Decimal):
-        return int(value) if value == value.to_integral_value() else float(value)
-    raise TypeError(f"not JSON serializable: {type(value)}")
 
 
 # --------------------------------------------------------------------------
@@ -318,14 +267,8 @@ def _session_photos(session_id):
 
 
 def _query_all(**kwargs):
-    """Every page of a query, not just the first 1 MB."""
-    items = []
-    while True:
-        page = table.query(**kwargs)
-        items.extend(page["Items"])
-        if "LastEvaluatedKey" not in page:
-            return items
-        kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+    """Every page of a query, not just the first 1 MB (common.tables)."""
+    return tables.query_all(table, **kwargs)
 
 
 def _photo_payload(photo):
@@ -1639,25 +1582,6 @@ def _require_own_photo(photo_id, email):
     return photo
 
 
-def _ulid_param(body, field):
-    value = body.get(field)
-    if not isinstance(value, str) or not re.fullmatch(ULID_PATTERN, value):
-        raise ApiError(400, f"{field} must be a ULID")
-    return value
-
-
-def _iso_param(body, field):
-    """A client timestamp, kept only if it parses — it is the phone's clock."""
-    value = body.get(field)
-    if not isinstance(value, str) or len(value) > 40:
-        return None
-    try:
-        datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return value
-
-
 # --------------------------------------------------------------------------
 # Shared helpers
 # --------------------------------------------------------------------------
@@ -1716,26 +1640,6 @@ def _store_count(key, ids):
         UpdateExpression="SET photoCount = :count",
         ExpressionAttributeValues={":count": len(ids)},
     )
-
-
-def _required_string(body, field, maximum):
-    value = (body.get(field) or "").strip()
-    if not value:
-        raise ApiError(400, f"{field} is required")
-    if len(value) > maximum:
-        raise ApiError(400, f"{field} is longer than {maximum} characters")
-    return value
-
-
-def _int_param(query, name, default, maximum):
-    raw = query.get(name)
-    if raw is None:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        raise ApiError(400, f"{name} must be an integer")
-    return max(1, min(value, maximum))
 
 
 # --------------------------------------------------------------------------
@@ -1809,13 +1713,4 @@ ROUTES = (
 
 
 def _match_route(method, path):
-    path = path.rstrip("/") or path
-    matched_path = False
-    for route_method, pattern, handler_fn, access in ROUTES:
-        match = re.match(pattern, path)
-        if not match:
-            continue
-        matched_path = True
-        if route_method == method:
-            return handler_fn, match.groupdict(), access
-    raise ApiError(405 if matched_path else 404, f"no route for {method} {path}")
+    return api.match_route(ROUTES, method, path)
