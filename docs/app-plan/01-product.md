@@ -314,7 +314,7 @@ not a reason to wait.
 | G3 | **Report reasons, and what the reporter sees after.** "Report" closes the menu and nothing else | Route takes a reason from a fixed list; UI waits for design |
 | G4 | **Blocked people.** One can block; there is no list to unblock from | Route exists; UI waits |
 | G5 | **What replaces grading** (D9: GPA is computed, nobody gives one): the row "Grade a cat +1", the counter "Cats graded" and the badge "Critic" have nothing behind them | GPA itself is built. The three leftovers are hidden until the designer confirms the proposed replacements ("GPA", above) |
-| G6 | **Feeding** (D10: build it): no control to log a feeding, no drawing of a feeding spot on the map, no "last fed" line on a cat's page | The backend is built (B7c). The screens wait for the design; "Cats fed" counts from the first log |
+| G6 | **Feeding** (D10: build it): no control to log a feeding, no drawing of a feeding spot on the map, no "last fed" line on a cat's page | Built 2026-11-13 (B7c), drawn like the app's other cards: a card on the cat's page with "Last fed …" and **I fed this cat**, which opens a sheet with the feeding spots (optional). For the designer to redraw if wanted. Still open: a feeding spot on the map |
 | G7 | **Friend requests** (D4), if not instant: no incoming list, no pending state | Wait for D4 |
 | G8 | **Entering an invite code by hand.** A link tapped before the app is installed loses its code | A "Have an invite code?" field is needed; ask |
 | G9 | **Search cats:** a button, no results screen | Filter the gallery in place as the person types; confirm with the designer |

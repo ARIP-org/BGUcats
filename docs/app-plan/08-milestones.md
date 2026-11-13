@@ -23,11 +23,11 @@ A session ticks its row in the pull request that finishes it.
 | B1 | Profiles | B1a (name, settings), B1b (photo) and B1c (username) merged 2026-11-13; devices wait for B9 |
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
-| B4 | Name polls | B4a (names, votes, the leader) merged 2026-11-13; B4b (the desk's remove and lock) built the same day, in review. Votes as feed cards moved to B5: a vote card is friends' votes |
-| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
+| B4 | Name polls | merged 2026-11-13 (B4a: names, votes, the leader; B4b: the desk's remove and lock). Votes as feed cards moved to B5: a vote card is friends' votes |
+| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) merged 2026-11-13; blocks with B8; mutual counts not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
-| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) merged 2026-11-13; B7a (points, levels, six badges) built the same day; feedings (B7c) and the recount scripts not built |
-| B8 | Reports, blocks, bans, the desk's tools | B8a (blocks, with their screens) and B8b (reports: the route, the email, hiding at three, the desk's queue, Report in the app) built 2026-11-13; B8c (bans, the desk's list of the app's people) built the same day |
+| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) built the same day, in review; the recount scripts not built |
+| B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
 | B9 | Push | |
 | B10 | Deleting an account | |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
@@ -41,12 +41,12 @@ A session ticks its row in the pull request that finishes it.
 | E0 | Client groundwork | merged 2026-11-12 |
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
-| E3 | The capture flow | merged 2026-11-12 |
+| E3 | The capture flow | merged 2026-11-12; every page drawn as the prototype draws it 2026-11-13, in review |
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
-| E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) built 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
+| E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) merged 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a, Report since B8b |
-| E8 | Achievements | E8a (Home's card and the sheet) built 2026-11-13 with B7a |
+| E8 | Achievements | E8a (Home's card and the sheet) merged 2026-11-13 with B7a; "Cats fed", Snack Giver and "Feed a cat" with B7c |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
 | N1 | The member app in the iPhone app, with the model | merged 2026-11-13; on the owner's phone once the API answered its preflight (the same day) |
@@ -465,6 +465,26 @@ was built.
   inside four hours is refused; a third feeding in a day earns nothing;
   removing the newest feeding puts "last fed" back to the one before.
   The screens for it wait for the design (G6).
+- **B7c, built 2026-11-13**, behind the `feeding` flag (on in both
+  accounts' settings; off, the route is 404 and nothing of it shows).
+  `POST /cats/{id}/feedings` writes the feeding under the cat and a copy
+  under the person in one transaction with `FEDCAT#{catId}`, a pointer
+  whose write condition is the four-hour rule; six a day by the shared
+  limiter. The events Lambda (`count_feeding`) reads the cat's newest
+  feeding that stands into `lastFedAt`, and works the person's
+  `fedPoints`, `catsFed` and Snack Giver out again from their copies
+  (`fed`), so a record seen twice changes nothing. Points shown are the
+  encounters' plus the feedings'. The desk's cat page lists a cat's
+  feedings with **Remove**, which only marks. The rules file has
+  `points.feed`, `feedingsCountedADay` and the badge; `web/regions.json`
+  has three made-up feeding spots until the owner's list (O12).
+  `tests/app/test_feedings.py` covers the three "done when" and the
+  flag. In the app (G6, drawn like the other cards): the card on a cat's
+  page and its sheet (`web/social/feeding.js`); "Cats fed", Snack Giver
+  and "Feed a cat +10" in Achievements. **Not built:** feeding spots on
+  the map (their look is the designer's); reporting a single feeding
+  (nobody sees one to report: the cat's page shows only the last time);
+  the recount as a script.
 
 ### B8. Reports, blocks, bans, the desk's tools
 

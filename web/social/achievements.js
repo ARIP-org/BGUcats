@@ -3,10 +3,10 @@
 // you have done, every badge earned or still to earn, and how points are
 // earned. All of it comes from the server (B7); nothing is counted here.
 //
-// Not in this build, with their backends: feedings ("Cats fed", "Snack
-// Giver", "Feed a cat +10": B7c). Left out since nobody grades a cat (D9):
-// "Cats graded", "Critic", "Grade a cat +1"; the tiles show encounters and
-// posts in their place. A tap on a badge says how it is earned, which the
+// Feedings ("Cats fed", "Snack Giver", "Feed a cat +10") come with the
+// `feeding` flag: the server sends them or not (B7c). Left out since nobody
+// grades a cat (D9): "Cats graded", "Critic", "Grade a cat +1"; the third
+// tile shows posts, and without feedings the second shows encounters. A tap on a badge says how it is earned, which the
 // prototype does not draw.
 
 import { html, useEffect, useState } from "../vendor/preact-htm.js";
@@ -20,6 +20,7 @@ import { toast } from "./ui.js";
 // (the prototype shows them locked only).
 const DRAWINGS = {
   "first-meow": html`<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.3 6L12 16.4 6.6 19.4l1.3-6L3.4 9.3l6-.7z" />`,
+  "snack-giver": html`<path d="M4 13h16a8 6 0 0 1-16 0z" /><path d="M9 9.5c0-1.4 1-1.9 1-3.3M14 9.5c0-1.4 1-1.9 1-3.3" />`,
   "night-owl": html`<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z" />`,
   explorer: html`<path d="M9 4L3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5z" /><path d="M9 4v13.5M15 6.5V20" />`,
   "name-giver": html`<path d="M4 7h16M4 12h10M4 17h7" /><path d="M17 14l1.5 3 3 .4-2.2 2 .6 3-2.9-1.6-2.9 1.6.6-3-2.2-2 3-.4z" />`,
@@ -29,7 +30,7 @@ const DRAWINGS = {
 const LOCK = html`<rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />`;
 const TROPHY = html`<path d="M8 4h8v5a4 4 0 0 1-8 0z" /><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M9 20h6M10 17h4" />`;
 const CAMERA = html`<path d="M4 8h3l1.8-2.5h6.4L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13.3" r="3.6" />`;
-const RULE_DRAWINGS = { post: CAMERA };
+const RULE_DRAWINGS = { post: CAMERA, feed: DRAWINGS["snack-giver"] };
 
 const stroke = (drawing, size, width = 2) =>
   html`<svg width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width=${width} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -149,7 +150,9 @@ export function AchievementsSheet() {
 
           <div class="ach-tiles">
             <${Tile} value=${data.counters.catsMet} label=${t("ach.catsMet", { count: data.counters.catsMet })} />
-            <${Tile} value=${data.counters.encounters} label=${t("ach.encounters", { count: data.counters.encounters })} />
+            ${data.counters.catsFed == null
+              ? html`<${Tile} value=${data.counters.encounters} label=${t("ach.encounters", { count: data.counters.encounters })} />`
+              : html`<${Tile} value=${data.counters.catsFed} label=${t("ach.catsFed", { count: data.counters.catsFed })} />`}
             <${Tile} value=${data.counters.posts} label=${t("ach.posts", { count: data.counters.posts })} />
           </div>
 

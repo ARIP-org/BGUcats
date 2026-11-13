@@ -94,6 +94,8 @@ SELF_WRITTEN = (
     ("USER#", "MET#01J0000000000000000000000"),
     ("USER#", "METM#2026-11#01J0000000000000000000000"),
     ("USER#", "BADGE#first-meow"),
+    ("USER#", "FED#2026-11-12T00:00:00.000000Z#01J0000000000000000000000"),
+    ("USER#", "FEDCAT#01J0000000000000000000000"),
     ("USER#", "PUSHED#2026-11-12"),
     ("USER#", "DEVICE#phone"),
     ("MOD#POSTTEXT#01J0000000000000000000000", "RUN#2026-11-12T00:00:00Z"),
@@ -627,6 +629,89 @@ def count_popularity(user_pk, encs):
         )
 
 
+def _query_all(pk, prefix, forward=True):
+    items, start = [], None
+    while True:
+        kwargs = {
+            "KeyConditionExpression": Key("PK").eq(pk) & Key("SK").begins_with(prefix),
+            "ConsistentRead": True,
+            "ScanIndexForward": forward,
+        }
+        if start:
+            kwargs["ExclusiveStartKey"] = start
+        page = social_table.query(**kwargs)
+        items.extend(page["Items"])
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def fed(feedings):
+    """(points, cats, count): what a person's feedings add up to. Ten
+    points each, for at most two in one Israel day (D10), so the largest
+    reward in the app cannot be farmed by tapping. One an admin removed
+    counts for nothing."""
+    counted = [f for f in feedings if not f.get("removed")]
+    days = {}
+    for f in counted:
+        days[f["day"]] = days.get(f["day"], 0) + 1
+    paid = sum(min(n, RULES["feedingsCountedADay"]) for n in days.values())
+    return RULES["points"]["feed"] * paid, len({f["catId"] for f in counted}), len(counted)
+
+
+def count_feeding(record):
+    """A feeding was logged, or an admin removed one (the desk only marks
+    it `removed`).
+
+    The cat's "last fed" is its newest feeding that still stands, read
+    again rather than adjusted, so removing the newest puts it back to the
+    one before. The person's copy takes the mark, and their points, "cats
+    fed" and Snack Giver are worked out again from all their copies: a
+    record seen twice changes nothing."""
+    cat_pk = _keys(record)[0]
+    feeding = _image(record) or _image(record, "OldImage")
+    user_pk = f"USER#{feeding['userId']}"
+    mine = {"PK": user_pk, "SK": f"FED#{feeding['at']}#{feeding['catId']}"}
+    if _image(record) is None:
+        social_table.delete_item(Key=mine)
+    elif feeding.get("removed"):
+        try:
+            social_table.update_item(
+                Key=mine,
+                UpdateExpression="SET removed = :yes",
+                ConditionExpression="attribute_exists(PK)",
+                ExpressionAttributeValues={":yes": True},
+            )
+        except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+            pass  # the person's copy is gone: nothing of theirs to correct
+
+    standing = next(
+        (f for f in _query_all(cat_pk, "FED#", forward=False) if not f.get("removed")),
+        None,
+    )
+    if standing:
+        social_table.update_item(
+            Key={"PK": cat_pk, "SK": "PUBLIC"},
+            UpdateExpression="SET lastFedAt = :at",
+            ExpressionAttributeValues={":at": standing["at"]},
+        )
+    else:
+        social_table.update_item(
+            Key={"PK": cat_pk, "SK": "PUBLIC"}, UpdateExpression="REMOVE lastFedAt"
+        )
+
+    points, cats, count = fed(_query_all(user_pk, "FED#"))
+    social_table.update_item(
+        Key={"PK": user_pk, "SK": "STATS#ALL"},
+        UpdateExpression="SET fedPoints = :p, catsFed = :c, feedings = :n, fedCountedAt = :now",
+        ExpressionAttributeValues={":p": points, ":c": cats, ":n": count, ":now": _now_iso()},
+    )
+    if count:
+        _award(user_pk, "snack-giver")
+    else:
+        social_table.delete_item(Key={"PK": user_pk, "SK": "BADGE#snack-giver"})
+
+
 def _encounters_of(user_pk):
     items, start = [], None
     while True:
@@ -1034,6 +1119,7 @@ HANDLERS["post"] = publish_post
 HANDLERS["name"] = count_name
 HANDLERS["profile"] = publish_profile
 HANDLERS["encounter"] = count_encounter
+HANDLERS["feeding"] = count_feeding
 HANDLERS["proposal"] = decide_proposal
 HANDLERS["report"] = take_report
 

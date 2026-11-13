@@ -301,6 +301,9 @@
   --b-fill: #E8913A;
   --b-ink: #1a1a1a;
 }
+.badge-disc[data-badge="snack-giver"] {
+  --b-fill: #5E8A6E;
+}
 .badge-disc[data-badge="night-owl"] {
   --b-fill: #5E6A9A;
 }

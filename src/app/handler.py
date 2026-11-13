@@ -25,6 +25,7 @@ import math
 import os
 import re
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -1072,7 +1073,12 @@ def _get_achievements(user, **_):
     mark = rules["badges"]["deans-list"]["gpa"]
     gpa = grades(_counters([c["catId"] for c in _cats()]), _israel_today())
     top = {cat for cat, grade in gpa.items() if grade >= mark}
-    points = _number(stats.get("points"))
+    feeding = bool(FLAGS.get("feeding"))
+    # What encounters earned and what feedings earned are kept apart, each
+    # by its own recount (the events Lambda), and added here.
+    points = _number(stats.get("points")) + (
+        _number(stats.get("fedPoints")) if feeding else 0
+    )
     return {
         "points": points,
         "level": achievements.level_of(points),
@@ -1080,6 +1086,7 @@ def _get_achievements(user, **_):
             "catsMet": _number(stats.get("catsMet")),
             "encounters": _number(stats.get("encounters")),
             "posts": _number(stats.get("posts")),
+            **({"catsFed": _number(stats.get("catsFed"))} if feeding else {}),
         },
         "badges": [
             {
@@ -1090,9 +1097,111 @@ def _get_achievements(user, **_):
                 "at": held.get(badge),
             }
             for badge in rules["badges"]
+            if feeding or badge != "snack-giver"
         ],
-        "rules": [{"id": "post", "points": rules["points"]["post"]}],
+        "rules": [
+            *([{"id": "feed", "points": rules["points"]["feed"]}] if feeding else []),
+            {"id": "post", "points": rules["points"]["post"]},
+        ],
     }
+
+
+# --------------------------------------------------------------------------
+# Feedings (B7c, D10)
+# --------------------------------------------------------------------------
+
+FEEDINGS_PER_DAY = 6
+FEED_AGAIN_AFTER_S = 4 * 3600
+
+
+def _clock():
+    return time.time()
+
+
+def _feed(user, cat_id, body, **_):
+    """`POST /cats/{id}/feedings`: the caller fed this cat, now.
+
+    One log per cat per person every four hours, held by a pointer item
+    whose condition is the rule, so two phones at once cannot both pass;
+    six logs a day. The same `feedingId` again answers as the first time.
+    Writes the feeding under the cat (which the events Lambda follows: the
+    cat's "last fed", the person's points) and a copy under the person,
+    which is how their feedings are counted again from nothing."""
+    if not FLAGS.get("feeding"):
+        raise ApiError(404, "not found")
+    feeding_id = api.ulid_param(body, "feedingId")
+    spot_id = body.get("spotId")
+    if spot_id is not None and spot_id not in regions.feeding_spot_ids():
+        raise ApiError(400, "spotId is not a feeding spot")
+    _require_cat(cat_id)
+    me = user["userId"]
+    pointer = tables.get_one(social_table, user["PK"], f"FEDCAT#{cat_id}")
+    if pointer and pointer.get("feedingId") == feeding_id:
+        return {"lastFedAt": pointer["at"], "feedingId": feeding_id}  # asked twice
+
+    now = _clock()
+    again = int(_number((pointer or {}).get("atS"))) + FEED_AGAIN_AFTER_S
+    too_soon = ApiError(
+        429,
+        "You logged a feeding for this cat a short while ago.",
+        code="too_soon",
+        details={"retryAfter": max(1, math.ceil(again - now))},
+    )
+    if pointer and now < again:
+        raise too_soon
+    limits.take(social_table, f"{me}#feedings", FEEDINGS_PER_DAY, 86400, now=now)
+
+    at = datetime.fromtimestamp(now, UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    feeding = {
+        "feedingId": feeding_id,
+        "catId": cat_id,
+        "userId": me,
+        "at": at,
+        "day": encounters.day_of(at),
+        **({"spotId": spot_id} if spot_id else {}),
+    }
+    client = social_table.meta.client
+    name = social_table.name
+    new = {"ConditionExpression": "attribute_not_exists(PK)"}
+    try:
+        client.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": name,
+                        "Item": {"PK": f"CAT#{cat_id}", "SK": f"FED#{at}#{me}", **feeding},
+                        **new,
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": name,
+                        "Item": {"PK": user["PK"], "SK": f"FED#{at}#{cat_id}", **feeding},
+                        **new,
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": name,
+                        "Item": {
+                            "PK": user["PK"],
+                            "SK": f"FEDCAT#{cat_id}",
+                            "catId": cat_id,
+                            "feedingId": feeding_id,
+                            "at": at,
+                            "atS": int(now),
+                        },
+                        "ConditionExpression": "attribute_not_exists(PK) OR atS <= :before",
+                        "ExpressionAttributeValues": {
+                            ":before": int(now) - FEED_AGAIN_AFTER_S
+                        },
+                    }
+                },
+            ]
+        )
+    except client.exceptions.TransactionCanceledException:
+        raise too_soon from None  # another phone of theirs got there first
+    return {"lastFedAt": at, "feedingId": feeding_id}
 
 
 # --------------------------------------------------------------------------
@@ -2239,6 +2348,7 @@ ROUTES = (
     ("POST", rf"^/api/v1/cats/(?P<cat_id>{ID})/names$", _suggest_name, "user"),
     ("PUT", rf"^/api/v1/cats/(?P<cat_id>{ID})/vote$", _vote, "user"),
     ("DELETE", rf"^/api/v1/cats/(?P<cat_id>{ID})/vote$", _unvote, "user"),
+    ("POST", rf"^/api/v1/cats/(?P<cat_id>{ID})/feedings$", _feed, "user"),
     ("GET", r"^/api/v1/feed$", _get_feed, "user"),
     ("POST", r"^/api/v1/posts$", _create_post, "user"),
     ("GET", rf"^/api/v1/posts/(?P<post_id>{ID})$", _get_post, "user"),

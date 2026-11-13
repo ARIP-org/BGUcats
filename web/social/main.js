@@ -38,6 +38,7 @@ import { ReportSheet } from "./report.js";
 import { Scan, openScan, startOutbox } from "./scan.js";
 import { Overlays, toast } from "./ui.js";
 import { unanswered } from "./asking.js";
+import { FeedingSheet } from "./feeding.js";
 
 const HOME = "/app.html";
 const root = document.getElementById("root");
@@ -120,6 +121,7 @@ function Frame() {
       <${Scan} />
       <${AchievementsSheet} />
       <${ReportSheet} />
+      <${FeedingSheet} />
       <${Overlays} />
     </div>
   `;

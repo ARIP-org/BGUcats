@@ -1,5 +1,5 @@
 {
-  "comment": "The campus places the app names (docs/app-plan/04-api.md, 'Regions and feeding spots'). PLACEHOLDERS: the names come from the prototype, the coordinates are approximate and made up, and there are no feeding spots yet. The owner supplies the real ones (docs/app-plan/OWNER_STEPS.md, O12). Read by the map, the new-cat form and the API (src/common/regions.py); an id, once used, never changes meaning.",
+  "comment": "The campus places the app names (docs/app-plan/04-api.md, 'Regions and feeding spots'). PLACEHOLDERS: the names come from the prototype, the coordinates are approximate and made up, and the feeding spots are made up too (the campus has set ones; these stand in until the owner's list). The owner supplies the real ones (docs/app-plan/OWNER_STEPS.md, O12). Read by the map, the new-cat form and the API (src/common/regions.py); an id, once used, never changes meaning.",
   "placeholder": true,
   "regions": [
     {"id": "engineering", "names": {"en": "Building 96 · Engineering"}, "near": {"en": "Building 96"}, "lat": 31.2635, "lon": 34.8005, "radiusM": 120},
@@ -8,5 +8,9 @@
     {"id": "dorms", "names": {"en": "Dorms"}, "near": {"en": "the dorms"}, "lat": 31.2655, "lon": 34.8040, "radiusM": 200},
     {"id": "lawn", "names": {"en": "Sports lawn"}, "near": {"en": "the sports lawn"}, "lat": 31.2600, "lon": 34.8050, "radiusM": 150}
   ],
-  "feedingSpots": []
+  "feedingSpots": [
+    {"id": "library-steps", "names": {"en": "Library steps"}, "regionId": "library", "lat": 31.2621, "lon": 34.8028},
+    {"id": "union-yard", "names": {"en": "Student Union yard"}, "regionId": "union", "lat": 31.2609, "lon": 34.8017},
+    {"id": "dorms-gate", "names": {"en": "Dorms gate"}, "regionId": "dorms", "lat": 31.2652, "lon": 34.8037}
+  ]
 }

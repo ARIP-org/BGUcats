@@ -2227,6 +2227,59 @@ body:has(.frame) {
   font-size: 14px;
 }
 
+/* Feeding (B7c): when the cat was last fed, and the way to log one. */
+.fed-card {
+  padding: 14px 14px 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fed-icon {
+  flex: none;
+  inline-size: 38px;
+  block-size: 38px;
+  border-radius: 12px;
+  background: var(--chip);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fed-words {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fed-last {
+  font-size: 15px;
+  font-weight: 600;
+}
+.fed-by {
+  font-size: 12px;
+  color: var(--muted);
+}
+.fed-button {
+  flex: none;
+  min-block-size: 44px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 22px;
+  background: var(--chip);
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.feeding-sheet .chips legend {
+  margin-block-end: 8px;
+  padding-inline: 0;
+  font-size: 14px;
+}
+
 /* "Tag a cat": every cat by name, three to a row. */
 .tag-grid {
   display: grid;

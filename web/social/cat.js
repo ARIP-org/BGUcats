@@ -11,6 +11,7 @@
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { cat as loadCat, catPosts, names as loadNames, regionName } from "./data.js";
 import { Avatar } from "./feed.js";
+import { FedCard } from "./feeding.js";
 import { ago, oneDecimal, t } from "./i18n.js";
 import { openMap } from "./map.js";
 import { glass } from "./motion.js";
@@ -124,6 +125,8 @@ export function CatPage({ catId }) {
         </div>
         <p class="cat-met">${cat.met ? t("cat.met", { count: cat.met.encounters }) : t("cat.notMet")}</p>
       </section>
+
+      <${FedCard} cat=${cat} name=${name || t("cat.noName")} onFed=${(lastFedAt) => setCat({ ...cat, lastFedAt })} />
 
       ${poll && html`<${NamePoll} poll=${poll} change=${setPoll} />`}
 

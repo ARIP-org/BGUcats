@@ -72,6 +72,8 @@ locals {
     gpa = true
     # Points, levels and badges (B7, E8): the card on Home and its sheet.
     achievements = true
+    # "I fed this cat" (D10, B7c): the log, "last fed", its points and badge.
+    feeding = true
   }
 
   # count for the bot's resources: 1 in production, 0 in staging.

@@ -1,9 +1,11 @@
 {
-  "comment": "The rules of achievements, one list for the events Lambda (which counts) and the member API (which shows): docs/app-plan/01-product.md, 'The rules' (D11). points: what earns them. levels: the points each level starts at, level 1 first; the prototype's 'Level 4, 1,240 points, 260 to Level 5' fits levels 4 and 5 at 500 and 1,500. badges: in the order shown, each with what its rule needs. The names of badges and levels are the app's strings (web/i18n/). Snack Giver waits for feedings (B7c); Critic has no meaning since D9 and is not here until the designer says what it is.",
-  "points": {"post": 5},
+  "comment": "The rules of achievements, one list for the events Lambda (which counts) and the member API (which shows): docs/app-plan/01-product.md, 'The rules' (D11). points: what earns them. levels: the points each level starts at, level 1 first; the prototype's 'Level 4, 1,240 points, 260 to Level 5' fits levels 4 and 5 at 500 and 1,500. badges: in the order shown, each with what its rule needs. The names of badges and levels are the app's strings (web/i18n/). feedingsCountedADay: how many of a person's feedings in one Israel day earn points (D10); more can be logged and earn nothing. Critic has no meaning since D9 and is not here until the designer says what it is.",
+  "points": {"post": 5, "feed": 10},
+  "feedingsCountedADay": 2,
   "levels": [0, 50, 200, 500, 1500, 3000],
   "badges": {
     "first-meow": {},
+    "snack-giver": {},
     "night-owl": {"fromHour": 22, "untilHour": 5},
     "explorer": {},
     "name-giver": {},
