@@ -370,5 +370,16 @@
     "one": "{count} cat lives here",
     "other": "{count} cats live here"
   },
-  "map.nobody": "No named cats here yet. Spotted one? Scan it."
+  "map.nobody": "No named cats here yet. Spotted one? Scan it.",
+  "block.block": "Block",
+  "block.title": "Block {name}?",
+  "block.body": "You will not see each other's posts or pages, and you will stop being friends. They are not told.",
+  "block.button": "Block",
+  "block.done": "{name} is blocked",
+  "block.listTitle": "Blocked people",
+  "block.listLead": "People you blocked do not see your posts or your page, and you do not see theirs.",
+  "block.unblock": "Unblock",
+  "block.lifted": "{name} is unblocked",
+  "block.none": "You have not blocked anyone.",
+  "block.failed": "The list could not be loaded."
 }

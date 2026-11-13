@@ -24,7 +24,7 @@ import { html, render } from "../vendor/preact-htm.js";
 import { AchievementsSheet } from "./achievements.js";
 import { CatPage } from "./cat.js";
 import { Feed } from "./feed.js";
-import { Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
+import { Blocked, Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
 import { Gallery } from "./gallery.js";
 import { Home, Profile } from "./home.js";
 import { MapPage } from "./map.js";
@@ -81,7 +81,7 @@ function NotOpen() {
 // The frame (E1): the tabs' pages, the pages pushed over them, the tab
 // bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
 const TAB_PAGES = { feed: Feed, home: Home };
-const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage, map: MapPage };
+const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage, map: MapPage, blocked: Blocked };
 const onScroll = watchScroll();
 
 function Frame() {

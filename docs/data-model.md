@@ -113,7 +113,7 @@ dataset's.
 | Invite code **(F4)** | `INVITE#{code}` | `META` | `userId`. The code is random, not derived from the username |
 | Friend **(written since B5a)** | `USER#{a}` | `FRIEND#{b}` | `userId` (a), `friendId` (b), `since`, `via` (`invite` / `request` / `contacts`; only `invite` is written yet). Always written and deleted with its mirror (`USER#{b}` / `FRIEND#{a}`), in one transaction |
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
-| Block (B8; an invite already refuses to cross one, B5a) | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
+| Block **(written since B8a)** | `USER#{a}` | `BLOCK#{b}` | `userId` (a), `blockedId` (b), `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}` with `userId` (b), `blockerId` (a), `at`; always written and deleted together, in one transaction that also deletes the two `FRIEND` items. One read of a person's `BLOCK…` items is everyone a block keeps them apart from, either way |
 | Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
 | Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; on `ALL` only, **since B7a**: `points` (five for each day a cat was met and posted) and `posts` (encounters that became a post). Planned, not written: `fed`, `namesVoted`, `namesLed` |
 | A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. |

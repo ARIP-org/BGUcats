@@ -27,7 +27,7 @@ A session ticks its row in the pull request that finishes it.
 | B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) merged 2026-11-13; B7a (points, levels, six badges) built the same day; feedings (B7c) and the recount scripts not built |
-| B8 | Reports, blocks, bans, the desk's tools | |
+| B8 | Reports, blocks, bans, the desk's tools | B8a (blocks, with their screens) built 2026-11-13; reports and bans not built |
 | B9 | Push | |
 | B10 | Deleting an account | |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
@@ -45,7 +45,7 @@ A session ticks its row in the pull request that finishes it.
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
 | E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) built 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
-| E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) built 2026-11-13 with B5a; Block and Report in a friend's menu wait for B8 |
+| E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a; Report waits for B8b |
 | E8 | Achievements | E8a (Home's card and the sheet) built 2026-11-13 with B7a |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
@@ -476,6 +476,20 @@ was built.
   other in the feed, the polls' friend marks, the podium or search; a
   banned account's every write is refused by both APIs; three reports
   hide a post and one admin action restores it.
+- **B8a, built 2026-11-13:** blocks. `PUT` and `DELETE /blocks/{id}`,
+  `GET /blocks`; a block is `BLOCK#` under the one who blocked and
+  `BLOCKEDBY#` under the other, written with the end of the friendship
+  in one transaction. `_hidden(me)` is everyone a block keeps the
+  caller apart from, either way; the feed, a cat's posts, a post by its
+  id and a person's page leave them out, with the answer nobody gets.
+  `tests/app/test_blocks.py` runs 160 random accepts, removes, blocks
+  and unblocks among three people and checks every mirror, and that
+  nobody is a friend of someone a block keeps them from. In the app:
+  **Block** in a friend's menu (as drawn) and in a menu on anyone's
+  page; the posts of someone just blocked leave the feed on screen.
+  - **Mine (G4, "there is no list to unblock from"):** "Blocked people"
+    in the profile, with **Unblock**.
+  - **Not built:** reports (B8b) and bans (B8c).
 
 ### B9. Push
 

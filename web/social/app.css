@@ -3420,3 +3420,42 @@ button.post-name {
   color: var(--accent);
 }
 
+/* ------------------------------------------------------------ blocks (B8) */
+
+/* A person's menu, level with the page's back button, at the other edge. */
+.person-top {
+  position: sticky;
+  z-index: 3;
+  inset-block-start: -64px;
+  margin-block: -64px 16px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.person-top > * {
+  pointer-events: auto;
+}
+.page-lead {
+  margin: -8px 4px 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.blocked-page .friends-open {
+  cursor: default;
+}
+.unblock {
+  flex: none;
+  block-size: 36px;
+  margin-inline-end: 6px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: var(--chip-neutral);
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+

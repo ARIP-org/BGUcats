@@ -380,17 +380,21 @@ export function Feed() {
   const idOf = (c) => c.postId || c.cardId;
   const change = (next) => setCards((now) => now.map((c) => (idOf(c) === idOf(next) ? next : c)));
   const gone = (card) => setCards((now) => now.filter((c) => idOf(c) !== idOf(card)));
+  // Someone blocked a moment ago: their posts leave the feed that is
+  // already on screen; the next page from the server has none.
+  const keptApart = useStore((s) => s.keptApart) || [];
+  const shown = cards?.filter((card) => !keptApart.includes(card.author?.userId));
 
   return html`<${TopButtons} />
     <div class="tab-content feed">
       ${today && html`<${CatOfTheDay} cat=${today} />`}
       ${mineFirst.map((card) => html`<${SendingCard} key=${card.postId} card=${card} />`)}
-      ${cards?.map((card) =>
+      ${shown?.map((card) =>
         card.type === "vote"
           ? html`<${VoteCard} key=${card.cardId} card=${card} onChange=${change} />`
           : html`<${Card} key=${card.postId} card=${card} onChange=${change} onGone=${gone} />`,
       )}
-      ${cards && !cards.length && !failed && html`<p class="empty">${t("feed.empty")}</p>`}
+      ${shown && !shown.length && !failed && html`<p class="empty">${t("feed.empty")}</p>`}
       ${failed && html`<p class="empty" role="alert">${t("feed.failed")}</p>`}
       ${cursor && html`<div ref=${end} class="feed-more" aria-hidden="true"></div>`}
       ${busy && html`<p class="loading" role="status">${t("feed.loading")}</p>`}

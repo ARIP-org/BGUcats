@@ -59,6 +59,10 @@ export const friends = (period) => api(`/v1/friends?period=${period}`);
 export const person = (userId) => api(`/v1/users/${userId}`);
 export const personPosts = (userId) => api(`/v1/users/${userId}/posts`);
 export const removeFriend = (userId) => del(`/v1/friends/${userId}`);
+// Blocks (B8): each hides the two people from each other everywhere.
+export const blocks = () => api("/v1/blocks");
+export const block = (userId) => put(`/v1/blocks/${userId}`);
+export const unblock = (userId) => del(`/v1/blocks/${userId}`);
 // -> {person}. Refused with `gone` or `own_invite`.
 export const acceptInvite = (code) => post(`/v1/invites/${code}/accept`);
 

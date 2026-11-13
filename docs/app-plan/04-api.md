@@ -77,7 +77,7 @@ its owner's alone.
 | `DELETE /friends/{userId}` | Removes the friendship, both sides, in one transaction. The same answer if they were not friends. Since B5a |
 | `POST /invites/{code}/accept` | Makes the caller and the code's owner friends, in one transaction. `{person}`, the same whether new or already friends; `gone` for an unknown code, an account that is going away, or a block between them; `own_invite` (409) for the caller's own. Needs the terms; 30 a day. Since B5a |
 | `POST /friends/requests`, `GET /friends/requests`, `POST /friends/requests/{userId}/accept`, `DELETE /friends/requests/{userId}` | D4, if requests are chosen |
-| `PUT /blocks/{userId}`, `DELETE /blocks/{userId}`, `GET /blocks` | Block, unblock, list |
+| `PUT /blocks/{userId}`, `DELETE /blocks/{userId}`, `GET /blocks` | Since B8a. Block: the block, its mirror and the end of the friendship, in one transaction; `{userId, blocked}`; twice is once; 50 a day. Unblock: both items; they are not friends again. List: the people the caller blocked, newest first (never who blocked the caller). While a block stands, either way: neither is in the other's feed or a cat's posts, `GET /posts/{id}`, `GET /users/{id}` and its posts answer `gone` exactly as for nobody, and an invite between them does nothing |
 | `POST /reports` | `{reportId, targetType, targetId, reason, note?}`. Reasons are a fixed list (D15). Always answers the same, so a reporter learns nothing about earlier reports |
 | `POST /contacts/match` | D5 only. Numbers in, the people among them out; nothing stored |
 
