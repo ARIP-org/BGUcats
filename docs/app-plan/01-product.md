@@ -100,14 +100,15 @@ close.
 **2a · "You met Simba".** The cat's photo with yours overlapping;
 "Usually near Aranne Library · met 37 times"; the cat's **name poll**,
 marked optional, voting in place; **Create a post**; **Save without
-posting**.
+posting** (on the button: "Just save").
 
 **2b · New cat.** One to four photos ("Take another", "2 of 4", remove);
 **Name idea** (optional, 24 characters, "e.g. Hummus"); **Coat** (one
 of Ginger, Black, White, Gray, Tabby, Calico, Tuxedo); **Where does it
 hang out?** (one of the five places or "Somewhere else"); **Anything
 else?** (any of Friendly, Shy, Ear-tipped, Kitten, Has a collar);
-**Add cat & create a post**; **Add cat without posting**.
+**Add cat & create a post**; **Add cat without posting** (on the
+buttons: "Add & post", "Just add").
 
 **3 · New post.** The tagged cat with **Change** (and NEW for a
 proposal); the photos, numbered, up to four; **Description** (optional,

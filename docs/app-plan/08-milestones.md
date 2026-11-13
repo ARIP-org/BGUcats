@@ -725,6 +725,25 @@ English file.
   the flash (no torch in an iPhone's web view), three frames per press
   (D12, the `capture_burst` flag), the service worker sending posts with
   the app closed (Chrome on Android only; the open app sends them).
+- **Pages 1, 2a and 2b drawn as the prototype draws them (2026-11-13):**
+  "Which cat?" has the photo just taken at the top between Close and
+  Retake, the model's three as large photos (two and one), and every
+  other cat four to a row after a dashed "New cat" tile; tiles are
+  photos only, and a cat with no photo yet shows its name. "You met X"
+  has the cat's photo with yours over its corner, "Usually near …" and
+  the cat's name poll (the one on its page, `NamePoll` in `poll.js`;
+  a vote from here is an ordinary vote). The new-cat form has the tall
+  photo strip with "Add photo · 1 of 4", the coats with their colours
+  (tokens.css), and the prototype's chips. Both pages end in two buttons
+  that stay at the foot of the screen: "Just save" / "Create a post",
+  "Just add" / "Add & post". The top button is Close on the flow's first
+  page and Back after it (`pageBefore` in `scan.js`): back from "You
+  met" is "not this cat". Choosing a cat for a post ("Tag a cat" from
+  "+", or "Change") comes straight back to the post. The model is not
+  served in the tests, so the test of the three candidates stands in for
+  `recognition.js` at its one meeting point with `scan.js`. **Not yet:**
+  page 3's look (the post), removing a photo from the strip, the
+  sideways swipe back, the small map under "Add location".
 
 ### E4. The gallery, a cat's page, the poll
 
