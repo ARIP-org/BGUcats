@@ -6,6 +6,7 @@ import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { cats, deletePost, feedPage, regionName, setLike, takeVoteBack, voteFor } from "./data.js";
 import { openGallery } from "./gallery.js";
 import { ago, t, tMarked } from "./i18n.js";
+import { openMap } from "./map.js";
 import { glass } from "./motion.js";
 import { REFUSED, moved } from "./poll.js";
 import { push, useStore } from "./store.js";
@@ -95,7 +96,17 @@ function Card({ card, onChange, onGone }) {
 
   function menu(e) {
     const items = [];
-    if (card.cat) items.push({ label: t("post.seeCat", { name: card.cat.name }), pick: () => openCat(card.cat) });
+    if (card.cat) {
+      items.push({ label: t("post.seeCat", { name: card.cat.name }), pick: () => openCat(card.cat) });
+      // On the cat's usual place, which the list of cats knows.
+      items.push({
+        label: t("post.showOnMap"),
+        pick: async () => {
+          const all = await cats().catch(() => ({ cats: [] }));
+          openMap(all.cats.find((c) => c.catId === card.cat.catId)?.regionId || null);
+        },
+      });
+    }
     if (card.mine) {
       items.push({
         label: t("post.delete"),

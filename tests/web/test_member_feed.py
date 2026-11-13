@@ -95,7 +95,7 @@ def test_the_photo_s_menu_offers_the_cat_and_for_its_author_deleting(
     page = feed(open_member_app, ADMIN)
     page.locator("article.post .photo").first.click()
     menu = page.get_by_role("menu", name="Post options")
-    assert menu.get_by_role("menuitem").all_inner_texts() == ["See Mitzi"]
+    assert menu.get_by_role("menuitem").all_inner_texts() == ["See Mitzi", "Show on map"]
     page.keyboard.press("Escape")
 
     mine = feed(open_member_app, COLLABORATOR)
@@ -103,6 +103,7 @@ def test_the_photo_s_menu_offers_the_cat_and_for_its_author_deleting(
     menu = mine.get_by_role("menu", name="Post options")
     assert menu.get_by_role("menuitem").all_inner_texts() == [
         "See Mitzi",
+        "Show on map",
         "Delete post",
     ]
     mine.wait_for_timeout(450)

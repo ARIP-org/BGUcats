@@ -43,7 +43,7 @@ A session ticks its row in the pull request that finishes it.
 | E2 | The feed | merged 2026-11-12 |
 | E3 | The capture flow | merged 2026-11-12 |
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
-| E5 | The map | |
+| E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) built 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) built 2026-11-13 with B5a; Block and Report in a friend's menu wait for B8 |
 | E8 | Achievements | E8a (Home's card and the sheet) built 2026-11-13 with B7a |
@@ -688,7 +688,7 @@ English file.
   and where it came from, the usual place, the description, posts, likes
   and last seen, and how often the caller met it; who posted it lately.
   Left out until their backends exist: the grade and "Highest GPA"
-  (B7b), the map button (E5). The name poll joined the page with B4a:
+  (B7b), the map button (E5; both built since). The name poll joined the page with B4a:
   each option a bar of its share, the leader marked, the choice ringed;
   a tap votes, a tap on your choice takes it back, and a name typed
   below joins the poll, marked while it is being checked. The gallery slides in
@@ -701,6 +701,24 @@ English file.
   shapes, dragging, the habitat sheet. The feeding spots (D10) are drawn
   once the designer has drawn one (G6); until then the file carries them
   and the map does not show them.
+- **E5a, built 2026-11-13** (`web/social/map.js`), from the prototype:
+  the campus as one drawing in the theme's colours, dragged with a
+  finger (it follows a third as far past an edge, glides on a little,
+  and stops inside its edges); the five habitats, each an area and a
+  name to tap, with up to three of its cats as round photos; the sheet
+  with the habitat's name, how many cats live there, and each cat with
+  its grade. "Show on map" on a cat's page and in a photo's menu opens
+  it on the cat's usual place (`regionId`, set in the desk's "Public
+  info"); a cat with none opens the whole campus. The map takes the
+  whole screen: the tab bar and the page's back button step aside, and
+  the way back is in the sheet. No route of its own: `GET /cats` and
+  the regions file.
+  - The areas are the prototype's, keyed by region id in the module. A
+    test holds them to `web/regions.json`: when the owner's real places
+    arrive (O12) the drawing is made again.
+  - **Mine:** "Scan a cat" in the sheet of a habitat with no cats, where
+    the prototype has the sentence alone.
+  - **Not built:** feeding spots (G6); the map's opening animation.
 
 ### E6. Home, profile, settings
 

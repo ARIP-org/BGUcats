@@ -27,6 +27,7 @@ import { Feed } from "./feed.js";
 import { Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
 import { Gallery } from "./gallery.js";
 import { Home, Profile } from "./home.js";
+import { MapPage } from "./map.js";
 import { loadLanguage, t } from "./i18n.js";
 import { Stack } from "./stack.js";
 import { set, useStore } from "./store.js";
@@ -80,14 +81,17 @@ function NotOpen() {
 // The frame (E1): the tabs' pages, the pages pushed over them, the tab
 // bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
 const TAB_PAGES = { feed: Feed, home: Home };
-const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage };
+const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage, map: MapPage };
 const onScroll = watchScroll();
 
 function Frame() {
   const tab = useStore((s) => s.tab);
   const stacked = useStore((s) => s.stack.length > 0);
+  // The page on top, by name: the map fills the screen and has its own way
+  // back, so the tab bar steps aside for it (app.css).
+  const top = useStore((s) => s.stack[s.stack.length - 1]?.name || "");
   return html`
-    <div class="frame" data-screen="frame">
+    <div class="frame" data-screen="frame" data-top=${top}>
       ${Object.entries(TAB_PAGES).map(
         ([id, View]) => html`<div
           class=${id === tab ? "tab-page shown" : "tab-page"}
