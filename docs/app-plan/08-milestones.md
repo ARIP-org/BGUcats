@@ -20,7 +20,7 @@ A session ticks its row in the pull request that finishes it.
 | F2 | Shared code, and one catalogue of every key | merged 2026-11-12 |
 | F3 | The social table, the events Lambda, the seed | merged 2026-11-12. The local app and the seed learn the table in B3c |
 | F4 | The member API: who you are, flags, who may sign up | merged 2026-11-12 |
-| B1 | Profiles | B1a (the name and the settings) merged 2026-11-13; B1b (the photo) built the same day, in review |
+| B1 | Profiles | B1a (name, settings) and B1b (photo) merged 2026-11-13; B1c (username) built the same day, in review; devices wait for B9 |
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | |
@@ -222,8 +222,13 @@ was built.
   `pendingAvatarKey` and the events Lambda publishes it, as a name. The
   member API's role gains `avatars/*` in the media bucket and nothing
   else there. A replaced photo is removed at the person's next change:
-  the events Lambda has no access to the bucket. Still to build: the
-  username, devices.
+  the events Lambda has no access to the bucket.
+- **B1c, built 2026-11-13:** `PUT /me/username`, the transaction of
+  `03-data-model.md`, and a Username row on the profile beside the name
+  (the prototype shows the username and draws no way to change it; G16's
+  first-run choice is not built). Not held for a check as a display name
+  is: a lookup key cannot be pending. Still to build: devices, with push
+  (B9).
 
 ### B2. Cats for members, regions
 

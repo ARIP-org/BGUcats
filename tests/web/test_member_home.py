@@ -290,3 +290,39 @@ def test_a_file_that_is_no_picture_is_refused_on_the_phone(open_member_app, app)
     )
     page.locator(".toast.on").get_by_text("That picture could not be used.").wait_for()
     assert "Contents" not in app.s3.list_objects_v2(Bucket=app.bucket, Prefix="avatars/")
+
+
+def test_a_username_is_chosen_in_its_row(open_member_app, app, shot):
+    page = home(open_member_app)
+    profile = open_profile(page)
+    field = profile.get_by_label("Username")
+    assert field.input_value() == "collaborator"
+    field.fill("Dana.Cats")
+    with page.expect_response(lambda res: res.url.endswith("/api/v1/me/username")) as saved:
+        field.press("Enter")
+    assert saved.value.status == 200
+    page.locator(".toast.on").get_by_text("Username saved").wait_for()
+    assert field.input_value() == "dana.cats"  # as the server stored it
+    assert profile.locator(".profile-sub").inner_text().startswith("@dana.cats · since ")
+    shot(page, "member-profile-username")
+    _, feed = app.api("GET", "/api/v1/feed", email=ADMIN)
+    assert feed["cards"][0]["author"]["username"] == "dana.cats"
+
+
+def test_a_taken_or_malformed_username_is_refused_and_the_field_goes_back(open_member_app, app):
+    _, admin = app.api("GET", "/api/v1/me", email=ADMIN)
+    page = home(open_member_app)
+    profile = open_profile(page)
+    field = profile.get_by_label("Username")
+    for typed, said in (
+        (admin["username"], "That username is taken."),
+        ("no spaces here", "A username is 3 to 20 letters"),
+    ):
+        field.fill(typed)
+        field.press("Enter")
+        page.locator(".toast.on").get_by_text(said).wait_for()
+        page.wait_for_function(
+            "document.querySelector('[data-row=username] input').value === 'collaborator'"
+        )
+    _, me = app.api("GET", "/api/v1/me", email=COLLABORATOR)
+    assert me["username"] == "collaborator"

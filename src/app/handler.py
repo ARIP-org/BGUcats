@@ -348,6 +348,94 @@ def _update_me(user, role, body, **_):
     return _get_me(changed, role)
 
 
+# Attempts, not successes: a taken name counts, so the route cannot be used
+# to ask which names exist more than a few times a day.
+USERNAME_CHANGES_PER_DAY = 10
+
+
+def _clean_username(value):
+    """The username as it will be stored, or ApiError(400) saying the rule.
+    Lower case, so "Maya" and "maya" are one name; 3 to 20 of a-z, 0-9, dot
+    and underscore; a letter or digit at each end; none of the names that
+    would read as the app speaking."""
+    if not isinstance(value, str):
+        raise ApiError(400, "username must be text", code="bad_username")
+    name = value.strip().lower()
+    if (
+        not USERNAME_PATTERN.match(name)
+        or name[0] in "._"
+        or name[-1] in "._"
+        or re.search(r"[._]{2}", name)
+    ):
+        raise ApiError(
+            400,
+            "a username is 3 to 20 letters a-z, digits, dots or underscores, "
+            "with a letter or digit at each end",
+            code="bad_username",
+        )
+    if name in RESERVED_USERNAMES:
+        raise ApiError(409, "that username is not available", code="name_taken")
+    return name
+
+
+def _choose_username(user, role, body, **_):
+    """`PUT /me/username`: one transaction, so two people asking for the
+    same name at once cannot both get it, and the old name is free the
+    moment the new one is held (03-data-model.md, "Writes that must be
+    all-or-nothing"). Not held for a check as a display name is: its
+    alphabet leaves little to check, and a lookup key cannot be pending.
+    C1 adds the check; until then the reserved list is the rule."""
+    require_terms(user)
+    new = _clean_username(body.get("username"))
+    old = user["username"]
+    if new == old:
+        return _get_me(user, role)
+    limits.take(
+        social_table, f"{user['userId']}#usernames", USERNAME_CHANGES_PER_DAY, 86400
+    )
+    client = social_table.meta.client
+    try:
+        client.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": SOCIAL_TABLE_NAME,
+                        "Item": {
+                            "PK": f"USERNAME#{new}",
+                            "SK": "META",
+                            "userId": user["userId"],
+                        },
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+                {
+                    "Delete": {
+                        "TableName": SOCIAL_TABLE_NAME,
+                        "Key": {"PK": f"USERNAME#{old}", "SK": "META"},
+                        "ConditionExpression": "userId = :me",
+                        "ExpressionAttributeValues": {":me": user["userId"]},
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": SOCIAL_TABLE_NAME,
+                        "Key": {"PK": user["PK"], "SK": "PROFILE"},
+                        "UpdateExpression": "SET username = :new",
+                        "ConditionExpression": "username = :old",
+                        "ExpressionAttributeValues": {":new": new, ":old": old},
+                    }
+                },
+            ]
+        )
+    except client.exceptions.TransactionCanceledException as exc:
+        reasons = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
+        if reasons and reasons[0] == "ConditionalCheckFailed":
+            raise ApiError(409, "that username is taken", code="name_taken")
+        # The person's own name changed under this call (two phones).
+        raise ApiError(503, "your username just changed; try again", code="try_again")
+    return _get_me({**user, "username": new}, role)
+
+
 # --------------------------------------------------------------------------
 # The profile photo (B1b)
 # --------------------------------------------------------------------------
@@ -1234,6 +1322,7 @@ ID = r"[0-9A-Za-z]+"
 ROUTES = (
     ("GET", r"^/api/v1/me$", _get_me, "user"),
     ("PATCH", r"^/api/v1/me$", _update_me, "user"),
+    ("PUT", r"^/api/v1/me/username$", _choose_username, "user"),
     ("POST", r"^/api/v1/me/avatar$", _start_avatar, "user"),
     (
         "POST",
