@@ -489,7 +489,7 @@ function NewCat({ scan, places }) {
     <${Shots} scan=${scan} />
     <label class="field">
       <span>${t("scan.nameIdea")} <span class="optional">${t("scan.optional")}</span></span>
-      <input maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder=${t("scan.nameIdeaHint")} value=${p.nameIdea} onInput=${(e) => change({ nameIdea: e.currentTarget.value })} />
+      <input maxlength="24" dir="auto" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder=${t("scan.nameIdeaHint")} value=${p.nameIdea} onInput=${(e) => change({ nameIdea: e.currentTarget.value })} />
     </label>
     <${Chips} label=${t("scan.coat")} options=${COATS} chosen=${p.coat} swatch="coat" labelOf=${(v) => t(`coat.${v}`)} onChange=${(coat) => change({ coat })} />
     <${Chips}
@@ -609,6 +609,7 @@ function PostPage({ scan, cats, places }) {
       <textarea
         maxlength="280"
         rows="3"
+        dir="auto"
         autocapitalize="sentences"
         enterkeyhint="done"
         placeholder=${t("scan.descriptionHint")}

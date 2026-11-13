@@ -174,7 +174,7 @@ function Card({ card, onChange, onGone }) {
         ${card.likes}
       </button>
     </div>
-    ${card.text && html`<p class="post-text">${card.text}</p>`}
+    ${card.text && html`<p class="post-text" dir="auto">${card.text}</p>`}
     <div class="post-meta">
       <span>${ago(card.createdAt)}</span>
       ${region &&
@@ -232,7 +232,7 @@ function SendingCard({ card }) {
       </span>
     </div>
     <p class="sending-why" role="status">${why}</p>
-    ${card.text && html`<p class="post-text">${card.text}</p>`}
+    ${card.text && html`<p class="post-text" dir="auto">${card.text}</p>`}
   </article>`;
 }
 

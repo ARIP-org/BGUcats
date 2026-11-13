@@ -96,7 +96,7 @@ export function NamePoll({ poll, change }) {
       )}
     </div>`}
     <form class="poll-suggest" onSubmit=${suggest}>
-      <input ref=${field} name="suggestion" aria-label=${t("poll.suggest")} placeholder=${t("poll.suggest")} maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="done" />
+      <input ref=${field} name="suggestion" dir="auto" aria-label=${t("poll.suggest")} placeholder=${t("poll.suggest")} maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="done" />
       <button type="submit" disabled=${busy}>${t("poll.suggestButton")}</button>
     </form>
   </section>`;

@@ -3801,6 +3801,7 @@ button.post-name {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.25;
+  overflow-wrap: anywhere; /* a long name in another language stays in its cell */
 }
 .ach-rules {
   padding: 14px 12px 6px;

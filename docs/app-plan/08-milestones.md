@@ -48,7 +48,7 @@ A session ticks its row in the pull request that finishes it.
 | E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a, Report since B8b |
 | E8 | Achievements | E8a (Home's card and the sheet) merged 2026-11-13 with B7a; "Cats fed", Snack Giver and "Feed a cat" with B7c |
 | E9 | The states nobody drew, offline, accessibility | built 2026-11-13, in review: the missing states, the contrast test, the touch-target test |
-| E10 | Languages and right-to-left | |
+| E10 | Languages and right-to-left | built 2026-11-13 as drafts, in review: Hebrew, Russian and Arabic, the language menu, every screen checked from the right. Offered in staging only until a speaker has read them (O14) |
 | N1 | The member app in the iPhone app, with the model | merged 2026-11-13; on the owner's phone once the API answered its preflight (the same day) |
 | N2 | Push on the phone | |
 | N3 | Share, haptics (and contacts) | |
@@ -934,6 +934,36 @@ English file.
 - **Needs:** D17. E9. O14 before a language is offered.
 - **Builds:** `he.json`, `ru.json`, `ar.json` as drafts; the language
   menu; a Hebrew and an Arabic screenshot of every screen.
+- **Built 2026-11-13, as drafts.** `web/i18n/he.json`, `ru.json` and
+  `ar.json` say everything English says (`tests/web/test_languages.py`:
+  the same keys in the same order, the same placeholders, and exactly
+  the plural forms each language's rules can ask for: three in Hebrew,
+  four in Russian, six in Arabic). Written by the model, not by a
+  speaker: **nobody has read them** (O14). They avoid addressing the
+  reader by gender where the language allows.
+  - **Which languages the profile offers is the account's setting**
+    (`languages` in `infra/main/variables.tf`, sent as
+    `flags.languages`): English alone in production, all four in
+    staging, so a draft can be read on a phone before it is offered.
+    The menu names each language in its own words. Choosing one saves
+    it with the account and on the phone and starts the app again in
+    it; a new phone opens in the account's language; one no longer
+    offered falls back to English.
+  - **Right to left** was built in from the first line of CSS, so
+    Hebrew and Arabic needed no layout change. What a person wrote (a
+    post's text, a name being typed) keeps its own direction
+    (`dir="auto"`).
+  - `tests/web/test_member_languages.py` walks fourteen screens in
+    Hebrew, Arabic and Russian and holds each to: no page scrolls
+    sideways and nothing visible hangs past an edge. Pictures:
+    `member-*-he`, `member-*-ar`, `member-*-ru`. Russian's longer words
+    were shortened where they did not fit a button.
+  - Found on the way: `tRich` put the number after any plural form that
+    said it in words ("one cat found" in Hebrew); such a form now has
+    nothing in bold.
+  - **Not translated:** the names of the campus places
+    (`web/regions.json` has English only, and they are placeholders
+    until O12), the desk, and the server's own error sentences.
 
 ---
 

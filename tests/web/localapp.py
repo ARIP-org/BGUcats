@@ -199,7 +199,7 @@ class LocalApp:
             (app_handler, "s3", self.s3),
             (app_handler, "MEDIA_BUCKET", self.bucket),
             (app_handler, "SOCIAL", True),
-            (app_handler, "FLAGS", {"social": True, "gpa": True, "achievements": True, "feeding": True}),
+            (app_handler, "FLAGS", {"social": True, "gpa": True, "achievements": True, "feeding": True, "languages": ["en", "he", "ru", "ar"]}),
             (events_handler, "social_table", self.social),
         ):
             self._patched.append((module, name, getattr(module, name)))

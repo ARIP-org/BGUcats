@@ -14,7 +14,7 @@ import { AchievementsCard } from "./achievements.js";
 import { squareJpeg } from "./avatar.js";
 import { chooseUsername, deletePost, me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
 import { FriendsCard, openFriends } from "./friends.js";
-import { dayMonth, monthYear, t } from "./i18n.js";
+import { dayMonth, keepLanguage, language, LANGUAGES, monthYear, t } from "./i18n.js";
 import { CatFace, Mascot } from "./mascot.js";
 import { glass } from "./motion.js";
 import { openScan } from "./scan.js";
@@ -242,11 +242,29 @@ export function Profile() {
         pick: () => chooseTheme(id),
       })),
     });
-  // One language until E10; the menu is where the others will appear.
+  // The languages this account is offered (`flags.languages`), each by its
+  // own name. Choosing one saves it with the account and on this phone, and
+  // starts the app again in it: every screen is drawn from the strings.
+  const offered = (me?.flags?.languages || ["en"]).filter((code) => code in LANGUAGES);
+  const chooseLanguage = async (code) => {
+    if (code === language()) return;
+    try {
+      await updateMe({ language: code });
+    } catch (err) {
+      toast(t("error.generic", { message: err.message }));
+      return;
+    }
+    keepLanguage(code);
+    location.reload();
+  };
   const languageMenu = (e) =>
     openMenu(e.currentTarget, {
       label: t("profile.language"),
-      items: [{ label: t("language.en"), checked: true, pick: () => {} }],
+      items: offered.map((code) => ({
+        label: LANGUAGES[code],
+        checked: code === language(),
+        pick: () => chooseLanguage(code),
+      })),
     });
   const signOut = async () => {
     const yes = await confirm({
@@ -374,10 +392,10 @@ export function Profile() {
     <${MyPosts} posts=${posts} failed=${failed} small=${true} onGone=${gone} />
 
     <section class="group" aria-label=${t("profile.settings")}>
-      <button type="button" class="row" aria-haspopup="menu" onClick=${languageMenu}>
+      <button type="button" class="row" aria-haspopup="menu" data-row="language" onClick=${languageMenu}>
         <span class="row-icon" aria-hidden="true"><${Icon} name="globe" /></span>
         <span class="row-label">${t("profile.language")}</span>
-        <span class="row-value">${t("language.en")}</span>
+        <span class="row-value">${LANGUAGES[language()]}</span>
         <${Icon} name="updown" size=${16} width=${2.2} />
       </button>
       <div class="divider" aria-hidden="true"></div>

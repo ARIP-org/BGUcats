@@ -29,7 +29,7 @@ import { Blocked, Friends, PersonPage, keepInvite, takeInvite } from "./friends.
 import { Gallery } from "./gallery.js";
 import { Home, Profile } from "./home.js";
 import { MapPage } from "./map.js";
-import { loadLanguage, t } from "./i18n.js";
+import { keepLanguage, language, loadLanguage, savedLanguage, t } from "./i18n.js";
 import { Stack } from "./stack.js";
 import { set, useStore } from "./store.js";
 import { TabBar, watchScroll } from "./tabbar.js";
@@ -138,7 +138,9 @@ async function boot() {
     return;
   }
   applyTheme(savedTheme());
-  await loadLanguage("en");
+  // The language this phone was last in; English if its strings cannot be
+  // had (a draft taken away, or no signal on a first visit).
+  await loadLanguage(savedLanguage()).catch(() => loadLanguage("en"));
   useConfig(await (await fetch("/config.json")).json());
   onSignedOut(() => show(html`<${SignIn} note=${takeNote()} />`));
 
@@ -172,6 +174,13 @@ async function boot() {
   }
   set({ me });
   adoptTheme(me.theme);
+  // The account's language, if this account is offered it and this phone
+  // is in another (a new phone, or a language no longer offered).
+  const offered = me.flags?.languages || ["en"];
+  const wanted = offered.includes(me.language) ? me.language : "en";
+  if (wanted !== language()) {
+    await loadLanguage(wanted).then(() => keepLanguage(wanted), () => {});
+  }
   // The photos, picks, proposals and posts waiting on this phone go on
   // uploading, and an unfinished capture flow comes back where it was.
   startOutbox();
