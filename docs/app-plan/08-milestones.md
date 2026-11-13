@@ -20,7 +20,7 @@ A session ticks its row in the pull request that finishes it.
 | F2 | Shared code, and one catalogue of every key | merged 2026-11-12 |
 | F3 | The social table, the events Lambda, the seed | merged 2026-11-12. The local app and the seed learn the table in B3c |
 | F4 | The member API: who you are, flags, who may sign up | merged 2026-11-12 |
-| B1 | Profiles | |
+| B1 | Profiles | B1a (the name and the settings) built 2026-11-13, in review |
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | |
@@ -44,7 +44,7 @@ A session ticks its row in the pull request that finishes it.
 | E3 | The capture flow | merged 2026-11-12 |
 | E4 | The gallery, a cat's page, the poll | |
 | E5 | The map | |
-| E6 | Home, profile, settings | E6a (the screens) built 2026-11-13, in review; editing waits for B1 |
+| E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a; the photo waits for B1b |
 | E7 | Friends | |
 | E8 | Achievements | |
 | E9 | The states nobody drew, offline, accessibility | |
@@ -206,6 +206,13 @@ was built.
 - **Done when:** a second account sees the first one's new name and
   avatar only after the stub passes them; an avatar with an EXIF block is
   refused; another person's email is in no response.
+- **B1a, built 2026-11-13:** `PATCH /me`. A display name is written
+  beside the published one (`pendingName`) and moved over by the events
+  Lambda (`publish_name`, where moderation goes, C1), on the condition
+  that it is still the name that was read. Language, theme and
+  notifications are stored as sent. On the profile the name is edited in
+  its row and saved on "done"; the theme chosen there follows the account
+  to the next phone. Still to build: the username, the avatar, devices.
 
 ### B2. Cats for members, regions
 

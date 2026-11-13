@@ -28,7 +28,7 @@ import { loadLanguage, t } from "./i18n.js";
 import { Stack } from "./stack.js";
 import { set, useStore } from "./store.js";
 import { TabBar, watchScroll } from "./tabbar.js";
-import { applyTheme, savedTheme } from "./theme.js";
+import { adoptTheme, applyTheme, savedTheme } from "./theme.js";
 import { Scan, openScan, startOutbox } from "./scan.js";
 import { Overlays } from "./ui.js";
 
@@ -139,6 +139,7 @@ async function boot() {
     throw err;
   }
   set({ me });
+  adoptTheme(me.theme);
   // The photos, picks, proposals and posts waiting on this phone go on
   // uploading, and an unfinished capture flow comes back where it was.
   startOutbox();

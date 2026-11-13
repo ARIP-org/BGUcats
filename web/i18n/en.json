@@ -159,5 +159,10 @@
     "one": "{count} post",
     "other": "{count} posts"
   },
-  "profile.foot": "BGU Cats · Made on campus"
+  "profile.foot": "BGU Cats · Made on campus",
+  "profile.nameLabel": "Display name",
+  "profile.namePlaceholder": "Your name",
+  "profile.nameSaved": "Name saved",
+  "profile.nameChecking": "Others see your new name once it has been checked.",
+  "profile.nameLimit": "That's enough name changes for today. Try again tomorrow."
 }

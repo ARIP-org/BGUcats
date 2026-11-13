@@ -414,8 +414,34 @@ def correct_post(enc):
     social_table.meta.client.transact_write_items(TransactItems=items)
 
 
+def publish_name(record):
+    """A changed display name becomes the one everyone sees (B1). The member
+    API writes it beside the published one (`pendingName`); this moves it
+    over, on the condition that it is still the name that was read, so a
+    second delivery, a newer change, or this write coming back through the
+    stream does nothing.
+
+    This is where moderation goes (C1, docs/app-plan/06-moderation.md), as
+    for a post: until then a name is published at once.
+    """
+    changed = _image(record)
+    name = (changed or {}).get("pendingName")
+    if not name:
+        return
+    try:
+        social_table.update_item(
+            Key={"PK": changed["PK"], "SK": "PROFILE"},
+            UpdateExpression="SET displayName = :name REMOVE pendingName, pendingNameAt",
+            ConditionExpression="pendingName = :name",
+            ExpressionAttributeValues={":name": name},
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        return  # changed again, or gone: the newer change has its own record
+
+
 HANDLERS = {kind: _not_built_yet for _, _, kind in KINDS}
 HANDLERS["post"] = publish_post
+HANDLERS["profile"] = publish_name
 HANDLERS["encounter"] = count_encounter
 HANDLERS["proposal"] = decide_proposal
 

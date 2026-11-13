@@ -20,7 +20,8 @@ import { cats as loadCats, places as loadPlaces } from "./data.js";
 import { t } from "./i18n.js";
 import { glass } from "./motion.js";
 import { get, set, useStore } from "./store.js";
-import { Icon, confirm, toast } from "./ui.js";
+import { termsFirst } from "./terms.js";
+import { Icon, toast } from "./ui.js";
 
 const KEY = "bgucats.scan";
 const MAX_PHOTOS = 4;
@@ -213,20 +214,6 @@ export function endingWrites(scan, { posting }) {
     });
   }
   return writes;
-}
-
-async function termsFirst() {
-  const me = get().me;
-  if (!me?.terms?.required) return true;
-  const yes = await confirm({
-    title: t("terms.title"),
-    body: t("terms.body"),
-    button: t("terms.accept"),
-  });
-  if (!yes) return false;
-  const answer = await post("/v1/me/terms", { version: me.terms.current });
-  set({ me: { ...me, ...answer } });
-  return true;
 }
 
 async function finish({ posting }) {

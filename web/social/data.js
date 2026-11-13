@@ -3,7 +3,7 @@
 // Reads reuse a recent answer (the shared cachedGet); likes change on
 // screen at once and are sent, and a refusal puts the old state back.
 
-import { api, cachedGet, del, put } from "../lib/api.js";
+import { api, cachedGet, del, patch, put } from "../lib/api.js";
 
 const query = (cursor) => (cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
 
@@ -22,6 +22,8 @@ export const deletePost = (postId) => del(`/v1/posts/${postId}`);
 
 // The caller: profile, role, counters (a second or two behind a pick).
 export const me = () => api("/v1/me");
+// Changes the caller's display name or settings; answers like `me`.
+export const updateMe = (changes) => patch("/v1/me", changes);
 // The caller's own posts, newest first, each with its state.
 export const myPosts = () => api("/v1/me/posts");
 

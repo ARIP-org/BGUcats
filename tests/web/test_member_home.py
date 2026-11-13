@@ -117,7 +117,7 @@ def test_the_pill_opens_the_profile_with_your_posts(open_member_app, shot):
     profile = page.locator("[data-page=profile]")
     assert profile.locator(".profile-name").inner_text() == "collaborator"
     assert profile.locator(".profile-sub").inner_text().startswith("@collaborator · since ")
-    assert profile.locator("[data-row=name] .row-value").inner_text() == "collaborator"
+    assert profile.get_by_label("Display name").input_value() == "collaborator"
     loaded(page, "[data-page=profile] .my-posts")
     assert profile.locator(".my-posts .card-count").inner_text() == "1 post"
     # Four to a row, the photo alone: its cat and day are its name.
@@ -127,3 +127,70 @@ def test_the_pill_opens_the_profile_with_your_posts(open_member_app, shot):
         "Math.abs(document.querySelector('[data-page=profile]').getBoundingClientRect().x) < 1"
     )
     shot(page, "member-profile")
+
+
+def open_profile(page):
+    page.get_by_role("button", name="Your profile").click()
+    page.wait_for_selector("[data-page=profile][data-state=shown]")
+    return page.locator("[data-page=profile]")
+
+
+def test_a_new_name_is_saved_and_everyone_sees_it(open_member_app, app, shot):
+    """Typed into its row on the profile and saved on "done" (B1a): its
+    owner sees it at once, on the profile and on Home's pill, and the
+    campus sees it on their posts once it has been checked."""
+    page = home(open_member_app)
+    profile = open_profile(page)
+    name = profile.get_by_label("Display name")
+    name.fill("  Dana   of the Library ")
+    # Home asked who you are again as the profile opened, and the answer
+    # redraws the page. What was typed must still be there: it once was not.
+    page.evaluate(
+        "import('/social/data.js').then(async (d) => (await import('/social/store.js')).set({ me: await d.me() }))"
+    )
+    assert name.input_value() == "  Dana   of the Library "
+    with page.expect_response(
+        lambda res: res.url.endswith("/api/v1/me") and res.request.method == "PATCH"
+    ) as saved:
+        name.press("Enter")
+    assert saved.value.status == 200
+    page.locator(".toast.on").get_by_text("Name saved").wait_for()
+    # Cleaned by the server, and shown as it was stored.
+    assert name.input_value() == "Dana of the Library"
+    assert profile.locator(".profile-name").inner_text() == "Dana of the Library"
+    shot(page, "member-profile-renamed")
+    page.get_by_role("button", name="Back").click()
+    assert page.locator(".me-pill .me-name").inner_text() == "Dana of the Library"
+
+    # The events Lambda has published it: another member reads it on the post.
+    _, feed = app.api("GET", "/api/v1/feed", email=ADMIN)
+    assert feed["cards"][0]["author"]["displayName"] == "Dana of the Library"
+
+
+def test_an_emptied_name_goes_back_to_what_it_was(open_member_app, app):
+    page = home(open_member_app)
+    profile = open_profile(page)
+    name = profile.get_by_label("Display name")
+    name.fill("   ")
+    name.press("Enter")
+    page.wait_for_function(
+        "document.querySelector('[data-row=name] input').value === 'collaborator'"
+    )
+    _, me = app.api("GET", "/api/v1/me", email=COLLABORATOR)
+    assert (me["displayName"], me["namePending"]) == ("collaborator", False)
+
+
+def test_the_theme_follows_the_account_to_another_phone(open_member_app, app):
+    page = home(open_member_app)
+    profile = open_profile(page)
+    with page.expect_response(
+        lambda res: res.url.endswith("/api/v1/me") and res.request.method == "PATCH"
+    ):
+        profile.locator("[data-row=theme]").click()
+        page.get_by_role("menuitemradio", name="Cat coat light").click()
+    _, me = app.api("GET", "/api/v1/me", email=COLLABORATOR)
+    assert me["theme"] == "cats-light"
+    # A phone that has never chosen opens in the account's theme.
+    other = open_member_app(COLLABORATOR)
+    other.wait_for_selector("[data-screen=frame]")
+    other.wait_for_function("document.documentElement.dataset.theme === 'cats-light'")
