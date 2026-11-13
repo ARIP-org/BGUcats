@@ -462,9 +462,11 @@ workflow reads the variable `APPLE_TEAM_ID`.
    `org.arip.bgucats://signin`; the API has a CORS configuration and the
    media bucket lists the app's origin (`docs/deploy.md`, "The iPhone
    app"). Terraform, so staging first, then the build.
-3. **The recognition model in the app.** Its files are fetched from
-   `/model/`, which inside the app is not the server. Until then the
-   packed app runs without guesses, as it does when a model is missing.
+3. **The recognition model in the app.** Written 2026-11-12 (N1 of
+   `docs/app-plan/`): the app fetches `/model/` from the site, which
+   answers with CORS, and keeps the files in IndexedDB. Merge, let
+   staging deploy, then a new build; on the phone, a scan should offer
+   three cats.
 4. **Live update:** the app downloads a newer copy of `web/` from our own
    server, so a merge reaches it without a build.
 5. **Uploads with the app closed** (`URLSession` background uploads): the

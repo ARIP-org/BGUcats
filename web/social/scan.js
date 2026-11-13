@@ -11,6 +11,7 @@
 // they are uploaded, and in memory for the previews and the model.
 
 import { api, post } from "../lib/api.js";
+import { getConfig } from "../lib/auth.js";
 import { isNative } from "../install.js";
 import { createOutbox, ulid } from "../outbox.js";
 import { createRecognition } from "../recognition.js";
@@ -34,8 +35,9 @@ let recognition = null;
 
 export function startOutbox() {
   outbox ??= createOutbox({ post, onChange: () => set({ outboxTick: Date.now() }) });
-  // Not in the iPhone app yet (N1): the model is published to the site.
-  recognition ??= isNative() ? null : createRecognition({ api, post });
+  // In the iPhone app the model comes from the site, another origin there
+  // (N1; CORS on /model/ in infra/main/web.tf).
+  recognition ??= createRecognition({ api, post, base: isNative() ? getConfig().apiBase || "" : "" });
   outbox.kick();
   const saved = load();
   if (saved) set({ scan: saved });

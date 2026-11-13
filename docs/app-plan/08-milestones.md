@@ -41,7 +41,7 @@ A session ticks its row in the pull request that finishes it.
 | E0 | Client groundwork | merged 2026-11-12 |
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
-| E3 | The capture flow | built 2026-11-12, in review |
+| E3 | The capture flow | merged 2026-11-12 |
 | E4 | The gallery, a cat's page, the poll | |
 | E5 | The map | |
 | E6 | Home, profile, settings | |
@@ -49,7 +49,7 @@ A session ticks its row in the pull request that finishes it.
 | E8 | Achievements | |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
-| N1 | The member app in the iPhone app, with the model | |
+| N1 | The member app in the iPhone app, with the model | built 2026-11-12, in review |
 | N2 | Push on the phone | |
 | N3 | Share, haptics (and contacts) | |
 | N4 | Links that open the app | |
@@ -624,6 +624,14 @@ which parts no person has run.
   item 3 of `docs/ROADMAP.md`, 2e.
 - **Done when:** the simulator job starts on the feed; on the owner's
   phone, a scan offers three candidates.
+- **Built (2026-11-12):** `scripts/native_bundle.py` packs
+  `"frontDoor": "app"`; `infra/main/web.tf` serves `/model/*` with the
+  managed response headers policy Managed-SimpleCORS (by its ID, so no
+  data source and no new permission to read it); `web/recognition.js`
+  takes a `base` origin and, with no service worker, keeps the model's
+  bytes in its IndexedDB `files` store. The desk and the scan flow pass
+  `config.apiBase` as the base in the app. Not yet run by a person: the
+  phone checklist after the next build.
 
 ### N2. Push on the phone
 

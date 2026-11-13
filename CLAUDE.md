@@ -290,7 +290,11 @@ product). Its old sessions and photos stay in the table with
   and every call still needs its token), answered on an `OPTIONS` route
   without the authorizer (a preflight carries no token; on the `ANY` route
   it got 401, "Load failed"), and the media bucket lists
-  `capacitor://localhost`. No cat guesses in the app yet.
+  `capacitor://localhost`. It opens on the member app (`frontDoor = "app"`
+  in the packed config, since N1). The model comes from the site's
+  `/model/`, which CloudFront answers with an AWS-managed CORS policy (no
+  new resource kind), and is kept in IndexedDB, since no service worker
+  caches it there.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`
   in cognito.tf). Sign-out only forgets the app's tokens and stays in the
