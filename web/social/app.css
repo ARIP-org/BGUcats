@@ -1062,6 +1062,154 @@ body:has(.frame) {
   color: var(--accent);
   font-weight: 600;
 }
+/* The name poll: each option a bar of its share, the choice ringed. */
+.poll {
+  border-radius: 28px;
+  padding: 18px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.poll .card-head {
+  padding-inline: 4px;
+}
+.poll-lead {
+  margin: 0;
+  padding-inline: 4px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.poll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.poll-option {
+  position: relative;
+  block-size: 52px;
+  padding: 0 14px;
+  border: 1.5px solid transparent;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--chip-neutral);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+/* While one vote is on its way the options wait, looking as they did: a
+   second tap is taken once the first has been answered. */
+.poll-option:disabled {
+  cursor: default;
+}
+.poll-option[aria-checked="true"] {
+  border-color: var(--accent);
+}
+.poll-bar {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  background: var(--hover);
+  transition:
+    inline-size var(--dur-spring) var(--ease-spring),
+    background 0.2s ease;
+}
+.poll-option[aria-checked="true"] .poll-bar {
+  background: var(--chip);
+}
+.poll-option > :not(.poll-bar) {
+  position: relative;
+}
+.poll-ring {
+  flex: none;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 10px;
+  border: 2px solid var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s ease;
+}
+.poll-ring span {
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 5px;
+  background: var(--accent);
+  opacity: 0;
+  scale: 0.4;
+  transition:
+    opacity 0.2s ease,
+    scale 0.3s var(--ease-lens-press);
+}
+.poll-option[aria-checked="true"] .poll-ring {
+  border-color: var(--accent);
+}
+.poll-option[aria-checked="true"] .poll-ring span {
+  opacity: 1;
+  scale: 1;
+}
+.poll-name {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.poll-option[aria-checked="true"] .poll-name {
+  font-weight: 700;
+}
+.poll-count {
+  flex: none;
+  min-inline-size: 34px;
+  text-align: end;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.poll-suggest {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+.poll-suggest input {
+  flex: 1;
+  min-inline-size: 0;
+  block-size: 48px;
+  padding: 0 18px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background: var(--chip-neutral);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  outline-color: var(--accent);
+}
+.poll-suggest input::placeholder {
+  color: inherit;
+  opacity: 0.5;
+}
+.poll-suggest button {
+  flex: none;
+  block-size: 48px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 24px;
+  background: var(--chip);
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .cat-posts {
   border-radius: 28px;
   padding: 18px 12px 10px;

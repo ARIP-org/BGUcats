@@ -86,10 +86,10 @@ Search over friends is done on the phone, over the list it already has.
 |---|---|
 | `GET /cats` | Every public cat: id, shown name and where it came from (poll, admin, none), cover photo, region, coat, GPA (computed, or null for "—"; absent with the `gpa` flag off), posts, likes, last seen, last fed, first seen. Plus today's cat of the day. Sorted and searched on the phone. A cat that is still a proposal is never in it |
 | `GET /cats/{catId}` | The same, plus the description, a few more photos, the poll's summary, and the caller's own vote. Since B3b `met`: `{encounters, days, firstDay, lastDay}` for the caller and this cat, or null |
-| `GET /cats/{catId}/names` | Live options with votes, the leader, whether the name is locked; the caller's choice; the caller's own pending or refused suggestion with its state |
-| `POST /cats/{catId}/names` | `{name}`. Cleans it, refuses blocklisted ones (`not_accepted`), merges with an existing option, records it as pending with the caller's vote |
-| `PUT /cats/{catId}/vote` | `{nameKey}`. Moves the caller's vote |
-| `DELETE /cats/{catId}/vote` | Takes it back |
+| `GET /cats/{catId}/names` | Live options with votes, most first, the leader marked, whether the name is locked; the caller's choice; the caller's own pending or refused suggestion with its state; and the cat's `name` and `nameSource` as these options make them (the leader is worked out from the options read, so the page that just voted is never a moment behind). The admins' own name is an option from the start, with no votes. Since B4a |
+| `POST /cats/{catId}/names` | `{name}`. Cleans it, refuses blocklisted ones (`not_accepted`; the blocklist arrives with C1), merges with an existing option, records it as pending with the caller's vote. Answers like `GET …/names`. Needs the terms; 10 a day, 3 per cat. Since B4a |
+| `PUT /cats/{catId}/vote` | `{nameKey}`. Moves the caller's vote: one transaction, conditional on the vote and on both options being as they were read. Answers like `GET …/names`. Needs the terms; 60 an hour. Since B4a |
+| `DELETE /cats/{catId}/vote` | Takes it back. Answers like `GET …/names`. Since B4a |
 | `GET /cats/{catId}/posts` | Visible posts of this cat |
 | `POST /cats/{catId}/feedings` | `{feedingId, spotId?}`. Logs that the caller fed this cat (D10). Limits: six a day; one per cat every four hours. Answers with the cat's new "last fed" |
 

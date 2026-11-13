@@ -470,8 +470,118 @@ def publish_profile(record):
     publish_avatar(record)
 
 
+# ------------------------------------------------------------ the name poll
+
+# A pending name read and written again if a vote lands in between.
+NAME_ATTEMPTS = 4
+
+
+def _options(cat_pk):
+    items, start = [], None
+    while True:
+        page = social_table.query(
+            KeyConditionExpression=Key("PK").eq(cat_pk) & Key("SK").begins_with("NAME#"),
+            ConsistentRead=True,
+            **({"ExclusiveStartKey": start} if start else {}),
+        )
+        items += page["Items"]
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def publish_suggestion(cat_pk, sk):
+    """A suggested name joins the poll (B4): pending becomes live, and the
+    votes it already holds (its author's) join the cat's total, in one
+    transaction, on the condition that nothing about the option moved since
+    it was read. Moderation of names (C1) goes here, as for a post.
+
+    Returns once the option is no longer pending, by this or anything else.
+    """
+    client = social_table.meta.client
+    for _ in range(NAME_ATTEMPTS):
+        option = _get(cat_pk, sk)
+        if not option or option.get("status") != "pending":
+            return
+        votes = int(option.get("votes") or 0)
+        items = [
+            {
+                "Update": {
+                    "TableName": social_table.name,
+                    "Key": {"PK": cat_pk, "SK": sk},
+                    "UpdateExpression": "SET #status = :live",
+                    "ConditionExpression": "#status = :pending AND votes = :votes",
+                    "ExpressionAttributeNames": {"#status": "status"},
+                    "ExpressionAttributeValues": {
+                        ":live": "live",
+                        ":pending": "pending",
+                        ":votes": votes,
+                    },
+                }
+            }
+        ]
+        if votes:
+            items.append(
+                {
+                    "Update": {
+                        "TableName": social_table.name,
+                        "Key": {"PK": cat_pk, "SK": "PUBLIC"},
+                        "UpdateExpression": "ADD voteTotal :votes",
+                        "ExpressionAttributeValues": {":votes": votes},
+                    }
+                }
+            )
+        try:
+            client.transact_write_items(TransactItems=items)
+            return
+        except client.exceptions.TransactionCanceledException:
+            continue
+    raise RuntimeError(f"could not publish {cat_pk} / {sk}: it kept changing")
+
+
+def lead(cat_pk):
+    """The poll's leader, worked out again from the options themselves and
+    written to the cat's public item: the live option with the most votes,
+    the earlier suggestion on a tie, none while nobody has voted. Written
+    only when it changed. It can be a moment behind a vote and can always
+    be recomputed (03-data-model.md, "Kept by the events Lambda")."""
+    voted = [
+        o
+        for o in _options(cat_pk)
+        if o.get("status") == "live" and int(o.get("votes") or 0) > 0
+    ]
+    voted.sort(key=lambda o: (-int(o["votes"]), o.get("createdAt") or "", o["SK"]))
+    leader = voted[0] if voted else None
+    public = _get(cat_pk, "PUBLIC") or {}
+    now = (leader["nameKey"], leader["name"]) if leader else (None, None)
+    if (public.get("leaderKey"), public.get("leaderName")) == now:
+        return
+    if leader:
+        social_table.update_item(
+            Key={"PK": cat_pk, "SK": "PUBLIC"},
+            UpdateExpression="SET leaderKey = :key, leaderName = :name",
+            ExpressionAttributeValues={":key": now[0], ":name": now[1]},
+        )
+    else:
+        social_table.update_item(
+            Key={"PK": cat_pk, "SK": "PUBLIC"},
+            UpdateExpression="REMOVE leaderKey, leaderName",
+        )
+
+
+def count_name(record):
+    """Every change to a name option: a suggestion to publish, and votes
+    that may have moved the leader."""
+    pk, sk = _keys(record)
+    changed = _image(record)
+    if changed and changed.get("status") == "pending":
+        publish_suggestion(pk, sk)
+    lead(pk)
+
+
 HANDLERS = {kind: _not_built_yet for _, _, kind in KINDS}
 HANDLERS["post"] = publish_post
+HANDLERS["name"] = count_name
 HANDLERS["profile"] = publish_profile
 HANDLERS["encounter"] = count_encounter
 HANDLERS["proposal"] = decide_proposal
