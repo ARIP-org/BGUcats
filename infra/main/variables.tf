@@ -46,9 +46,10 @@ locals {
       # because staging never holds real contributors' photos.
       social        = true
       signup_policy = "allowlist"
-      # The desk until the member app can do something (E2); app.html is
-      # open on its own address meanwhile.
-      front_door = "desk"
+      # The member app since 2026-11-13 (the owner: the installed staging
+      # app opened on the desk, and the new screens only in a browser
+      # tab). The desk is one tap away (the profile, or `?desk`).
+      front_door = "app"
     }
   }[var.environment]
 
