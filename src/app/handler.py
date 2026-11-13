@@ -1406,11 +1406,18 @@ def _get_user(user, user_id, **_):
         if user_id == me
         else tables.get_one(social_table, f"USER#{me}", f"FRIEND#{user_id}")
     )
+    # Friends in common: how many, never who (B5). None on one's own page.
+    mutual = (
+        None
+        if user_id == me
+        else len(set(_friendships(me)) & set(_friendships(user_id)) - _hidden(me))
+    )
     return {
         "person": {
             **person(profile, friendship, me),
             "found": _found(user_id),
             "cats": _latest_cats(user_id),
+            "mutual": mutual,
         }
     }
 

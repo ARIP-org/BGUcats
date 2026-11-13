@@ -24,9 +24,9 @@ A session ticks its row in the pull request that finishes it.
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | merged 2026-11-13 (B4a: names, votes, the leader; B4b: the desk's remove and lock). Votes as feed cards moved to B5: a vote card is friends' votes |
-| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) merged 2026-11-13; blocks with B8; mutual counts not built |
+| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) merged 2026-11-13; blocks with B8; mutual counts built the same day, in review |
 | B6 | New-cat proposals | merged 2026-11-12 |
-| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) built the same day, in review; the recount scripts not built |
+| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script built the same day, in review |
 | B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
 | B9 | Push | |
 | B10 | Deleting an account | |
@@ -376,8 +376,10 @@ was built.
   takes the card away; the cursor carries the cats already shown. In
   the app (`VoteCard` in `web/social/feed.js`) a tap on a name votes,
   as on the cat's page.
-- **Not built:** mutual-friend counts, and the "friend" events (a push,
-  B9).
+- **Mutual-friend counts, built 2026-11-13:** `GET /users/{id}` carries
+  `mutual`, how many friends the caller and that person have in common
+  (never who; null on one's own page), and the person's page says it.
+- **Not built:** the "friend" events (a push, B9).
 - **B5b, phone and contacts:** only if D5 says so; needs O17 for codes.
   The HMAC lookup, the match route and its tight limit.
 
@@ -483,8 +485,15 @@ was built.
   page and its sheet (`web/social/feeding.js`); "Cats fed", Snack Giver
   and "Feed a cat +10" in Achievements. **Not built:** feeding spots on
   the map (their look is the designer's); reporting a single feeding
-  (nobody sees one to report: the cat's page shows only the last time);
-  the recount as a script.
+  (nobody sees one to report: the cat's page shows only the last time).
+- **The recount, built 2026-11-13:** `scripts/recount.py` reads the
+  app's table once and works every stored sum out again with the events
+  Lambda's own functions: a person's encounters, cats met, points,
+  posts, badges and feeding numbers, what they give each cat's
+  popularity, each cat's `pop{yyyy-mm}` and "last fed". One line per
+  difference; it only reads (`docs/deploy.md`, "Post-deploy checks").
+  `tests/app/test_recount.py`: nothing differs after meeting, posting,
+  feeding, relabeling and removing; a counter changed by hand is named.
 
 ### B8. Reports, blocks, bans, the desk's tools
 

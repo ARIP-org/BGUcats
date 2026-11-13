@@ -72,7 +72,7 @@ its owner's alone.
 | Route | Does |
 |---|---|
 | `GET /friends?period=month\|all` | `{period, people, requests}`. `people`: the caller (`me: true`) and their friends, each a person with `found` for the period and `cats`, the ids of the three cats they met last; most found first, so the podium is the first three. `requests` is 0 until there are requests. Default `month`. Since B5a |
-| `GET /users/{userId}` | `{person}`, with all-time `found` and `cats`. Their posts are a second call. `gone` for nobody, or an account that is banned or being deleted. Since B5a |
+| `GET /users/{userId}` | `{person}`, with all-time `found`, `cats` and `mutual` (how many friends the caller and they have in common, never who; null for oneself). Their posts are a second call. `gone` for nobody, or an account that is banned or being deleted. Since B5a |
 | `GET /users/{userId}/posts` | Their visible posts, newest first, a page of them (D3: the whole campus reads every visible post). Since B5a |
 | `DELETE /friends/{userId}` | Removes the friendship, both sides, in one transaction. The same answer if they were not friends. Since B5a |
 | `POST /invites/{code}/accept` | Makes the caller and the code's owner friends, in one transaction. `{person}`, the same whether new or already friends; `gone` for an unknown code, an account that is going away, or a block between them; `own_invite` (409) for the caller's own. Needs the terms; 30 a day. Since B5a |
