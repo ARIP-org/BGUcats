@@ -46,7 +46,6 @@
   "feed.cotdLabel": "Watch cat of the day, {name}",
   "feed.watch": "Watch",
   "feed.search": "Search cats",
-  "feed.searchSoon": "Searching the cats arrives with the gallery.",
   "feed.newPost": "New post",
   "feed.empty": "No posts yet. Meet a cat and post it: it shows up here for the whole campus.",
   "feed.failed": "The feed could not be loaded. It tries again when you come back to it.",
@@ -184,5 +183,32 @@
   "scan.locationHeld": "The app stopped last time while asking for your location, so it won't ask by itself. Turn on Add location on a post to try again.",
   "scan.cameraHeldToast": "The app stopped last time while asking for the camera, so the live camera is off. You can turn it back on from the camera screen.",
   "scan.cameraHeld": "The live camera is off: the app stopped last time while asking for it. The phone's camera button below still works.",
-  "scan.cameraTry": "Try the live camera"
+  "scan.cameraTry": "Try the live camera",
+  "feed.gallery": "Open the cat gallery",
+  "gallery.title": "Cat gallery",
+  "gallery.open": "Open {name}",
+  "gallery.sort": "Sort cats",
+  "gallery.sortBy": "Sort cats by",
+  "gallery.sort.seen": "Recently seen",
+  "gallery.sort.posts": "Most posts",
+  "gallery.sort.newest": "Newest on campus",
+  "gallery.sort.name": "Name A–Z",
+  "gallery.empty": "No cats yet.",
+  "gallery.noMatch": "No cat called “{search}”.",
+  "gallery.failed": "The cats could not be loaded.",
+  "cat.namedByVote": "Named by vote",
+  "cat.namedByAdmins": "Named by the people who look after the cats",
+  "cat.notNamed": "No name yet",
+  "cat.usuallyNear": "Usually near {place}",
+  "cat.posts": {
+    "one": "Post",
+    "other": "Posts"
+  },
+  "cat.likes": {
+    "one": "Like",
+    "other": "Likes"
+  },
+  "cat.lastSeen": "Last seen",
+  "cat.never": "—",
+  "cat.recentPosts": "Recent posts"
 }

@@ -42,7 +42,7 @@ A session ticks its row in the pull request that finishes it.
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
 | E3 | The capture flow | merged 2026-11-12 |
-| E4 | The gallery, a cat's page, the poll | |
+| E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) built 2026-11-13, in review; the poll waits for B4 |
 | E5 | The map | |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | |
@@ -597,6 +597,18 @@ English file.
 ### E4. The gallery, a cat's page, the poll
 
 - **Needs:** E1, B2, B4.
+- **E4a, built 2026-11-13:** the gallery and the cat's page, from what
+  the API already answers (`GET /cats`, `GET /cats/{id}` and its posts).
+  The gallery (`web/social/gallery.js`) opens from the feed's top-left
+  button and from its search bar, which hands over to a real search
+  field; two columns of photos cut to the prototype's heights; sorted on
+  the phone by recently seen, most posts, newest and name. The cat's
+  page: its photos edge to edge, one at a time; the card with the name
+  and where it came from, the usual place, the description, posts, likes
+  and last seen, and how often the caller met it; who posted it lately.
+  Left out until their backends exist: the grade and "Highest GPA"
+  (B7b), the name poll (B4), the map button (E5). The gallery slides in
+  as a page from the end edge; the prototype brings it from the start.
 
 ### E5. The map
 

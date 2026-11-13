@@ -143,12 +143,9 @@ def test_the_feed_pages_as_it_scrolls(open_member_app, app, monkeypatch):
     page.wait_for_function("document.querySelectorAll('article.post').length === 3")
 
 
-def test_the_top_buttons_say_what_they_will_open(open_member_app):
+def test_the_plus_button_opens_a_new_post(open_member_app):
+    # The gallery button and the search bar: tests/web/test_member_gallery.py.
     page = feed(open_member_app)
-    page.get_by_role("button", name="Search cats").click()
-    page.wait_for_function("document.querySelector('.toast.on')")
-    assert "gallery" in page.get_by_role("status").inner_text()
-    # + opens a new post (E3).
     page.get_by_role("button", name="New post").click()
     page.get_by_role("heading", name="New post").wait_for()
 

@@ -23,6 +23,7 @@ import {
 import { html, render } from "../vendor/preact-htm.js";
 import { CatPage } from "./cat.js";
 import { Feed } from "./feed.js";
+import { Gallery } from "./gallery.js";
 import { Home, Profile } from "./home.js";
 import { loadLanguage, t } from "./i18n.js";
 import { Stack } from "./stack.js";
@@ -77,7 +78,7 @@ function NotOpen() {
 // The frame (E1): the tabs' pages, the pages pushed over them, the tab
 // bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
 const TAB_PAGES = { feed: Feed, home: Home };
-const PAGES = { profile: Profile, cat: CatPage };
+const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery };
 const onScroll = watchScroll();
 
 function Frame() {
