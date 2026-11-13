@@ -136,7 +136,7 @@ never writes this table.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason`, `likeCount`, `createdAt`, `visibleAt` |
+| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason` (`proposal_rejected`, `reports`, `admin`, `rejected`), `hiddenAt`, `removedAt`, `likeCount`, `createdAt`, `visibleAt`; and, for the moment between an admin's decision and its being carried out (B8b), `modAction` (`hide` / `restore` / `remove`), `modReason`, `modBy`, `modAt`: the desk's API writes them, the events Lambda acts and removes them |
 | Like **(since B3a)** | `POST#{postId}` | `LIKE#{userId}` | `at`. Written with the post's `likeCount` and the cat's `likes` in one transaction |
 
 A post's `status`: `pending` (written, not yet checked) → `visible` |
@@ -199,8 +199,8 @@ cat's `name` in the dataset; else nothing (D6).
 | Item | PK | SK | Holds |
 |---|---|---|---|
 | New-cat proposal **(since B6)** | `PROPOSAL#{proposalId}` | `META` | `proposerId`, `sessionId`, `nameIdea`, `coat`, `regionId`, `traits` (`coat` and `traits` from `src/common/proposals.py`; `regionId` a campus place or `elsewhere`), `status` (`open` / `approved` / `merged` / `rejected`), `catId` (the result; an approved proposal's id **is** the new cat's id, so approving twice makes one cat), `decidedBy`, `decidedAt`. On `GSI2` as `PROPOSALS#{status}` / `createdAt` (the desk's queue), and on `GSI1` as `PROPOSER#{userId}` / `createdAt` (the proposer's own list) |
-| Report | `REPORT#{reportId}` | `META` | `reporterId`, `targetType` (`post` / `user` / `name` / `avatar`), `targetId`, `reason`, `note`, `status` (`open` / `actioned` / `dismissed`), `decidedBy`. On `GSI2` as `REPORTS#{status}` / `createdAt` |
-| One report per person per target | `REPORTED#{targetType}#{targetId}` | `BY#{reporterId}` | `at`. Counting the partition gives "different people who reported this" |
+| Report **(written since B8b)** | `REPORT#{reportId}` | `META` | `reportId` (from the phone), `reporterId`, `targetType` (`post` / `user` / `avatar` / `name`), `targetId` (a post's id, a user's id, or `{catId}/{nameKey}`), `targetOwnerId`, `reason` (`src/common/reports.py`), `note` (0–280, read by admins only), `status` (`open` / `actioned` / `dismissed`), `emailedAt` (the admins were emailed), `decision`, `decidedBy`, `decidedAt`, `createdAt`. On `GSI2` as `REPORTS#{status}` / `createdAt` |
+| One report per person per target **(written since B8b)** | `REPORTED#{targetType}#{targetId}` | `BY#{reporterId}` | `reporterId`, `reportId`, `at`. Written with the report in one transaction; a second report by the same person on the same thing writes nothing. Counting the partition gives "different people who reported this": at three, a post hides itself |
 | Moderation run | `MOD#{kind}#{subjectId}` | `RUN#{at}` | `policy`, `model`, `mode`, `answers` (each question's probability), `outcome` (`pass` / `flag` / `block` / `error`), `acted`, `human`, `humanBy`, `humanAt`, `tokens`, `ms`. On `GSI2` as `MODQ#open` / `at` while it waits for an admin, then `MODRUN#{yyyy-mm}` / `at` |
 
 `kind` is one of `POSTTEXT`, `NAME`, `PROPNAME`, `DISPLAYNAME`,

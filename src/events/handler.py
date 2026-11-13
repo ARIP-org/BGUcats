@@ -57,6 +57,16 @@ RULES = _rules_file("achievements.json")
 CAMPUS_REGIONS = frozenset(r["id"] for r in _rules_file("regions.json")["regions"])
 # The badges an encounter can give or, corrected by a label, take back.
 ENCOUNTER_BADGES = ("first-meow", "night-owl", "explorer", "cat-whisperer")
+
+# Reports (B8). This many different people reporting a post hide it until
+# an admin looks: common/reports.py's HIDE_AT, held equal by a test (this
+# Lambda ships without src/common).
+REPORT_HIDE_AT = 3
+# Where a report is emailed: the account's alerts topic (alarms.tf), whose
+# subscriber is the admin. Absent in tests and on a machine with no topic.
+ALERTS_TOPIC_ARN = os.environ.get("ALERTS_TOPIC_ARN")
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "")
+_sns = None
 social_table = boto3.resource("dynamodb").Table(SOCIAL_TABLE_NAME)
 _DESERIALIZE = TypeDeserializer()
 
@@ -125,11 +135,158 @@ def publish_post(record):
     This is where moderation goes (C1, docs/app-plan/06-moderation.md).
     Until then a post is published at once: right for the internal beta,
     where everyone is known to the owner; production has the app off.
+
+    An admin's decision about a post (hide, restore, remove) arrives the
+    same way: the desk's API marks the post (`modAction`), and it is
+    carried out here (B8).
     """
     changed = _image(record)
-    if not changed or changed.get("status") != "pending":
+    if not changed:
         return
-    release(changed["PK"])
+    if changed.get("modAction"):
+        set_post(changed["PK"], changed["modAction"], changed.get("modReason") or "admin")
+        return
+    if changed.get("status") == "pending":
+        release(changed["PK"])
+
+
+# What each decision turns a post into, and from what.
+POST_MOVES = {
+    "hide": ("hidden", ("visible",)),
+    "restore": ("visible", ("hidden",)),
+    "remove": ("removed", ("visible", "hidden", "pending")),
+}
+
+
+def set_post(post_pk, action, reason):
+    """Hide a post, put a hidden one back, or remove one: its state, its
+    place in the feed and on its cat's list, and its cat's counters, in one
+    transaction, on the condition that the post is as it was read. A post
+    that is already there, or not in a state the move starts from, is left
+    as it is, and the desk's mark is cleared either way.
+
+    A hidden post keeps its cat and its likes, so putting it back gives the
+    cat exactly what hiding took."""
+    post = _get(post_pk, "META")
+    if not post:
+        return
+    to, start = POST_MOVES[action]
+    was = post.get("status")
+    names = {"#s": "status"}
+    values = {":was": was}
+    if was not in start:
+        # Nothing to do but forget the request, if there was one.
+        if post.get("modAction"):
+            try:
+                social_table.update_item(
+                    Key={"PK": post_pk, "SK": "META"},
+                    UpdateExpression="REMOVE modAction, modReason",
+                    ConditionExpression="#s = :was",
+                    ExpressionAttributeNames=names,
+                    ExpressionAttributeValues=values,
+                )
+            except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+                raise RuntimeError(f"{post_pk} changed under a decision") from None
+        return
+    likes = int(post.get("likeCount", 0))
+    cat_id = post.get("catId")
+    values.update({":to": to, ":likes": likes, ":now": _now_iso()})
+    if to == "visible":
+        created = post["createdAt"]
+        update = "SET #s = :to, GSI2PK = :feed, GSI2SK = :feed_sk"
+        values.update({":feed": f"FEED#{created[:7]}", ":feed_sk": f"{created}#P#{post['postId']}"})
+        if cat_id:
+            update += ", GSI3PK = :cat, GSI3SK = :created"
+            values.update({":cat": f"CATPOST#{cat_id}", ":created": created})
+        update += " REMOVE hiddenReason, hiddenAt, modAction, modReason"
+        values.pop(":now")
+    else:
+        values[":why"] = reason
+        stamp = "hiddenAt" if to == "hidden" else "removedAt"
+        update = (
+            f"SET #s = :to, hiddenReason = :why, {stamp} = :now "
+            "REMOVE GSI2PK, GSI2SK, GSI3PK, GSI3SK, modAction, modReason"
+        )
+    items = [
+        {
+            "Update": {
+                "TableName": social_table.name,
+                "Key": {"PK": post_pk, "SK": "META"},
+                "UpdateExpression": update,
+                "ConditionExpression": "#s = :was AND likeCount = :likes",
+                "ExpressionAttributeNames": names,
+                "ExpressionAttributeValues": values,
+            }
+        }
+    ]
+    # Only a visible post counts on its cat.
+    if cat_id and was == "visible":
+        items.append(_cat_counts(cat_id, -1, -likes))
+    elif cat_id and to == "visible":
+        items.append(_cat_counts(cat_id, 1, likes))
+    # A like in between changes likeCount and cancels this; the mapping
+    # retries the record and the post is read again.
+    social_table.meta.client.transact_write_items(TransactItems=items)
+
+
+def take_report(record):
+    """A report was made (B8): the admins are emailed, once, and a post
+    that enough different people have reported is hidden until one of them
+    looks. The report itself waits in the desk's queue either way."""
+    report = _image(record)
+    if not report or report.get("status") != "open":
+        return
+    kind, target = report["targetType"], report["targetId"]
+    people = social_table.query(
+        KeyConditionExpression=Key("PK").eq(f"REPORTED#{kind}#{target}"),
+        Select="COUNT",
+        ConsistentRead=True,
+    )["Count"]
+    hides = kind == "post" and people >= REPORT_HIDE_AT
+    if hides:
+        set_post(f"POST#{target}", "hide", "reports")
+    if not report.get("emailedAt"):
+        _email_report(report, people, hides)
+        try:
+            social_table.update_item(
+                Key={"PK": report["PK"], "SK": "META"},
+                UpdateExpression="SET emailedAt = :now",
+                ConditionExpression="attribute_not_exists(emailedAt)",
+                ExpressionAttributeValues={":now": _now_iso()},
+            )
+        except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+            pass
+
+
+def _email_report(report, people, hidden):
+    """Through the alerts topic, to whoever reads the account's alerts. It
+    carries what was reported and why from the fixed list, and nothing a
+    person typed: the note stays in the desk."""
+    if not ALERTS_TOPIC_ARN:
+        logger.info("no alerts topic: report=%s not emailed", report.get("reportId"))
+        return
+    global _sns
+    if _sns is None:
+        _sns = boto3.client("sns")
+    where = f" ({ENVIRONMENT})" if ENVIRONMENT else ""
+    what = {"post": "A post", "user": "A person", "avatar": "A profile photo", "name": "A cat's name"}
+    lines = [
+        f"{what.get(report['targetType'], 'Something')} was reported in BGU Cats{where}.",
+        f"Reason: {report['reason']}.",
+        f"Different people who reported it: {people}.",
+    ]
+    if hidden:
+        lines.append("It is hidden from everyone until an admin decides.")
+    lines += [
+        "",
+        "Decide in the desk: Queue, Reports. Apple's rules ask for an answer within a day.",
+        f"Report {report['reportId']}, {report['targetType']} {report['targetId']}.",
+    ]
+    _sns.publish(
+        TopicArn=ALERTS_TOPIC_ARN,
+        Subject=f"BGU Cats{where}: {report['targetType']} reported ({report['reason']})"[:100],
+        Message="\n".join(lines),
+    )
 
 
 def release(post_pk):
@@ -842,6 +999,7 @@ HANDLERS["name"] = count_name
 HANDLERS["profile"] = publish_profile
 HANDLERS["encounter"] = count_encounter
 HANDLERS["proposal"] = decide_proposal
+HANDLERS["report"] = take_report
 
 
 def _keys(record):

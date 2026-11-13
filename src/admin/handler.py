@@ -47,6 +47,7 @@ from common import (
     polls,
     proposals,
     regions,
+    reports,
     tables,
     text,
 )
@@ -1420,6 +1421,219 @@ def _reject_proposal(proposal_id, email, **_):
 
 
 # --------------------------------------------------------------------------
+# Reports and an admin's decisions about posts (B8b)
+# --------------------------------------------------------------------------
+#
+# People in the member app report a post, a person, a photo or a name
+# (06-moderation.md, "Reports, blocks and bans"). The reports wait here,
+# grouped by the thing reported, until an admin answers: leave it, hide the
+# post, or remove it. As with the name poll, this API only marks: the post
+# gets a `modAction`, and the events Lambda carries it out with the cat's
+# counters, which only it keeps.
+
+REPORT_ACTIONS = ("dismiss", "hide", "remove")
+POST_ACTIONS = ("hide", "restore", "remove")
+
+
+def _social_item(pk, sk="META"):
+    return social_table.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True).get(
+        "Item"
+    )
+
+
+def _username(user_id, known):
+    if user_id and user_id not in known:
+        known[user_id] = (_social_item(f"USER#{user_id}", "PROFILE") or {}).get(
+            "username"
+        )
+    return known.get(user_id)
+
+
+def _report_target(target_type, target_id, known):
+    """What was reported, as an admin needs to see it to decide."""
+    if target_type == "post":
+        post = _social_item(f"POST#{target_id}")
+        if post is None:
+            return {"type": "post", "postId": target_id, "gone": True}
+        cat = _item(f"CAT#{post['catId']}") if post.get("catId") else None
+        return {
+            "type": "post",
+            "postId": target_id,
+            "status": post["status"],
+            "hiddenReason": post.get("hiddenReason"),
+            "text": post.get("text") or "",
+            "author": _username(post["authorId"], known),
+            "cat": cat.get("name") if cat else None,
+            "createdAt": post["createdAt"],
+            "photos": [
+                {
+                    "photoId": photo_id,
+                    "thumbUrl": _presign(f"derived/{photo_id}/thumb-256.webp"),
+                    "mediumUrl": _presign(f"derived/{photo_id}/medium-1024.webp"),
+                }
+                for photo_id in post.get("photoIds") or []
+            ],
+        }
+    if target_type in ("user", "avatar"):
+        profile = _social_item(f"USER#{target_id}", "PROFILE")
+        if profile is None:
+            return {"type": target_type, "userId": target_id, "gone": True}
+        return {
+            "type": target_type,
+            "userId": target_id,
+            "username": profile["username"],
+            "displayName": profile.get("displayName"),
+            "status": profile.get("status"),
+        }
+    cat_id, _, name_key = target_id.partition("/")
+    option = _social_item(f"CAT#{cat_id}", f"NAME#{name_key}")
+    cat = _item(f"CAT#{cat_id}")
+    return {
+        "type": "name",
+        "catId": cat_id,
+        "nameKey": name_key,
+        "name": option["name"] if option else name_key,
+        "status": option["status"] if option else None,
+        "cat": cat.get("name") if cat else None,
+        "gone": option is None,
+    }
+
+
+def _reports_with(status):
+    return tables.query_all(
+        social_table,
+        IndexName="GSI2",
+        KeyConditionExpression=Key("GSI2PK").eq(f"REPORTS#{status}"),
+        ScanIndexForward=True,  # oldest first, like the queue
+    )
+
+
+def _get_reports(query, **_):
+    """`GET /api/reports`: what waits for an admin, one entry per thing
+    reported, the one reported longest ago first. Each with who reported
+    it, why, and what they wrote."""
+    if not SOCIAL:
+        return {"reports": []}
+    status = query.get("status") or "open"
+    if status not in reports.STATUSES:
+        raise ApiError(400, f"status is one of {', '.join(reports.STATUSES)}")
+    known, groups = {}, {}
+    for item in _reports_with(status):
+        key = (item["targetType"], item["targetId"])
+        groups.setdefault(key, []).append(item)
+    out = []
+    for (target_type, target_id), items in groups.items():
+        out.append(
+            {
+                # Any of its reports names the group to the resolve route.
+                "reportId": items[0]["reportId"],
+                "target": _report_target(target_type, target_id, known),
+                "people": len(items),  # one report per person per thing
+                "since": items[0]["createdAt"],
+                "reports": [
+                    {
+                        "reportId": i["reportId"],
+                        "reason": i["reason"],
+                        "note": i.get("note") or "",
+                        "reporter": _username(i["reporterId"], known),
+                        "createdAt": i["createdAt"],
+                    }
+                    for i in items
+                ],
+            }
+        )
+    return {"reports": out}
+
+
+def _mark_post(post_id, action, email, reason="admin"):
+    """Ask for a post to be hidden, put back or removed. The events Lambda
+    does it, in one transaction with the cat's counters."""
+    try:
+        social_table.update_item(
+            Key={"PK": f"POST#{post_id}", "SK": "META"},
+            UpdateExpression=(
+                "SET modAction = :action, modReason = :reason, modBy = :by, modAt = :now"
+            ),
+            ConditionExpression="attribute_exists(PK)",
+            ExpressionAttributeValues={
+                ":action": action,
+                ":reason": reason,
+                ":by": email,
+                ":now": _now_iso(),
+            },
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        raise ApiError(404, "no such post") from None
+
+
+def _moderate_post(post_id, action, email, **_):
+    """`POST /api/posts/{id}/hide`, `/restore`, `/remove`."""
+    if not SOCIAL:
+        raise ApiError(404, "the app is not open on this account")
+    _mark_post(post_id, action, email)
+    logger.info("user=%s asked to %s post=%s", email, action, post_id)
+    return {"postId": post_id, "asked": action}
+
+
+def _resolve_report(report_id, body, email, **_):
+    """`POST /api/reports/{id}/resolve` `{action}`: the admin's answer to
+    everything reported about one thing. `dismiss` leaves it, and puts back
+    a post that the reports themselves had hidden; `hide` and `remove` act
+    on a post, and `remove` on a name takes it out of its poll. Every open
+    report about the thing is closed with the same answer."""
+    if not SOCIAL:
+        raise ApiError(404, "no such report")
+    action = body.get("action")
+    if action not in REPORT_ACTIONS:
+        raise ApiError(400, f"action is one of {', '.join(REPORT_ACTIONS)}")
+    report = _social_item(f"REPORT#{report_id}")
+    if report is None:
+        raise ApiError(404, "no such report")
+    target_type, target_id = report["targetType"], report["targetId"]
+    if action != "dismiss":
+        if target_type == "post":
+            _mark_post(target_id, action, email)
+        elif target_type == "name" and action == "remove":
+            cat_id, _, name_key = target_id.partition("/")
+            _remove_name(cat_id, {"nameKey": name_key}, email)
+        else:
+            raise ApiError(
+                400, f"a reported {target_type} can be dismissed, not {action}d here"
+            )
+    elif target_type == "post":
+        post = _social_item(f"POST#{target_id}")
+        if post and post.get("status") == "hidden" and post.get("hiddenReason") == "reports":
+            _mark_post(target_id, "restore", email)
+    status, now, closed = "dismissed" if action == "dismiss" else "actioned", _now_iso(), 0
+    for item in _reports_with("open"):
+        if (item["targetType"], item["targetId"]) != (target_type, target_id):
+            continue
+        try:
+            social_table.update_item(
+                Key=reports.report_key(item["reportId"]),
+                UpdateExpression=(
+                    "SET #s = :status, decision = :action, decidedBy = :by, "
+                    "decidedAt = :now, GSI2PK = :queue"
+                ),
+                ConditionExpression="#s = :open",
+                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeValues={
+                    ":status": status,
+                    ":action": action,
+                    ":by": email,
+                    ":now": now,
+                    ":queue": f"REPORTS#{status}",
+                    ":open": "open",
+                },
+            )
+            closed += 1
+        except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+            pass  # another admin answered it meanwhile
+    logger.info("user=%s answered %s on %s %s", email, action, target_type, target_id)
+    return {"reportId": report_id, "status": status, "closed": closed}
+
+
+# --------------------------------------------------------------------------
 # The name poll, from the desk (B4b)
 # --------------------------------------------------------------------------
 #
@@ -2098,6 +2312,19 @@ ROUTES = (
         ADMINS,
     ),
     ("POST", rf"^/api/sessions/(?P<session_id>{ID})/reject$", _reject_session, ADMINS),
+    ("GET", r"^/api/reports$", _get_reports, ADMINS),
+    (
+        "POST",
+        rf"^/api/reports/(?P<report_id>{ID})/resolve$",
+        _resolve_report,
+        ADMINS,
+    ),
+    (
+        "POST",
+        rf"^/api/posts/(?P<post_id>{ID})/(?P<action>hide|restore|remove)$",
+        _moderate_post,
+        ADMINS,
+    ),
     ("GET", rf"^/api/cats/(?P<cat_id>{ID})/names$", _get_cat_names, ADMINS),
     ("POST", rf"^/api/cats/(?P<cat_id>{ID})/names/remove$", _remove_name, ADMINS),
     ("POST", rf"^/api/cats/(?P<cat_id>{ID})/name-lock$", _lock_name, ADMINS),

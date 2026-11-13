@@ -8,6 +8,7 @@ import { openGallery } from "./gallery.js";
 import { ago, t, tMarked } from "./i18n.js";
 import { openMap } from "./map.js";
 import { glass } from "./motion.js";
+import { openReport } from "./report.js";
 import { REFUSED, moved } from "./poll.js";
 import { push, useStore } from "./store.js";
 import { openScan } from "./scan.js";
@@ -105,6 +106,14 @@ function Card({ card, onChange, onGone }) {
           const all = await cats().catch(() => ({ cats: [] }));
           openMap(all.cats.find((c) => c.catId === card.cat.catId)?.regionId || null);
         },
+      });
+    }
+    if (!card.mine) {
+      items.push({
+        label: t("report.report"),
+        icon: "flag",
+        danger: true,
+        pick: () => openReport({ type: "post", id: card.postId, name: t("report.postOf", { name: card.author.displayName || card.author.username }) }),
       });
     }
     if (card.mine) {

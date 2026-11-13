@@ -95,7 +95,8 @@ def test_the_photo_s_menu_offers_the_cat_and_for_its_author_deleting(
     page = feed(open_member_app, ADMIN)
     page.locator("article.post .photo").first.click()
     menu = page.get_by_role("menu", name="Post options")
-    assert menu.get_by_role("menuitem").all_inner_texts() == ["See Mitzi", "Show on map"]
+    # Someone else's post can be reported; one's own can be deleted.
+    assert menu.get_by_role("menuitem").all_inner_texts() == ["See Mitzi", "Show on map", "Report"]
     page.keyboard.press("Escape")
 
     mine = feed(open_member_app, COLLABORATOR)

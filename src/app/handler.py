@@ -42,6 +42,7 @@ from common import (
     polls,
     proposals,
     regions,
+    reports,
     tables,
     text,
 )
@@ -1427,6 +1428,105 @@ def _get_blocks(user, **_):
 
 
 # --------------------------------------------------------------------------
+# Reports (B8)
+# --------------------------------------------------------------------------
+
+REPORTS_PER_DAY = 20
+
+
+def _report_target(user, target_type, target_id):
+    """The thing reported, checked to be there; and whose it is, for the
+    desk. None if there is no such thing."""
+    if target_type == "post":
+        post = tables.get_one(social_table, f"POST#{target_id}")
+        if post is None or post.get("status") == "removed":
+            return None
+        return post["authorId"]
+    if target_type in ("user", "avatar"):
+        profile = tables.get_one(social_table, f"USER#{target_id}", "PROFILE")
+        return profile["userId"] if profile else None
+    cat_id, _, name_key = target_id.partition("/")
+    option = tables.get_one(social_table, f"CAT#{cat_id}", f"NAME#{name_key}")
+    return (option.get("suggestedBy") or "") if option else None
+
+
+def _report(user, body, **_):
+    """`POST /reports`: one person says a post, a person, a photo or a name
+    should not be here, with a reason from the list. It joins the desk's
+    queue; the events Lambda emails the admins and, for a post, hides it
+    once enough different people have said so.
+
+    The answer is always the same: a reporter learns nothing about earlier
+    reports, nor whether the thing still exists. One report per person per
+    thing counts; a second is accepted and changes nothing."""
+    me = user["userId"]
+    report_id = api.ulid_param(body, "reportId")
+    target_type, target_id, reason = (
+        body.get("targetType"),
+        body.get("targetId"),
+        body.get("reason"),
+    )
+    if target_type not in reports.TARGETS:
+        raise ApiError(400, f"targetType is one of {', '.join(reports.TARGETS)}")
+    if not isinstance(target_id, str) or not 0 < len(target_id) <= 120:
+        raise ApiError(400, "targetId is what is reported")
+    if reason not in reports.REASONS:
+        raise ApiError(400, f"reason is one of {', '.join(reports.REASONS)}")
+    note = text.clean(
+        body.get("note"), "note", reports.NOTE_MAX, required=False, multiline=True
+    )
+    limits.take(social_table, f"{me}#reports", REPORTS_PER_DAY, 86400)
+    answer = {"reported": True}
+    owner = _report_target(user, target_type, target_id)
+    if owner is None or owner == me:
+        return answer  # nothing there, or their own: nothing to queue
+    now = api.now_iso()
+    client = social_table.meta.client
+    try:
+        client.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": social_table.name,
+                        "Item": {
+                            **reports.report_key(report_id),
+                            "reportId": report_id,
+                            "reporterId": me,
+                            "targetType": target_type,
+                            "targetId": target_id,
+                            "targetOwnerId": owner or None,
+                            "reason": reason,
+                            "note": note,
+                            "status": "open",
+                            "createdAt": now,
+                            "GSI2PK": "REPORTS#open",
+                            "GSI2SK": now,
+                        },
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": social_table.name,
+                        "Item": {
+                            "PK": reports.reported_pk(target_type, target_id),
+                            "SK": f"BY#{me}",
+                            "reporterId": me,
+                            "reportId": report_id,
+                            "at": now,
+                        },
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+            ]
+        )
+        logger.info("report=%s on %s by user=%s", report_id, target_type, me)
+    except client.exceptions.TransactionCanceledException:
+        pass  # sent twice, or this person reported this before: the same answer
+    return answer
+
+
+# --------------------------------------------------------------------------
 # Posts, likes and the feed (B3a)
 # --------------------------------------------------------------------------
 
@@ -2150,6 +2250,7 @@ ROUTES = (
     ("GET", r"^/api/v1/achievements$", _get_achievements, "user"),
     ("POST", r"^/api/v1/invites/(?P<code>[a-z0-9]{1,32})/accept$", _accept_invite, "user"),
     ("GET", r"^/api/v1/friends$", _get_friends, "user"),
+    ("POST", r"^/api/v1/reports$", _report, "user"),
     ("GET", r"^/api/v1/blocks$", _get_blocks, "user"),
     ("PUT", rf"^/api/v1/blocks/(?P<user_id>{ID})$", _block, "user"),
     ("DELETE", rf"^/api/v1/blocks/(?P<user_id>{ID})$", _unblock, "user"),

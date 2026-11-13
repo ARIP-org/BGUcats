@@ -22,8 +22,8 @@ def test_blocking_from_a_persons_page_takes_their_posts_out_of_the_feed(app, ope
 
     person.get_by_role("button", name="Options for collaborator").click()
     menu = page.get_by_role("menu", name="Options for collaborator")
-    # Not a friend: there is nothing to remove, only to block.
-    assert menu.get_by_role("menuitem").all_inner_texts() == ["Block"]
+    # Not a friend: there is nothing to remove, only to block or report.
+    assert menu.get_by_role("menuitem").all_inner_texts() == ["Block", "Report"]
     shot(page, "member-person-menu")
     menu.get_by_role("menuitem", name="Block").click()
     dialog = page.get_by_role("alertdialog")
@@ -52,7 +52,8 @@ def test_a_friend_is_blocked_from_the_friends_list(app, open_member_app):
     row.wait_for()
     row.get_by_role("button", name=f"Options for {admin}").click()
     menu = page.get_by_role("menu", name=f"Options for {admin}")
-    assert menu.get_by_role("menuitem").all_inner_texts() == ["Remove from friends", "Block"]
+    # As the prototype's friend menu has them, Report last.
+    assert menu.get_by_role("menuitem").all_inner_texts() == ["Remove from friends", "Block", "Report"]
     menu.get_by_role("menuitem", name="Block").click()
     page.get_by_role("alertdialog").get_by_role("button", name="Block").click()
     page.locator(".toast.on").get_by_text(f"{admin} is blocked").wait_for()

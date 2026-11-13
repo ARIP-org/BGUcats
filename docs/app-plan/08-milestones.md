@@ -27,7 +27,7 @@ A session ticks its row in the pull request that finishes it.
 | B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) merged 2026-11-13; B7a (points, levels, six badges) built the same day; feedings (B7c) and the recount scripts not built |
-| B8 | Reports, blocks, bans, the desk's tools | B8a (blocks, with their screens) built 2026-11-13; reports and bans not built |
+| B8 | Reports, blocks, bans, the desk's tools | B8a (blocks, with their screens) and B8b (reports: the route, the email, hiding at three, the desk's queue, Report in the app) built 2026-11-13; bans and the desk's People tools (B8c) not built |
 | B9 | Push | |
 | B10 | Deleting an account | |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
@@ -45,7 +45,7 @@ A session ticks its row in the pull request that finishes it.
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
 | E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) built 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
-| E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a; Report waits for B8b |
+| E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a, Report since B8b |
 | E8 | Achievements | E8a (Home's card and the sheet) built 2026-11-13 with B7a |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
@@ -489,7 +489,32 @@ was built.
   page; the posts of someone just blocked leave the feed on screen.
   - **Mine (G4, "there is no list to unblock from"):** "Blocked people"
     in the profile, with **Unblock**.
-  - **Not built:** reports (B8b) and bans (B8c).
+- **B8b, built 2026-11-13:** reports.
+  - `POST /api/v1/reports` writes the report and one item per person per
+    thing in one transaction, and always answers the same.
+  - The events Lambda (`take_report`) emails the admins through the
+    alerts topic, once per report, with the reason and the count and
+    nothing a person typed; and hides a post that three different
+    people reported (`REPORT_HIDE_AT`, held to `common/reports.py` by a
+    test).
+  - An admin's decision about a post is a mark on it (`modAction`) that
+    the events Lambda carries out (`set_post`): state, feed and cat
+    keys, and the cat's counters in one transaction, so hiding and
+    putting back are exact opposites, likes included.
+  - The desk: "Reported" at the top of the Queue, one card per thing,
+    with **Leave it** (or **Put it back** for a post the reports hid),
+    **Hide post**, **Remove post**, **Remove name**. Its role gained
+    three partitions (`REPORT#`, `REPORTS#`, `POST#`) and no action.
+  - The app (`web/social/report.js`): **Report** in someone else's
+    photo menu, in a friend's menu (as drawn) and on a person's page; a
+    sheet with six reasons and an optional line; "Thank you. Someone
+    looks at every report within a day."
+  - **Mine, for the owner (D15):** the six reasons and the sheet, which
+    the design does not have; three reporters to hide a post (the
+    plan's recommendation).
+  - **Not built:** bans and acting on a reported person (B8c);
+    reporting a name from the app (the route takes it); showing an
+    admin the reported profile photo.
 
 ### B9. Push
 

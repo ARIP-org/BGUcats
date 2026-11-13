@@ -107,6 +107,10 @@ resource "aws_lambda_function" "events" {
   environment {
     variables = {
       SOCIAL_TABLE_NAME = aws_dynamodb_table.social.name
+      # Where a report of a post or a person is emailed (B8): the alerts
+      # topic, which this role may already publish to.
+      ALERTS_TOPIC_ARN = aws_sns_topic.alerts.arn
+      ENVIRONMENT      = var.environment
     }
   }
 }

@@ -59,6 +59,8 @@ export const friends = (period) => api(`/v1/friends?period=${period}`);
 export const person = (userId) => api(`/v1/users/${userId}`);
 export const personPosts = (userId) => api(`/v1/users/${userId}/posts`);
 export const removeFriend = (userId) => del(`/v1/friends/${userId}`);
+// A report of a post, a person or a name (B8b). Always answers the same.
+export const sendReport = (report) => post("/v1/reports", report);
 // Blocks (B8): each hides the two people from each other everywhere.
 export const blocks = () => api("/v1/blocks");
 export const block = (userId) => put(`/v1/blocks/${userId}`);

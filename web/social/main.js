@@ -33,6 +33,7 @@ import { Stack } from "./stack.js";
 import { set, useStore } from "./store.js";
 import { TabBar, watchScroll } from "./tabbar.js";
 import { adoptTheme, applyTheme, savedTheme } from "./theme.js";
+import { ReportSheet } from "./report.js";
 import { Scan, openScan, startOutbox } from "./scan.js";
 import { Overlays, toast } from "./ui.js";
 import { unanswered } from "./asking.js";
@@ -106,6 +107,7 @@ function Frame() {
       <${TabBar} onScan=${() => openScan("scan")} />
       <${Scan} />
       <${AchievementsSheet} />
+      <${ReportSheet} />
       <${Overlays} />
     </div>
   `;

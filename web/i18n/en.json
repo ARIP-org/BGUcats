@@ -381,5 +381,19 @@
   "block.unblock": "Unblock",
   "block.lifted": "{name} is unblocked",
   "block.none": "You have not blocked anyone.",
-  "block.failed": "The list could not be loaded."
+  "block.failed": "The list could not be loaded.",
+  "report.report": "Report",
+  "report.postOf": "{name}'s post",
+  "report.title": "Report {name}",
+  "report.lead": "Tell us what is wrong. They are not told who reported.",
+  "report.why": "What is wrong",
+  "report.reason.spam": "Spam or advertising",
+  "report.reason.offensive": "Offensive, hateful or sexual",
+  "report.reason.harassment": "Harassment or bullying",
+  "report.reason.privacy": "Shows a person or private details",
+  "report.reason.not_cat": "Not about a campus cat",
+  "report.reason.other": "Something else",
+  "report.note": "Anything to add? (optional)",
+  "report.send": "Send report",
+  "report.sent": "Thank you. Someone looks at every report within a day."
 }

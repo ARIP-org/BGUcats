@@ -7,8 +7,9 @@
 // "Block" is in a friend's menu and on anyone's page (B8); the people you
 // blocked are listed, with "Unblock", from the profile.
 //
-// Left out until their backends exist: Report (B8b), finding friends from
-// contacts (D5).
+// "Report" is beside it (B8b, report.js).
+//
+// Left out until its backend exists: finding friends from contacts (D5).
 
 import { isNative } from "../install.js";
 import { getConfig } from "../lib/auth.js";
@@ -28,6 +29,7 @@ import { Avatar } from "./feed.js";
 import { monthYear, t, tRich } from "./i18n.js";
 import { CatFace } from "./mascot.js";
 import { glass } from "./motion.js";
+import { openReport } from "./report.js";
 import { get, pop, push, set, useStore } from "./store.js";
 import { termsFirst } from "./terms.js";
 import { Icon, confirm, openMenu, toast } from "./ui.js";
@@ -109,6 +111,14 @@ async function blockPerson(person) {
     return false;
   }
 }
+
+// "Report", the last and red, as the prototype's friend menu has it.
+const reportItem = (person) => ({
+  label: t("report.report"),
+  icon: "flag",
+  danger: true,
+  pick: () => openReport({ type: "user", id: person.userId, name: person.displayName || person.username }),
+});
 
 // ------------------------------------------------------------ on Home
 
@@ -353,6 +363,7 @@ export function Friends() {
       items: [
         { label: t("friends.remove"), icon: "personMinus", pick: () => remove(person) },
         { label: t("block.block"), icon: "block", pick: async () => (await blockPerson(person)) && reload() },
+        reportItem(person),
       ],
     });
 
@@ -492,6 +503,7 @@ export function PersonPage({ userId }) {
         ...(person.friend === "yes" ? [{ label: t("friends.remove"), icon: "personMinus", pick: unfriend }] : []),
         // Blocked, their page is gone: back to where one came from.
         { label: t("block.block"), icon: "block", pick: async () => (await blockPerson(person)) && pop() },
+        reportItem(person),
       ],
     });
   return html`${!person.me &&
