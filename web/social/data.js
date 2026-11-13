@@ -20,6 +20,11 @@ export const setLike = (postId, liked) =>
 
 export const deletePost = (postId) => del(`/v1/posts/${postId}`);
 
+// The caller: profile, role, counters (a second or two behind a pick).
+export const me = () => api("/v1/me");
+// The caller's own posts, newest first, each with its state.
+export const myPosts = () => api("/v1/me/posts");
+
 // The campus places (web/regions.json), for an area's name and the
 // new-cat form.
 let regions = null;

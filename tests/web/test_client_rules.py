@@ -94,7 +94,7 @@ def test_every_string_key_exists_in_english():
     used = {
         key
         for path in SCRIPTS
-        for key in re.findall(r"""\bt\(\s*["']([\w.]+)["']""", path.read_text())
+        for key in re.findall(r"""\bt(?:Rich)?\(\s*["']([\w.]+)["']""", path.read_text())
     }
     assert used, "no t() calls found: the check would pass for nothing"
     assert used <= set(english), sorted(used - set(english))

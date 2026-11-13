@@ -44,12 +44,12 @@ A session ticks its row in the pull request that finishes it.
 | E3 | The capture flow | merged 2026-11-12 |
 | E4 | The gallery, a cat's page, the poll | |
 | E5 | The map | |
-| E6 | Home, profile, settings | |
+| E6 | Home, profile, settings | E6a (the screens) built 2026-11-13, in review; editing waits for B1 |
 | E7 | Friends | |
 | E8 | Achievements | |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
-| N1 | The member app in the iPhone app, with the model | built 2026-11-12, in review |
+| N1 | The member app in the iPhone app, with the model | merged 2026-11-13; on the owner's phone once the API answered its preflight (the same day) |
 | N2 | Push on the phone | |
 | N3 | Share, haptics (and contacts) | |
 | N4 | Links that open the app | |
@@ -586,6 +586,25 @@ English file.
 ### E6. Home, profile, settings
 
 - **Needs:** E1, B1 (B7 for the cards' numbers, B10 for delete).
+- **E6a, built 2026-11-13 (the owner's order: Home and profile first):**
+  the two screens as the prototype draws them, from what the API already
+  answers (`GET /me` with its counters, `GET /me/posts`). Home: the glass
+  pill (name, cats met, since), which folds to the photo while scrolling;
+  the Friends card with the sitting cat (`web/social/mascot.js`) and the
+  caller's own row; "My posts". The profile: the default cat-face photo,
+  name, username, "My posts" four to a row, the settings and account rows
+  E1 had. Left out until their backends exist, not drawn with made-up
+  numbers: friends (E7), achievements (E8), changing the name and photo
+  (B1), the notifications switch (N2), the phone number (D5), privacy
+  policy (A6), delete (B10). The profile still slides in as a page; the
+  prototype grows it out of the pill.
+- **Also in E6a:** the glass bar over a tab (the feed's buttons, Home's
+  pill) stays at the top. It had scrolled away with the first card since
+  E2, which no test looked at; one does now.
+- **From now on** a screen's pull request carries the prototype rendered
+  beside the built screen (the owner's ask, 2026-11-13): the prototype's
+  `.dc.html` files open in the test browser with its runtime as
+  `support.js`.
 
 ### E7. Friends
 

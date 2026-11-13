@@ -641,17 +641,23 @@ body:has(.frame) {
 
 /* ------------------------------------------------------------ the feed (E2) */
 
-.tab-content.feed {
-  padding-block-start: 76px; /* under the top buttons */
-}
-
-.top-buttons {
-  position: absolute;
+/* The glass bar over a tab (the feed's buttons, Home's pill): the first
+   thing in the scroller, and it stays at the top while the page scrolls
+   under it, as in the prototype. Until E6 it was positioned absolutely
+   inside the scroller, so it scrolled away with the first card. */
+.top-buttons,
+.home-top {
+  position: sticky;
   z-index: 3;
-  inset-block-start: calc(env(safe-area-inset-top) + 12px);
-  inset-inline: 16px;
+  /* Measured from inside the scroller's padding (safe area + 24px), so
+     this is 12px under the safe area, where the margin also starts it. */
+  inset-block-start: -12px;
+  max-inline-size: 640px;
+  margin-block: -12px 12px;
+  margin-inline: auto;
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
   pointer-events: none;
 }
@@ -1337,4 +1343,400 @@ body:has(.frame) {
   aspect-ratio: 4 / 5;
   object-fit: cover;
   border-radius: 18px;
+}
+
+
+/* ------------------------------------------------------------ Home and the profile (E6) */
+
+.home-top {
+  block-size: 64px;
+}
+.home-top > * {
+  pointer-events: auto;
+}
+.me-pill,
+.friends-button {
+  position: relative;
+  flex: none;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  background:
+    radial-gradient(70% 90% at var(--gx, 30%) var(--gy, 0%), color-mix(in srgb, var(--knob) calc(var(--gs, 0) * 100%), transparent), transparent 70%),
+    var(--glass-bg);
+  transition:
+    inline-size var(--dur-spring) var(--ease-spring),
+    block-size var(--dur-spring) var(--ease-spring),
+    border-radius var(--dur-spring) var(--ease-spring);
+}
+.me-pill {
+  inline-size: min(306px, calc(100% - 68px));
+  block-size: 64px;
+  border-radius: 32px;
+  text-align: start;
+}
+.me-avatar {
+  flex: none;
+  inline-size: var(--size, 48px);
+  block-size: var(--size, 48px);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--avatar-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.me-pill .me-avatar {
+  position: absolute;
+  inset-block-start: 7px;
+  inset-inline-start: 7px;
+  transform-origin: 0 0;
+  transition: transform var(--dur-spring) var(--ease-spring);
+}
+.me-pill:dir(rtl) .me-avatar {
+  transform-origin: 100% 0;
+}
+.me-words {
+  position: absolute;
+  inset-block-start: 11px;
+  inset-inline: 67px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: opacity 0.18s ease;
+}
+.me-name {
+  font-size: 18px;
+  line-height: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.me-sub {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.me-met {
+  color: var(--accent);
+  font-weight: 600;
+}
+.friends-button {
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-inline-start: 14px;
+}
+.friends-button .icon {
+  flex: none;
+}
+.friends-words {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+/* Scrolled down: the pill is the photo alone, and Friends opens up. */
+.home-top.collapsed .me-pill {
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: 26px;
+}
+.home-top.collapsed .me-avatar {
+  transform: translate(-4px, -4px) scale(0.917);
+}
+.home-top.collapsed .me-pill:dir(rtl) .me-avatar {
+  transform: translate(4px, -4px) scale(0.917);
+}
+.home-top.collapsed .me-words {
+  opacity: 0;
+}
+.home-top.collapsed .friends-button {
+  inline-size: 132px;
+  block-size: 52px;
+}
+.home-top.collapsed .friends-words {
+  opacity: 1;
+  transition-delay: 0.08s;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 26px;
+}
+.card-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-inline: 6px;
+}
+.card-count,
+.card-note,
+.card-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.card-empty {
+  padding: 4px 6px 6px;
+  font-size: 15px;
+}
+
+/* The Friends card, with the cat sitting on its edge. */
+.friends-card {
+  position: relative;
+  margin-block-start: 44px;
+  padding: 18px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.friends-card .mascot {
+  position: absolute;
+  inset-block-start: -61px;
+  inset-inline-end: 18px;
+}
+.friends-card .card-title {
+  padding: 0 8px 6px;
+}
+.friends-card .card-note {
+  padding: 4px 8px 2px;
+}
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 6px;
+}
+.friend-who {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.friend-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+.friend-found {
+  font-size: 13px;
+  color: var(--muted);
+}
+.friend-found b {
+  color: var(--accent);
+  font-weight: 700;
+}
+.friend-cats {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+.friend-cats img {
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+}
+
+.my-posts {
+  padding: 18px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.my-posts .glass-button {
+  align-self: flex-start;
+  margin-inline-start: 6px;
+}
+.post-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.post-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+}
+button.post-tile {
+  cursor: pointer;
+}
+.post-tile-photo {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--chip-neutral);
+}
+.post-tile-photo img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+.post-tile-badge {
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-start: 6px;
+  background: var(--photo-badge);
+  color: var(--on-photo);
+}
+.post-tile-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  padding-inline: 4px;
+}
+.post-tile-name {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.post-tile-date {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* On the profile: four to a row, the photos alone. */
+.my-posts.small {
+  border-radius: 22px;
+  padding: 16px 14px 14px;
+}
+.my-posts.small .card-head {
+  padding-inline: 4px;
+}
+.my-posts.small .post-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.my-posts.small .post-tile-photo {
+  border-radius: 12px;
+}
+
+.tab-content.profile {
+  gap: 14px;
+}
+.profile-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-block-end: 6px;
+  text-align: center;
+}
+.profile-head .me-avatar {
+  margin-block-end: 14px;
+}
+.profile-name {
+  margin: 0;
+  max-inline-size: 100%;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-sub {
+  font-size: 14px;
+  color: var(--muted);
+}
+div.row {
+  cursor: default;
+}
+.profile-foot {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The cat drawings (mascot.js). Their colours: tokens.css. */
+.mascot {
+  display: block;
+  overflow: visible;
+}
+.mascot .m-coat {
+  fill: var(--m-coat);
+}
+.mascot .m-ear {
+  stroke: var(--m-coat);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.mascot .m-line {
+  fill: none;
+  stroke: var(--m-stripe);
+  stroke-linecap: round;
+}
+.mascot .m-stripes {
+  opacity: var(--m-stripes);
+}
+.mascot .m-light {
+  fill: var(--m-light);
+}
+.mascot .m-pink {
+  fill: var(--m-pink);
+}
+.mascot .m-ink {
+  fill: var(--m-ink);
+}
+.mascot .m-glint {
+  fill: var(--m-glint);
+}
+.mascot .m-shadow {
+  fill: var(--m-shadow);
+}
+.mascot .m-whisker {
+  fill: none;
+  stroke: var(--m-ink);
+  stroke-linecap: round;
+}
+.cat-face .f-head {
+  fill: var(--f-head);
+}
+.cat-face .f-eye {
+  fill: var(--f-eye);
+}
+.cat-face .f-nose {
+  fill: var(--f-nose);
 }

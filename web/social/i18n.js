@@ -6,6 +6,8 @@
 // English is complete first; a language joins the menu only once a native
 // speaker has read it (E10, O14).
 
+import { html } from "../vendor/preact-htm.js";
+
 const RIGHT_TO_LEFT = new Set(["he", "ar"]);
 
 let lang = "en";
@@ -24,21 +26,42 @@ export async function loadLanguage(code = "en") {
   root.dir = RIGHT_TO_LEFT.has(code) ? "rtl" : "ltr";
 }
 
+// The string for `key` in the right plural form, its placeholders untouched.
+function template(key, values) {
+  const text = strings[key];
+  if (text == null || typeof text !== "object") return text;
+  const form = new Intl.PluralRules(lang).select(Number(values.count ?? 0));
+  return text[form] ?? text.other;
+}
+
+const shown = (value) =>
+  typeof value === "number" ? new Intl.NumberFormat(lang).format(value) : String(value);
+
 export function t(key, values = {}) {
-  let text = strings[key];
+  const text = template(key, values);
   if (text == null) return key; // a missing string shows its key, and a test fails
-  if (typeof text === "object") {
-    const form = new Intl.PluralRules(lang).select(Number(values.count ?? 0));
-    text = text[form] ?? text.other;
-  }
-  return text.replace(/\{(\w+)\}/g, (whole, name) => {
-    if (!(name in values)) return whole;
-    const value = values[name];
-    return typeof value === "number" ? new Intl.NumberFormat(lang).format(value) : String(value);
-  });
+  return text.replace(/\{(\w+)\}/g, (whole, name) => (name in values ? shown(values[name]) : whole));
+}
+
+// The same string with one of its values set in bold ("found **18** cats"):
+// markup, so the sentence stays one string whatever the word order.
+export function tRich(key, values, strong) {
+  const text = template(key, values);
+  if (text == null) return key;
+  const fill = (part) => part.replace(/\{(\w+)\}/g, (whole, name) => (name in values ? shown(values[name]) : whole));
+  const [before, after = ""] = text.split(`{${strong}}`);
+  return html`${fill(before)}<b>${shown(values[strong])}</b>${fill(after)}`;
 }
 
 export const language = () => lang;
+
+// "Nov 2026" and "Nov 10", as the language writes them.
+const dated = (iso, options) => {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(lang, options).format(date);
+};
+export const monthYear = (iso) => dated(iso, { month: "short", year: "numeric" });
+export const dayMonth = (iso) => dated(iso, { month: "short", day: "numeric" });
 
 // "Just now", "5 min ago", "yesterday": a time as a person says it.
 const UNITS = [
