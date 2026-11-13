@@ -296,3 +296,68 @@ def test_five_photos_a_day_and_the_terms_first(bucket, monkeypatch):
     monkeypatch.setattr(handler, "TERMS_VERSION", "2027-01")  # new terms
     status, answer = call("POST", "/api/v1/me/avatar", email=HELPER)
     assert (status, answer["code"]) == (403, "terms_required")
+
+
+# ------------------------------------------------------------ the username
+
+
+def lookup(table, username):
+    return table.get_item(Key={"PK": f"USERNAME#{username}", "SK": "META"}).get("Item")
+
+
+def test_a_new_username_takes_the_place_of_the_old_one(people):
+    social = people["social"]
+    before = profile(social, ADMIN)
+    status, me = call("PUT", "/api/v1/me/username", {"username": "  Sasha.Cats "})
+    assert (status, me["username"]) == (200, "sasha.cats")  # lower case, trimmed
+    assert profile(social, ADMIN)["username"] == "sasha.cats"
+    assert lookup(social, "sasha.cats")["userId"] == before["userId"]
+    assert lookup(social, before["username"]) is None  # free for someone else
+    # The same name again is no change, and costs nothing.
+    assert call("PUT", "/api/v1/me/username", {"username": "sasha.cats"})[0] == 200
+
+
+def test_a_name_someone_holds_is_refused_and_nothing_changes(people):
+    social = people["social"]
+    theirs = profile(social, HELPER)["username"]
+    mine = profile(social, ADMIN)["username"]
+    status, answer = call("PUT", "/api/v1/me/username", {"username": theirs.upper()})
+    assert (status, answer["code"]) == (409, "name_taken")
+    assert profile(social, ADMIN)["username"] == mine
+    assert lookup(social, mine) and lookup(social, theirs)["userId"] != lookup(social, mine)["userId"]
+
+
+def test_the_name_given_up_can_be_taken_by_someone_else(people):
+    old = profile(people["social"], ADMIN)["username"]
+    call("PUT", "/api/v1/me/username", {"username": "moved.on"})
+    status, me = call("PUT", "/api/v1/me/username", {"username": old}, email=HELPER)
+    assert (status, me["username"]) == (200, old)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["ab", "x" * 21, "has space", "émile", "semi;colon", ".dot", "dot.", "a..b", "a._b", 7, None],
+)
+def test_a_username_outside_the_rule_is_refused(people, name):
+    before = profile(people["social"], ADMIN)
+    status, answer = call("PUT", "/api/v1/me/username", {"username": name})
+    assert (status, answer["code"]) == (400, "bad_username")
+    assert profile(people["social"], ADMIN) == before
+
+
+@pytest.mark.parametrize("name", ["admin", "BGUcats", "moderator"])
+def test_a_name_that_would_read_as_the_app_is_never_given(people, name):
+    status, answer = call("PUT", "/api/v1/me/username", {"username": name})
+    assert (status, answer["code"]) == (409, "name_taken")
+    assert lookup(people["social"], name.lower()) is None
+
+
+def test_a_few_username_tries_a_day_and_the_terms_first(people, monkeypatch):
+    monkeypatch.setattr(handler, "USERNAME_CHANGES_PER_DAY", 1)
+    assert call("PUT", "/api/v1/me/username", {"username": "first.one"})[0] == 200
+    status, answer = call("PUT", "/api/v1/me/username", {"username": "second.one"})
+    assert (status, answer["code"]) == (429, "rate_limited")
+    assert profile(people["social"], ADMIN)["username"] == "first.one"
+    monkeypatch.setattr(handler, "TERMS_VERSION", "2027-01")
+    status, answer = call("PUT", "/api/v1/me/username", {"username": "early"}, email=HELPER)
+    assert (status, answer["code"]) == (403, "terms_required")

@@ -11,7 +11,7 @@
 import { logout } from "../lib/auth.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { squareJpeg } from "./avatar.js";
-import { me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
+import { chooseUsername, me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
 import { dayMonth, monthYear, t, tRich } from "./i18n.js";
 import { CatFace, Mascot } from "./mascot.js";
 import { glass } from "./motion.js";
@@ -172,6 +172,47 @@ export function Home() {
     </div>`;
 }
 
+// A row whose value is typed in place and saved when the field is left or
+// "done" is pressed, as the prototype's name row is. `save(text)` answers
+// who the person is now (or null if they backed out); `shown(me)` is what
+// the field then shows, as the server cleaned it.
+//
+// The field is the browser's own while someone types in it. Given its text
+// as `value`, Preact would write it back on every redraw, and Home asks who
+// you are again just as the profile opens: the letters typed meanwhile were
+// gone, and "done" saved nothing.
+function TextRow({ row, icon, label, value, shown, field, save, errors = {} }) {
+  const input = useRef(null);
+  useEffect(() => {
+    const el = input.current;
+    if (el && document.activeElement !== el) el.value = value;
+  }, [value]);
+
+  const commit = async (e) => {
+    const el = e.currentTarget;
+    const text = el.value.replace(/\s+/g, " ").trim();
+    if (!text || text === value) {
+      el.value = value;
+      return;
+    }
+    try {
+      const next = await save(text);
+      el.value = next ? shown(next) : value;
+    } catch (err) {
+      el.value = value;
+      toast(errors[err.code] ? t(errors[err.code]) : t("error.generic", { message: err.message }));
+    }
+  };
+  const doneOnEnter = (e) => {
+    if (e.key === "Enter") e.currentTarget.blur();
+  };
+  return html`<label class="row" data-row=${row}>
+    <span class="row-icon" aria-hidden="true"><${Icon} name=${icon} /></span>
+    <span class="row-label">${label}</span>
+    <input class="row-input" ref=${input} defaultValue=${value} enterkeyhint="done" ...${field} onChange=${commit} onKeyDown=${doneOnEnter} />
+  </label>`;
+}
+
 export function Profile() {
   const me = useStore((s) => s.me);
   const theme = useStore((s) => s.theme);
@@ -202,44 +243,24 @@ export function Profile() {
     if (yes) logout(HOME);
   };
 
-  // The name is saved when the field is left or "done" is pressed, as the
-  // prototype's is. Its owner sees it at once; everyone else once it has
-  // been checked (04-api.md, PATCH /me).
-  // The field is the browser's own while someone types in it. Given the
-  // name as `value`, Preact would write it back on every redraw, and Home
-  // asks who you are again just as the profile opens: the letters typed
-  // meanwhile were gone, and "done" saved nothing.
-  const nameField = useRef(null);
-  const shownName = nameOf(me);
-  useEffect(() => {
-    const field = nameField.current;
-    if (field && document.activeElement !== field) field.value = shownName;
-  }, [shownName]);
-
-  const saveName = async (e) => {
-    const field = e.currentTarget;
-    const before = nameOf(me);
-    const name = field.value.replace(/\s+/g, " ").trim();
-    if (!name || name === before) {
-      field.value = before;
-      return;
-    }
-    try {
-      if (!(await termsFirst())) {
-        field.value = before;
-        return;
-      }
-      const next = await updateMe({ displayName: name });
-      field.value = nameOf(next); // as the server cleaned it
-      set({ me: next });
-      toast(t("profile.nameSaved"));
-    } catch (err) {
-      field.value = before;
-      toast(err.code === "rate_limited" ? t("profile.nameLimit") : t("error.generic", { message: err.message }));
-    }
+  // A name others read needs the terms first; then the server's answer is
+  // who you are now. `save` returns what the field should show.
+  const changing = (send, saved) => async (text) => {
+    if (!(await termsFirst())) return null;
+    const next = await send(text);
+    set({ me: next });
+    toast(t(saved));
+    return next;
   };
-  const doneOnEnter = (e) => {
-    if (e.key === "Enter") e.currentTarget.blur();
+  const saveName = changing((displayName) => updateMe({ displayName }), "profile.nameSaved");
+  const saveUsername = changing(chooseUsername, "profile.usernameSaved");
+  const said = {
+    name: { rate_limited: "profile.nameLimit" },
+    username: {
+      rate_limited: "profile.usernameLimit",
+      name_taken: "profile.usernameTaken",
+      bad_username: "profile.usernameRule",
+    },
   };
 
   // The photo: taken now or chosen, made small on the phone (avatar.js),
@@ -311,23 +332,27 @@ export function Profile() {
     </div>
 
     <section class="group" aria-label=${t("profile.you")}>
-      <label class="row" data-row="name">
-        <span class="row-icon" aria-hidden="true"><${Icon} name="person" /></span>
-        <span class="row-label">${t("profile.name")}</span>
-        <input
-          class="row-input"
-          ref=${nameField}
-          defaultValue=${shownName}
-          aria-label=${t("profile.nameLabel")}
-          placeholder=${t("profile.namePlaceholder")}
-          maxlength="30"
-          autocomplete="nickname"
-          autocapitalize="words"
-          enterkeyhint="done"
-          onChange=${saveName}
-          onKeyDown=${doneOnEnter}
-        />
-      </label>
+      <${TextRow}
+        row="name"
+        icon="person"
+        label=${t("profile.name")}
+        value=${nameOf(me)}
+        shown=${nameOf}
+        field=${{ "aria-label": t("profile.nameLabel"), placeholder: t("profile.namePlaceholder"), maxlength: "30", autocomplete: "nickname", autocapitalize: "words" }}
+        save=${saveName}
+        errors=${said.name}
+      />
+      <div class="divider" aria-hidden="true"></div>
+      <${TextRow}
+        row="username"
+        icon="at"
+        label=${t("profile.username")}
+        value=${me?.username || ""}
+        shown=${(next) => next.username}
+        field=${{ "aria-label": t("profile.username"), maxlength: "20", autocomplete: "username", autocapitalize: "none", autocorrect: "off", spellcheck: false }}
+        save=${saveUsername}
+        errors=${said.username}
+      />
     </section>
     ${me?.namePending && html`<p class="group-note" role="status">${t("profile.nameChecking")}</p>`}
     ${me?.avatarPending && html`<p class="group-note" role="status">${t("profile.photoChecking")}</p>`}

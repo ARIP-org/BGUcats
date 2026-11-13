@@ -24,6 +24,8 @@ export const deletePost = (postId) => del(`/v1/posts/${postId}`);
 export const me = () => api("/v1/me");
 // Changes the caller's display name or settings; answers like `me`.
 export const updateMe = (changes) => patch("/v1/me", changes);
+// -> `me`. Refused with `name_taken` or `bad_username`.
+export const chooseUsername = (username) => put("/v1/me/username", { username });
 // A new profile photo (a JPEG Blob from avatar.js): asks where to send it,
 // sends it straight to storage, then confirms. Answers like `me`.
 export async function saveAvatar(blob) {

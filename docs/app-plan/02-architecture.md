@@ -327,6 +327,7 @@ the table's TTL):
 | contact matching | 2 calls a day, 2,000 numbers each |
 | avatar changes | 5 a day |
 | display name changes | 10 a day (since B1a) |
+| username tries | 10 a day, taken names included (since B1c) |
 | re-rank | 60 a day per person; a daily ceiling per account (K3) |
 
 Contact matching is the sensitive one: without a tight limit it answers
