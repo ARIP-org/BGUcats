@@ -741,9 +741,22 @@ English file.
   met" is "not this cat". Choosing a cat for a post ("Tag a cat" from
   "+", or "Change") comes straight back to the post. The model is not
   served in the tests, so the test of the three candidates stands in for
-  `recognition.js` at its one meeting point with `scan.js`. **Not yet:**
-  page 3's look (the post), removing a photo from the strip, the
-  sideways swipe back, the small map under "Add location".
+  `recognition.js` at its one meeting point with `scan.js`.
+- **Pages 3 and 4 the same way (2026-11-13):** the post page has its
+  title and "Post" in the bar at the top; "You met **X**" with the cat's
+  face and "Change" (from "+": "Tag a cat · Optional", and a tag can be
+  removed); the photos large and numbered "1/2", with "Add photo · 1 of
+  4", or one large "Take a photo" when there is none; the description
+  in a card with its count; "Add location" with the small map and "Near
+  Aranne Library" when the phone is inside a place the campus names
+  (`placeAt` in `scan.js`, the server's `region_at` on the same rounded
+  point; a test holds the two together); "Save without posting" as a
+  quiet line after a scan. "Tag a cat" from "+" is the prototype's page
+  4: every cat by name, three to a row, the chosen one ringed, no "New
+  cat". **Not yet:** the sideways swipe back, and removing a photo from
+  the strip: a photo taken is already part of the encounter in the
+  dataset, and whether "remove" should also delete it there is the
+  owner's to decide.
 
 ### E4. The gallery, a cat's page, the poll
 

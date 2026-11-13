@@ -262,7 +262,7 @@ def test_posting_from_plus_with_no_cat(app, open_member_app):
     page.get_by_role("button", name="Take a photo").click()
     shoot(page)
     page.get_by_role("heading", name="New post").wait_for()
-    assert "No cat tagged" in page.locator(".tag-row").inner_text()
+    assert "Tag a cat" in page.locator(".tag-row").inner_text()
     page.get_by_role("button", name="Post", exact=True).click()
     post = eventually(
         page, lambda: next((c for c in my_posts(app) if c["cat"] is None), None)
@@ -270,7 +270,50 @@ def test_posting_from_plus_with_no_cat(app, open_member_app):
     assert post["state"] == "visible"
 
 
-def test_tagging_a_post_comes_back_to_the_post(app, open_member_app):
+AT_THE_LIBRARY = {
+    "geolocation": {"latitude": 31.2621, "longitude": 34.8029},
+    "permissions": ["geolocation"],
+}
+
+
+def test_the_post_page_names_the_area_and_counts_the_words(app, open_member_app, shot):
+    page = frame(open_member_app, **AT_THE_LIBRARY)
+    scan_one(page)
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
+    page.get_by_role("button", name="Create a post").click()
+    page.get_by_role("heading", name="New post").wait_for()
+    # Who the post is about, the photo numbered, and how to add another.
+    assert page.locator(".tag-row").inner_text().split("\n")[0] == "You met Mitzi"
+    assert page.locator(".shots.big .shot b").inner_text() == "1/1"
+    assert "1 of 4" in page.locator(".shot.add").inner_text()
+    page.fill("textarea", "Asleep on the returns desk.")
+    assert page.locator(".describe-count").inner_text() == "27/280"
+    # The phone is in a place the campus names: the small map says which.
+    near = page.locator(".near")
+    page.wait_for_selector(".near[data-open=true]")
+    assert near.inner_text() == "Near Aranne Library"
+    page.wait_for_timeout(700)  # the page's slide and the map opening
+    shot(page, "member-scan-post-near")
+    # Off: the map closes and the words say the spot stays with you.
+    switch = page.get_by_role("switch", name="Add location")
+    switch.click()
+    page.wait_for_selector(".near[data-open=false]")
+    assert "the spot stays with you" in switch.inner_text()
+    switch.click()
+    page.wait_for_selector(".near[data-open=true]")
+    page.get_by_role("button", name="Post", exact=True).click()
+    post = eventually(
+        page,
+        lambda: next(
+            (c for c in my_posts(app) if c["text"] == "Asleep on the returns desk."),
+            None,
+        ),
+    )
+    # What the phone showed is what the server decided.
+    assert post["region"] == "library"
+
+
+def test_tagging_a_post_comes_back_to_the_post(app, open_member_app, shot):
     page = frame(open_member_app)
     page.get_by_role("button", name="New post").click()
     page.get_by_role("button", name="Take a photo").click()
@@ -280,16 +323,31 @@ def test_tagging_a_post_comes_back_to_the_post(app, open_member_app):
     # The flow's first page here is the post: its button closes.
     assert top.get_by_role("button", name="Close").count() == 1
     page.get_by_role("button", name="Tag a cat").click()
+    # Every cat by name, three to a row, and nothing else to choose.
     page.get_by_role("heading", name="Which cat?").wait_for()
+    cats = page.locator(".tag-grid").get_by_role("radio")
+    assert sorted(c.inner_text() for c in cats.all()) == ["Mitzi", "Pilpel", "Shunra"]
+    assert page.get_by_role("button", name="New cat").count() == 0
+    page.wait_for_timeout(600)  # the page's slide
+    shot(page, "member-scan-tag")
     top.get_by_role("button", name="Back").click()
     page.get_by_role("heading", name="New post").wait_for()
-    assert "No cat tagged" in page.locator(".tag-row").inner_text()
+    assert "Tag a cat" in page.locator(".tag-row").inner_text()
     page.get_by_role("button", name="Tag a cat").click()
-    page.locator(".cat-grid-pick").get_by_role("button", name="Shunra", exact=True).click()
+    cats.filter(has_text="Shunra").click()
     # Straight back to the post, with what was written.
     page.get_by_role("heading", name="New post").wait_for()
     assert "Shunra" in page.locator(".tag-row").inner_text()
     assert page.input_value("textarea") == "Tagged on the way."
+    # The tag can be changed, where the chosen cat is marked, and removed.
+    page.get_by_role("button", name="Change").click()
+    assert page.locator(".tag-cat[aria-checked=true]").inner_text() == "Shunra"
+    cats.filter(has_text="Mitzi").click()
+    assert "Mitzi" in page.locator(".tag-row").inner_text()
+    page.get_by_role("button", name="Remove cat tag").click()
+    assert "Tag a cat" in page.locator(".tag-row").inner_text()
+    page.get_by_role("button", name="Tag a cat").click()
+    cats.filter(has_text="Shunra").click()
     page.get_by_role("button", name="Post", exact=True).click()
     post = eventually(
         page,

@@ -1907,19 +1907,370 @@ body:has(.frame) {
   font-size: 12px;
   color: var(--muted);
 }
-.tag-row {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
+/* The post page (the prototype's page 3). Its title and "Post" are in
+   the bar at the top. */
+.scan-title {
+  flex: 1;
+  margin: 0;
+  block-size: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+  pointer-events: none;
 }
-.switch-row {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
+.scan-post {
+  block-size: 48px;
+  padding: 0 22px;
+  border: 1px solid var(--sheen);
+  border-radius: 24px;
+  background: var(--heart);
+  box-shadow: var(--glass-shadow);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.switch-row .row-value {
-  white-space: normal;
+.scan-post:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tagged {
+  padding-inline: 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tagged-face {
+  flex: none;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.tagged-face img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tagged-words {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: 15px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tagged-words b {
+  font-weight: 700;
+  color: var(--ink);
+}
+.tagged-button {
+  flex: none;
+  block-size: 34px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 17px;
+  background: var(--chip-neutral);
+  color: var(--ink);
+  font: inherit;
   font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tagged-button.round {
+  inline-size: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tag-ask {
+  inline-size: 100%;
+  min-block-size: 54px;
+  padding-inline: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: start;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+.tag-ask-icon {
+  flex: none;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 18px;
+  background: var(--chip);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tag-ask-words {
+  flex: 1;
+}
+.tag-ask .optional {
+  font-size: 13px;
+}
+
+.shots.big {
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 16px;
+}
+.shots.big .shot,
+.shots.big .shot:first-child {
+  inline-size: 250px;
+  block-size: auto;
+  aspect-ratio: 4 / 5;
+  border-radius: 24px;
+  scroll-snap-align: start;
+}
+.shots.big .shot.add {
+  inline-size: 112px;
+  aspect-ratio: auto;
+  flex: none;
+}
+.first-shot {
+  inline-size: 100%;
+  aspect-ratio: 4 / 4.2;
+  border: 1.5px dashed var(--border);
+  border-radius: 26px;
+  background: var(--chip-neutral);
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  cursor: pointer;
+}
+.first-shot-icon {
+  inline-size: 72px;
+  block-size: 72px;
+  border-radius: 36px;
+  background: var(--heart);
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.describe {
+  padding: 14px 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: text;
+}
+.describe-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.describe textarea {
+  inline-size: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.45;
+}
+.describe:focus-within {
+  border-color: var(--accent);
+}
+.describe-count {
+  align-self: flex-end;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.locate {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.locate-row {
+  inline-size: 100%;
+  min-block-size: 64px;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+}
+.locate-icon {
+  flex: none;
+  inline-size: 34px;
+  block-size: 34px;
+  border-radius: 11px;
+  background: var(--chip);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.locate-words {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.locate-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.locate-sub {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* The small map opens under the switch when the phone is in a place the
+   campus names. */
+.near {
+  block-size: 0;
+  overflow: hidden;
+  transition: block-size 0.45s var(--ease-pop);
+}
+.near[data-open="true"] {
+  block-size: 140px;
+}
+.near-map {
+  position: relative;
+  margin: 0 12px 12px;
+  block-size: 128px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--map-ground);
+}
+.near-map svg {
+  inline-size: 100%;
+  block-size: 128px;
+  display: block;
+}
+.nm-ground {
+  fill: var(--map-ground);
+}
+.nm-green {
+  fill: var(--map-green);
+}
+.nm-road {
+  fill: none;
+  stroke: var(--map-road);
+  stroke-linecap: round;
+}
+.nm-building {
+  fill: var(--map-building);
+  stroke: var(--map-building-stroke);
+}
+.nm-halo {
+  fill: var(--accent);
+  opacity: 0.16;
+}
+.nm-pin {
+  fill: var(--accent);
+  stroke: var(--knob);
+  stroke-width: 2;
+}
+.nm-dot {
+  fill: var(--knob);
+}
+.near-name {
+  position: absolute;
+  inset-inline-start: 10px;
+  inset-block-end: 10px;
+  block-size: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: 15px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+.link-button.quiet {
+  block-size: 40px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* "Tag a cat": every cat by name, three to a row. */
+.tag-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 8px;
+}
+.tag-cat {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tag-cat-photo {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 1;
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--surface);
+  transition: box-shadow 0.2s ease;
+}
+.tag-cat[aria-checked="true"] .tag-cat-photo {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+.tag-cat-photo img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tag-cat-name {
+  padding-inline: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .switch {
   flex: none;
