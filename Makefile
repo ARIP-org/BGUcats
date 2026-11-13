@@ -21,7 +21,7 @@ lambda-compile = python -m compileall -q -j 0 --invalidation-mode checked-hash \
 # there redeploys those and no other (tests/common/test_packaging.py).
 # web/regions.json goes with it: the campus places, one list for the
 # phone and the API (src/common/regions.py).
-copy-common = mkdir -p build/$(1)/common && cp src/common/*.py web/regions.json build/$(1)/common/
+copy-common = mkdir -p build/$(1)/common && cp src/common/*.py web/regions.json web/achievements.json build/$(1)/common/
 
 fmt:
 	ruff format .
@@ -112,7 +112,7 @@ build-app:
 build-events:
 	rm -rf build/events && mkdir -p build/events/events
 	cp src/events/__init__.py src/events/handler.py src/events/filters.json \
-		build/events/events/
+		web/achievements.json web/regions.json build/events/events/
 	$(call lambda-compile,events)
 
 # Every target that calls AWS from a person's shell takes the profile by

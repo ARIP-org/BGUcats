@@ -28,6 +28,7 @@ import logging
 import os
 from collections import Counter
 from datetime import UTC, datetime
+from pathlib import Path
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -37,6 +38,25 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 SOCIAL_TABLE_NAME = os.environ.get("SOCIAL_TABLE_NAME", "bgucats-social")
+
+
+def _rules_file(name):
+    """A rules file the phone and the APIs share: beside this module in the
+    Lambda's package (the Makefile's build-events), in web/ in the
+    repository."""
+    here = Path(__file__).resolve().parent
+    for path in (here / name, here.parents[1] / "web" / name):
+        if path.exists():
+            return json.loads(path.read_text())
+    raise FileNotFoundError(f"{name} is not beside the handler nor in web/")
+
+
+# What earns points and badges (docs/app-plan/01-product.md, "The rules"),
+# and the campus places "Explorer" asks for.
+RULES = _rules_file("achievements.json")
+CAMPUS_REGIONS = frozenset(r["id"] for r in _rules_file("regions.json")["regions"])
+# The badges an encounter can give or, corrected by a label, take back.
+ENCOUNTER_BADGES = ("first-meow", "night-owl", "explorer", "cat-whisperer")
 social_table = boto3.resource("dynamodb").Table(SOCIAL_TABLE_NAME)
 _DESERIALIZE = TypeDeserializer()
 
@@ -326,6 +346,64 @@ def popularity(encs):
     return points
 
 
+def achievements(encs, met):
+    """(points, posts, badges): what a person's encounters have earned
+    them. Five points for an encounter that became a post, once per cat per
+    day, so ten photos of one cat in an hour are five points. Worked out
+    again from all of them on every change, like "met", so a label that
+    takes an encounter away takes back exactly what it gave."""
+    counted = [e for e in encs if not e.get("rejected") and e.get("day")]
+    # "Meet & post a cat": a post of no cat is a post, and earns nothing.
+    posted = {
+        (_shown_cat(e), e["day"]) for e in counted if e.get("postId") and _shown_cat(e)
+    }
+    points = RULES["points"]["post"] * len(posted)
+    badges = set()
+    if counted:
+        badges.add("first-meow")
+    night = RULES["badges"]["night-owl"]
+    if any(
+        e.get("hour") is not None
+        and (int(e["hour"]) >= night["fromHour"] or int(e["hour"]) < night["untilHour"])
+        for e in counted
+    ):
+        badges.add("night-owl")
+    if CAMPUS_REGIONS and CAMPUS_REGIONS <= {e.get("regionId") for e in counted}:
+        badges.add("explorer")
+    if any(m["days"] >= RULES["badges"]["cat-whisperer"]["days"] for m in met.values()):
+        badges.add("cat-whisperer")
+    return points, sum(1 for e in counted if e.get("postId")), badges
+
+
+def _award(user_pk, badge):
+    """The badge, with the moment it was first earned; once."""
+    try:
+        social_table.put_item(
+            Item={"PK": user_pk, "SK": f"BADGE#{badge}", "badgeId": badge, "at": _now_iso()},
+            ConditionExpression="attribute_not_exists(PK)",
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass  # theirs already
+
+
+def keep_badges(user_pk, earned):
+    """The person holds exactly the encounter badges they have earned now:
+    a new one is given, one a label took the ground from is taken back."""
+    held = {
+        item["SK"].removeprefix("BADGE#")
+        for item in social_table.query(
+            KeyConditionExpression=Key("PK").eq(user_pk)
+            & Key("SK").begins_with("BADGE#"),
+            ConsistentRead=True,
+        )["Items"]
+    }
+    for badge in ENCOUNTER_BADGES:
+        if badge in earned and badge not in held:
+            _award(user_pk, badge)
+        elif badge in held and badge not in earned:
+            social_table.delete_item(Key={"PK": user_pk, "SK": f"BADGE#{badge}"})
+
+
 def count_popularity(user_pk, encs):
     """Each cat's popularity per month (`pop{yyyy-mm}` on its public item)
     is the sum of what every person gives it. What this person gives is
@@ -406,13 +484,17 @@ def _encounters_of(user_pk):
 
 
 def _set_counts(pk, sk, counts):
+    """The counters as they are now. `points` and `posts` are on the item
+    for all time only (docs/data-model.md, "Counters")."""
+    names = {"encounters": ":e", "catsMet": ":c", "points": ":p", "posts": ":o"}
+    fields = [f for f in names if f in counts]
     social_table.update_item(
         Key={"PK": pk, "SK": sk},
-        UpdateExpression="SET encounters = :e, catsMet = :c, countedAt = :now",
+        UpdateExpression="SET countedAt = :now, "
+        + ", ".join(f"{f} = {names[f]}" for f in fields),
         ExpressionAttributeValues={
-            ":e": counts["encounters"],
-            ":c": counts["catsMet"],
             ":now": _now_iso(),
+            **{names[f]: counts[f] for f in fields},
         },
     )
 
@@ -441,7 +523,9 @@ def count_encounter(record):
         _set_counts(
             pk, f"STATS#{month}", months.get(month, {"encounters": 0, "catsMet": 0})
         )
-    _set_counts(pk, "STATS#ALL", total)
+    points, posts, badges = achievements(encs, met)
+    _set_counts(pk, "STATS#ALL", {**total, "points": points, "posts": posts})
+    keep_badges(pk, badges)
     count_popularity(pk, encs)
 
     if new and new.get("postId"):
@@ -719,6 +803,10 @@ def lead(cat_pk):
     ]
     voted.sort(key=lambda o: (-int(o["votes"]), o.get("createdAt") or "", o["SK"]))
     leader = voted[0] if voted else None
+    if leader and leader.get("suggestedBy"):
+        # "Name Giver": a name you suggested has led its poll. Kept once
+        # earned, whatever the poll does next.
+        _award(f"USER#{leader['suggestedBy']}", "name-giver")
     public = _get(cat_pk, "PUBLIC") or {}
     now = (leader["nameKey"], leader["name"]) if leader else (None, None)
     if (public.get("leaderKey"), public.get("leaderName")) == now:

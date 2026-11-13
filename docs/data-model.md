@@ -115,11 +115,11 @@ dataset's.
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
 | Block (B8; an invite already refuses to cross one, B5a) | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
 | Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
-| Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
+| Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; on `ALL` only, **since B7a**: `points` (five for each day a cat was met and posted) and `posts` (encounters that became a post). Planned, not written: `fed`, `namesVoted`, `namesLed` |
 | A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. |
 | What a person gives a cat's popularity **(since B7b)** | `USER#{id}` | `METM#{yyyy-mm}#{catId}` | `catId`, `month`, `points`: one for each day they met the cat that month, five more for a day that became a post. The cat's `pop{yyyy-mm}` is the sum of these over everyone, and moves by the difference in one transaction with this item. Deleted at zero |
-| Badge | `USER#{id}` | `BADGE#{badgeId}` | `at` |
-| An encounter, as the app counts it **(since B3b)** | `USER#{id}` | `ENC#{sessionId}` | `userId`, `sessionId`, `proposalId` (B6: the encounter's new-cat proposal), `claimedCatId` (the pick, or the post's claim if there was no pick), `labelCatId` (the session's label, following merges), `rejected`, `day` (the Israel date the encounter began), `regionId`, `postId`, `updatedAt` |
+| Badge **(written since B7a)** | `USER#{id}` | `BADGE#{badgeId}` | `badgeId`, `at` (when it was first earned). The ids are `web/achievements.json`'s. `first-meow`, `night-owl`, `explorer` and `cat-whisperer` follow the person's encounters and are deleted if a label takes the ground from them; `name-giver` is kept once earned; `deans-list` is not stored (worked out when asked) |
+| An encounter, as the app counts it **(since B3b)** | `USER#{id}` | `ENC#{sessionId}` | `userId`, `sessionId`, `proposalId` (B6: the encounter's new-cat proposal), `claimedCatId` (the pick, or the post's claim if there was no pick), `labelCatId` (the session's label, following merges), `rejected`, `day` (the Israel date the encounter began), `hour` (the Israel hour it began, 0 to 23, since B7a, for "Night Owl"; absent on older items), `regionId`, `postId`, `updatedAt` |
 
 `ENC` is the bridge between the tables (`src/common/encounters.py`). The
 capture route that records a pick writes it, and so does `POST /posts`;

@@ -4,12 +4,13 @@
 // posts; and on the profile the photo, the name, your posts, the settings.
 //
 // What the API cannot answer yet is left out, not drawn with made-up
-// numbers: achievements (E8), notifications (N2), deleting the account
-// (B10). The Friends card and page are friends.js (E7). The name is changed in its row on the profile (B1a),
+// numbers: notifications (N2), deleting the account (B10). The Friends card
+// and page are friends.js (E7), the Achievements card achievements.js (E8). The name is changed in its row on the profile (B1a),
 // the photo with the pencil on it (B1b).
 
 import { logout } from "../lib/auth.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
+import { AchievementsCard } from "./achievements.js";
 import { squareJpeg } from "./avatar.js";
 import { chooseUsername, me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
 import { FriendsCard, openFriends } from "./friends.js";
@@ -153,6 +154,7 @@ export function Home() {
   return html`<${HomeTop} me=${me} />
     <div class="tab-content home">
       <${FriendsCard} shown=${shown}><${Mascot} coat="gray" size=${64} /><//>
+      <${AchievementsCard} shown=${shown} />
       <${MyPosts} posts=${posts} failed=${failed} />
     </div>`;
 }

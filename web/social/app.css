@@ -2870,3 +2870,308 @@ button.post-name {
   cursor: pointer;
 }
 
+/* ------------------------------------------------------------ achievements (E8) */
+
+.badge-disc {
+  flex: none;
+  inline-size: var(--size, 54px);
+  block-size: var(--size, 54px);
+  border-radius: 50%;
+  background: var(--b-fill);
+  color: var(--b-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.badge-disc.locked {
+  box-sizing: border-box;
+  background: transparent;
+  border: 2px dashed var(--muted);
+  color: var(--muted);
+}
+
+/* Home's card. */
+.achievements-card {
+  inline-size: 100%;
+  padding-block: 14px;
+  padding-inline: 14px 16px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+.achievements-trophy {
+  flex: none;
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: 16px;
+  background: var(--chip);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.achievements-words {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.achievements-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.achievements-sub {
+  font-size: 13px;
+  color: var(--muted);
+}
+.achievements-sub b {
+  color: var(--accent);
+  font-weight: 700;
+}
+.achievements-newest {
+  flex: none;
+  display: flex;
+}
+.achievements-newest .badge-disc {
+  box-sizing: border-box;
+  border: 2px solid var(--surface);
+}
+.achievements-newest .badge-disc + .badge-disc {
+  margin-inline-start: -9px;
+}
+
+/* The sheet: the prototype's island over the app. */
+.island-dim {
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+}
+.island {
+  position: fixed;
+  z-index: 31;
+  inset-block: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-bottom) + 24px);
+  inset-inline: 12px;
+  max-inline-size: 520px;
+  margin-inline: auto;
+  border-radius: 42px;
+  overflow: hidden;
+  background: var(--island-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  animation: pop-in 0.4s cubic-bezier(0.3, 1.15, 0.45, 1);
+}
+.island-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  padding: 22px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.island-scroll::-webkit-scrollbar {
+  display: none;
+}
+.island-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.island-head h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.island-close {
+  inline-size: 40px;
+  block-size: 40px;
+  padding: 0;
+  border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.ach-top {
+  padding: 6px 0 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ach-number {
+  font-size: 52px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--accent);
+}
+.ach-number-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ach-level {
+  inline-size: 100%;
+  margin-block-start: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ach-level-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.ach-level-name {
+  font-weight: 700;
+}
+.ach-level-next {
+  color: var(--muted);
+}
+.ach-track {
+  display: block;
+  block-size: 8px;
+  border-radius: 4px;
+  background: var(--track);
+  overflow: hidden;
+}
+.ach-track span {
+  display: block;
+  block-size: 100%;
+  border-radius: 4px;
+  background: var(--heart);
+}
+.ach-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.ach-tile {
+  padding: 14px 10px;
+  border-radius: 20px;
+  background: var(--chip-neutral);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.ach-tile-value {
+  font-size: 24px;
+  font-weight: 800;
+}
+.ach-tile-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ach-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ach-section-head {
+  padding: 0 2px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.ach-section-head h3,
+.ach-rules h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.ach-section-head span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.ach-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 6px;
+}
+.ach-badge {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  cursor: pointer;
+}
+.ach-badge.locked {
+  opacity: 0.45;
+}
+.ach-badge-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.ach-rules {
+  padding: 14px 12px 6px;
+  border-radius: 24px;
+  background: var(--chip-neutral);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ach-rules h3 {
+  margin-block-end: 6px;
+  padding: 0 4px;
+}
+.ach-rule {
+  padding: 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ach-rule-icon {
+  flex: none;
+  inline-size: 38px;
+  block-size: 38px;
+  border-radius: 12px;
+  background: var(--chip);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ach-rule-words {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ach-rule-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+.ach-rule-how {
+  font-size: 13px;
+  color: var(--muted);
+}
+.ach-rule-points {
+  flex: none;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--accent);
+}
+

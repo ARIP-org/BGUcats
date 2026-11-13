@@ -24,6 +24,11 @@ def day_of(iso):
     return moment.astimezone(ISRAEL).date().isoformat()
 
 
+def hour_of(iso):
+    """The hour of the day in Israel, 0 to 23: for "Night Owl" (B7)."""
+    return datetime.fromisoformat(iso).astimezone(ISRAEL).hour
+
+
 def user_id_for(social_table, email):
     """The app's user id for a sign-in, or None if they never opened the app."""
     if not email:
@@ -53,6 +58,7 @@ def place_fields(session):
     return {
         "sessionId": session["sessionId"],
         "day": day_of(started) if started else None,
+        "hour": hour_of(started) if started else None,
         "regionId": region,
     }
 

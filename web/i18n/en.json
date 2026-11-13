@@ -299,5 +299,62 @@
     "one": "You and {count} friend voted",
     "other": "You and {count} friends voted"
   },
-  "vote.allNames": "All names"
+  "vote.allNames": "All names",
+  "ach.title": "Achievements",
+  "ach.failed": "Your achievements could not be loaded.",
+  "ach.points": {
+    "one": "{count} point",
+    "other": "{count} points"
+  },
+  "ach.badgeCount": {
+    "one": "{count} badge",
+    "other": "{count} badges"
+  },
+  "ach.number": "{count}",
+  "ach.socialPoints": {
+    "one": "social point",
+    "other": "social points"
+  },
+  "ach.level": "Level {level} · {name}",
+  "ach.toNext": "{count} to Level {level}",
+  "ach.topLevel": "The top level",
+  "ach.progress": "On the way to the next level",
+  "level.1": "New Arrival",
+  "level.2": "Cat Spotter",
+  "level.3": "Trail Walker",
+  "level.4": "Campus Scout",
+  "level.5": "Cat Guardian",
+  "level.6": "Campus Legend",
+  "ach.catsMet": {
+    "one": "Cat met",
+    "other": "Cats met"
+  },
+  "ach.encounters": {
+    "one": "Encounter",
+    "other": "Encounters"
+  },
+  "ach.posts": {
+    "one": "Post",
+    "other": "Posts"
+  },
+  "ach.badges": "Badges",
+  "ach.badgesOf": "{earned} of {count}",
+  "ach.badgeEarned": "Earned. {how}",
+  "ach.badgeLocked": "Not yet. {how}",
+  "badge.first-meow": "First Meow",
+  "badge.first-meow.how": "Save your first encounter with a cat.",
+  "badge.night-owl": "Night Owl",
+  "badge.night-owl.how": "Meet a cat between 10 at night and 5 in the morning.",
+  "badge.explorer": "Explorer",
+  "badge.explorer.how": "Meet cats in every part of campus.",
+  "badge.name-giver": "Name Giver",
+  "badge.name-giver.how": "Suggest a name that leads a cat's poll.",
+  "badge.deans-list": "Dean’s List",
+  "badge.deans-list.how": "Meet every cat with a GPA of 3.5 or more.",
+  "badge.cat-whisperer": "Cat Whisperer",
+  "badge.cat-whisperer.how": "Meet the same cat on 10 different days.",
+  "ach.howPoints": "How you earn points",
+  "rule.post": "Meet & post a cat",
+  "rule.post.how": "Scan it and make a post. Once per cat a day.",
+  "ach.plus": "+{points}"
 }

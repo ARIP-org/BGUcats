@@ -21,6 +21,7 @@ import {
   useConfig,
 } from "../lib/auth.js";
 import { html, render } from "../vendor/preact-htm.js";
+import { AchievementsSheet } from "./achievements.js";
 import { CatPage } from "./cat.js";
 import { Feed } from "./feed.js";
 import { Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
@@ -100,6 +101,7 @@ function Frame() {
       <${Stack} pages=${PAGES} />
       <${TabBar} onScan=${() => openScan("scan")} />
       <${Scan} />
+      <${AchievementsSheet} />
       <${Overlays} />
     </div>
   `;

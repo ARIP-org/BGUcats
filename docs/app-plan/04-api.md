@@ -63,7 +63,7 @@ its owner's alone.
 | `DELETE /me/devices/{deviceId}` | On sign-out, and when the switch is turned off |
 | `GET /me/posts` | The caller's posts, pending and hidden ones included, each with its state |
 | `GET /me/invite` | `{code}`. The link is built on the phone, from the address the app was opened at (the custom domain arrives with N4). `GET /me` carries the same code. Since B5a |
-| `GET /achievements` | Points, level and the next threshold, the three counters, every badge with earned or not, and the rules' text |
+| `GET /achievements` | Since B7a. `{points, level: {level, from, next}, counters: {catsMet, encounters, posts}, badges: [{id, earned, at}], rules: [{id, points}]}`. `next` is null at the top level. The badges are every one in `web/achievements.json`, in its order. Names and the rules' text are the app's strings, by id |
 | `DELETE /me` | Body `{"confirm": "delete"}`. Starts deletion and signs the caller out (`03-data-model.md`) |
 | `PUT /me/phone`, `DELETE /me/phone` | D5 only |
 
