@@ -16,6 +16,7 @@ import { isNative } from "../install.js";
 import { createOutbox, ulid } from "../outbox.js";
 import { createRecognition } from "../recognition.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
+import { askAgain, asking, painted, quiet } from "./asking.js";
 import { cats as loadCats, places as loadPlaces } from "./data.js";
 import { t } from "./i18n.js";
 import { glass } from "./motion.js";
@@ -68,8 +69,8 @@ function update(patch) {
   set({ scan });
 }
 
-// Where the phone is, once, when the flow opens: the encounter's location
-// (rounded on the server to about 100 m), never the phone's word for an area.
+// Where the phone is, once per flow: the encounter's location (rounded on
+// the server to about 100 m), never the phone's word for an area.
 function locate() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
@@ -78,6 +79,23 @@ function locate() {
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
     );
+  });
+}
+
+// Asked once the flow's screen is drawn, and after the camera has answered,
+// so the phone puts one question at a time and never inside the tap that
+// opened the flow (asking.js: that tap froze an iPhone). Not asked at all
+// if the app was last closed with this question unanswered, until the
+// person turns "Add location" on themselves (`again`).
+let located = null; // the flow whose place has been asked for
+function findPlace({ again = false } = {}) {
+  const scan = get().scan;
+  if (!scan || scan.fix) return;
+  if (again) askAgain("location");
+  else if (located === scan.sessionId || quiet("location")) return;
+  located = scan.sessionId;
+  asking("location", locate).then((fix) => {
+    if (fix && get().scan?.sessionId === scan.sessionId) update({ fix });
   });
 }
 
@@ -103,8 +121,10 @@ export async function openScan(entry) {
   };
   save(scan);
   set({ scan, scanOpen: true });
-  const fix = await locate();
-  if (get().scan?.sessionId === scan.sessionId) update({ fix });
+  await painted();
+  // The camera page asks for the camera first and for the place after it
+  // (Camera, below); a post started with "+" has no camera yet.
+  if (scan.step !== "camera") findPlace();
   recognition?.prepareForCapture().catch(() => {});
 }
 
@@ -280,23 +300,36 @@ function Camera({ scan }) {
   const video = useRef(null);
   const file = useRef(null);
   const [live, setLive] = useState(false);
+  // Off by itself if the app was last closed while the phone was being
+  // asked for the camera (asking.js); the phone's own camera still works.
+  const [held, setHeld] = useState(() => quiet("camera"));
   useEffect(() => {
+    if (held || !navigator.mediaDevices?.getUserMedia) {
+      findPlace();
+      return undefined;
+    }
     let stream = null;
     let gone = false;
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: "environment", width: { ideal: 2048 } }, audio: false })
+    asking("camera", () =>
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 2048 } }, audio: false }),
+    )
       .then((s) => {
         if (gone) return s.getTracks().forEach((track) => track.stop());
         stream = s;
         video.current.srcObject = s;
         setLive(true);
       })
-      .catch(() => setLive(false));
+      .catch(() => setLive(false))
+      .then(() => findPlace()); // one question at a time: the place after the camera
     return () => {
       gone = true;
       stream?.getTracks().forEach((track) => track.stop());
     };
-  }, []);
+  }, [held]);
+  const tryLive = () => {
+    askAgain("camera");
+    setHeld(false);
+  };
 
   async function shoot() {
     const v = video.current;
@@ -312,7 +345,12 @@ function Camera({ scan }) {
 
   return html`<div class="camera" data-step="camera">
     <video ref=${video} autoplay playsinline muted aria-hidden="true"></video>
-    ${!live && html`<p class="camera-note">${t("scan.noCamera")}</p>`}
+    ${!live && !held && html`<p class="camera-note">${t("scan.noCamera")}</p>`}
+    ${held &&
+    html`<p class="camera-note">
+      ${t("scan.cameraHeld")}
+      <button type="button" class="link-button" onClick=${tryLive}>${t("scan.cameraTry")}</button>
+    </p>`}
     <span class="bracket tl" aria-hidden="true"></span><span class="bracket tr" aria-hidden="true"></span>
     <span class="bracket bl" aria-hidden="true"></span><span class="bracket br" aria-hidden="true"></span>
     <div class="camera-bar">
@@ -448,7 +486,18 @@ function PostPage({ scan, cats }) {
       <span>${t("scan.description")}</span>
       <textarea maxlength="280" rows="3" placeholder=${t("scan.descriptionHint")} value=${scan.text} onInput=${(e) => update({ text: e.currentTarget.value })}></textarea>
     </label>
-    <button type="button" role="switch" class="row switch-row" aria-checked=${String(scan.shareRegion)} onClick=${() => update({ shareRegion: !scan.shareRegion })}>
+    <button
+      type="button"
+      role="switch"
+      class="row switch-row"
+      aria-checked=${String(scan.shareRegion)}
+      onClick=${() => {
+        // Turned on by hand with no place yet: ask the phone now, also if
+        // it had stopped asking by itself.
+        if (!scan.shareRegion && !scan.fix) findPlace({ again: true });
+        update({ shareRegion: !scan.shareRegion });
+      }}
+    >
       <span class="row-label">${t("scan.location")}</span>
       <span class="row-value">${scan.shareRegion ? t("scan.locationOn") : t("scan.locationOff")}</span>
       <span class="switch" aria-hidden="true"><span></span></span>

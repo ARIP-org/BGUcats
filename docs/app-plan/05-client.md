@@ -184,6 +184,15 @@ The new flow's pages are new. Underneath are today's pieces:
   today's result screen is.
 - With D12 on, a press keeps three frames; the page shows the first.
 
+**Asking the phone** (`web/social/asking.js`, since 2026-11-13). The
+flow's screen is drawn before anything is asked of the phone: the camera
+on the camera page, then where the phone is, one question at a time. A
+post started with "+" asks for the place once its page is there. A
+question still unanswered when the app is closed is not asked again by
+itself: the next launch says so, the phone's own camera button still
+takes the photo, and "Add location" on a post, or "Try the live camera",
+asks again. `docs/notes.md`, "The iPhone app", has why.
+
 ## States the design does not draw (G10)
 
 Built plainly from the existing components, each with a screenshot for

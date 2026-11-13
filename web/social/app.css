@@ -603,14 +603,18 @@ body:has(.frame) {
   inset-inline-start: 50%;
   translate: calc(var(--dir) * -50%) -14px;
   scale: 0.92;
-  block-size: 46px;
-  padding-block: 0;
+  /* One line as the prototype draws it; a sentence wraps inside the
+     screen instead of running off it. */
+  min-block-size: 46px;
+  max-inline-size: calc(100% - 32px);
+  inline-size: max-content;
+  padding-block: 10px;
   padding-inline: 12px 20px;
   border-radius: 23px;
   display: flex;
   align-items: center;
   gap: 10px;
-  white-space: nowrap;
+  line-height: 1.35;
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
@@ -632,6 +636,7 @@ body:has(.frame) {
   scale: 1;
 }
 .toast-tick {
+  flex: none;
   inline-size: 26px;
   block-size: 26px;
   border-radius: 13px;

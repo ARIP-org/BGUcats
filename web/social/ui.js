@@ -52,10 +52,11 @@ export function Icon({ name, size = 18, width = 2 }) {
 
 let toastTimer = null;
 
-export function toast(text) {
+// `ms`: how long it stays; longer for a sentence someone has to read.
+export function toast(text, ms = 2400) {
   clearTimeout(toastTimer);
   set({ toast: { text, on: true } });
-  toastTimer = setTimeout(() => set({ toast: { ...get().toast, on: false } }), 2400);
+  toastTimer = setTimeout(() => set({ toast: { ...get().toast, on: false } }), ms);
 }
 
 function Toast() {

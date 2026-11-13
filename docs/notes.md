@@ -147,6 +147,27 @@ an hour that a sentence would have saved.
 - **An error message should use the name the reader has to type.** The
   workflow said "no TEAM_ID", its own name for the variable
   `APPLE_TEAM_ID`, and a secret called `TEAM_ID` was added.
+- **A permission question asked inside the tap that opens a screen can
+  freeze an installed web app.** The member app's capture flow asked for
+  the phone's location in the same task as the tap on "+" or "Scan a
+  cat". On the owner's iPhone, in the app installed from the staging
+  site (a fresh install, so the question was new), nothing appeared and
+  no touch worked until the app was closed; Safari's tab was fine, and so
+  was the next launch, which resumes the saved flow without asking
+  (2026-11-13, before an iOS update). Not reproducible here: Chromium
+  with touch and WebKitGTK both work, so the cause is the best
+  explanation, not a measurement. What the app does about it
+  (`web/social/asking.js`): the screen is drawn first; the camera is
+  asked for, then the place, one question at a time; and a question left
+  unanswered when the app was closed is not asked again by itself, with a
+  line saying so and a way to ask again. A page cannot see itself
+  freeze, so the fix is to make the freeze a one-off.
+- **Nothing here runs Safari.** The screen tests are Chromium. WebKitGTK
+  (`apt-get install gir1.2-webkit2-4.1 python3-gi`, run under
+  `xvfb-run` with the system's Python 3.12) loads the local app and
+  shows JavaScript errors and what is under a point, which rules out the
+  engine; it has no touch, no permissions and no home-screen mode, which
+  is where the iPhone differed.
 
 ## GitHub
 
