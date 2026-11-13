@@ -125,9 +125,17 @@ an hour that a sentence would have saved.
   view's preflight, which never carries a token, got the JWT authorizer's
   401 and every call from the first TestFlight build failed with Safari's
   "Load failed" (2026-11-11). `OPTIONS /api/{proxy+}` without an authorizer
-  (`admin_api.tf`) is the fix. The local test server answered preflights
-  itself, so the tests passed; `curl -X OPTIONS` against the real API with
-  an `Origin` header is the check (`docs/deploy.md`, "The iPhone app").
+  (`admin_api.tf`) is half the fix. **Nor does API Gateway answer the
+  preflight on that route by itself:** it invokes the route's Lambda and
+  only adds the CORS headers to the answer. Ours asked for the caller's
+  email first and said 401, so the app still failed on every call, for two
+  days, behind a fix that had changed only whose 401 it was (2026-11-13).
+  The handlers now answer `OPTIONS` 204 before anything else (`preflight`
+  in `src/common/api.py`). Both times the local test server had answered
+  preflights itself, so the tests passed; it now hands them to the real
+  handlers, and the deploy job sends a real preflight to each API after
+  every apply ("The front door answers"). A fix to something only the
+  deployed API does is not done until that `curl` has been run against it.
 - **`*` on an API that takes a token in a header gives nothing away.**
   CORS decides whether a page may read an answer, and matters where a
   browser attaches credentials by itself (cookies). Here the page adds the

@@ -242,11 +242,12 @@ resource "aws_apigatewayv2_route" "admin_api" {
 # that carries no token. `ANY` above matches OPTIONS too, and its authorizer
 # answered that preflight 401, before the CORS configuration (api.tf) could;
 # the web view then refused the real call, which an iPhone shows as "Load
-# failed". A more specific method wins, so this route takes every OPTIONS,
-# and with CORS configured API Gateway answers it itself: the Lambda is
-# never invoked. If it ever were, a request without a token is refused there
-# too (_caller_email in src/admin/handler.py). Found on 2026-11-11, the first
-# TestFlight build's first sign-in.
+# failed". A more specific method wins, so this route takes every OPTIONS.
+# API Gateway does not answer it by itself: it invokes the Lambda and adds
+# the CORS headers to its answer, so the handler answers a preflight 204
+# before anything else (`preflight` in src/common/api.py). Found on
+# 2026-11-11, the first TestFlight build's first sign-in; the Lambda's half
+# on 2026-11-13, when the route alone had only changed whose 401 it was.
 resource "aws_apigatewayv2_route" "admin_api_preflight" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "OPTIONS /api/{proxy+}"

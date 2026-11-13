@@ -132,7 +132,8 @@ resource "aws_apigatewayv2_route" "app_api" {
 
 # A preflight carries no token, so it must not meet the authorizer: on the
 # ANY route it got 401 and the iPhone app's calls failed with "Load failed"
-# (docs/notes.md, "The iPhone app"). The API's CORS configuration answers it.
+# (docs/notes.md, "The iPhone app"). The Lambda answers it 204
+# (`preflight` in src/common/api.py) and API Gateway adds the CORS headers.
 resource "aws_apigatewayv2_route" "app_api_preflight" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "OPTIONS /api/v1/{proxy+}"

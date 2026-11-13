@@ -1077,6 +1077,8 @@ def _answer(status, payload):
 def handler(event, context):
     method = event.get("requestContext", {}).get("http", {}).get("method", "")
     path = event.get("requestContext", {}).get("http", {}).get("path", "")
+    if method == "OPTIONS":
+        return api.preflight(event)
     try:
         if not SOCIAL:
             raise ApiError(404, "not found", code="not_found")

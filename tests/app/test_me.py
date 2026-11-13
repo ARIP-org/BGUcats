@@ -91,6 +91,16 @@ def items(table):
 # ------------------------------------------------------------- the account
 
 
+def test_a_preflight_is_answered_before_anyone_is_asked_who_they_are(monkeypatch):
+    """As in the desk's API (tests/admin/test_handler.py): the iPhone app's
+    web view asks first, with no token, and anything but 204 fails the real
+    call. Also with the app off, when every other call is a 404."""
+    event = {"requestContext": {"http": {"method": "OPTIONS", "path": "/api/v1/me"}}}
+    assert handler.handler(event, None) == {"statusCode": 204}
+    monkeypatch.setattr(handler, "SOCIAL", False)
+    assert handler.handler(event, None) == {"statusCode": 204}
+
+
 def test_the_first_call_makes_the_account(aws):
     status, me = call("GET", "/api/v1/me", email=HELPER, name="Helper Person")
     assert status == 200

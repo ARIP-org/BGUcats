@@ -168,6 +168,15 @@ def test_token_without_email_claim_is_rejected(aws):
     assert status == 401
 
 
+def test_a_preflight_is_answered_before_anyone_is_asked_who_they_are():
+    """The iPhone app's web view sends an OPTIONS with no token before every
+    call. API Gateway hands it to this Lambda (the route has no authorizer)
+    and adds the CORS headers to the answer; a 401 here was "Load failed" on
+    every call from the app (2026-11-13). No table is read: none exists here."""
+    event = {"requestContext": {"http": {"method": "OPTIONS", "path": "/api/me"}}}
+    assert handler.handler(event, None) == {"statusCode": 204}
+
+
 def test_removing_an_admin_takes_effect_immediately(aws):
     aws["table"].put_item(
         Item={

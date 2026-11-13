@@ -287,9 +287,11 @@ product). Its old sessions and photos stay in the table with
   refuses that. Cognito answers at `org.arip.bgucats://signin`. To the
   packed pages the API and the bucket are other origins, so the API has a
   CORS configuration (any origin: API Gateway takes only `http(s)` or `*`,
-  and every call still needs its token), answered on an `OPTIONS` route
-  without the authorizer (a preflight carries no token; on the `ANY` route
-  it got 401, "Load failed"), and the media bucket lists
+  and every call still needs its token). A preflight carries no token, so
+  `OPTIONS` has a route without the authorizer, and API Gateway hands it
+  to the Lambda: each handler answers it 204 before anything else
+  (`preflight` in `src/common/api.py`; a 401 there is "Load failed" on
+  every call, as it was until 2026-11-13). The media bucket lists
   `capacitor://localhost`. It opens on the member app (`frontDoor = "app"`
   in the packed config, since N1). The model comes from the site's
   `/model/`, which CloudFront answers with an AWS-managed CORS policy (no

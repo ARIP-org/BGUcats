@@ -174,6 +174,22 @@ jobs:
           check 200 "$app"
           check 200 "${app}config.json"
           check 401 "${app}api/me"
+          # What the iPhone app's web view asks before every call: a
+          # preflight, with no token. Anything but 204 and the app shows
+          # "Load failed" on each one (docs/notes.md, "The iPhone app").
+          preflight() {
+            code=$(curl -s -o /dev/null -m 20 -w '%{http_code}' -X OPTIONS "$1" \
+              -H "Origin: capacitor://localhost" \
+              -H "Access-Control-Request-Method: GET" \
+              -H "Access-Control-Request-Headers: authorization")
+            echo "$code OPTIONS $1"
+            if [ "$code" != "204" ]; then
+              echo "::error::The preflight of $1 answered $code, expected 204."
+              exit 1
+            fi
+          }
+          preflight "${app}api/me"
+          preflight "${app}api/v1/me"
 
       # Staging only: one made-up photo through the whole pipeline, posted
       # in the member app, then deleted again (scripts/smoke_staging.py).

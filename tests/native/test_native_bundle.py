@@ -102,9 +102,13 @@ def test_the_api_answers_a_preflight_without_a_token():
     """The packed pages are another origin to the API, so the web view sends
     an OPTIONS first, with no token. The catch-all `ANY` route's authorizer
     answered it 401 and every call failed with "Load failed" (2026-11-11).
-    API Gateway answers a preflight from its CORS configuration only on a
-    route without an authorizer."""
-    tf = (REPO / "infra" / "main" / "admin_api.tf").read_text()
+    So each API has an OPTIONS route without an authorizer. That is half of
+    it: API Gateway hands the preflight to the Lambda, which must answer 204
+    (tests/admin/test_handler.py, tests/app/test_me.py)."""
+    tf = "".join(
+        (REPO / "infra" / "main" / name).read_text()
+        for name in ("admin_api.tf", "app_api.tf")
+    )
     routes = {}
     for block in tf.split('resource "aws_apigatewayv2_route"')[1:]:
         key = re.search(r'route_key\s*=\s*"([^"]+)"', block).group(1)
@@ -112,6 +116,8 @@ def test_the_api_answers_a_preflight_without_a_token():
         routes[key] = auth.group(1) if auth else "NONE"
     assert routes["ANY /api/{proxy+}"] == "JWT"
     assert routes["OPTIONS /api/{proxy+}"] == "NONE"
+    assert routes["ANY /api/v1/{proxy+}"] == "JWT"
+    assert routes["OPTIONS /api/v1/{proxy+}"] == "NONE"
     api = (REPO / "infra" / "main" / "api.tf").read_text()
     assert re.search(r"cors_configuration\s*\{", api)
 
