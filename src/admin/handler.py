@@ -39,7 +39,17 @@ from boto3.dynamodb.conditions import Key
 from ulid import ULID
 
 from admin import insights
-from common import admission, api, encounters, media, proposals, regions, tables, text
+from common import (
+    admission,
+    api,
+    encounters,
+    media,
+    polls,
+    proposals,
+    regions,
+    tables,
+    text,
+)
 from common.api import ApiError
 
 logger = logging.getLogger()
@@ -1409,6 +1419,145 @@ def _reject_proposal(proposal_id, email, **_):
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# The name poll, from the desk (B4b)
+# --------------------------------------------------------------------------
+#
+# In the member app the poll's leader names the cat (D6). An admin has two
+# answers to a name that should not be there: remove the option, or lock the
+# name the app shows. Both only mark; what follows from a removal (its votes
+# leaving the total, the votes themselves, the new leader) is the events
+# Lambda's, like everything else the app's table keeps.
+
+
+def _poll_cat(cat_id):
+    if not SOCIAL:
+        raise ApiError(404, "the app is not open on this account")
+    cat = _item(f"CAT#{cat_id}")
+    if cat is None:
+        raise ApiError(404, "no such cat")
+    return cat
+
+
+def _get_cat_names(cat_id, **_):
+    """`GET /api/cats/{id}/names`: every option whatever its state, with who
+    suggested it, and the name the app shows now and why."""
+    cat = _poll_cat(cat_id)
+    options = tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(f"CAT#{cat_id}")
+        & Key("SK").begins_with("NAME#"),
+        ConsistentRead=True,
+    )
+    public = (
+        social_table.get_item(
+            Key={"PK": f"CAT#{cat_id}", "SK": "PUBLIC"}, ConsistentRead=True
+        ).get("Item")
+        or {}
+    )
+    # The leader as these options make it; the stored one follows a moment
+    # after a removal (the same rule the member API shows by).
+    leader = polls.leader(options)
+    locked = public.get("lockedName")
+    shown, source = polls.shown_name(
+        cat, {"lockedName": locked, "leaderName": leader["name"] if leader else None}
+    )
+    usernames = {}
+
+    def username(user_id):
+        if user_id and user_id not in usernames:
+            person = social_table.get_item(
+                Key={"PK": f"USER#{user_id}", "SK": "PROFILE"}
+            ).get("Item")
+            usernames[user_id] = (person or {}).get("username")
+        return usernames.get(user_id)
+
+    options.sort(
+        key=lambda o: (-int(o.get("votes") or 0), o.get("createdAt") or "", o["nameKey"])
+    )
+    return {
+        "catId": cat_id,
+        "name": cat.get("name"),
+        "shown": shown,
+        "source": "locked" if locked else source,
+        "locked": locked,
+        "lockedBy": public.get("lockedBy") if locked else None,
+        "options": [
+            {
+                "nameKey": o["nameKey"],
+                "name": o["name"],
+                "votes": int(o.get("votes") or 0),
+                "status": o["status"],
+                "leading": o is leader,
+                "suggestedBy": username(o.get("suggestedBy")),
+            }
+            for o in options
+        ],
+    }
+
+
+def _remove_name(cat_id, body, email, **_):
+    """`POST /api/cats/{id}/names/remove` `{nameKey}`: the option leaves
+    the poll and its votes go with it. The key rides in the body, not the
+    path: a name may hold a slash or a question mark.
+
+    Removing twice is removing once. A removed name stays out: suggesting
+    it again is refused, so it cannot be voted back in."""
+    _poll_cat(cat_id)
+    key = body.get("nameKey")
+    if not isinstance(key, str) or not key:
+        raise ApiError(400, "nameKey is the option to remove")
+    try:
+        social_table.update_item(
+            Key=polls.option_key(cat_id, key),
+            # What it was, kept: a live name's votes are in the cat's total
+            # and leave it; a pending one's never were.
+            UpdateExpression=(
+                "SET removedFrom = #s, #s = :removed, removedBy = :by, removedAt = :now"
+            ),
+            ConditionExpression="#s IN (:live, :pending)",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":removed": "removed",
+                ":live": "live",
+                ":pending": "pending",
+                ":by": email,
+                ":now": _now_iso(),
+            },
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        option = social_table.get_item(
+            Key=polls.option_key(cat_id, key), ConsistentRead=True
+        ).get("Item")
+        if option is None:
+            raise ApiError(404, "no such name in this cat's poll") from None
+        if option["status"] != "removed":
+            raise ApiError(409, f"this name is {option['status']} already") from None
+    logger.info("user=%s removed name cat=%s key=%r", email, cat_id, key)
+    return _get_cat_names(cat_id)
+
+
+def _lock_name(cat_id, body, email, **_):
+    """`POST /api/cats/{id}/name-lock` `{name}`: the name the app shows,
+    whatever the poll says; null gives the name back to the poll. Votes go
+    on either way."""
+    _poll_cat(cat_id)
+    key = {"PK": f"CAT#{cat_id}", "SK": "PUBLIC"}
+    if body.get("name") is None:
+        social_table.update_item(
+            Key=key, UpdateExpression="REMOVE lockedName, lockedBy, lockedAt"
+        )
+    else:
+        name = text.clean(body["name"], "name", polls.LOCK_MAX)
+        social_table.update_item(
+            Key=key,
+            UpdateExpression="SET lockedName = :name, lockedBy = :by, lockedAt = :now",
+            ExpressionAttributeValues={":name": name, ":by": email, ":now": _now_iso()},
+        )
+    logger.info("user=%s locked name cat=%s name=%r", email, cat_id, body.get("name"))
+    return _get_cat_names(cat_id)
+
+
 def _get_admins(**_):
     admins = table.query(
         IndexName="GSI2",
@@ -1949,6 +2098,9 @@ ROUTES = (
         ADMINS,
     ),
     ("POST", rf"^/api/sessions/(?P<session_id>{ID})/reject$", _reject_session, ADMINS),
+    ("GET", rf"^/api/cats/(?P<cat_id>{ID})/names$", _get_cat_names, ADMINS),
+    ("POST", rf"^/api/cats/(?P<cat_id>{ID})/names/remove$", _remove_name, ADMINS),
+    ("POST", rf"^/api/cats/(?P<cat_id>{ID})/name-lock$", _lock_name, ADMINS),
     ("GET", r"^/api/cats$", _get_cats, ANYONE),
     ("POST", r"^/api/cats$", _create_cat, ADMINS),
     ("GET", rf"^/api/cats/(?P<cat_id>{ID})$", _get_cat, ANYONE),

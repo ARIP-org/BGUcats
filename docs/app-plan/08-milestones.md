@@ -20,10 +20,10 @@ A session ticks its row in the pull request that finishes it.
 | F2 | Shared code, and one catalogue of every key | merged 2026-11-12 |
 | F3 | The social table, the events Lambda, the seed | merged 2026-11-12. The local app and the seed learn the table in B3c |
 | F4 | The member API: who you are, flags, who may sign up | merged 2026-11-12 |
-| B1 | Profiles | B1a (name, settings) and B1b (photo) merged 2026-11-13; B1c (username) built the same day, in review; devices wait for B9 |
+| B1 | Profiles | B1a (name, settings), B1b (photo) and B1c (username) merged 2026-11-13; devices wait for B9 |
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
-| B4 | Name polls | B4a (names, votes, the leader) built 2026-11-13, in review; B4b (the desk's remove and lock, votes in the feed) not built |
+| B4 | Name polls | B4a (names, votes, the leader) merged 2026-11-13; B4b (the desk's remove and lock) built the same day, in review. Votes as feed cards moved to B5: a vote card is friends' votes |
 | B5 | Friends and invites (B5b: phone and contacts) | |
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
@@ -42,7 +42,7 @@ A session ticks its row in the pull request that finishes it.
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
 | E3 | The capture flow | merged 2026-11-12 |
-| E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page built the same day with B4a, in review |
+| E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
 | E5 | The map | |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | |
@@ -330,16 +330,30 @@ was built.
   mocked table would prove nothing about DynamoDB. **Mine, not the
   plan's:** the admins' own name stands in the poll from the start with
   no votes, so it can be voted to stay.
-- **What an admin cannot do yet (B4b):** remove a name or lock one.
-  Until then the first vote on any suggestion renames the cat for
-  everyone, on staging. Votes as feed cards are B4b too.
+- **B4b, built 2026-11-13:** the desk's half. On a cat's page in the
+  desk, "Name poll": what the app calls the cat and why, every suggested
+  name with its votes and author, **Remove** on each and **Lock the
+  name**. The desk's API only marks (`removed` on the option,
+  `lockedName` on the cat's public item): its role gained the `CAT#`
+  partition of the app's table and no new action. What follows from a
+  removal is the events Lambda's (`remove_name`): the count to zero and
+  off the total in one transaction, then the votes that named it
+  deleted. A vote that leaves a removed name does not touch its count
+  (`_move_vote`), or the total would lose that vote twice;
+  `tests/app/test_polls_desk.py` drives that race. A removed name stays
+  out. **Not built:** restoring a removed name. The admins' own name is
+  listed, and removable, only once somebody has voted for it; until
+  then it is not an item.
+- **Moved to B5:** votes as feed cards. A vote card is "Daniel and Noa
+  voted…": friends' votes, and there are no friends before B5. The
+  `VOTE` item gets its `FEED#` keys there.
 
 ### B5. Friends and invites
 
 - **Needs:** D4. B1.
 - **Builds:** invite code and accept; list with period counts and the
   podium; remove; a person's page; requests if D4 says so; mutual-friend
-  counts.
+  counts; friends' name votes as feed cards (from B4).
 - **Done when:** every friend item has its mirror after any sequence of
   accept, remove and block (a property test); an invite between two
   people one of whom blocked the other does nothing and says nothing.

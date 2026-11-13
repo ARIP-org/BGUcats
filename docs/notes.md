@@ -37,6 +37,13 @@ an hour that a sentence would have saved.
   `table.put_item`. Converting them with `TypeSerializer` first converts
   them twice; moto reports it only as "cancellation reasons [TypeError]"
   on every item (2026-11-12, F4).
+- **A count handed over to someone else must stop being everyone's.** An
+  admin removes a name from a poll; the events Lambda then takes its
+  votes off the cat's total as a whole. If a voter leaving that name in
+  between still took their one vote off the option, the total would lose
+  it once too few. From the moment an option is `removed`, only the
+  events Lambda changes its count (`_move_vote` in `src/app/handler.py`,
+  `remove_name` in `src/events/handler.py`; B4b, 2026-11-13).
 - **Mocks are always consistent.** moto answers every read with the latest
   write, so none of the above can fail in a unit test. They were found by
   running real calls against a real table.

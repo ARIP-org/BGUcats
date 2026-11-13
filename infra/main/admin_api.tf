@@ -95,7 +95,8 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
         # the app's table (docs/data-model.md, "ENC"). It finds the person
         # by their sign-in. Since B6: the new-cat proposals' queue
         # (PROPOSALS#{status} on GSI2) and deciding one (PROPOSAL#{id}).
-        # Nothing else there.
+        # Since B4b: a cat's name poll (CAT#{id}), to read it, mark an
+        # option removed and lock the shown name. Nothing else there.
         Action = [
           "dynamodb:GetItem",
           "dynamodb:UpdateItem",
@@ -107,7 +108,7 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
         ]
         Condition = {
           "ForAllValues:StringLike" = {
-            "dynamodb:LeadingKeys" = ["IDENTITY#*", "USER#*", "PROPOSAL#*", "PROPOSALS#*"]
+            "dynamodb:LeadingKeys" = ["IDENTITY#*", "USER#*", "PROPOSAL#*", "PROPOSALS#*", "CAT#*"]
           }
         }
       },

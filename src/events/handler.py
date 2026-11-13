@@ -539,6 +539,85 @@ def publish_suggestion(cat_pk, sk):
     raise RuntimeError(f"could not publish {cat_pk} / {sk}: it kept changing")
 
 
+def _votes(cat_pk):
+    items, start = [], None
+    while True:
+        page = social_table.query(
+            KeyConditionExpression=Key("PK").eq(cat_pk) & Key("SK").begins_with("VOTE#"),
+            ConsistentRead=True,
+            **({"ExclusiveStartKey": start} if start else {}),
+        )
+        items += page["Items"]
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def remove_name(cat_pk, sk):
+    """An admin removed a name from the poll (B4b); its votes go with it.
+    The desk only marks the option `removed`, keeping what it was
+    (`removedFrom`). Here its count goes to zero, and leaves the cat's
+    total if the name was live, in one transaction; then every vote that
+    names it is deleted, so those people may vote again.
+
+    Safe to run twice: a count already at zero is left alone, and a vote
+    is deleted only while it still names this option."""
+    client = social_table.meta.client
+    for _ in range(NAME_ATTEMPTS):
+        option = _get(cat_pk, sk)
+        if not option or option.get("status") != "removed":
+            return
+        votes = int(option.get("votes") or 0)
+        if not votes:
+            break
+        items = [
+            {
+                "Update": {
+                    "TableName": social_table.name,
+                    "Key": {"PK": cat_pk, "SK": sk},
+                    "UpdateExpression": "SET votes = :none",
+                    "ConditionExpression": "#status = :removed AND votes = :votes",
+                    "ExpressionAttributeNames": {"#status": "status"},
+                    "ExpressionAttributeValues": {
+                        ":none": 0,
+                        ":removed": "removed",
+                        ":votes": votes,
+                    },
+                }
+            }
+        ]
+        if option.get("removedFrom") == "live":
+            items.append(
+                {
+                    "Update": {
+                        "TableName": social_table.name,
+                        "Key": {"PK": cat_pk, "SK": "PUBLIC"},
+                        "UpdateExpression": "ADD voteTotal :less",
+                        "ExpressionAttributeValues": {":less": -votes},
+                    }
+                }
+            )
+        try:
+            client.transact_write_items(TransactItems=items)
+            break
+        except client.exceptions.TransactionCanceledException:
+            continue
+    else:
+        raise RuntimeError(f"could not remove {cat_pk} / {sk}: it kept changing")
+
+    for vote in _votes(cat_pk):
+        if vote.get("nameKey") != option["nameKey"]:
+            continue
+        try:
+            social_table.delete_item(
+                Key={"PK": cat_pk, "SK": vote["SK"]},
+                ConditionExpression="nameKey = :key",
+                ExpressionAttributeValues={":key": option["nameKey"]},
+            )
+        except client.exceptions.ConditionalCheckFailedException:
+            pass  # moved to another name meanwhile: theirs to keep
+
+
 def lead(cat_pk):
     """The poll's leader, worked out again from the options themselves and
     written to the cat's public item: the live option with the most votes,
@@ -570,12 +649,14 @@ def lead(cat_pk):
 
 
 def count_name(record):
-    """Every change to a name option: a suggestion to publish, and votes
-    that may have moved the leader."""
+    """Every change to a name option: a suggestion to publish, a name an
+    admin removed, and votes that may have moved the leader."""
     pk, sk = _keys(record)
     changed = _image(record)
     if changed and changed.get("status") == "pending":
         publish_suggestion(pk, sk)
+    if changed and changed.get("status") == "removed":
+        remove_name(pk, sk)
     lead(pk)
 
 

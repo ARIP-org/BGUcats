@@ -179,8 +179,9 @@ desk's current style, until the admin desk is designed.
 | `GET /api/proposals`, `POST /api/proposals/{id}/approve`, `…/merge`, `…/reject` | Since B6. `GET ?status=` (default `open`), oldest first, with the session's photos and the proposer's username. Approve `{name?}` (default the name idea) creates the cat with the proposal's id, sets its coat and usual place from the proposal, and labels the session with the queue's assign; merge `{catId}` labels it as that cat; reject closes only the proposal (the session stays in the queue). Labeling updates `ENC` as any label does; the events Lambda then publishes the waiting post under the cat, or hides it on reject. A second, different decision is 409. Shown at the top of the desk's Queue |
 | `GET /api/people`, `POST /api/people/{userId}/ban`, `…/unban` | The list of users; a ban refuses every write and hides their posts |
 | `POST /api/posts/{postId}/hide`, `…/restore`, `…/remove` | |
-| `POST /api/cats/{catId}/names/{nameKey}/remove` | Removes an option; its votes go with it |
-| `POST /api/cats/{catId}/name-lock` | `{name}` locks the shown name; null unlocks |
+| `GET /api/cats/{catId}/names` | Since B4b. Every option whatever its status, most votes first, each with its votes, whether it leads and its author's username; the name the app shows now and why (`source`: `locked`, `poll`, `admin`, `none`); the lock and who set it |
+| `POST /api/cats/{catId}/names/remove` | Since B4b. `{nameKey}` removes an option; its votes go with it, and the name cannot be suggested for this cat again. The key is in the body, not the path as first planned: a name may hold a slash. Only marks the option; the events Lambda takes the votes away. Removing twice is removing once. Answers like the `GET` |
+| `POST /api/cats/{catId}/name-lock` | Since B4b. `{name}` locks the shown name (any name, up to 80 characters); null unlocks. The poll goes on underneath. Answers like the `GET` |
 | `POST /api/encounters/{id}/rerank` | Listed above; any member, own encounter |
 
 ## Push
