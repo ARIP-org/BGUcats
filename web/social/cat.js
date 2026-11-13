@@ -3,14 +3,17 @@
 // it came from, where the cat usually is, its description and its numbers;
 // then the name poll (B4), and who posted it lately.
 //
-// Left out until their backends exist, not drawn with made-up numbers: the
-// grade (B7b), the map button (E5).
+// The grade is a popularity grade the app works out (B7b, D9); a cat nobody
+// met lately shows a dash, and with the `gpa` flag off there is no chip.
+//
+// Left out until its backend exists: the map button (E5).
 
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { cat as loadCat, catPosts, names as loadNames, regionName, suggestName, takeVoteBack, voteFor } from "./data.js";
 import { Avatar } from "./feed.js";
-import { ago, t } from "./i18n.js";
+import { ago, oneDecimal, t } from "./i18n.js";
 import { REFUSED, moved } from "./poll.js";
+import { get } from "./store.js";
 import { termsFirst } from "./terms.js";
 import { toast } from "./ui.js";
 
@@ -158,9 +161,21 @@ export function CatPage({ catId }) {
     <${Photos} cat=${cat} />
     <div class="cat-body">
       <section class="card cat-card">
-        <div class="cat-head">
-          <h1 class="cat-name">${name || t("cat.noName")}</h1>
-          <span class="cat-named">${named}</span>
+        <div class="cat-top">
+          <div class="cat-head">
+            <h1 class="cat-name">${name || t("cat.noName")}</h1>
+            <span class="cat-named">${named}</span>
+          </div>
+          ${get().me?.flags?.gpa &&
+          html`<div
+            class="cat-gpa"
+            role="img"
+            aria-label=${cat.gpa == null ? t("cat.gpaNone") : t("cat.gpaLabel", { gpa: oneDecimal(cat.gpa) })}
+          >
+            <span class="cat-gpa-word">${t("cat.gpa")}</span>
+            <span class="cat-gpa-value">${cat.gpa == null ? t("cat.never") : oneDecimal(cat.gpa)}</span>
+            <span class="cat-gpa-of">${t("cat.gpaOf")}</span>
+          </div>`}
         </div>
         ${region &&
         html`<span class="cat-place"

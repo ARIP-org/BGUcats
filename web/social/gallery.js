@@ -18,8 +18,11 @@ const SHAPES = ["3 / 4.4", "1 / 1", "3 / 4", "4 / 5", "3 / 4.8", "1 / 1", "4 / 5
 
 const byText = (a, b) => (a || "").localeCompare(b || "", undefined, { sensitivity: "base" });
 const newest = (key) => (a, b) => (b[key] || "").localeCompare(a[key] || "");
-// "Highest GPA" joins these with the grade itself (B7b).
+// "Highest GPA" is the first, and the one the gallery opens with, as in the
+// prototype, where the grade is on (the `gpa` flag); a cat with no grade
+// comes after every cat that has one.
 export const SORTS = {
+  gpa: (a, b) => (b.gpa ?? 0) - (a.gpa ?? 0) || newest("lastSeenAt")(a, b),
   seen: newest("lastSeenAt"),
   posts: (a, b) => b.posts - a.posts || newest("lastSeenAt")(a, b),
   newest: newest("firstSeenAt"),
@@ -51,7 +54,8 @@ export function Gallery({ search: focusSearch }) {
   const [cats, setCats] = useState(null);
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState("");
-  const sort = useStore((s) => s.gallerySort) || "seen";
+  const graded = !!useStore((s) => s.me?.flags?.gpa);
+  const sort = useStore((s) => s.gallerySort) || (graded ? "gpa" : "seen");
   const field = useRef(null);
 
   useEffect(() => {
@@ -69,11 +73,13 @@ export function Gallery({ search: focusSearch }) {
   const sortMenu = (e) =>
     openMenu(e.currentTarget, {
       label: t("gallery.sortBy"),
-      items: Object.keys(SORTS).map((id) => ({
-        label: t(`gallery.sort.${id}`),
-        checked: id === sort,
-        pick: () => set({ gallerySort: id }),
-      })),
+      items: Object.keys(SORTS)
+        .filter((id) => graded || id !== "gpa")
+        .map((id) => ({
+          label: t(`gallery.sort.${id}`),
+          checked: id === sort,
+          pick: () => set({ gallerySort: id }),
+        })),
     });
 
   const shown = cats ? sorted(cats, sort, search) : [];

@@ -68,6 +68,10 @@ export function tMarked(key, values, marks) {
 
 export const language = () => lang;
 
+// "3.9", "4.0": a grade always shows its decimal.
+export const oneDecimal = (value) =>
+  new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
+
 // "Nov 2026" and "Nov 10", as the language writes them.
 const dated = (iso, options) => {
   const date = new Date(iso);

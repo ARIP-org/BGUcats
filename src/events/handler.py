@@ -302,6 +302,92 @@ def summarise(encs):
     return met, months, {"encounters": total, "catsMet": len(met)}
 
 
+# What a met-and-posted day is worth beside a met-and-saved one (D9).
+POST_POINTS = 5
+
+
+def popularity(encs):
+    """{(catId, yyyy-mm): points}: what one person's encounters add to their
+    cats' popularity (docs/app-plan/01-product.md, "GPA"). One person
+    meeting a cat on one day is one, however many encounters or photos, and
+    five more if any of them became a post. The same encounters count as
+    for "met": the label, else the claim, and nothing if rejected."""
+    days = {}
+    for enc in encs:
+        cat = _shown_cat(enc)
+        if cat is None or not enc.get("day"):
+            continue
+        key = (cat, enc["day"])
+        days[key] = days.get(key, False) or bool(enc.get("postId"))
+    points = {}
+    for (cat, day), posted in days.items():
+        key = (cat, day[:7])
+        points[key] = points.get(key, 0) + 1 + (POST_POINTS if posted else 0)
+    return points
+
+
+def count_popularity(user_pk, encs):
+    """Each cat's popularity per month (`pop{yyyy-mm}` on its public item)
+    is the sum of what every person gives it. What this person gives is
+    kept beside their other counters (`METM#{yyyy-mm}#{catId}`), and the
+    cat's number moves by the difference, in one transaction with that
+    item, on the condition that the item still says what was read. So a
+    record seen twice changes nothing, and a label that corrects an
+    encounter takes from one cat exactly what it gives the other."""
+    want = popularity(encs)
+    have, start = {}, None
+    while True:
+        page = social_table.query(
+            KeyConditionExpression=Key("PK").eq(user_pk)
+            & Key("SK").begins_with("METM#"),
+            ConsistentRead=True,
+            **({"ExclusiveStartKey": start} if start else {}),
+        )
+        for item in page["Items"]:
+            have[(item["catId"], item["month"])] = int(item["points"])
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            break
+    for cat, month in sorted(set(want) | set(have)):
+        new, old = want.get((cat, month), 0), have.get((cat, month))
+        if new == (old or 0):
+            continue
+        key = {"PK": user_pk, "SK": f"METM#{month}#{cat}"}
+        was = (
+            {"ConditionExpression": "attribute_not_exists(PK)"}
+            if old is None
+            else {
+                "ConditionExpression": "points = :old",
+                "ExpressionAttributeValues": {":old": old},
+            }
+        )
+        mine = (
+            {
+                "Put": {
+                    "TableName": social_table.name,
+                    "Item": {**key, "catId": cat, "month": month, "points": new},
+                    **was,
+                }
+            }
+            if new
+            else {"Delete": {"TableName": social_table.name, "Key": key, **was}}
+        )
+        social_table.meta.client.transact_write_items(
+            TransactItems=[
+                mine,
+                {
+                    "Update": {
+                        "TableName": social_table.name,
+                        "Key": {"PK": f"CAT#{cat}", "SK": "PUBLIC"},
+                        "UpdateExpression": "ADD #pop :by",
+                        "ExpressionAttributeNames": {"#pop": f"pop{month}"},
+                        "ExpressionAttributeValues": {":by": new - (old or 0)},
+                    }
+                },
+            ]
+        )
+
+
 def _encounters_of(user_pk):
     items, start = [], None
     while True:
@@ -341,7 +427,8 @@ def count_encounter(record):
     """
     pk = _keys(record)[0]
     old, new = _image(record, "OldImage"), _image(record)
-    met, months, total = summarise(_encounters_of(pk))
+    encs = _encounters_of(pk)
+    met, months, total = summarise(encs)
 
     for cat in sorted({_shown_cat(old), _shown_cat(new)} - {None}):
         if cat in met:
@@ -355,6 +442,7 @@ def count_encounter(record):
             pk, f"STATS#{month}", months.get(month, {"encounters": 0, "catsMet": 0})
         )
     _set_counts(pk, "STATS#ALL", total)
+    count_popularity(pk, encs)
 
     if new and new.get("postId"):
         correct_post(new)

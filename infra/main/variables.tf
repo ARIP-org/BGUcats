@@ -67,6 +67,9 @@ locals {
   # "Flags").
   app_flags = {
     social = local.settings.social
+    # A cat's grade, worked out from its popularity (D9, B7b). One switch
+    # hides it everywhere if the owner decides it is not wanted.
+    gpa = true
   }
 
   # count for the bot's resources: 1 in production, 0 in staging.
