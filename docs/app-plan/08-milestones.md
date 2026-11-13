@@ -24,7 +24,7 @@ A session ticks its row in the pull request that finishes it.
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | B4a (names, votes, the leader) merged 2026-11-13; B4b (the desk's remove and lock) built the same day, in review. Votes as feed cards moved to B5: a vote card is friends' votes |
-| B5 | Friends and invites (B5b: phone and contacts) | |
+| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends in the feed) built 2026-11-13; votes as feed cards, mutual counts and blocks (B8) not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
 | B8 | Reports, blocks, bans, the desk's tools | |
@@ -357,6 +357,20 @@ was built.
 - **Done when:** every friend item has its mirror after any sequence of
   accept, remove and block (a property test); an invite between two
   people one of whom blocked the other does nothing and says nothing.
+- **B5a, built 2026-11-13:** D4 as answered: an invite link makes two
+  people friends at once, and there is nothing else yet (D5: no contacts
+  in the first build), so no requests. `POST /invites/{code}/accept`
+  writes both `FRIEND` items in one transaction that also checks no
+  `BLOCK` stands between the two (blocks arrive with B8; the check is
+  already there and tested); `DELETE /friends/{id}` deletes both in one.
+  `GET /friends` is the caller and their friends by cats found, this
+  month or in all; `GET /users/{id}` and `…/posts` are a person's page.
+  In the feed an author is marked as a friend, and a friend sees a
+  post's area (D3). `tests/app/test_friends.py`: the mirror after 120
+  random accepts and removes among three people, a block either way,
+  every key a person is sent. **Not built:** friends' name votes as
+  feed cards (from B4), mutual-friend counts, and the "friend" events
+  (a push, B9).
 - **B5b, phone and contacts:** only if D5 says so; needs O17 for codes.
   The HMAC lookup, the match route and its tight limit.
 

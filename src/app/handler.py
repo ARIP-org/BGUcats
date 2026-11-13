@@ -996,6 +996,226 @@ def _unvote(user, cat_id, **_):
 
 
 # --------------------------------------------------------------------------
+# Friends (B5)
+# --------------------------------------------------------------------------
+#
+# People become friends through an invite link, at once: sharing your link
+# is consent (D4). A friendship is two items, one under each person, always
+# written and deleted together (03-data-model.md, invariant 5).
+
+INVITES_PER_DAY = 30
+PERIODS = ("month", "all")
+LATEST_CATS = 3
+
+
+def _friendships(user_id):
+    """{friendId: the FRIEND item}, for one person."""
+    items = tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(f"USER#{user_id}")
+        & Key("SK").begins_with("FRIEND#"),
+        ConsistentRead=True,
+    )
+    return {item["SK"].removeprefix("FRIEND#"): item for item in items}
+
+
+def _friend_key(a, b):
+    return {"PK": f"USER#{a}", "SK": f"FRIEND#{b}"}
+
+
+def person(profile, friendship, me):
+    """A person as others see them (04-api.md). Never their email, and only
+    what has been published: a name or a photo still being checked is its
+    owner's alone. tests/app/test_friends.py lists every key."""
+    return {
+        "userId": profile["userId"],
+        "username": profile["username"],
+        "displayName": profile["displayName"],
+        "avatar": _avatar_url(profile.get("avatarKey")),
+        "since": profile["createdAt"],
+        "friend": "yes" if friendship else "no",
+        "friendSince": friendship["since"] if friendship else None,
+        "me": profile["userId"] == me,
+    }
+
+
+def _found(user_id, period="all"):
+    sk = "STATS#ALL" if period == "all" else f"STATS#{_israel_today().isoformat()[:7]}"
+    stats = tables.get_one(social_table, f"USER#{user_id}", sk) or {}
+    return _number(stats.get("catsMet"))
+
+
+def _require_person(user_id):
+    profile = tables.get_one(social_table, f"USER#{user_id}", "PROFILE")
+    if profile is None or profile.get("status") != "active":
+        raise ApiError(404, "no such person", code="gone")
+    return profile
+
+
+def _get_invite(user, **_):
+    """`GET /me/invite`: the code. The link is the phone's to build, from
+    the address it was opened at."""
+    return {"code": user["inviteCode"]}
+
+
+def _accept_invite(user, code, **_):
+    """`POST /invites/{code}/accept`: the caller and the code's owner are
+    friends, both ways, in one transaction. The same answer whether they
+    just became friends or were already; `gone` for a code nobody has, and
+    for a block between the two, which says nothing more than that."""
+    require_terms(user)
+    me = user["userId"]
+    limits.take(social_table, f"{me}#invites", INVITES_PER_DAY, 86400)
+    invite = tables.get_one(social_table, f"INVITE#{code}")
+    other = invite and tables.get_one(
+        social_table, f"USER#{invite['userId']}", "PROFILE"
+    )
+    if not other or other.get("status") != "active":
+        raise ApiError(404, "this invite does not work", code="gone")
+    them = other["userId"]
+    if them == me:
+        raise ApiError(409, "this is your own invite", code="own_invite")
+    now, pairs = api.now_iso(), ((me, them), (them, me))
+    client = social_table.meta.client
+    items = [
+        {
+            "Put": {
+                "TableName": social_table.name,
+                "Item": {
+                    **_friend_key(a, b),
+                    "userId": a,
+                    "friendId": b,
+                    "since": now,
+                    "via": "invite",
+                },
+                "ConditionExpression": "attribute_not_exists(PK)",
+            }
+        }
+        for a, b in pairs
+    ] + [
+        {
+            "ConditionCheck": {
+                "TableName": social_table.name,
+                "Key": {"PK": f"USER#{a}", "SK": f"BLOCK#{b}"},
+                "ConditionExpression": "attribute_not_exists(PK)",
+            }
+        }
+        for a, b in pairs
+    ]
+    try:
+        client.transact_write_items(TransactItems=items)
+        logger.info("friends user=%s and user=%s via invite", me, them)
+    except client.exceptions.TransactionCanceledException as exc:
+        reasons = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
+        if "ConditionalCheckFailed" in reasons[2:]:
+            raise ApiError(404, "this invite does not work", code="gone") from None
+        if "ConditionalCheckFailed" not in reasons[:2]:
+            raise
+        # Friends already: the same answer.
+    friendship = tables.get_one(social_table, f"USER#{me}", f"FRIEND#{them}")
+    return {"person": {**person(other, friendship, me), "found": _found(them)}}
+
+
+def _remove_friend(user, user_id, **_):
+    """`DELETE /friends/{userId}`: both sides, together. Removing someone
+    who is not a friend removes nothing and says the same."""
+    me = user["userId"]
+    if user_id != me:
+        social_table.meta.client.transact_write_items(
+            TransactItems=[
+                {"Delete": {"TableName": social_table.name, "Key": _friend_key(a, b)}}
+                for a, b in ((me, user_id), (user_id, me))
+            ]
+        )
+    return {"userId": user_id, "friend": "no"}
+
+
+def _latest_cats(user_id):
+    """The ids of the cats a person met last, newest first. Names and
+    photos are the cat list's, which the phone already holds."""
+    met = tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(f"USER#{user_id}")
+        & Key("SK").begins_with("MET#"),
+    )
+    met.sort(key=lambda m: (m.get("lastDay") or "", m["catId"]), reverse=True)
+    return [m["catId"] for m in met[:LATEST_CATS]]
+
+
+def _get_friends(user, query, **_):
+    """`GET /friends?period=month|all`: the caller and their friends, whoever
+    found the most cats in the period first. The podium is the first
+    three."""
+    period = query.get("period") or "month"
+    if period not in PERIODS:
+        raise ApiError(400, f"period is one of {', '.join(PERIODS)}")
+    me = user["userId"]
+    friendships = _friendships(me)
+    stats_sk = (
+        "STATS#ALL" if period == "all" else f"STATS#{_israel_today().isoformat()[:7]}"
+    )
+    ids = [me, *friendships]
+    found = _batch_get(
+        social_table,
+        [{"PK": f"USER#{i}", "SK": sk} for i in ids for sk in ("PROFILE", stats_sk)],
+    )
+    profiles = {i["userId"]: i for i in found if i["SK"] == "PROFILE"}
+    stats = {i["PK"].removeprefix("USER#"): i for i in found if i["SK"] == stats_sk}
+    people = []
+    for user_id in ids:
+        profile = profiles.get(user_id)
+        if profile is None or profile.get("status") != "active":
+            continue
+        row = person(profile, friendships.get(user_id), me)
+        if user_id == me:
+            # Their own row as they see themselves elsewhere (`GET /me`).
+            row["displayName"] = profile.get("pendingName") or profile["displayName"]
+            row["avatar"] = _avatar_url(
+                profile.get("pendingAvatarKey") or profile.get("avatarKey")
+            )
+        row["found"] = _number(stats.get(user_id, {}).get("catsMet"))
+        row["cats"] = _latest_cats(user_id)
+        people.append(row)
+    people.sort(
+        key=lambda p: (-p["found"], (p["displayName"] or "").casefold(), p["userId"])
+    )
+    # No requests in this build: an invite link is instant (D4).
+    return {"period": period, "people": people, "requests": 0}
+
+
+def _get_user(user, user_id, **_):
+    """`GET /users/{userId}`: a person as others see them."""
+    me = user["userId"]
+    profile = _require_person(user_id)
+    friendship = (
+        None
+        if user_id == me
+        else tables.get_one(social_table, f"USER#{me}", f"FRIEND#{user_id}")
+    )
+    return {
+        "person": {
+            **person(profile, friendship, me),
+            "found": _found(user_id),
+            "cats": _latest_cats(user_id),
+        }
+    }
+
+
+def _user_posts(user, user_id, **_):
+    """`GET /users/{userId}/posts`: what everyone may see of theirs (D3:
+    the whole campus reads every visible post)."""
+    _require_person(user_id)
+    items = social_table.query(
+        IndexName="GSI1",
+        KeyConditionExpression=Key("GSI1PK").eq(f"AUTHOR#{user_id}"),
+        ScanIndexForward=False,
+        Limit=FEED_QUERY,
+    )["Items"]
+    visible = [i for i in items if i.get("status") == "visible"][:FEED_PAGE]
+    return {"cards": _cards(visible, user)}
+
+
+# --------------------------------------------------------------------------
 # Posts, likes and the feed (B3a)
 # --------------------------------------------------------------------------
 
@@ -1468,11 +1688,12 @@ def _cat_names(cat_ids):
 
 def _cards(posts, user):
     """Posts as the app shows them: who, which cat, the photos, the words,
-    the likes, and the area only to its author until there are friends (B5,
-    D3: friends see roughly where)."""
+    the likes; the author marked if a friend of the caller's; and the area
+    to the author and their friends only (D3: friends see roughly where)."""
     posts = [p for p in posts if p]
     if not posts:
         return []
+    friends = _friendships(user["userId"])
     author_keys = {p["authorId"] for p in posts}
     authors = {
         a["userId"]: a
@@ -1504,6 +1725,7 @@ def _cards(posts, user):
                 # The published photo only: one still waiting is its
                 # owner's alone (`GET /me`).
                 "avatar": _avatar_url(author.get("avatarKey")),
+                "friend": "yes" if p["authorId"] in friends else "no",
             },
             "cat": {"catId": p["catId"], "name": names.get(p["catId"])}
             if p.get("catId")
@@ -1516,7 +1738,9 @@ def _cards(posts, user):
             "likes": _number(p.get("likeCount")),
             "liked": p["postId"] in liked,
             "createdAt": p["createdAt"],
-            "region": p.get("regionId") if mine else None,
+            "region": p.get("regionId")
+            if mine or p["authorId"] in friends
+            else None,
             "mine": mine,
         }
         if mine:
@@ -1620,6 +1844,12 @@ ROUTES = (
     ("PUT", rf"^/api/v1/posts/(?P<post_id>{ID})/like$", _like, "user"),
     ("DELETE", rf"^/api/v1/posts/(?P<post_id>{ID})/like$", _unlike, "user"),
     ("GET", r"^/api/v1/me/posts$", _my_posts, "user"),
+    ("GET", r"^/api/v1/me/invite$", _get_invite, "user"),
+    ("POST", r"^/api/v1/invites/(?P<code>[a-z0-9]{1,32})/accept$", _accept_invite, "user"),
+    ("GET", r"^/api/v1/friends$", _get_friends, "user"),
+    ("DELETE", rf"^/api/v1/friends/(?P<user_id>{ID})$", _remove_friend, "user"),
+    ("GET", rf"^/api/v1/users/(?P<user_id>{ID})$", _get_user, "user"),
+    ("GET", rf"^/api/v1/users/(?P<user_id>{ID})/posts$", _user_posts, "user"),
     ("POST", r"^/api/v1/proposals$", _create_proposal, "user"),
     ("GET", r"^/api/v1/me/proposals$", _my_proposals, "user"),
 )
