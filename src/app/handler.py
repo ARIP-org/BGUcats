@@ -890,6 +890,7 @@ def _move_vote(cat, user, new_key, create=None):
                 if old_key
                 else {"ConditionExpression": "attribute_not_exists(PK)"}
             )
+            at = api.now_iso()
             items.append(
                 {
                     "Put": {
@@ -899,7 +900,13 @@ def _move_vote(cat, user, new_key, create=None):
                             "catId": cat_id,
                             "userId": me,
                             "nameKey": new_key,
-                            "at": api.now_iso(),
+                            "at": at,
+                            # In the feed's index, where a friend's vote
+                            # becomes a card (`_vote_card`). One item per
+                            # person per cat, so a changed vote moves and a
+                            # vote taken back is gone from the feed too.
+                            "GSI2PK": f"FEED#{_month(at)}",
+                            "GSI2SK": f"{at}#V#{cat_id}#{me}",
                         },
                         **was,
                     }
@@ -1686,14 +1693,15 @@ def _cat_names(cat_ids):
     return {c: shown_name(cat, public.get(c, {}))[0] for c, cat in cats.items()}
 
 
-def _cards(posts, user):
+def _cards(posts, user, friends=None):
     """Posts as the app shows them: who, which cat, the photos, the words,
     the likes; the author marked if a friend of the caller's; and the area
     to the author and their friends only (D3: friends see roughly where)."""
     posts = [p for p in posts if p]
     if not posts:
         return []
-    friends = _friendships(user["userId"])
+    if friends is None:
+        friends = _friendships(user["userId"])
     author_keys = {p["authorId"] for p in posts}
     authors = {
         a["userId"]: a
@@ -1758,14 +1766,85 @@ def _cards(posts, user):
     return cards
 
 
+def _person_brief(profile):
+    """A person beside something they did: who, and their published photo."""
+    return {
+        "userId": profile["userId"],
+        "username": profile["username"],
+        "displayName": profile["displayName"],
+        "avatar": _avatar_url(profile.get("avatarKey")),
+    }
+
+
+def _vote_card(cat_id, user, friends):
+    """Friends' votes on one cat's name, as one card: "Daniel and Noa voted
+    to call Professor Pumpkin 'Mango'", over the poll itself with the
+    friends who chose each name. Built from the poll as it is now, not from
+    the feed's items, so it holds every friend's vote wherever the page
+    ends. None when there is nothing to show: the cat is gone, or no friend
+    has a vote on a name that is in the poll."""
+    cat = tables.get_one(data_table, f"CAT#{cat_id}")
+    if cat is None:
+        return None
+    poll = _names_view(cat, user)
+    in_poll = {o["nameKey"] for o in poll["options"] if not o.get("pending")}
+    votes = tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(f"CAT#{cat_id}")
+        & Key("SK").begins_with("VOTE#"),
+    )
+    theirs = [v for v in votes if v["userId"] in friends and v["nameKey"] in in_poll]
+    if not theirs:
+        return None
+    theirs.sort(key=lambda v: v["at"], reverse=True)
+    people = {
+        p["userId"]: _person_brief(p)
+        for p in _batch_get(
+            social_table,
+            [{"PK": f"USER#{v['userId']}", "SK": "PROFILE"} for v in theirs],
+        )
+    }
+    theirs = [v for v in theirs if v["userId"] in people]
+    if not theirs:
+        return None
+    newest = theirs[0]
+    for option in poll["options"]:
+        option["friends"] = [
+            people[v["userId"]] for v in theirs if v["nameKey"] == option["nameKey"]
+        ]
+    chosen = next(o for o in poll["options"] if o["nameKey"] == newest["nameKey"])
+    cover = next(iter(_photos_of(cat_id, newest_first=False, limit=1)), None)
+    return {
+        "type": "vote",
+        "cardId": f"vote-{cat_id}",
+        "createdAt": newest["at"],
+        "cat": {
+            "catId": cat_id,
+            "name": poll["name"],
+            "cover": media.photo_urls(s3, MEDIA_BUCKET, cover["photoId"])
+            if cover
+            else None,
+        },
+        # What the newest of the friends' votes says, and who else says it.
+        "name": chosen["name"],
+        "voters": chosen["friends"],
+        "friendsVoted": len(theirs),
+        "poll": poll,
+    }
+
+
 def _get_feed(user, query, **_):
-    """Newest first, month by month, over the whole campus (D3). At most a
-    page of cards and a few queries per call; the cursor says where to go
-    on: the month, and the last card's key inside it."""
+    """Newest first, month by month, over the whole campus (D3): posts, and
+    friends' name votes folded into one card per cat. At most a page of
+    cards and a few queries per call; the cursor says where to go on: the
+    month, the last key read inside it, and the cats whose vote card an
+    earlier page already carried."""
     state = _decode_cursor(query["cursor"]) if query.get("cursor") else {}
     month = state.get("month") or _month(api.now_iso())
     start_key = state.get("key")
-    posts, queries = [], 0
+    voted = set(state.get("cats") or [])
+    friends = _friendships(user["userId"])
+    entries, queries = [], 0  # ("post", item) or ("vote", catId), in order
     while queries < FEED_QUERIES and month >= FEED_START:
         request = {
             "IndexName": "GSI2",
@@ -1779,19 +1858,33 @@ def _get_feed(user, query, **_):
         queries += 1
         for item in page["Items"]:
             start_key = {k: item[k] for k in ("PK", "SK", "GSI2PK", "GSI2SK")}
-            if "#P#" in item["GSI2SK"]:  # votes join the feed in B4
-                posts.append(item)
-                if len(posts) == FEED_PAGE:
-                    break
-        if len(posts) == FEED_PAGE:
+            if "#P#" in item["GSI2SK"]:
+                entries.append(("post", item))
+            elif (
+                "#V#" in item["GSI2SK"]
+                and item["userId"] in friends
+                and item["catId"] not in voted
+            ):
+                voted.add(item["catId"])
+                entries.append(("vote", item["catId"]))
+            if len(entries) == FEED_PAGE:
+                break
+        if len(entries) == FEED_PAGE:
             break
         if "LastEvaluatedKey" in page:
             start_key = page["LastEvaluatedKey"]
             continue
         month, start_key = _previous_month(month), None
-    answer = {"cards": _cards(posts, user)}
-    if month >= FEED_START and (len(posts) == FEED_PAGE or queries == FEED_QUERIES):
-        answer["cursor"] = _encode_cursor({"month": month, "key": start_key})
+    posts = iter(_cards([e for kind, e in entries if kind == "post"], user, friends))
+    cards = [
+        next(posts) if kind == "post" else _vote_card(entry, user, friends)
+        for kind, entry in entries
+    ]
+    answer = {"cards": [card for card in cards if card]}
+    if month >= FEED_START and (len(entries) == FEED_PAGE or queries == FEED_QUERIES):
+        answer["cursor"] = _encode_cursor(
+            {"month": month, "key": start_key, "cats": sorted(voted)}
+        )
     return answer
 
 

@@ -168,7 +168,7 @@ Its index keys:
 |---|---|---|---|
 | Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `lockedName` (an admin's lock; written by the desk's API since B4b, with `lockedBy` and `lockedAt`) |
 | Name option **(written since B4a)** | `CAT#{catId}` | `NAME#{nameKey}` | `catId`, `nameKey` (the name cleaned and case-folded, so "Mango" and "mango " are one option), `name` (the first spelling suggested), `votes`, `suggestedBy` (absent on the admins' own name), `status` (`pending` / `live` / `rejected` / `removed`), `createdAt`. Removed by an admin (B4b): the desk's API sets `status` to `removed` with `removedFrom` (the status it had), `removedBy`, `removedAt`; the events Lambda then sets `votes` to 0, takes them off `voteTotal` if it was live, and deletes the votes that name it |
-| Vote **(written since B4a)** | `CAT#{catId}` | `VOTE#{userId}` | `catId`, `userId`, `nameKey`, `at`. One per person per cat. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds (not written yet: B5, with friends) |
+| Vote **(written since B4a)** | `CAT#{catId}` | `VOTE#{userId}` | `catId`, `userId`, `nameKey`, `at`. One per person per cat. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds (written since B5a; a vote cast before it has no feed keys and makes no card) |
 | Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `feedingId` (from the phone), `spotId`, `removed` |
 
 There is no grade item: nobody grades a cat (D9). GPA is worked out from

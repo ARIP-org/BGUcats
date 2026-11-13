@@ -291,3 +291,130 @@ def test_a_persons_page_and_their_posts(people):
     for path in ("/api/v1/users/01JD0000000000000000000XXX", "/api/v1/users/01JD0000000000000000000XXX/posts"):
         status, body = call("GET", path, email=ADMIN)
         assert (status, body["code"]) == (404, "gone")
+
+
+# ------------------------------------------------- friends' votes in the feed
+
+
+def suggest(name, email, cat=CAT):
+    status, body = call("POST", f"/api/v1/cats/{cat}/names", {"name": name}, email=email)
+    assert status == 200, body
+    return body
+
+
+def vote(key, email, cat=CAT):
+    status, body = call("PUT", f"/api/v1/cats/{cat}/vote", {"nameKey": key}, email=email)
+    assert status == 200, body
+    return body
+
+
+def feed(who, cursor=None):
+    status, body = call(
+        "GET", "/api/v1/feed", email=who, query={"cursor": cursor} if cursor else None
+    )
+    assert status == 200, body
+    return body
+
+
+def kinds(body):
+    return [c.get("type", "post") for c in body["cards"]]
+
+
+@pytest.fixture
+def voting(people):
+    from tests.events.stream import Stream
+
+    people["stream"] = Stream(people["social"])
+    accept(people, of=ADMIN, by=HELPER)
+    accept(people, of=ADMIN, by=THIRD)  # HELPER and THIRD are not friends
+    return people
+
+
+def test_a_friends_vote_is_a_card_and_a_strangers_is_not(voting):
+    suggest("Mango", HELPER)
+    # Until it has been checked the name is its author's alone: no card.
+    assert feed(ADMIN)["cards"] == []
+    voting["stream"].settle()
+
+    (card,) = feed(ADMIN)["cards"]
+    names = {who: voting["me"][who]["username"] for who in PEOPLE}
+    assert (card["type"], card["cardId"], card["name"]) == ("vote", f"vote-{CAT}", "Mango")
+    # The poll leads, so the cat is already called by the new name.
+    assert card["cat"] == {"catId": CAT, "name": "Mango", "cover": None}
+    assert [p["username"] for p in card["voters"]] == [names[HELPER]]
+    assert set(card["voters"][0]) == {"userId", "username", "displayName", "avatar"}
+    assert card["friendsVoted"] == 1
+    poll = card["poll"]
+    assert (poll["total"], poll["myVote"]) == (1, None)
+    by_name = {o["name"]: o for o in poll["options"]}
+    assert [p["username"] for p in by_name["Mango"]["friends"]] == [names[HELPER]]
+    assert by_name["Simba"]["friends"] == []  # the admins' name, still votable
+    assert HELPER not in str(card)  # never an email
+
+    # Your own vote is not news to you, and a stranger's is not shown.
+    assert feed(HELPER)["cards"] == []
+    assert feed(THIRD)["cards"] == []
+
+
+def test_two_friends_on_one_cat_are_one_card_at_the_newest_vote(voting):
+    suggest("Mango", HELPER)
+    voting["stream"].settle()
+    make_post()  # HELPER's post, between the two votes
+    published(voting["social"], POST)
+    vote("mango", THIRD)
+    voting["stream"].settle()
+
+    body = feed(ADMIN)
+    assert kinds(body) == ["vote", "post"]  # one card, where the newest vote is
+    card = body["cards"][0]
+    names = {who: voting["me"][who]["username"] for who in PEOPLE}
+    assert [p["username"] for p in card["voters"]] == [names[THIRD], names[HELPER]]
+    assert (card["friendsVoted"], card["poll"]["total"]) == (2, 2)
+
+    # They disagree: the card says what the newest vote says, and each
+    # name carries the friends who chose it.
+    vote("simba", HELPER)
+    card = feed(ADMIN)["cards"][0]
+    assert (card["name"], [p["username"] for p in card["voters"]]) == (
+        "Simba",
+        [names[HELPER]],
+    )
+    by_name = {o["name"]: o for o in card["poll"]["options"]}
+    assert [p["username"] for p in by_name["Mango"]["friends"]] == [names[THIRD]]
+    assert card["friendsVoted"] == 2
+
+    # The caller votes from the card: still a card, now with their choice.
+    vote("mango", ADMIN)
+    card = feed(ADMIN)["cards"][0]
+    assert card["poll"]["myVote"] == "mango" and card["poll"]["total"] == 3
+
+
+def test_a_vote_taken_back_or_a_friend_removed_takes_the_card_away(voting):
+    suggest("Mango", HELPER)
+    voting["stream"].settle()
+    vote("mango", THIRD)
+    assert kinds(feed(ADMIN)) == ["vote"]
+
+    call("DELETE", f"/api/v1/cats/{CAT}/vote", email=THIRD)
+    card = feed(ADMIN)["cards"][0]
+    assert card["friendsVoted"] == 1
+
+    helper = voting["me"][HELPER]["userId"]
+    call("DELETE", f"/api/v1/friends/{helper}", email=ADMIN)
+    assert feed(ADMIN)["cards"] == []
+
+
+def test_a_cats_card_is_not_repeated_on_the_next_page(voting, monkeypatch):
+    suggest("Mango", HELPER)
+    voting["stream"].settle()
+    make_post()
+    published(voting["social"], POST)
+    vote("mango", THIRD)  # newer than the post; HELPER's vote is older
+    monkeypatch.setattr(handler, "FEED_PAGE", 2)
+
+    first = feed(ADMIN)
+    assert kinds(first) == ["vote", "post"]
+    assert first["cards"][0]["friendsVoted"] == 2  # both, though one is further on
+    rest = feed(ADMIN, first["cursor"])
+    assert rest["cards"] == []  # HELPER's older vote is already in that card
+    assert "cursor" not in rest

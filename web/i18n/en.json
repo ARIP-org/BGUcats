@@ -276,5 +276,23 @@
   "person.posts": "Posts",
   "person.latest": "latest",
   "person.noPosts": "{name} has not posted yet.",
-  "person.gone": "This person is not here any more."
+  "person.gone": "This person is not here any more.",
+  "vote.label": "Name vote for {name}",
+  "vote.thisCat": "this cat",
+  "vote.one": "{a} voted to call {cat} “{name}”",
+  "vote.two": "{a} and {b} voted to call {cat} “{name}”",
+  "vote.many": {
+    "one": "{a}, {b} and {count} other voted to call {cat} “{name}”",
+    "other": "{a}, {b} and {count} others voted to call {cat} “{name}”"
+  },
+  "vote.percent": "{percent}%",
+  "vote.friendsVoted": {
+    "one": "{count} friend voted",
+    "other": "{count} friends voted"
+  },
+  "vote.youAndFriends": {
+    "one": "You and {count} friend voted",
+    "other": "You and {count} friends voted"
+  },
+  "vote.allNames": "All names"
 }

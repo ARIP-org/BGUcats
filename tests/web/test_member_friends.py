@@ -204,3 +204,54 @@ def test_someone_who_is_not_a_friend_shows_no_friendship(app, open_member_app):
     person = page.locator("[data-page=person]")
     person.locator(".person-name").wait_for()
     assert [c.inner_text() for c in person.locator(".person-chip").all()] == ["1 cat found"]
+
+
+# ------------------------------------------------- friends' votes in the feed
+
+
+def test_a_friends_vote_is_a_card_in_the_feed_and_a_tap_votes(app, open_member_app, shot):
+    """The prototype's name-vote card: who voted for what, the poll's names
+    with the friends who chose each, and a tap votes."""
+    befriend(app)
+    cat = app.data["cats"]["Mitzi"]
+    status, _ = app.api("POST", f"/api/v1/cats/{cat}/names", {"name": "Mango"}, email=COLLABORATOR)
+    assert status == 200
+
+    page = open_member_app(ADMIN)
+    card = page.locator("article.vote-card")
+    card.wait_for()
+    # Mango leads with its one vote, so that is what the cat is called.
+    assert card.locator(".vote-words").inner_text() == "collaborator voted to call this cat “Mango”"
+    assert card.get_attribute("aria-label") == "Name vote for Mango"
+    mango = card.locator(".vote-option[data-name=mango]")
+    mitzi = card.locator(".vote-option[data-name=mitzi]")
+    assert mango.locator(".vote-pct").inner_text() == "100%"
+    assert mango.locator(".vote-friends .avatar").count() == 1
+    assert mitzi.locator(".vote-friends .avatar").count() == 0
+    assert card.locator(".vote-foot span").inner_text() == "1 vote · 1 friend voted"
+    page.wait_for_function("[...document.querySelectorAll('.vote-card img')].every(i => i.complete)")
+    shot(page, "member-feed-vote")
+
+    # The admin votes to keep the name the cat had.
+    with page.expect_response(lambda r: r.url.endswith("/vote") and r.request.method == "PUT") as sent:
+        mitzi.click()
+    assert sent.value.status == 200
+    page.wait_for_function(
+        "document.querySelector('.vote-foot span').innerText === '2 votes · You and 1 friend voted'"
+    )
+    assert mitzi.get_attribute("aria-checked") == "true"
+    assert mitzi.locator(".vote-pct").inner_text() == "50%"
+    # The friend's mark stays on the name they chose.
+    assert mango.locator(".vote-friends .avatar").count() == 1
+
+    card.get_by_role("button", name="All names").click()
+    page.wait_for_selector("[data-page=cat][data-state=shown]")
+    page.wait_for_selector("[data-page=cat] .poll")
+
+
+def test_someone_who_is_not_a_friend_makes_no_card(app, open_member_app):
+    cat = app.data["cats"]["Mitzi"]
+    app.api("POST", f"/api/v1/cats/{cat}/names", {"name": "Mango"}, email=COLLABORATOR)
+    page = open_member_app(ADMIN)
+    page.wait_for_selector("article.post")
+    assert page.locator("article.vote-card").count() == 0

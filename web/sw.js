@@ -55,6 +55,7 @@ const SHELL = [
   "/social/asking.js",
   "/social/gallery.js",
   "/social/friends.js",
+  "/social/poll.js",
   "/social/data.js",
   "/social/cat.js",
   "/social/scan.js",
