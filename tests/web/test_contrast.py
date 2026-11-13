@@ -44,7 +44,7 @@ KNOWN_SHORT = {(theme, "on-danger", "danger"): 3.7 for theme in THEMES}
 def _blocks():
     shared = {}
     themes = {name: {} for name in THEMES}
-    css = re.sub(r"/\*.*?\*/", "", TOKENS, flags=re.S)
+    css = re.sub(r"/\*.*?\*/", "", TOKENS, flags=re.DOTALL)
     for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
         values = dict(re.findall(r"(--[\w-]+):\s*([^;]+);", body))
         named = re.findall(r'data-theme="([\w-]+)"', selector)
