@@ -7,11 +7,12 @@ import { cats, deletePost, feedPage, regionName, setLike, takeVoteBack, voteFor 
 import { openGallery } from "./gallery.js";
 import { ago, t, tMarked } from "./i18n.js";
 import { openMap } from "./map.js";
+import { Empty } from "./mascot.js";
 import { glass } from "./motion.js";
 import { openReport } from "./report.js";
 import { REFUSED, moved } from "./poll.js";
-import { push, useStore } from "./store.js";
-import { openScan } from "./scan.js";
+import { get, push, useStore } from "./store.js";
+import { openScan, sendingState } from "./scan.js";
 import { termsFirst } from "./terms.js";
 import { Icon, confirm, openMenu, toast } from "./ui.js";
 
@@ -187,10 +188,29 @@ function Card({ card, onChange, onGone }) {
   </article>`;
 }
 
-// A post still on its way: its photo from the phone, a note, no actions.
+// A post still on its way: its photo from the phone under a ring that
+// fills as the photos arrive, and the outbox's own words for why it waits.
+// No actions yet.
 function SendingCard({ card }) {
+  const tick = useStore((s) => s.outboxTick);
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    let live = true;
+    sendingState(card).then((now) => live && setState(now));
+    return () => {
+      live = false;
+    };
+  }, [tick, card.postId]);
   const author = card.author.displayName || card.author.username || "";
-  const waiting = card.proposal ? t("post.waitingNewCat") : t("post.sending");
+  const done = state ? state.done : 0;
+  const why = card.proposal && state?.sent
+    ? t("post.waitingNewCat")
+    : !navigator.onLine
+      ? t("post.sendingOffline")
+      : state?.error
+        ? t("post.sendingRetry", { message: state.error })
+        : t("post.sendingPhotos", { done: Math.floor(done * card.photos.length), count: card.photos.length });
+  const round = 2 * Math.PI * 20;
   return html`<article class="post sending" data-post=${card.postId} aria-label=${t("post.label", { name: author })}>
     <div class="post-head">
       <${Avatar} person=${card.author} />
@@ -198,13 +218,40 @@ function SendingCard({ card }) {
         <span class="post-name">${author}</span>
         <h2 class="post-what">
           ${card.cat ? html`${t("post.met")} <span class="cat-link">${card.cat.name}</span>` : t("post.photoPosted")}
-          ${" "}<span class="badge">${waiting}</span>
+          ${" "}<span class="badge">${card.proposal ? t("post.waitingNewCat") : t("post.sending")}</span>
         </h2>
       </div>
     </div>
-    ${card.photos[0]?.medium && html`<img class="sending-photo" src=${card.photos[0].medium} alt=${t("post.photo")} />`}
+    <div class="sending-media">
+      ${card.photos[0]?.medium && html`<img class="sending-photo" src=${card.photos[0].medium} alt=${t("post.photo")} />`}
+      <span class="sending-ring" role="progressbar" aria-label=${t("post.sendingProgress")} aria-valuemin="0" aria-valuemax="100" aria-valuenow=${Math.round(done * 100)}>
+        <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
+          <circle class="ring-track" cx="26" cy="26" r="20" />
+          <circle class="ring-done" cx="26" cy="26" r="20" stroke-dasharray=${round} stroke-dashoffset=${round * (1 - done)} />
+        </svg>
+      </span>
+    </div>
+    <p class="sending-why" role="status">${why}</p>
     ${card.text && html`<p class="post-text">${card.text}</p>`}
   </article>`;
+}
+
+// The feed as it was last seen, kept on this phone for when there is no
+// signal. One page, per person.
+const keptKey = () => `bgucats.feed.${get().me?.userId || ""}`;
+function keepFeed(page) {
+  try {
+    localStorage.setItem(keptKey(), JSON.stringify({ cards: page.cards, at: Date.now() }));
+  } catch {
+    /* no room, or no storage: the feed just has no memory */
+  }
+}
+function keptFeed() {
+  try {
+    return JSON.parse(localStorage.getItem(keptKey()));
+  } catch {
+    return null;
+  }
 }
 
 // The server's poll says nothing of friends; the card keeps who chose what.
@@ -335,11 +382,16 @@ export function Feed() {
   const [cursor, setCursor] = useState(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
+  // When the cards on screen are the phone's memory of the feed, not the
+  // server's answer: since when.
+  const [fromMemory, setFromMemory] = useState(null);
   const [today, setToday] = useState(null);
   const end = useRef(null);
   // A ref, not the state: the observer below keeps the function it was
   // given, and a state read there would be the one from that render.
   const loading = useRef(false);
+  const onScreen = useRef(null);
+  onScreen.current = cards;
   const tab = useStore((s) => s.tab);
 
   async function load(from) {
@@ -351,9 +403,22 @@ export function Feed() {
       setCards((now) => (from ? [...(now || []), ...page.cards] : page.cards));
       setCursor(page.cursor || null);
       setFailed(null);
+      if (!from) {
+        setFromMemory(null);
+        keepFeed(page);
+      }
     } catch (err) {
       setFailed(err.message);
-      if (!from) setCards((now) => now || []);
+      if (!from) {
+        // Nothing on screen yet: the feed as this phone last saw it.
+        const memory = keptFeed();
+        if (!onScreen.current?.length && memory?.cards?.length) {
+          setCards(memory.cards);
+          setFromMemory(memory.at);
+        } else {
+          setCards((now) => now || []);
+        }
+      }
     } finally {
       loading.current = false;
       setBusy(false);
@@ -367,6 +432,13 @@ export function Feed() {
       .then((answer) => setToday(answer.cats.find((c) => c.catId === answer.catOfTheDay) || null))
       .catch(() => {});
   }, [tab]);
+
+  // The signal is back: the feed is asked for again.
+  useEffect(() => {
+    const again = () => get().tab === "feed" && load(null);
+    addEventListener("online", again);
+    return () => removeEventListener("online", again);
+  }, []);
 
   // The next page, when the end of this one comes into view.
   useEffect(() => {
@@ -396,6 +468,9 @@ export function Feed() {
 
   return html`<${TopButtons} />
     <div class="tab-content feed">
+      ${fromMemory && html`<p class="feed-note" role="status">
+        ${Date.now() - fromMemory < 60000 ? t("feed.fromMemory") : t("feed.fromMemoryWhen", { when: ago(new Date(fromMemory).toISOString()) })}
+      </p>`}
       ${today && html`<${CatOfTheDay} cat=${today} />`}
       ${mineFirst.map((card) => html`<${SendingCard} key=${card.postId} card=${card} />`)}
       ${shown?.map((card) =>
@@ -403,8 +478,10 @@ export function Feed() {
           ? html`<${VoteCard} key=${card.cardId} card=${card} onChange=${change} />`
           : html`<${Card} key=${card.postId} card=${card} onChange=${change} onGone=${gone} />`,
       )}
-      ${shown && !shown.length && !failed && html`<p class="empty">${t("feed.empty")}</p>`}
-      ${failed && html`<p class="empty" role="alert">${t("feed.failed")}</p>`}
+      ${shown && !shown.length && !mineFirst.length && !failed &&
+      html`<${Empty} line=${t("feed.empty")} coat="ginger" action=${t("tab.scan")} onAction=${() => openScan("scan")} />`}
+      ${failed && !fromMemory && !shown?.length &&
+      html`<${Empty} line=${t("feed.failed")} alert action=${t("ui.tryAgain")} onAction=${() => load(null)} />`}
       ${cursor && html`<div ref=${end} class="feed-more" aria-hidden="true"></div>`}
       ${busy && html`<p class="loading" role="status">${t("feed.loading")}</p>`}
     </div>`;

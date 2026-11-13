@@ -946,6 +946,31 @@ body:has(.frame) {
 .feed-more {
   block-size: 1px;
 }
+/* Nothing here yet, or it could not be loaded: the mascot, one line and
+   the next thing to do. */
+.empty-state {
+  padding-block: 28px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.empty-state .empty {
+  max-inline-size: 300px;
+  padding-block: 0;
+}
+/* The feed from the phone's memory says so, quietly. */
+.feed-note {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--chip-neutral);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
 
 /* ------------------------------------------------------------ a cat's page (E4) */
 
@@ -2222,7 +2247,7 @@ body:has(.frame) {
   align-items: center;
 }
 .link-button.quiet {
-  block-size: 40px;
+  block-size: 44px;
   color: var(--muted);
   font-size: 14px;
 }
@@ -2359,6 +2384,42 @@ body:has(.frame) {
   aspect-ratio: 4 / 5;
   object-fit: cover;
   border-radius: 18px;
+}
+.sending-media {
+  position: relative;
+}
+.sending-ring {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: calc(var(--dir) * -50%) -50%;
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: 26px;
+  background: var(--photo-badge);
+}
+.sending-ring svg {
+  display: block;
+  rotate: -90deg;
+}
+.ring-track,
+.ring-done {
+  fill: none;
+  stroke-width: 4;
+}
+.ring-track {
+  stroke: var(--sheen);
+}
+.ring-done {
+  stroke: var(--on-photo);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+.sending-why {
+  margin: 0;
+  padding-inline: 4px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 
@@ -4160,3 +4221,40 @@ button.post-name {
   opacity: 0.45;
 }
 
+/* ------------------------------------------------------------ room for a finger (E9)
+   A control the design draws smaller than 44 px keeps its look and gets
+   room around it that still takes the touch: its own ::after, so a tap
+   there is a tap on the control. tests/web/test_touch_targets.py presses
+   each control 21 px off its centre, every way. */
+.post-author,
+.tagged-button,
+.chip,
+.island-close,
+.glass-button.small,
+.round-close,
+.fed-button {
+  position: relative;
+}
+.post-author::after,
+.tagged-button::after,
+.chip::after,
+.island-close::after,
+.glass-button.small::after,
+.fed-button::after,
+.segments button::after,
+.round-close::after,
+.map-chip::after,
+.profile-photo .glass-icon::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: max(100%, 44px);
+  block-size: max(100%, 44px);
+  translate: calc(var(--dir) * -50%) -50%;
+}
+/* The gallery's two buttons keep their width when the search field wants
+   the row. */
+.gallery-top .glass-icon {
+  flex: none;
+}

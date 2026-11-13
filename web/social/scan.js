@@ -293,6 +293,23 @@ async function close() {
   set({ scan: null, scanOpen: false });
 }
 
+// How far a post made on this phone has got (feed.js, the sending card):
+// `done` is the part of its photos that have arrived, `sent` whether the
+// post itself has gone, `error` the outbox's reason if the last try failed.
+export async function sendingState(card) {
+  if (!outbox) return { done: 0, sent: false, error: null };
+  const { items, encounters, lastError } = await outbox.snapshot();
+  const mine = items.filter((item) => card.photos.some((p) => p.photoId === item.photoId));
+  const part = mine.reduce((sum, item) => sum + (1 - (item.progress ?? 0)), 0);
+  const count = Math.max(1, card.photos.length);
+  const waiting = encounters.some((e) => (e.after || []).some((w) => w.body?.postId === card.postId));
+  return {
+    done: Math.max(0, Math.min(1, 1 - part / count)),
+    sent: !waiting && !mine.length,
+    error: mine.find((item) => item.error)?.error || lastError || null,
+  };
+}
+
 const catName = (catId) => (get().cats || []).find((c) => c.catId === catId)?.name || t("cat.noName");
 
 // ------------------------------------------------------------------ pages

@@ -47,7 +47,7 @@ A session ticks its row in the pull request that finishes it.
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a, Report since B8b |
 | E8 | Achievements | E8a (Home's card and the sheet) merged 2026-11-13 with B7a; "Cats fed", Snack Giver and "Feed a cat" with B7c |
-| E9 | The states nobody drew, offline, accessibility | |
+| E9 | The states nobody drew, offline, accessibility | built 2026-11-13, in review: the missing states, the contrast test, the touch-target test |
 | E10 | Languages and right-to-left | |
 | N1 | The member app in the iPhone app, with the model | merged 2026-11-13; on the owner's phone once the API answered its preflight (the same day) |
 | N2 | Push on the phone | |
@@ -892,6 +892,42 @@ English file.
 - **Builds:** every row of "States the design does not draw"
   (`05-client.md`), with a screenshot of each for the owner; the contrast
   test; touch-target sizes.
+- **Built 2026-11-13.** The rows of that table that were missing:
+  - *Nothing here yet:* the mascot, one line and the next thing to do
+    (`Empty` in `mascot.js`) in the feed ("Scan a cat"), the gallery, a
+    search with no match and the blocked list; a feed or gallery that
+    could not be loaded says so the same way, the feed with "Try again".
+  - *No signal:* the feed keeps its first page on the phone, per person,
+    and shows it with one quiet line when the server cannot be reached;
+    it asks again by itself when the signal returns. A like or a vote
+    already said it did not go through.
+  - *A post being sent:* a ring over its photo that fills as the photos
+    arrive, and under it the outbox's own reason for waiting ("No
+    signal…", or "Trying again. Last try: …").
+  - *Not published:* a post of the caller's that others cannot see
+    reads "Not published" in My posts; a tap says "This wasn't
+    published", with no reason, and removes it in one more.
+  - Already there: no model, "Being checked", a new cat's post waiting,
+    "—" for no grade, "No feeding logged yet", posting while photos
+    upload, the refusal at sign-in, the terms before the first post, and
+    deleting one's own post from the photo's menu (G11).
+  - **Contrast** (`tests/web/test_contrast.py`, no browser): thirteen
+    pairs of words and ground in each of the four themes, by WCAG's
+    formula on `tokens.css`. All pass 4.5 to 1 but one: white on the
+    prototype's red, the words of a "Delete post" button, is 3.7 to 1 in
+    every theme. Listed in the test as known, for the designer; it may
+    not get worse.
+  - **Touch targets** (`tests/web/test_touch_targets.py`): every control
+    on every screen is pressed 21 px off its centre, each way. Those the
+    design draws smaller than 44 px (chips, a sheet's close, the map's
+    place names, the friends' period switch, "Change") keep their look
+    and have room around them that takes the touch (`app.css`, "room for
+    a finger"). Not held to it: the two names inside a post's heading,
+    which are text in a sentence; the photo beside them and the photo's
+    menu lead to the same places.
+  - Pictures: `member-feed-empty`, `member-feed-no-signal`,
+    `member-feed-failed`, `member-gallery-no-match`,
+    `member-post-sending`, `member-post-not-published`.
 
 ### E10. Languages and right-to-left
 

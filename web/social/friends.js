@@ -27,7 +27,7 @@ import {
 } from "./data.js";
 import { Avatar } from "./feed.js";
 import { monthYear, t, tRich } from "./i18n.js";
-import { CatFace } from "./mascot.js";
+import { CatFace, Empty } from "./mascot.js";
 import { glass } from "./motion.js";
 import { openReport } from "./report.js";
 import { get, pop, push, set, useStore } from "./store.js";
@@ -595,7 +595,7 @@ export function Blocked() {
         </div>`,
       )}
     </section>`}
-    ${people && !people.length && html`<p class="empty">${t("block.none")}</p>`}
+    ${people && !people.length && html`<${Empty} line=${t("block.none")} />`}
     ${!people && failed && html`<p class="empty" role="alert">${t("block.failed")}</p>`}
     ${!people && !failed && html`<p class="loading" role="status">${t("feed.loading")}</p>`}
   </div>`;
