@@ -190,6 +190,8 @@ def handler(event, context):
         if access == ADMINS and role != ROLE_ADMIN:
             logger.warning("user=%s refused %s %s", email, method, path)
             raise ApiError(403, "only admins can do this")
+        if method != "GET" and role != ROLE_ADMIN:
+            _refuse_banned(email)
         body = _parse_body(event)
         result = handler_fn(
             email=email, role=role, body=body, query=_query(event), **params
@@ -205,6 +207,23 @@ def handler(event, context):
 def _item(pk):
     """One record by its key, read strongly consistent (common.tables)."""
     return tables.get_one(table, pk)
+
+
+def _refuse_banned(email):
+    """A person banned in the member app writes nothing here either: no
+    encounter, no photo, no pick (03-data-model.md, invariant 9). Asked
+    only of users and only on writes; an admin is never banned."""
+    if not SOCIAL:
+        return
+    user_id = encounters.user_id_for(social_table, email)
+    if not user_id:
+        return  # never opened the app: nobody to have banned
+    profile = social_table.get_item(
+        Key={"PK": f"USER#{user_id}", "SK": "PROFILE"}, ConsistentRead=True
+    ).get("Item")
+    if profile and profile.get("status") == "banned":
+        logger.warning("banned user=%s refused a write", user_id)
+        raise ApiError(403, "this account is blocked")
 
 
 def _require_member(email):
@@ -1431,7 +1450,7 @@ def _reject_proposal(proposal_id, email, **_):
 # gets a `modAction`, and the events Lambda carries it out with the cat's
 # counters, which only it keeps.
 
-REPORT_ACTIONS = ("dismiss", "hide", "remove")
+REPORT_ACTIONS = ("dismiss", "hide", "remove", "ban")
 POST_ACTIONS = ("hide", "restore", "remove")
 
 
@@ -1545,6 +1564,91 @@ def _get_reports(query, **_):
     return {"reports": out}
 
 
+def _get_people(**_):
+    """`GET /api/people`: everyone who has opened the member app, the
+    newest first. Not the allowlist (`/api/admins`), which is who may sign
+    in: these are the accounts that exist."""
+    if not SOCIAL:
+        return {"people": []}
+    items = tables.query_all(
+        social_table,
+        IndexName="GSI2",
+        KeyConditionExpression=Key("GSI2PK").eq("ENTITY#USER"),
+        ScanIndexForward=False,
+    )
+    return {
+        "people": [
+            {
+                "userId": i["userId"],
+                "username": i["username"],
+                "displayName": i.get("displayName"),
+                "email": i["email"],
+                "status": i.get("status", "active"),
+                "createdAt": i["createdAt"],
+                "bannedAt": i.get("bannedAt"),
+                "bannedBy": i.get("bannedBy"),
+            }
+            for i in items
+        ]
+    }
+
+
+def _ban(user_id, email, **_):
+    """`POST /api/people/{id}/ban`: the person writes nothing more, in
+    either API, and nobody sees their posts or their page. The mark is
+    theirs to carry; the events Lambda hides the posts. An admin is not
+    banned: take their role away first."""
+    if not SOCIAL:
+        raise ApiError(404, "the app is not open on this account")
+    profile = _social_item(f"USER#{user_id}", "PROFILE")
+    if profile is None:
+        raise ApiError(404, "no such person")
+    if profile["email"] == email:
+        raise ApiError(400, "that is you")
+    role = admission.role_for(
+        profile["email"], _item(f"ADMIN#{profile['email']}"), SIGNUP_POLICY, SIGNUP_DOMAINS
+    )
+    if role == ROLE_ADMIN:
+        raise ApiError(409, "an admin cannot be banned; make them a user first")
+    try:
+        social_table.update_item(
+            Key={"PK": f"USER#{user_id}", "SK": "PROFILE"},
+            UpdateExpression="SET #s = :banned, bannedBy = :by, bannedAt = :now",
+            ConditionExpression="#s = :active",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":banned": "banned",
+                ":active": "active",
+                ":by": email,
+                ":now": _now_iso(),
+            },
+        )
+        logger.info("user=%s banned user=%s", email, user_id)
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass  # banned already, or the account is being deleted
+    return {"userId": user_id, "status": "banned"}
+
+
+def _unban(user_id, email, **_):
+    """`POST /api/people/{id}/unban`: as they were; the posts the ban hid
+    come back."""
+    if not SOCIAL:
+        raise ApiError(404, "the app is not open on this account")
+    try:
+        social_table.update_item(
+            Key={"PK": f"USER#{user_id}", "SK": "PROFILE"},
+            UpdateExpression="SET #s = :active REMOVE bannedBy, bannedAt",
+            ConditionExpression="#s = :banned",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":active": "active", ":banned": "banned"},
+        )
+        logger.info("user=%s unbanned user=%s", email, user_id)
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        if _social_item(f"USER#{user_id}", "PROFILE") is None:
+            raise ApiError(404, "no such person") from None
+    return {"userId": user_id, "status": "active"}
+
+
 def _mark_post(post_id, action, email, reason="admin"):
     """Ask for a post to be hidden, put back or removed. The events Lambda
     does it, in one transaction with the cat's counters."""
@@ -1579,8 +1683,9 @@ def _resolve_report(report_id, body, email, **_):
     """`POST /api/reports/{id}/resolve` `{action}`: the admin's answer to
     everything reported about one thing. `dismiss` leaves it, and puts back
     a post that the reports themselves had hidden; `hide` and `remove` act
-    on a post, and `remove` on a name takes it out of its poll. Every open
-    report about the thing is closed with the same answer."""
+    on a post, `remove` on a name takes it out of its poll, and `ban` bans
+    a reported person. Every open report about the thing is closed with
+    the same answer."""
     if not SOCIAL:
         raise ApiError(404, "no such report")
     action = body.get("action")
@@ -1591,11 +1696,13 @@ def _resolve_report(report_id, body, email, **_):
         raise ApiError(404, "no such report")
     target_type, target_id = report["targetType"], report["targetId"]
     if action != "dismiss":
-        if target_type == "post":
+        if target_type == "post" and action in ("hide", "remove"):
             _mark_post(target_id, action, email)
         elif target_type == "name" and action == "remove":
             cat_id, _, name_key = target_id.partition("/")
             _remove_name(cat_id, {"nameKey": name_key}, email)
+        elif target_type in ("user", "avatar") and action == "ban":
+            _ban(target_id, email)
         else:
             raise ApiError(
                 400, f"a reported {target_type} can be dismissed, not {action}d here"
@@ -2312,6 +2419,9 @@ ROUTES = (
         ADMINS,
     ),
     ("POST", rf"^/api/sessions/(?P<session_id>{ID})/reject$", _reject_session, ADMINS),
+    ("GET", r"^/api/people$", _get_people, ADMINS),
+    ("POST", rf"^/api/people/(?P<user_id>{ID})/ban$", _ban, ADMINS),
+    ("POST", rf"^/api/people/(?P<user_id>{ID})/unban$", _unban, ADMINS),
     ("GET", r"^/api/reports$", _get_reports, ADMINS),
     (
         "POST",

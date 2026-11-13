@@ -106,7 +106,7 @@ dataset's.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey` (the published profile photo's object) and `pendingAvatarKey`, `pendingAvatarAt` (B1b: a new photo, its owner's alone until the events Lambda publishes it), `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
+| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey` (the published profile photo's object) and `pendingAvatarKey`, `pendingAvatarAt` (B1b: a new photo, its owner's alone until the events Lambda publishes it), `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`; `banned` is written by the desk's API since B8c, with `bannedBy` and `bannedAt`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
 | Sign-in lookup **(F4)** | `IDENTITY#{email}` | `META` | `userId` |
 | Username lookup **(F4)** | `USERNAME#{username}` | `META` | `userId` |
 | Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |
@@ -136,7 +136,7 @@ never writes this table.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason` (`proposal_rejected`, `reports`, `admin`, `rejected`), `hiddenAt`, `removedAt`, `likeCount`, `createdAt`, `visibleAt`; and, for the moment between an admin's decision and its being carried out (B8b), `modAction` (`hide` / `restore` / `remove`), `modReason`, `modBy`, `modAt`: the desk's API writes them, the events Lambda acts and removes them |
+| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason` (`proposal_rejected`, `reports`, `admin`, `banned`, `rejected`), `hiddenAt`, `removedAt`, `likeCount`, `createdAt`, `visibleAt`; and, for the moment between an admin's decision and its being carried out (B8b), `modAction` (`hide` / `restore` / `remove`), `modReason`, `modBy`, `modAt`: the desk's API writes them, the events Lambda acts and removes them |
 | Like **(since B3a)** | `POST#{postId}` | `LIKE#{userId}` | `at`. Written with the post's `likeCount` and the cat's `likes` in one transaction |
 
 A post's `status`: `pending` (written, not yet checked) → `visible` |

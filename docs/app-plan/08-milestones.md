@@ -27,7 +27,7 @@ A session ticks its row in the pull request that finishes it.
 | B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) merged 2026-11-13; B7a (points, levels, six badges) built the same day; feedings (B7c) and the recount scripts not built |
-| B8 | Reports, blocks, bans, the desk's tools | B8a (blocks, with their screens) and B8b (reports: the route, the email, hiding at three, the desk's queue, Report in the app) built 2026-11-13; bans and the desk's People tools (B8c) not built |
+| B8 | Reports, blocks, bans, the desk's tools | B8a (blocks, with their screens) and B8b (reports: the route, the email, hiding at three, the desk's queue, Report in the app) built 2026-11-13; B8c (bans, the desk's list of the app's people) built the same day |
 | B9 | Push | |
 | B10 | Deleting an account | |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
@@ -512,9 +512,21 @@ was built.
   - **Mine, for the owner (D15):** the six reasons and the sheet, which
     the design does not have; three reporters to hide a post (the
     plan's recommendation).
-  - **Not built:** bans and acting on a reported person (B8c);
-    reporting a name from the app (the route takes it); showing an
-    admin the reported profile photo.
+  - **Not built:** reporting a name from the app (the route takes
+    it); showing an admin the reported profile photo.
+- **B8c, built 2026-11-13:** bans. `POST /api/people/{id}/ban` and
+  `/unban` mark the person; `ban` is also an answer to a report about a
+  person. The member API already refused a banned person every call;
+  the desk's API now refuses their writes too (`_refuse_banned`, asked
+  only of users, only on writes). The events Lambda (`follow_ban`)
+  hides their visible posts with the reason `banned` and, when the ban
+  is lifted, puts back those and only those; a post still being checked
+  when its author is banned is never published. `GET /api/people` lists
+  everyone who has opened the app; the desk's role reads `ENTITY#USER`
+  for it. In the desk: "People in the app" on the People screen, with
+  **Ban** and **Unban**, and **Ban** on a reported person's card.
+  **Not built:** telling a banned person why, beyond "this account is
+  blocked"; an appeal.
 
 ### B9. Push
 

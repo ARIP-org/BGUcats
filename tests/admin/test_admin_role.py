@@ -4,8 +4,8 @@ Since B3b it keeps a person's encounter item there (docs/data-model.md,
 "ENC"): it reads the sign-in lookup and updates `USER#…` items. Since B6
 it reads the new-cat proposals' queue and decides them. Since B4b it reads
 a cat's name poll, marks an option removed and locks the shown name. Since
-B8b it reads the reports queue, answers a report and marks a post.
-Nothing else.
+B8b it reads the reports queue, answers a report and marks a post. Since
+B8c it lists the app's people. Nothing else.
 Read from the Terraform itself, so a wider grant fails here.
 """
 
@@ -44,6 +44,7 @@ def test_one_statement_reaches_the_app_table():
         "REPORT#*",
         "REPORTS#*",
         "POST#*",
+        "ENTITY#USER",
     }
     assert '"ForAllValues:StringLike"' in statement
 

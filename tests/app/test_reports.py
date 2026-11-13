@@ -255,7 +255,7 @@ def test_a_reported_person_waits_in_the_queue(world):
         "displayName": world["me"][HELPER]["displayName"],
         "status": "active",
     }
-    # Banning comes next (B8c); for now a person's report can only be closed.
+    # A person is not removed or hidden: closed, or banned (tests/app/test_bans.py).
     assert resolve(entry["reportId"], "remove")[0] == 400
     assert resolve(entry["reportId"], "dismiss")[0] == 200
     assert queue() == []
@@ -278,7 +278,10 @@ def test_what_is_refused(world, monkeypatch):
     assert desk_call("GET", "/api/reports", email=HELPER)[0] == 403
     assert desk_call("POST", f"/api/reports/{entry['reportId']}/resolve", {"action": "dismiss"}, HELPER)[0] == 403
     assert desk_call("POST", f"/api/posts/{POST}/hide", email=HELPER)[0] == 403
+    # A post is hidden or removed, not banned; and only the listed answers.
     assert resolve(entry["reportId"], "ban")[0] == 400
+    assert resolve(entry["reportId"], "nuke")[0] == 400
+    assert "modAction" not in post_item(world)
     assert resolve("01JD0000000000000000000XXX", "dismiss")[0] == 404
     assert desk_call("POST", "/api/posts/01JD0000000000000000000XXX/hide")[0] == 404
     # Twenty a day.

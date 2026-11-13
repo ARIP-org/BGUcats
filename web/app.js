@@ -462,6 +462,21 @@ function reportCard(r) {
       ),
     );
   }
+  if ((t.type === "user" || t.type === "avatar") && !t.gone && t.status === "active") {
+    actions.push(
+      button(
+        "Ban",
+        "btn btn-danger",
+        careful(
+          "ban",
+          `@${t.username} is banned`,
+          `Ban @${t.username}?`,
+          "They can write nothing more in the app or in Capture, and nobody sees their posts or their page, until you unban them on the People screen.",
+          "Ban",
+        ),
+      ),
+    );
+  }
   if (t.type === "name" && !t.gone && t.status !== "removed") {
     actions.push(
       button(
@@ -1831,8 +1846,56 @@ const ROLE_HELP = {
   user: "Photographs cats in the app and browses the cats. No labeling, no deleting.",
 };
 
+// Everyone who has opened the member app (B8c), under the allowlist: a ban
+// stops a person writing anything and hides their posts until it is
+// lifted. An admin is not banned (the API refuses), so admins have no
+// button.
+function appPeoplePanel(people, admins) {
+  if (!people.length) return null;
+  const roles = Object.fromEntries(admins.map((a) => [a.email, a.role]));
+  return el("section", { className: "app-people" }, [
+    sectionHead("People in the app", `${plural(people.length, "account")} · newest first`),
+    el(
+      "div",
+      { className: "card" },
+      people.map((p) => {
+        const banned = p.status === "banned";
+        const isAdminToo = roles[p.email] === "admin";
+        const ban = button("Ban", "btn btn-sm btn-danger", async () => {
+          const ok = await confirmAction({
+            title: `Ban @${p.username}?`,
+            text: "They can write nothing more in the app or in Capture, and nobody sees their posts or their page, until you unban them.",
+            ok: "Ban",
+          });
+          if (!ok) return;
+          await post(`/people/${p.userId}/ban`);
+          toast(`@${p.username} is banned`);
+          render();
+        });
+        const unban = button("Unban", "btn btn-sm", async () => {
+          await post(`/people/${p.userId}/unban`);
+          toast(`@${p.username} is unbanned`);
+          render();
+        });
+        return el("div", { className: "row person", attrs: { "data-user": p.userId } }, [
+          el("span", { className: "row-main" }, [
+            el("strong", { textContent: `@${p.username}` }),
+            el("span", { className: "muted small", textContent: ` ${p.email}` }),
+          ]),
+          banned ? el("span", { className: "tag", textContent: "banned" }) : null,
+          p.status === "deleting" ? el("span", { className: "tag", textContent: "being deleted" }) : null,
+          banned ? unban : isAdminToo || p.email === state.email || p.status !== "active" ? null : ban,
+        ]);
+      }),
+    ),
+  ]);
+}
+
 async function renderAdmins(isCurrent = () => true) {
-  const { admins } = await cachedGet("/admins");
+  const [{ admins }, { people: appPeople }] = await Promise.all([
+    cachedGet("/admins"),
+    cachedGet("/people").catch(() => ({ people: [] })),
+  ]);
   if (!isCurrent()) return;
 
   const input = el("input", {
@@ -1916,6 +1979,7 @@ async function renderAdmins(isCurrent = () => true) {
         ]);
       }),
     ]),
+    ...[appPeoplePanel(appPeople, admins)].filter(Boolean),
   );
 }
 

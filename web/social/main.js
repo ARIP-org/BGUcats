@@ -16,6 +16,7 @@ import {
   forgetSignIn,
   idToken,
   login,
+  logout,
   readTokens,
   saveTokens,
   useConfig,
@@ -75,6 +76,17 @@ function NotOpen() {
       <h1 class="title">${t("notOpen.title")}</h1>
       <p class="lead">${t("notOpen.body")}</p>
       <a class="glass-button" href="/?desk">${t("notOpen.desk")}</a>
+    </main>
+  `;
+}
+
+// An admin banned this account (B8c): every call answers 403 `banned`.
+function Banned() {
+  return html`
+    <main class="screen center" data-screen="banned">
+      <h1 class="title">${t("banned.title")}</h1>
+      <p class="lead">${t("banned.body")}</p>
+      <button class="glass-button" type="button" onClick=${() => logout(HOME)}>${t("signOut.button")}</button>
     </main>
   `;
 }
@@ -141,6 +153,10 @@ async function boot() {
   } catch (err) {
     if (err.status === 404) {
       show(html`<${NotOpen} />`);
+      return;
+    }
+    if (err.status === 403 && err.code === "banned") {
+      show(html`<${Banned} />`);
       return;
     }
     if (err.status === 403 && err.code === "not_admitted") {

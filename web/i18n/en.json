@@ -395,5 +395,7 @@
   "report.reason.other": "Something else",
   "report.note": "Anything to add? (optional)",
   "report.send": "Send report",
-  "report.sent": "Thank you. Someone looks at every report within a day."
+  "report.sent": "Thank you. Someone looks at every report within a day.",
+  "banned.title": "This account is blocked",
+  "banned.body": "The people who look after BGU Cats blocked this account. If you think it is a mistake, write to them."
 }

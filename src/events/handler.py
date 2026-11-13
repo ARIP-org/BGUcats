@@ -298,6 +298,10 @@ def release(post_pk):
     post = _get(post_pk, "META")
     if not post or post.get("status") != "pending":
         return
+    author = _get(f"USER#{post['authorId']}", "PROFILE") or {}
+    if author.get("status") == "banned":
+        _hide(post, "banned")  # written a moment before the ban: never shown
+        return
     cat_id = post.get("catId")
     if post.get("proposalId"):
         proposal = _get(f"PROPOSAL#{post['proposalId']}", "META") or {}
@@ -797,6 +801,38 @@ def publish_profile(record):
     itself, so a name never waits for a photo."""
     publish_name(record)
     publish_avatar(record)
+    follow_ban(record)
+
+
+def _posts_of(user_id):
+    items, start = [], None
+    while True:
+        page = social_table.query(
+            IndexName="GSI1",
+            KeyConditionExpression=Key("GSI1PK").eq(f"AUTHOR#{user_id}"),
+            **({"ExclusiveStartKey": start} if start else {}),
+        )
+        items += page["Items"]
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def follow_ban(record):
+    """An admin banned a person, or lifted a ban (B8c): their posts leave
+    every list, and come back, with what they counted for on their cats.
+    Only the posts the ban itself hid come back: one an admin hid for its
+    own sake stays hidden."""
+    old, new = _image(record, "OldImage") or {}, _image(record) or {}
+    was, now = old.get("status"), new.get("status")
+    if now == "banned" and was != "banned":
+        for post in _posts_of(new["userId"]):
+            if post.get("status") == "visible":
+                set_post(post["PK"], "hide", "banned")
+    elif was == "banned" and now == "active":
+        for post in _posts_of(new["userId"]):
+            if post.get("status") == "hidden" and post.get("hiddenReason") == "banned":
+                set_post(post["PK"], "restore", "banned")
 
 
 # ------------------------------------------------------------ the name poll

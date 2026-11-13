@@ -99,7 +99,9 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
         # option removed and lock the shown name. Since B8b: the reports
         # queue (REPORTS#{status} on GSI2), answering a report (REPORT#{id})
         # and marking a post for the events Lambda to hide, put back or
-        # remove (POST#{id}). Nothing else there.
+        # remove (POST#{id}). Since B8c: the list of the app's people
+        # (ENTITY#USER on GSI2); a ban is a mark on a USER# item, which
+        # was already allowed. Nothing else there.
         Action = [
           "dynamodb:GetItem",
           "dynamodb:UpdateItem",
@@ -111,7 +113,7 @@ resource "aws_iam_role_policy" "admin_lambda_access" {
         ]
         Condition = {
           "ForAllValues:StringLike" = {
-            "dynamodb:LeadingKeys" = ["IDENTITY#*", "USER#*", "PROPOSAL#*", "PROPOSALS#*", "CAT#*", "REPORT#*", "REPORTS#*", "POST#*"]
+            "dynamodb:LeadingKeys" = ["IDENTITY#*", "USER#*", "PROPOSAL#*", "PROPOSALS#*", "CAT#*", "REPORT#*", "REPORTS#*", "POST#*", "ENTITY#USER"]
           }
         }
       },
