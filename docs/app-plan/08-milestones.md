@@ -24,7 +24,7 @@ A session ticks its row in the pull request that finishes it.
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | B4a (names, votes, the leader) merged 2026-11-13; B4b (the desk's remove and lock) built the same day, in review. Votes as feed cards moved to B5: a vote card is friends' votes |
-| B5 | Friends and invites (B5b: phone and contacts) | |
+| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
 | B8 | Reports, blocks, bans, the desk's tools | |
@@ -45,7 +45,7 @@ A session ticks its row in the pull request that finishes it.
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
 | E5 | The map | |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
-| E7 | Friends | |
+| E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) built 2026-11-13 with B5a; Block and Report in a friend's menu wait for B8 |
 | E8 | Achievements | |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
@@ -357,6 +357,27 @@ was built.
 - **Done when:** every friend item has its mirror after any sequence of
   accept, remove and block (a property test); an invite between two
   people one of whom blocked the other does nothing and says nothing.
+- **B5a, built 2026-11-13:** D4 as answered: an invite link makes two
+  people friends at once, and there is nothing else yet (D5: no contacts
+  in the first build), so no requests. `POST /invites/{code}/accept`
+  writes both `FRIEND` items in one transaction that also checks no
+  `BLOCK` stands between the two (blocks arrive with B8; the check is
+  already there and tested); `DELETE /friends/{id}` deletes both in one.
+  `GET /friends` is the caller and their friends by cats found, this
+  month or in all; `GET /users/{id}` and `…/posts` are a person's page.
+  In the feed an author is marked as a friend, and a friend sees a
+  post's area (D3). `tests/app/test_friends.py`: the mirror after 120
+  random accepts and removes among three people, a block either way,
+  every key a person is sent.
+- **Friends' name votes in the feed** (from B4, with B5a): a `VOTE`
+  item carries `FEED#` keys, and `GET /feed` folds friends' votes into
+  one card per cat (`_vote_card`), built from the poll as it is now. A
+  pending name makes no card; a vote taken back or a friend removed
+  takes the card away; the cursor carries the cats already shown. In
+  the app (`VoteCard` in `web/social/feed.js`) a tap on a name votes,
+  as on the cat's page.
+- **Not built:** mutual-friend counts, and the "friend" events (a push,
+  B9).
 - **B5b, phone and contacts:** only if D5 says so; needs O17 for codes.
   The HMAC lookup, the match route and its tight limit.
 
@@ -676,6 +697,30 @@ English file.
 ### E7. Friends
 
 - **Needs:** E6, B5 (B8 for block and report).
+- **E7a, built 2026-11-13** (`web/social/friends.js`), from the
+  prototype's friends page in `Feed.dc.html`:
+  - Home's Friends card is the first three of you and your friends by
+    cats found in all, each with the cats they met last; the card and
+    the button beside the profile pill open the friends page.
+  - The page: "This month" / "All time", the podium, a search over the
+    list the phone already holds, every friend with "Remove from
+    friends" in its menu.
+  - "Add friend" is the invite alone (D5: no contacts yet): the link,
+    **Copy link**, **Share…**.
+  - A person's page: the name, "N cats found", "Friends since", their
+    latest posts. A post's author in the feed opens it.
+  - **Not in the prototype, mine:** under the link, "Got a link from a
+    friend?" with a field to paste it into. A link tapped in a chat
+    opens the browser, not an app added to the home screen, and on an
+    iPhone the two share nothing; without the field a friend's link
+    could not be used from the installed app until links open the app
+    (N4). A link opened where the app does run (`app.html?invite=…`) is
+    kept across the sign-in and makes the friendship once the app is up.
+  - The feed's name-vote card: "Maya voted to call Simba “Mango”", the
+    poll's first three names with percentages and the friends who chose
+    each, "128 votes · You and 2 friends voted", **All names**.
+  - **Not built:** Block and Report (B8), contacts (D5), the page's
+    opening animation from the card, the folded tab bar.
 
 ### E8. Achievements
 

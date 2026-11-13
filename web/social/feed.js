@@ -3,12 +3,14 @@
 // the card, the photo with its like button on glass, the photo's menu.
 
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
-import { cats, deletePost, feedPage, regionName, setLike } from "./data.js";
+import { cats, deletePost, feedPage, regionName, setLike, takeVoteBack, voteFor } from "./data.js";
 import { openGallery } from "./gallery.js";
-import { ago, t } from "./i18n.js";
+import { ago, t, tMarked } from "./i18n.js";
 import { glass } from "./motion.js";
+import { REFUSED, moved } from "./poll.js";
 import { push, useStore } from "./store.js";
 import { openScan } from "./scan.js";
+import { termsFirst } from "./terms.js";
 import { Icon, confirm, openMenu, toast } from "./ui.js";
 
 const openCat = (cat) => push("cat", { catId: cat.catId, title: cat.name || t("cat.noName") });
@@ -119,11 +121,14 @@ function Card({ card, onChange, onGone }) {
   }
 
   const author = card.author.displayName || card.author.username;
+  const openAuthor = () => push("person", { userId: card.author.userId, title: author });
   return html`<article class="post" data-post=${card.postId} aria-label=${t("post.label", { name: author })}>
     <div class="post-head">
-      <${Avatar} person=${card.author} />
+      <button type="button" class="post-author" aria-label=${t("post.openAuthor", { name: author })} onClick=${openAuthor}>
+        <${Avatar} person=${card.author} />
+      </button>
       <div class="post-who">
-        <span class="post-name">${author}</span>
+        <button type="button" class="post-name" onClick=${openAuthor}>${author}</button>
         <h2 class="post-what">
           ${card.cat
             ? html`${t("post.met")}${" "}<button type="button" class="cat-link" onClick=${() => openCat(card.cat)}>
@@ -181,6 +186,95 @@ function SendingCard({ card }) {
     ${card.text && html`<p class="post-text">${card.text}</p>`}
   </article>`;
 }
+
+// The server's poll says nothing of friends; the card keeps who chose what.
+const withFriends = (poll, before) => ({
+  ...poll,
+  options: poll.options.map((o) => ({
+    ...o,
+    friends: before.options.find((was) => was.nameKey === o.nameKey)?.friends || [],
+  })),
+});
+
+const BOLD = { a: "vote-strong", b: "vote-strong", cat: "vote-strong", name: "vote-name-said" };
+
+// Friends' votes on one cat's name, the prototype's name-vote card: who
+// voted for what, the poll's first names with the friends who chose each,
+// and a tap votes, as on the cat's page.
+function VoteCard({ card, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const { cat, poll, voters } = card;
+  const catName = cat.name || t("cat.noName");
+  const open = () => openCat(cat);
+
+  async function choose(option) {
+    if (busy) return;
+    const before = card;
+    setBusy(true);
+    try {
+      if (!(await termsFirst())) return;
+      const key = option.mine ? null : option.nameKey;
+      onChange({ ...card, poll: moved(poll, key) });
+      const answer = await (key ? voteFor(cat.catId, key) : takeVoteBack(cat.catId));
+      onChange({ ...card, cat: { ...cat, name: answer.name }, poll: withFriends(answer, poll) });
+    } catch (err) {
+      onChange(before);
+      toast(REFUSED[err.code] ? t(REFUSED[err.code]) : t("error.generic", { message: err.message }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const said = { a: nameOf(voters[0]), b: voters[1] && nameOf(voters[1]), // A name that already leads is the cat's name: "call Mango “Mango”" says nothing.
+    cat: cat.name && cat.name !== card.name ? cat.name : t("vote.thisCat"),
+    name: card.name, count: voters.length - 2 };
+  const words = tMarked(voters.length > 2 ? "vote.many" : voters.length === 2 ? "vote.two" : "vote.one", said, BOLD);
+  // The first three names, and always the one the card is about.
+  const live = poll.options.filter((o) => !o.pending);
+  const shown = live.slice(0, 3);
+  const about = live.find((o) => o.name === card.name);
+  if (about && !shown.includes(about)) shown[shown.length - 1] = about;
+  const pct = (o) => (poll.total ? Math.round((o.votes / poll.total) * 100) : 0);
+  const others = { count: card.friendsVoted };
+
+  return html`<article class="post vote-card" data-card=${card.cardId} aria-label=${t("vote.label", { name: catName })}>
+    <div class="vote-head">
+      <button type="button" class="vote-cat" aria-label=${t("gallery.open", { name: catName })} onClick=${open}>
+        ${cat.cover ? html`<img src=${cat.cover.thumb} alt="" loading="lazy" />` : html`<span class="vote-cat-empty" aria-hidden="true"></span>`}
+        <span class="vote-who" aria-hidden="true"><${Avatar} person=${voters[0]} size=${24} /></span>
+      </button>
+      <p class="vote-words">${words}</p>
+      <span class="vote-when">${ago(card.createdAt)}</span>
+    </div>
+    <div class="vote-options" role="radiogroup" aria-label=${t("poll.voteFor")}>
+      ${shown.map(
+        (o) => html`<button
+          type="button"
+          key=${o.nameKey}
+          class="vote-option"
+          role="radio"
+          aria-checked=${String(o.mine)}
+          data-name=${o.nameKey}
+          disabled=${busy}
+          onClick=${() => choose(o)}
+        >
+          <span class="vote-bar" aria-hidden="true" style=${{ inlineSize: `${pct(o)}%` }}></span>
+          <span class="vote-name">${o.name}</span>
+          <span class="vote-friends" aria-hidden="true">
+            ${(o.friends || []).map((person) => html`<${Avatar} key=${person.userId} person=${person} size=${22} />`)}
+          </span>
+          <span class="vote-pct">${t("vote.percent", { percent: pct(o) })}</span>
+        </button>`,
+      )}
+    </div>
+    <div class="vote-foot">
+      <span>${t("poll.votes", { count: poll.total })} · ${t(poll.myVote ? "vote.youAndFriends" : "vote.friendsVoted", others)}</span>
+      <button type="button" class="vote-all" onClick=${open}>${t("vote.allNames")}</button>
+    </div>
+  </article>`;
+}
+
+const nameOf = (person) => person.displayName || person.username || "";
 
 function CatOfTheDay({ cat }) {
   return html`<button type="button" class="cotd" onClick=${() => openCat(cat)} aria-label=${t("feed.cotdLabel", { name: cat.name || t("cat.noName") })}>
@@ -271,14 +365,20 @@ export function Feed() {
   const sending = useStore((s) => s.sending) || [];
   const known = new Set((cards || []).map((c) => c.postId));
   const mineFirst = sending.filter((c) => !known.has(c.postId));
-  const change = (next) => setCards((now) => now.map((c) => (c.postId === next.postId ? next : c)));
-  const gone = (card) => setCards((now) => now.filter((c) => c.postId !== card.postId));
+  // A post is known by its id, a friends' vote card by its cat's.
+  const idOf = (c) => c.postId || c.cardId;
+  const change = (next) => setCards((now) => now.map((c) => (idOf(c) === idOf(next) ? next : c)));
+  const gone = (card) => setCards((now) => now.filter((c) => idOf(c) !== idOf(card)));
 
   return html`<${TopButtons} />
     <div class="tab-content feed">
       ${today && html`<${CatOfTheDay} cat=${today} />`}
       ${mineFirst.map((card) => html`<${SendingCard} key=${card.postId} card=${card} />`)}
-      ${cards?.map((card) => html`<${Card} key=${card.postId} card=${card} onChange=${change} onGone=${gone} />`)}
+      ${cards?.map((card) =>
+        card.type === "vote"
+          ? html`<${VoteCard} key=${card.cardId} card=${card} onChange=${change} />`
+          : html`<${Card} key=${card.postId} card=${card} onChange=${change} onGone=${gone} />`,
+      )}
       ${cards && !cards.length && !failed && html`<p class="empty">${t("feed.empty")}</p>`}
       ${failed && html`<p class="empty" role="alert">${t("feed.failed")}</p>`}
       ${cursor && html`<div ref=${end} class="feed-more" aria-hidden="true"></div>`}

@@ -23,6 +23,7 @@ import {
 import { html, render } from "../vendor/preact-htm.js";
 import { CatPage } from "./cat.js";
 import { Feed } from "./feed.js";
+import { Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
 import { Gallery } from "./gallery.js";
 import { Home, Profile } from "./home.js";
 import { loadLanguage, t } from "./i18n.js";
@@ -78,7 +79,7 @@ function NotOpen() {
 // The frame (E1): the tabs' pages, the pages pushed over them, the tab
 // bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
 const TAB_PAGES = { feed: Feed, home: Home };
-const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery };
+const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage };
 const onScroll = watchScroll();
 
 function Frame() {
@@ -105,6 +106,9 @@ function Frame() {
 }
 
 async function boot() {
+  // A friend's invite link: its code is kept before the page can leave for
+  // the install page or for signing in.
+  keepInvite();
   if (!isInstalled()) {
     // A browser tab gets the install page, which lives on the site's root
     // (install.js, index.html). `?browser` still opens the app in a tab.
@@ -151,6 +155,7 @@ async function boot() {
   const left = unanswered();
   if (left.includes("location")) toast(t("scan.locationHeld"), 7000);
   else if (left.includes("camera")) toast(t("scan.cameraHeldToast"), 7000);
+  takeInvite();
 }
 
 boot().catch((err) => show(html`<${SignIn} note=${t("error.generic", { message: err.message })} />`));

@@ -69,7 +69,7 @@ def aws(monkeypatch):
         yield {"data": data, "social": social}
 
 
-def call(method, path, body=None, email=ADMIN, name=None):
+def call(method, path, body=None, email=ADMIN, name=None, query=None):
     claims = {"email": email}
     if name:
         claims["name"] = name
@@ -80,6 +80,8 @@ def call(method, path, body=None, email=ADMIN, name=None):
         },
         "body": json.dumps(body) if body is not None else None,
     }
+    if query:
+        event["queryStringParameters"] = query
     answer = handler.handler(event, None)
     return answer["statusCode"], json.loads(answer["body"])
 

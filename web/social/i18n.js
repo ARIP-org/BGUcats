@@ -53,6 +53,19 @@ export function tRich(key, values, strong) {
   return html`${fill(before)}<b>${shown(values[strong])}</b>${fill(after)}`;
 }
 
+// The same, with several values as markup: `marks` gives a class to each
+// value that gets one ("{who} voted to call {cat} “{name}”").
+export function tMarked(key, values, marks) {
+  const text = template(key, values);
+  if (text == null) return key;
+  return text.split(/(\{\w+\})/).map((part) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1];
+    if (!name || !(name in values)) return part;
+    const value = shown(values[name]);
+    return name in marks ? html`<span class=${marks[name]}>${value}</span>` : value;
+  });
+}
+
 export const language = () => lang;
 
 // "Nov 2026" and "Nov 10", as the language writes them.

@@ -202,7 +202,7 @@ the owner:
 |---|---|
 | No model on this phone (first run, data saver, or the iPhone app before N1) | "Which cat?" opens on the grid of all cats, with no candidates row |
 | No signal | the feed from memory with a quiet note; Capture works fully; likes and votes say they could not be sent |
-| Feed, gallery, friends, posts: empty | the mascot and one line with the next thing to do |
+| Feed, gallery, friends, posts: empty | the mascot and one line with the next thing to do. Friends (E7a): the podium with you alone, one line, and **Invite friends** |
 | A post being sent | its photo with a progress ring; the outbox's own words for why it waits |
 | A post, name or display name being checked | visible to its owner with "Being checked" |
 | A post for a new cat, before an admin approves the cat (D7) | visible to its owner with "Waiting for an admin to confirm the new cat"; nobody else sees it |

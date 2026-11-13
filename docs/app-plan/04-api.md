@@ -41,7 +41,10 @@ fields and records them here.
 
 A person, as others see them:
 `{userId, username, displayName, avatar, found, since}`, plus
-`friend` (`yes` / `requested` / `incoming` / `no`) relative to the caller.
+`friend` (`yes` / `requested` / `incoming` / `no`) relative to the caller,
+`friendSince` and `me` (since B5a; only `yes` and `no` until there are
+requests). Only what is published: a name or photo still being checked is
+its owner's alone.
 
 ## The member API: `/api/v1`
 
@@ -59,7 +62,7 @@ A person, as others see them:
 | `PUT /me/devices/{deviceId}` | Registers this phone's push token and Apple environment |
 | `DELETE /me/devices/{deviceId}` | On sign-out, and when the switch is turned off |
 | `GET /me/posts` | The caller's posts, pending and hidden ones included, each with its state |
-| `GET /me/invite` | The caller's invite code and link |
+| `GET /me/invite` | `{code}`. The link is built on the phone, from the address the app was opened at (the custom domain arrives with N4). `GET /me` carries the same code. Since B5a |
 | `GET /achievements` | Points, level and the next threshold, the three counters, every badge with earned or not, and the rules' text |
 | `DELETE /me` | Body `{"confirm": "delete"}`. Starts deletion and signs the caller out (`03-data-model.md`) |
 | `PUT /me/phone`, `DELETE /me/phone` | D5 only |
@@ -68,11 +71,11 @@ A person, as others see them:
 
 | Route | Does |
 |---|---|
-| `GET /friends?period=month\|all` | The caller's friends with `found` for the period, sorted, each with their three latest cats; the caller's own row; the count of incoming requests. The podium is the first three |
-| `GET /users/{userId}` | A person as others see them. Their posts are a second call |
-| `GET /users/{userId}/posts` | Visible posts, if D3 and the friendship allow |
-| `DELETE /friends/{userId}` | Removes the friendship, both sides |
-| `POST /invites/{code}/accept` | Makes the caller and the code's owner friends. The same answer whether new or already friends; `gone` for an unknown code or a block between them |
+| `GET /friends?period=month\|all` | `{period, people, requests}`. `people`: the caller (`me: true`) and their friends, each a person with `found` for the period and `cats`, the ids of the three cats they met last; most found first, so the podium is the first three. `requests` is 0 until there are requests. Default `month`. Since B5a |
+| `GET /users/{userId}` | `{person}`, with all-time `found` and `cats`. Their posts are a second call. `gone` for nobody, or an account that is banned or being deleted. Since B5a |
+| `GET /users/{userId}/posts` | Their visible posts, newest first, a page of them (D3: the whole campus reads every visible post). Since B5a |
+| `DELETE /friends/{userId}` | Removes the friendship, both sides, in one transaction. The same answer if they were not friends. Since B5a |
+| `POST /invites/{code}/accept` | Makes the caller and the code's owner friends, in one transaction. `{person}`, the same whether new or already friends; `gone` for an unknown code, an account that is going away, or a block between them; `own_invite` (409) for the caller's own. Needs the terms; 30 a day. Since B5a |
 | `POST /friends/requests`, `GET /friends/requests`, `POST /friends/requests/{userId}/accept`, `DELETE /friends/requests/{userId}` | D4, if requests are chosen |
 | `PUT /blocks/{userId}`, `DELETE /blocks/{userId}`, `GET /blocks` | Block, unblock, list |
 | `POST /reports` | `{reportId, targetType, targetId, reason, note?}`. Reasons are a fixed list (D15). Always answers the same, so a reporter learns nothing about earlier reports |
@@ -111,7 +114,7 @@ place and its region. The map is drawn from it; no route.
 
 | Route | Does |
 |---|---|
-| `GET /feed` | A page of cards, newest first: posts, and friends' name votes folded per cat (`03-data-model.md`, "Building a page of the feed"). Each post: author, cat (or "new", or none), photos, text, `likes`, `liked`, time, and `region` if the caller may see it |
+| `GET /feed` | A page of cards, newest first: posts, and friends' name votes folded per cat (`03-data-model.md`, "Building a page of the feed"). A vote card (since B5a): `{type: "vote", cardId, createdAt, cat: {catId, name, cover}, name, voters, friendsVoted, poll}`: what the newest of the friends' votes says and which friends say it, and the poll as `GET /cats/{id}/names` answers it, each option with the `friends` who chose it. Built from the poll as it is, so one card holds every friend's vote; the cursor carries the cats already shown, so a cat has one card however many pages its votes span. Each post: author (with `friend` since B5a), cat (or "new", or none), photos, text, `likes`, `liked`, time, and `region` if the caller may see it: the author and, since B5a, the author's friends |
 | `POST /posts` | `{postId, sessionId, photoIds, claim, text?, shareRegion}`. Checks the session is the caller's and every photo is in it and finished uploading (`not_ready` otherwise). Writes the post as pending. `claim` is `{catId}`, `{proposalId}` or null. One post per encounter: another post id for an encounter whose post is not removed is `already_posted` (409). Records the post on the encounter (`ENC.postId`), so the post follows the label |
 | `GET /posts/{postId}` | One post. Its author also gets its state, which is how "being checked" is shown and polled |
 | `DELETE /posts/{postId}` | The author removes it |

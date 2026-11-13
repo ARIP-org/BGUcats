@@ -111,9 +111,9 @@ dataset's.
 | Username lookup **(F4)** | `USERNAME#{username}` | `META` | `userId` |
 | Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |
 | Invite code **(F4)** | `INVITE#{code}` | `META` | `userId`. The code is random, not derived from the username |
-| Friend | `USER#{a}` | `FRIEND#{b}` | `since`, `via` (`invite` / `request` / `contacts`). Always written with its mirror (`USER#{b}` / `FRIEND#{a}`) |
+| Friend **(written since B5a)** | `USER#{a}` | `FRIEND#{b}` | `userId` (a), `friendId` (b), `since`, `via` (`invite` / `request` / `contacts`; only `invite` is written yet). Always written and deleted with its mirror (`USER#{b}` / `FRIEND#{a}`), in one transaction |
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
-| Block | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
+| Block (B8; an invite already refuses to cross one, B5a) | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
 | Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
 | Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
 | A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. (`METM#{yyyy-mm}#{catId}`, planned for the month's count, is not written: `STATS#{yyyy-mm}.catsMet` holds it) |
@@ -168,7 +168,7 @@ Its index keys:
 |---|---|---|---|
 | Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `lockedName` (an admin's lock; written by the desk's API since B4b, with `lockedBy` and `lockedAt`) |
 | Name option **(written since B4a)** | `CAT#{catId}` | `NAME#{nameKey}` | `catId`, `nameKey` (the name cleaned and case-folded, so "Mango" and "mango " are one option), `name` (the first spelling suggested), `votes`, `suggestedBy` (absent on the admins' own name), `status` (`pending` / `live` / `rejected` / `removed`), `createdAt`. Removed by an admin (B4b): the desk's API sets `status` to `removed` with `removedFrom` (the status it had), `removedBy`, `removedAt`; the events Lambda then sets `votes` to 0, takes them off `voteTotal` if it was live, and deletes the votes that name it |
-| Vote **(written since B4a)** | `CAT#{catId}` | `VOTE#{userId}` | `catId`, `userId`, `nameKey`, `at`. One per person per cat. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds (not written yet: B5, with friends) |
+| Vote **(written since B4a)** | `CAT#{catId}` | `VOTE#{userId}` | `catId`, `userId`, `nameKey`, `at`. One per person per cat. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds (written since B5a; a vote cast before it has no feed keys and makes no card) |
 | Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `feedingId` (from the phone), `spotId`, `removed` |
 
 There is no grade item: nobody grades a cat (D9). GPA is worked out from

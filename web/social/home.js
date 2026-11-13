@@ -4,15 +4,16 @@
 // posts; and on the profile the photo, the name, your posts, the settings.
 //
 // What the API cannot answer yet is left out, not drawn with made-up
-// numbers: friends (E7), achievements (E8), notifications (N2), deleting
-// the account (B10). The name is changed in its row on the profile (B1a),
+// numbers: achievements (E8), notifications (N2), deleting the account
+// (B10). The Friends card and page are friends.js (E7). The name is changed in its row on the profile (B1a),
 // the photo with the pencil on it (B1b).
 
 import { logout } from "../lib/auth.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { squareJpeg } from "./avatar.js";
 import { chooseUsername, me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
-import { dayMonth, monthYear, t, tRich } from "./i18n.js";
+import { FriendsCard, openFriends } from "./friends.js";
+import { dayMonth, monthYear, t } from "./i18n.js";
 import { CatFace, Mascot } from "./mascot.js";
 import { glass } from "./motion.js";
 import { openScan } from "./scan.js";
@@ -129,7 +130,7 @@ function HomeTop({ me }) {
         >
       </span>
     </button>
-    <button type="button" class="friends-button" ref=${glass} aria-label=${t("home.friends")} onClick=${() => toast(t("home.friendsSoon"))}>
+    <button type="button" class="friends-button" ref=${glass} aria-label=${t("home.friends")} onClick=${openFriends}>
       <${Icon} name="friends" size=${26} width=${1.7} />
       <span class="friends-words" aria-hidden="true">${t("home.friends")}</span>
     </button>
@@ -149,25 +150,9 @@ export function Home() {
       .catch(() => {});
   }, [shown]);
 
-  const met = me?.counters?.all?.catsMet || 0;
-  const latest = (posts || []).filter((card) => card.photos[0]).slice(0, 3);
   return html`<${HomeTop} me=${me} />
     <div class="tab-content home">
-      <section class="card friends-card" aria-label=${t("home.friends")}>
-        <${Mascot} coat="gray" size=${64} />
-        <h2 class="card-title">${t("home.friends")}</h2>
-        <div class="friend-row">
-          <${Me} size=${44} />
-          <span class="friend-who">
-            <span class="friend-name">${t("home.you")}</span>
-            <span class="friend-found">${tRich("home.found", { count: met }, "count")}</span>
-          </span>
-          <span class="friend-cats" aria-hidden="true">
-            ${latest.map((card) => html`<img src=${card.photos[0].thumb} alt="" loading="lazy" />`)}
-          </span>
-        </div>
-        <p class="card-note">${t("home.friendsSoon")}</p>
-      </section>
+      <${FriendsCard} shown=${shown}><${Mascot} coat="gray" size=${64} /><//>
       <${MyPosts} posts=${posts} failed=${failed} />
     </div>`;
 }

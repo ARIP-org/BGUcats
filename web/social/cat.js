@@ -10,6 +10,7 @@ import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { cat as loadCat, catPosts, names as loadNames, regionName, suggestName, takeVoteBack, voteFor } from "./data.js";
 import { Avatar } from "./feed.js";
 import { ago, t } from "./i18n.js";
+import { REFUSED, moved } from "./poll.js";
 import { termsFirst } from "./terms.js";
 import { toast } from "./ui.js";
 
@@ -38,25 +39,6 @@ function Photos({ cat }) {
 function Number({ value, label }) {
   return html`<div class="cat-number"><span class="cat-number-value">${value}</span><span class="cat-number-label">${label}</span></div>`;
 }
-
-// What a tap does to the poll before the server has answered: the caller's
-// one vote moves to `key`, or is taken back (null). The server's answer
-// replaces this a moment later; a refusal puts the poll back.
-function moved(poll, key) {
-  const options = poll.options.map((o) => ({
-    ...o,
-    votes: o.votes - (o.mine ? 1 : 0) + (o.nameKey === key ? 1 : 0),
-    mine: o.nameKey === key,
-  }));
-  const counted = options.filter((o) => !o.pending);
-  return { ...poll, options, myVote: key, total: counted.reduce((sum, o) => sum + o.votes, 0) };
-}
-
-const REFUSED = {
-  not_accepted: "poll.notAccepted",
-  try_again: "poll.tryAgain",
-  rate_limited: "poll.slowDown",
-};
 
 // The name poll, the prototype's: every option with its votes as a bar, the
 // leader marked, your choice ringed. A tap votes, a tap on your choice
