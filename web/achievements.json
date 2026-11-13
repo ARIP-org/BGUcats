@@ -1,0 +1,13 @@
+{
+  "comment": "The rules of achievements, one list for the events Lambda (which counts) and the member API (which shows): docs/app-plan/01-product.md, 'The rules' (D11). points: what earns them. levels: the points each level starts at, level 1 first; the prototype's 'Level 4, 1,240 points, 260 to Level 5' fits levels 4 and 5 at 500 and 1,500. badges: in the order shown, each with what its rule needs. The names of badges and levels are the app's strings (web/i18n/). Snack Giver waits for feedings (B7c); Critic has no meaning since D9 and is not here until the designer says what it is.",
+  "points": {"post": 5},
+  "levels": [0, 50, 200, 500, 1500, 3000],
+  "badges": {
+    "first-meow": {},
+    "night-owl": {"fromHour": 22, "untilHour": 5},
+    "explorer": {},
+    "name-giver": {},
+    "deans-list": {"gpa": 3.5},
+    "cat-whisperer": {"days": 10}
+  }
+}

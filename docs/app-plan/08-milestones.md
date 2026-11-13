@@ -26,7 +26,7 @@ A session ticks its row in the pull request that finishes it.
 | B4 | Name polls | B4a (names, votes, the leader) merged 2026-11-13; B4b (the desk's remove and lock) built the same day, in review. Votes as feed cards moved to B5: a vote card is friends' votes |
 | B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
-| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) built 2026-11-13; the achievements themselves and feedings not built |
+| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) merged 2026-11-13; B7a (points, levels, six badges) built the same day; feedings (B7c) and the recount scripts not built |
 | B8 | Reports, blocks, bans, the desk's tools | |
 | B9 | Push | |
 | B10 | Deleting an account | |
@@ -46,7 +46,7 @@ A session ticks its row in the pull request that finishes it.
 | E5 | The map | |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) built 2026-11-13 with B5a; Block and Report in a friend's menu wait for B8 |
-| E8 | Achievements | |
+| E8 | Achievements | E8a (Home's card and the sheet) built 2026-11-13 with B7a |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
 | N1 | The member app in the iPhone app, with the model | merged 2026-11-13; on the owner's phone once the API answered its preflight (the same day) |
@@ -421,6 +421,26 @@ was built.
 - **Done when:** replaying the same stream records twice changes
   nothing; a relabel takes back exactly what the claim gave; the recount
   script's result equals the stored counters on the seeded campus.
+- **B7a, built 2026-11-13:** the rules are `web/achievements.json`,
+  packed with both Lambdas (`common/achievements.py`; the events Lambda
+  reads its own copy). On every change to one of a person's encounters
+  the events Lambda works out again, from all of them: `points` and
+  `posts` on `STATS#ALL`, and the badges an encounter can give (First
+  Meow, Night Owl, Explorer, Cat Whisperer), given or taken back to
+  match. An encounter now keeps the `hour` it began at. Name Giver is
+  given when a suggested name leads (`lead`) and kept. Dean's List is
+  not stored: `GET /achievements` asks it of the cats' grades as they
+  stand. `tests/app/test_achievements.py` compares the points with a
+  recount after every step.
+  - **Mine, for the owner to change in the file:** the levels' starts
+    (0, 50, 200, 500, 1,500, 3,000: the prototype's "Level 4 · 1,240 ·
+    260 to Level 5" and its bar fit 500 and 1,500) and the names of
+    every level but "Campus Scout" (`web/i18n/en.json`, `level.N`).
+  - **Left out:** Snack Giver, "Cats fed" and "Feed a cat +10" until
+    feedings (B7c). Critic, "Cats graded" and "Grade a cat +1" have no
+    meaning since D9; the plan's proposal ("Names voted", "+1 for a
+    vote") is not built until confirmed, and the tiles show encounters
+    and posts instead. The recount as a script.
 - **B7b, GPA** (D9, answered: computed, nobody grades): the per-month
   popularity counter on each cat, kept and corrected with the same
   bookkeeping as "met"; the grade worked out in `GET /cats`; the `gpa`
@@ -736,6 +756,14 @@ English file.
 ### E8. Achievements
 
 - **Needs:** E6, B7.
+- **E8a, built 2026-11-13** (`web/social/achievements.js`), from the
+  prototype: Home's card ("5 points · 2 badges", the newest three
+  badges), and the sheet over the app: the points, the level with its
+  bar, three tiles, every badge earned or locked, how points are earned.
+  The `achievements` flag is on in both accounts' settings. **Mine:** a
+  tap on a badge says how it is earned; drawings and colours for Dean's
+  List and Cat Whisperer, which the prototype shows locked only. **Not
+  built:** the sheet's opening animation from the card.
 
 ### E9. The states nobody drew, offline, accessibility
 

@@ -32,6 +32,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 from common import (
+    achievements,
     admission,
     api,
     encounters,
@@ -1044,6 +1045,56 @@ def _unvote(user, cat_id, **_):
 
 
 # --------------------------------------------------------------------------
+# Achievements (B7)
+# --------------------------------------------------------------------------
+
+
+def _get_achievements(user, **_):
+    """`GET /achievements`: points and the level they make, the counters,
+    and every badge with whether it is earned. All of it is the events
+    Lambda's bookkeeping, a second or two behind, except "Dean's List",
+    which is asked of the cats as they stand: you have met every cat whose
+    grade is at or over the mark, while there is such a cat."""
+    rules = achievements.rules()
+    stats = tables.get_one(social_table, user["PK"], "STATS#ALL") or {}
+    mine = tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(user["PK"]),
+        ConsistentRead=True,
+    )
+    held = {
+        i["SK"].removeprefix("BADGE#"): i["at"]
+        for i in mine
+        if i["SK"].startswith("BADGE#")
+    }
+    met = {i["catId"] for i in mine if i["SK"].startswith("MET#")}
+    mark = rules["badges"]["deans-list"]["gpa"]
+    gpa = grades(_counters([c["catId"] for c in _cats()]), _israel_today())
+    top = {cat for cat, grade in gpa.items() if grade >= mark}
+    points = _number(stats.get("points"))
+    return {
+        "points": points,
+        "level": achievements.level_of(points),
+        "counters": {
+            "catsMet": _number(stats.get("catsMet")),
+            "encounters": _number(stats.get("encounters")),
+            "posts": _number(stats.get("posts")),
+        },
+        "badges": [
+            {
+                "id": badge,
+                "earned": bool(top) and top <= met
+                if badge == "deans-list"
+                else badge in held,
+                "at": held.get(badge),
+            }
+            for badge in rules["badges"]
+        ],
+        "rules": [{"id": "post", "points": rules["points"]["post"]}],
+    }
+
+
+# --------------------------------------------------------------------------
 # Friends (B5)
 # --------------------------------------------------------------------------
 #
@@ -1979,6 +2030,7 @@ ROUTES = (
     ("DELETE", rf"^/api/v1/posts/(?P<post_id>{ID})/like$", _unlike, "user"),
     ("GET", r"^/api/v1/me/posts$", _my_posts, "user"),
     ("GET", r"^/api/v1/me/invite$", _get_invite, "user"),
+    ("GET", r"^/api/v1/achievements$", _get_achievements, "user"),
     ("POST", r"^/api/v1/invites/(?P<code>[a-z0-9]{1,32})/accept$", _accept_invite, "user"),
     ("GET", r"^/api/v1/friends$", _get_friends, "user"),
     ("DELETE", rf"^/api/v1/friends/(?P<user_id>{ID})$", _remove_friend, "user"),

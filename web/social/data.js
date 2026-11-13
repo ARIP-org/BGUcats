@@ -48,6 +48,10 @@ export const removeAvatar = () => del("/v1/me/avatar");
 // The caller's own posts, newest first, each with its state.
 export const myPosts = () => api("/v1/me/posts");
 
+// Points, the level, counters, badges and the rules (B7):
+// {points, level: {level, from, next}, counters, badges: [{id, earned, at}], rules}.
+export const achievements = () => api("/v1/achievements");
+
 // Friends (B5). `friends`: {period, people, requests}, the caller among the
 // people, most cats found first. A person: {userId, username, displayName,
 // avatar, found, cats, friend, friendSince, me}.

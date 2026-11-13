@@ -70,6 +70,8 @@ locals {
     # A cat's grade, worked out from its popularity (D9, B7b). One switch
     # hides it everywhere if the owner decides it is not wanted.
     gpa = true
+    # Points, levels and badges (B7, E8): the card on Home and its sheet.
+    achievements = true
   }
 
   # count for the bot's resources: 1 in production, 0 in staging.

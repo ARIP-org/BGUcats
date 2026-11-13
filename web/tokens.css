@@ -279,6 +279,32 @@
   --m-pink: #E8A3A0;
   --m-stripes: 0;
 }
+/* The badges (web/social/achievements.js): each its own colour, the same
+   in every theme. The prototype's, and two chosen for the badges it shows
+   locked only. */
+.badge-disc {
+  --b-fill: #9A5F35;
+  --b-ink: #ffffff;
+}
+.badge-disc[data-badge="first-meow"] {
+  --b-fill: #E8913A;
+  --b-ink: #1a1a1a;
+}
+.badge-disc[data-badge="night-owl"] {
+  --b-fill: #5E6A9A;
+}
+.badge-disc[data-badge="explorer"] {
+  --b-fill: #4F7A6A;
+}
+.badge-disc[data-badge="name-giver"] {
+  --b-fill: #7A5C8E;
+}
+.badge-disc[data-badge="deans-list"] {
+  --b-fill: #8A6A3A;
+}
+.badge-disc[data-badge="cat-whisperer"] {
+  --b-fill: #9A5F35;
+}
 /* The default avatar: a black cat's face on the avatar's pale disc. */
 .cat-face {
   --f-head: #1a1a1a;
