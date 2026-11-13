@@ -363,6 +363,13 @@ export function Profile() {
     </section>
 
     <section class="group" aria-label=${t("profile.account")}>
+      <button type="button" class="row" data-row="blocked" onClick=${() => push("blocked", { title: t("block.listTitle") })}>
+        <span class="row-icon neutral" aria-hidden="true"><${Icon} name="block" /></span>
+        <span class="row-label">${t("block.listTitle")}</span>
+        <span class="row-value"></span>
+        <${Icon} name="chevron" size=${16} width=${2.2} />
+      </button>
+      <div class="divider" aria-hidden="true"></div>
       <a class="row" href="/?desk" data-row="desk">
         <span class="row-icon neutral" aria-hidden="true"><${Icon} name="camera" /></span>
         <span class="row-label">${t("profile.desk")}</span>

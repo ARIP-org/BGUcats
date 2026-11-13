@@ -106,14 +106,14 @@ dataset's.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey` (the published profile photo's object) and `pendingAvatarKey`, `pendingAvatarAt` (B1b: a new photo, its owner's alone until the events Lambda publishes it), `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
+| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey` (the published profile photo's object) and `pendingAvatarKey`, `pendingAvatarAt` (B1b: a new photo, its owner's alone until the events Lambda publishes it), `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`; `banned` is written by the desk's API since B8c, with `bannedBy` and `bannedAt`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
 | Sign-in lookup **(F4)** | `IDENTITY#{email}` | `META` | `userId` |
 | Username lookup **(F4)** | `USERNAME#{username}` | `META` | `userId` |
 | Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |
 | Invite code **(F4)** | `INVITE#{code}` | `META` | `userId`. The code is random, not derived from the username |
 | Friend **(written since B5a)** | `USER#{a}` | `FRIEND#{b}` | `userId` (a), `friendId` (b), `since`, `via` (`invite` / `request` / `contacts`; only `invite` is written yet). Always written and deleted with its mirror (`USER#{b}` / `FRIEND#{a}`), in one transaction |
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
-| Block (B8; an invite already refuses to cross one, B5a) | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
+| Block **(written since B8a)** | `USER#{a}` | `BLOCK#{b}` | `userId` (a), `blockedId` (b), `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}` with `userId` (b), `blockerId` (a), `at`; always written and deleted together, in one transaction that also deletes the two `FRIEND` items. One read of a person's `BLOCK…` items is everyone a block keeps them apart from, either way |
 | Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
 | Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; on `ALL` only, **since B7a**: `points` (five for each day a cat was met and posted) and `posts` (encounters that became a post). Planned, not written: `fed`, `namesVoted`, `namesLed` |
 | A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. |
@@ -136,7 +136,7 @@ never writes this table.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason`, `likeCount`, `createdAt`, `visibleAt` |
+| Post **(since B3a)** | `POST#{postId}` | `META` | `authorId`, `sessionId`, `photoIds` (1–4, in order), `claimedCatId`, `proposalId`, `catId` (what is shown: the label, else the claim, else none), `text` (0–280), `regionId` (the area, only if the author shared it), `status`, `hiddenReason` (`proposal_rejected`, `reports`, `admin`, `banned`, `rejected`), `hiddenAt`, `removedAt`, `likeCount`, `createdAt`, `visibleAt`; and, for the moment between an admin's decision and its being carried out (B8b), `modAction` (`hide` / `restore` / `remove`), `modReason`, `modBy`, `modAt`: the desk's API writes them, the events Lambda acts and removes them |
 | Like **(since B3a)** | `POST#{postId}` | `LIKE#{userId}` | `at`. Written with the post's `likeCount` and the cat's `likes` in one transaction |
 
 A post's `status`: `pending` (written, not yet checked) → `visible` |
@@ -199,8 +199,8 @@ cat's `name` in the dataset; else nothing (D6).
 | Item | PK | SK | Holds |
 |---|---|---|---|
 | New-cat proposal **(since B6)** | `PROPOSAL#{proposalId}` | `META` | `proposerId`, `sessionId`, `nameIdea`, `coat`, `regionId`, `traits` (`coat` and `traits` from `src/common/proposals.py`; `regionId` a campus place or `elsewhere`), `status` (`open` / `approved` / `merged` / `rejected`), `catId` (the result; an approved proposal's id **is** the new cat's id, so approving twice makes one cat), `decidedBy`, `decidedAt`. On `GSI2` as `PROPOSALS#{status}` / `createdAt` (the desk's queue), and on `GSI1` as `PROPOSER#{userId}` / `createdAt` (the proposer's own list) |
-| Report | `REPORT#{reportId}` | `META` | `reporterId`, `targetType` (`post` / `user` / `name` / `avatar`), `targetId`, `reason`, `note`, `status` (`open` / `actioned` / `dismissed`), `decidedBy`. On `GSI2` as `REPORTS#{status}` / `createdAt` |
-| One report per person per target | `REPORTED#{targetType}#{targetId}` | `BY#{reporterId}` | `at`. Counting the partition gives "different people who reported this" |
+| Report **(written since B8b)** | `REPORT#{reportId}` | `META` | `reportId` (from the phone), `reporterId`, `targetType` (`post` / `user` / `avatar` / `name`), `targetId` (a post's id, a user's id, or `{catId}/{nameKey}`), `targetOwnerId`, `reason` (`src/common/reports.py`), `note` (0–280, read by admins only), `status` (`open` / `actioned` / `dismissed`), `emailedAt` (the admins were emailed), `decision`, `decidedBy`, `decidedAt`, `createdAt`. On `GSI2` as `REPORTS#{status}` / `createdAt` |
+| One report per person per target **(written since B8b)** | `REPORTED#{targetType}#{targetId}` | `BY#{reporterId}` | `reporterId`, `reportId`, `at`. Written with the report in one transaction; a second report by the same person on the same thing writes nothing. Counting the partition gives "different people who reported this": at three, a post hides itself |
 | Moderation run | `MOD#{kind}#{subjectId}` | `RUN#{at}` | `policy`, `model`, `mode`, `answers` (each question's probability), `outcome` (`pass` / `flag` / `block` / `error`), `acted`, `human`, `humanBy`, `humanAt`, `tokens`, `ms`. On `GSI2` as `MODQ#open` / `at` while it waits for an admin, then `MODRUN#{yyyy-mm}` / `at` |
 
 `kind` is one of `POSTTEXT`, `NAME`, `PROPNAME`, `DISPLAYNAME`,

@@ -42,6 +42,7 @@ from common import (
     polls,
     proposals,
     regions,
+    reports,
     tables,
     text,
 )
@@ -1144,9 +1145,14 @@ def _found(user_id, period="all"):
     return _number(stats.get("catsMet"))
 
 
-def _require_person(user_id):
+def _require_person(user_id, me=None):
+    """The person's profile, or 404: nobody, an account that is banned or
+    going away, or (given `me`) someone a block keeps apart from the caller,
+    who is told nothing more than that."""
     profile = tables.get_one(social_table, f"USER#{user_id}", "PROFILE")
     if profile is None or profile.get("status") != "active":
+        raise ApiError(404, "no such person", code="gone")
+    if me and me != user_id and user_id in _hidden(me):
         raise ApiError(404, "no such person", code="gone")
     return profile
 
@@ -1285,7 +1291,7 @@ def _get_friends(user, query, **_):
 def _get_user(user, user_id, **_):
     """`GET /users/{userId}`: a person as others see them."""
     me = user["userId"]
-    profile = _require_person(user_id)
+    profile = _require_person(user_id, me)
     friendship = (
         None
         if user_id == me
@@ -1303,7 +1309,7 @@ def _get_user(user, user_id, **_):
 def _user_posts(user, user_id, **_):
     """`GET /users/{userId}/posts`: what everyone may see of theirs (D3:
     the whole campus reads every visible post)."""
-    _require_person(user_id)
+    _require_person(user_id, user["userId"])
     items = social_table.query(
         IndexName="GSI1",
         KeyConditionExpression=Key("GSI1PK").eq(f"AUTHOR#{user_id}"),
@@ -1312,6 +1318,212 @@ def _user_posts(user, user_id, **_):
     )["Items"]
     visible = [i for i in items if i.get("status") == "visible"][:FEED_PAGE]
     return {"cards": _cards(visible, user)}
+
+
+# --------------------------------------------------------------------------
+# Blocks (B8)
+# --------------------------------------------------------------------------
+#
+# Blocking a person hides each from the other everywhere and ends the
+# friendship (06-moderation.md, "Reports, blocks and bans"; Apple's rule
+# 1.2). A block is two items, `BLOCK#` under the one who blocked and
+# `BLOCKEDBY#` under the other, so "whom must I not see, and who must not
+# see me" is one read of one's own partition.
+
+BLOCKS_PER_DAY = 50
+
+
+def _hidden(user_id):
+    """The people this person and the app keep apart: everyone they blocked
+    and everyone who blocked them. Neither sees the other's posts or page."""
+    items = tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(f"USER#{user_id}")
+        & Key("SK").begins_with("BLOCK"),  # BLOCK# and BLOCKEDBY#
+        ConsistentRead=True,
+    )
+    return {item["SK"].split("#", 1)[1] for item in items}
+
+
+def _block_pair(me, them):
+    return (
+        {"PK": f"USER#{me}", "SK": f"BLOCK#{them}"},
+        {"PK": f"USER#{them}", "SK": f"BLOCKEDBY#{me}"},
+    )
+
+
+def _block(user, user_id, **_):
+    """`PUT /blocks/{userId}`: the block and its mirror, and the end of the
+    friendship both ways, in one transaction. Blocking twice is blocking
+    once."""
+    me = user["userId"]
+    if user_id == me:
+        raise ApiError(400, "that is you")
+    if tables.get_one(social_table, f"USER#{user_id}", "PROFILE") is None:
+        raise ApiError(404, "no such person", code="gone")
+    limits.take(social_table, f"{me}#blocks", BLOCKS_PER_DAY, 86400)
+    now = api.now_iso()
+    mine, theirs = _block_pair(me, user_id)
+    social_table.meta.client.transact_write_items(
+        TransactItems=[
+            {
+                "Put": {
+                    "TableName": social_table.name,
+                    "Item": {**mine, "userId": me, "blockedId": user_id, "at": now},
+                }
+            },
+            {
+                "Put": {
+                    "TableName": social_table.name,
+                    "Item": {**theirs, "userId": user_id, "blockerId": me, "at": now},
+                }
+            },
+            *(
+                {"Delete": {"TableName": social_table.name, "Key": _friend_key(a, b)}}
+                for a, b in ((me, user_id), (user_id, me))
+            ),
+        ]
+    )
+    logger.info("user=%s blocked user=%s", me, user_id)
+    return {"userId": user_id, "blocked": True}
+
+
+def _unblock(user, user_id, **_):
+    """`DELETE /blocks/{userId}`: both items. They are not friends again:
+    that takes a new invite."""
+    mine, theirs = _block_pair(user["userId"], user_id)
+    social_table.meta.client.transact_write_items(
+        TransactItems=[
+            {"Delete": {"TableName": social_table.name, "Key": key}}
+            for key in (mine, theirs)
+        ]
+    )
+    return {"userId": user_id, "blocked": False}
+
+
+def _get_blocks(user, **_):
+    """`GET /blocks`: the people the caller blocked, newest first, so there
+    is somewhere to unblock from. Not those who blocked the caller: nobody
+    is told that."""
+    items = tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(user["PK"]) & Key("SK").begins_with("BLOCK#"),
+        ConsistentRead=True,
+    )
+    items.sort(key=lambda i: i["at"], reverse=True)
+    profiles = {
+        p["userId"]: p
+        for p in _batch_get(
+            social_table,
+            [{"PK": f"USER#{i['blockedId']}", "SK": "PROFILE"} for i in items],
+        )
+    }
+    return {
+        "people": [
+            {**_person_brief(profiles[i["blockedId"]]), "at": i["at"]}
+            for i in items
+            if i["blockedId"] in profiles
+        ]
+    }
+
+
+# --------------------------------------------------------------------------
+# Reports (B8)
+# --------------------------------------------------------------------------
+
+REPORTS_PER_DAY = 20
+
+
+def _report_target(user, target_type, target_id):
+    """The thing reported, checked to be there; and whose it is, for the
+    desk. None if there is no such thing."""
+    if target_type == "post":
+        post = tables.get_one(social_table, f"POST#{target_id}")
+        if post is None or post.get("status") == "removed":
+            return None
+        return post["authorId"]
+    if target_type in ("user", "avatar"):
+        profile = tables.get_one(social_table, f"USER#{target_id}", "PROFILE")
+        return profile["userId"] if profile else None
+    cat_id, _, name_key = target_id.partition("/")
+    option = tables.get_one(social_table, f"CAT#{cat_id}", f"NAME#{name_key}")
+    return (option.get("suggestedBy") or "") if option else None
+
+
+def _report(user, body, **_):
+    """`POST /reports`: one person says a post, a person, a photo or a name
+    should not be here, with a reason from the list. It joins the desk's
+    queue; the events Lambda emails the admins and, for a post, hides it
+    once enough different people have said so.
+
+    The answer is always the same: a reporter learns nothing about earlier
+    reports, nor whether the thing still exists. One report per person per
+    thing counts; a second is accepted and changes nothing."""
+    me = user["userId"]
+    report_id = api.ulid_param(body, "reportId")
+    target_type, target_id, reason = (
+        body.get("targetType"),
+        body.get("targetId"),
+        body.get("reason"),
+    )
+    if target_type not in reports.TARGETS:
+        raise ApiError(400, f"targetType is one of {', '.join(reports.TARGETS)}")
+    if not isinstance(target_id, str) or not 0 < len(target_id) <= 120:
+        raise ApiError(400, "targetId is what is reported")
+    if reason not in reports.REASONS:
+        raise ApiError(400, f"reason is one of {', '.join(reports.REASONS)}")
+    note = text.clean(
+        body.get("note"), "note", reports.NOTE_MAX, required=False, multiline=True
+    )
+    limits.take(social_table, f"{me}#reports", REPORTS_PER_DAY, 86400)
+    answer = {"reported": True}
+    owner = _report_target(user, target_type, target_id)
+    if owner is None or owner == me:
+        return answer  # nothing there, or their own: nothing to queue
+    now = api.now_iso()
+    client = social_table.meta.client
+    try:
+        client.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": social_table.name,
+                        "Item": {
+                            **reports.report_key(report_id),
+                            "reportId": report_id,
+                            "reporterId": me,
+                            "targetType": target_type,
+                            "targetId": target_id,
+                            "targetOwnerId": owner or None,
+                            "reason": reason,
+                            "note": note,
+                            "status": "open",
+                            "createdAt": now,
+                            "GSI2PK": "REPORTS#open",
+                            "GSI2SK": now,
+                        },
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": social_table.name,
+                        "Item": {
+                            "PK": reports.reported_pk(target_type, target_id),
+                            "SK": f"BY#{me}",
+                            "reporterId": me,
+                            "reportId": report_id,
+                            "at": now,
+                        },
+                        "ConditionExpression": "attribute_not_exists(PK)",
+                    }
+                },
+            ]
+        )
+        logger.info("report=%s on %s by user=%s", report_id, target_type, me)
+    except client.exceptions.TransactionCanceledException:
+        pass  # sent twice, or this person reported this before: the same answer
+    return answer
 
 
 # --------------------------------------------------------------------------
@@ -1626,6 +1838,8 @@ def _visible_or_own(post, user):
 
 def _get_post(user, post_id, **_):
     post = _visible_or_own(tables.get_one(social_table, f"POST#{post_id}"), user)
+    if post["authorId"] in _hidden(user["userId"]):
+        raise ApiError(404, "no such post", code="gone")
     return {"post": _cards([post], user)[0]}
 
 
@@ -1936,6 +2150,7 @@ def _get_feed(user, query, **_):
     start_key = state.get("key")
     voted = set(state.get("cats") or [])
     friends = _friendships(user["userId"])
+    hidden = _hidden(user["userId"])  # a block, either way: not in this feed
     entries, queries = [], 0  # ("post", item) or ("vote", catId), in order
     while queries < FEED_QUERIES and month >= FEED_START:
         request = {
@@ -1951,7 +2166,8 @@ def _get_feed(user, query, **_):
         for item in page["Items"]:
             start_key = {k: item[k] for k in ("PK", "SK", "GSI2PK", "GSI2SK")}
             if "#P#" in item["GSI2SK"]:
-                entries.append(("post", item))
+                if item["authorId"] not in hidden:
+                    entries.append(("post", item))
             elif (
                 "#V#" in item["GSI2SK"]
                 and item["userId"] in friends
@@ -1997,7 +2213,8 @@ def _cat_posts(user, cat_id, **_):
         ScanIndexForward=False,
         Limit=FEED_PAGE,
     )["Items"]
-    return {"cards": _cards(items, user)}
+    hidden = _hidden(user["userId"])
+    return {"cards": _cards([i for i in items if i["authorId"] not in hidden], user)}
 
 
 ID = r"[0-9A-Za-z]+"
@@ -2033,6 +2250,10 @@ ROUTES = (
     ("GET", r"^/api/v1/achievements$", _get_achievements, "user"),
     ("POST", r"^/api/v1/invites/(?P<code>[a-z0-9]{1,32})/accept$", _accept_invite, "user"),
     ("GET", r"^/api/v1/friends$", _get_friends, "user"),
+    ("POST", r"^/api/v1/reports$", _report, "user"),
+    ("GET", r"^/api/v1/blocks$", _get_blocks, "user"),
+    ("PUT", rf"^/api/v1/blocks/(?P<user_id>{ID})$", _block, "user"),
+    ("DELETE", rf"^/api/v1/blocks/(?P<user_id>{ID})$", _unblock, "user"),
     ("DELETE", rf"^/api/v1/friends/(?P<user_id>{ID})$", _remove_friend, "user"),
     ("GET", rf"^/api/v1/users/(?P<user_id>{ID})$", _get_user, "user"),
     ("GET", rf"^/api/v1/users/(?P<user_id>{ID})/posts$", _user_posts, "user"),

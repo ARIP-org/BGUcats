@@ -3420,3 +3420,126 @@ button.post-name {
   color: var(--accent);
 }
 
+/* ------------------------------------------------------------ blocks (B8) */
+
+/* A person's menu, level with the page's back button, at the other edge. */
+.person-top {
+  position: sticky;
+  z-index: 3;
+  inset-block-start: -64px;
+  margin-block: -64px 16px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.person-top > * {
+  pointer-events: auto;
+}
+.page-lead {
+  margin: -8px 4px 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.blocked-page .friends-open {
+  cursor: default;
+}
+.unblock {
+  flex: none;
+  block-size: 36px;
+  margin-inline-end: 6px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: var(--chip-neutral);
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ reporting (B8b) */
+
+.report-sheet {
+  position: fixed;
+  z-index: 31;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: calc(var(--dir) * -50%) -50%;
+  inline-size: min(360px, calc(100% - 32px));
+  max-block-size: calc(100% - 48px);
+  overflow-y: auto;
+  padding: 22px 18px 16px;
+  border-radius: 30px;
+  background: var(--island-bg);
+  -webkit-backdrop-filter: blur(34px) saturate(180%);
+  backdrop-filter: blur(34px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: pop-in 0.36s cubic-bezier(0.3, 1.2, 0.45, 1);
+}
+.report-sheet h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.report-sheet p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.report-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.report-reason {
+  min-block-size: 46px;
+  padding: 8px 14px;
+  border: 1.5px solid transparent;
+  border-radius: 16px;
+  background: var(--chip-neutral);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  text-align: start;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+.report-reason[aria-checked="true"] {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.report-reason[aria-checked="true"] .poll-ring {
+  border-color: var(--accent);
+}
+.report-reason[aria-checked="true"] .poll-ring span {
+  opacity: 1;
+}
+.report-note {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--chip-neutral);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* under 16px an iPhone zooms the page on focus */
+  resize: none;
+  outline: none;
+}
+.report-note::placeholder {
+  color: var(--muted);
+}
+.report-sheet .dialog-go:disabled {
+  opacity: 0.45;
+}
+

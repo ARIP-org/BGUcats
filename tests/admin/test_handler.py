@@ -87,8 +87,11 @@ def _event(method, path, body=None, email=ADMIN):
     }
 
 
-def _call(method, path, body=None, email=ADMIN):
-    response = handler.handler(_event(method, path, body, email), None)
+def _call(method, path, body=None, email=ADMIN, query=None):
+    event = _event(method, path, body, email)
+    if query:
+        event["queryStringParameters"] = query
+    response = handler.handler(event, None)
     return response["statusCode"], json.loads(response["body"])
 
 

@@ -314,18 +314,24 @@ function closeOnBackdrop(dialog) {
 // --------------------------------------------------------------------------
 
 async function renderQueue(isCurrent = () => true) {
-  const [{ sessions }, { proposals }, places] = await Promise.all([
+  const [{ sessions }, { proposals }, { reports }, places] = await Promise.all([
     cachedGet("/queue"),
     // New cats people proposed in the member app (B6). An older API, or
     // the app's table being unreachable, leaves the queue as it was.
     cachedGet("/proposals").catch(() => ({ proposals: [] })),
+    // What people reported there (B8b): first, because Apple's rules ask
+    // for an answer within a day.
+    cachedGet("/reports").catch(() => ({ reports: [] })),
     regionsList().catch(() => []),
     refreshCats(),
   ]);
   if (!isCurrent()) return;
   const main = $("#main");
   // Spread, never passed as null: replaceChildren writes a null as "null".
-  const proposed = proposals.length ? [proposalSection(proposals, places)] : [];
+  const proposed = [
+    ...(reports.length ? [reportSection(reports)] : []),
+    ...(proposals.length ? [proposalSection(proposals, places)] : []),
+  ];
 
   if (!sessions.length) {
     main.replaceChildren(
@@ -405,6 +411,112 @@ const COATS = {
   calico: "Calico",
   tuxedo: "Tuxedo",
 };
+
+// What people reported in the member app (B8b), one card per thing, with
+// who reported it and why, and the admin's answers. A post that three
+// people reported is already hidden; "Put it back" is the answer that it
+// was fine.
+const REPORT_REASONS = {
+  spam: "spam",
+  offensive: "offensive",
+  harassment: "harassment",
+  privacy: "privacy",
+  not_cat: "not a cat",
+  other: "other",
+};
+
+function reportSection(reports) {
+  return el("section", { className: "reports" }, [
+    sectionHead("Reported", `${plural(reports.length, "thing")} · answer within a day`),
+    el("div", { className: "session-list" }, reports.map(reportCard)),
+  ]);
+}
+
+function reportCard(r) {
+  const t = r.target;
+  const what =
+    t.type === "post"
+      ? `Post by @${t.author || "someone"}${t.cat ? ` of ${t.cat}` : ""}`
+      : t.type === "name"
+        ? `The name “${t.name}”${t.cat ? ` for ${t.cat}` : ""}`
+        : `${t.type === "avatar" ? "Profile photo of" : "Person"} @${t.username || "someone"}`;
+  const hiddenByReports = t.type === "post" && t.status === "hidden" && t.hiddenReason === "reports";
+  const answer = (action, done) => async () => {
+    await post(`/reports/${r.reportId}/resolve`, { action });
+    toast(done);
+    render();
+  };
+  const careful = (action, done, title, text, ok) => async () => {
+    if (!(await confirmAction({ title, text, ok }))) return;
+    await answer(action, done)();
+  };
+
+  const actions = [button(hiddenByReports ? "Put it back" : "Leave it", "btn", answer("dismiss", hiddenByReports ? "Post put back" : "Reports closed"))];
+  if (t.type === "post" && !t.gone && t.status !== "removed") {
+    if (t.status === "visible") actions.push(button("Hide post", "btn", answer("hide", "Post hidden")));
+    actions.push(
+      button(
+        "Remove post",
+        "btn btn-danger",
+        careful("remove", "Post removed", "Remove this post?", "It leaves the app for everyone, its author included, and cannot be put back.", "Remove post"),
+      ),
+    );
+  }
+  if ((t.type === "user" || t.type === "avatar") && !t.gone && t.status === "active") {
+    actions.push(
+      button(
+        "Ban",
+        "btn btn-danger",
+        careful(
+          "ban",
+          `@${t.username} is banned`,
+          `Ban @${t.username}?`,
+          "They can write nothing more in the app or in Capture, and nobody sees their posts or their page, until you unban them on the People screen.",
+          "Ban",
+        ),
+      ),
+    );
+  }
+  if (t.type === "name" && !t.gone && t.status !== "removed") {
+    actions.push(
+      button(
+        "Remove name",
+        "btn btn-danger",
+        careful("remove", "Name removed", `Remove “${t.name}” from the poll?`, "Its votes go with it, and nobody can suggest this name for this cat again.", "Remove name"),
+      ),
+    );
+  }
+
+  return el("article", { className: "card session report", attrs: { "data-report": r.reportId } }, [
+    el("header", { className: "card-head" }, [
+      el("div", { className: "card-title", textContent: what }),
+      el("div", { className: "meta", textContent: `${people(r.people)} reported it · since ${fmtDate(r.since)}` }),
+      hiddenByReports ? el("span", { className: "tag", textContent: "hidden until you decide" }) : null,
+      t.gone ? el("span", { className: "tag", textContent: "no longer there" }) : null,
+    ]),
+    t.type === "post" && t.text ? el("p", { className: "report-text", textContent: t.text }) : null,
+    // The pictures alone: the queue's thumbnails carry "Delete photo", which
+    // takes a photo out of the dataset, and that is not what is asked here.
+    t.type === "post" && t.photos?.length
+      ? el(
+          "div",
+          { className: "grid" },
+          t.photos.map((photo) => el("div", { className: "thumb" }, [el("img", { src: photo.thumbUrl, alt: "", loading: "lazy" })])),
+        )
+      : null,
+    el(
+      "ul",
+      { className: "report-list" },
+      r.reports.map((one) =>
+        el("li", {}, [
+          el("strong", { textContent: `@${one.reporter || "someone"}` }),
+          el("span", { textContent: `: ${REPORT_REASONS[one.reason] || one.reason}${one.note ? ` · “${one.note}”` : ""}` }),
+        ]),
+      ),
+    ),
+    el("footer", { className: "card-actions" }, actions),
+  ]);
+}
 
 function proposalSection(proposals, places) {
   if (!proposals?.length) return null;
@@ -1734,8 +1846,56 @@ const ROLE_HELP = {
   user: "Photographs cats in the app and browses the cats. No labeling, no deleting.",
 };
 
+// Everyone who has opened the member app (B8c), under the allowlist: a ban
+// stops a person writing anything and hides their posts until it is
+// lifted. An admin is not banned (the API refuses), so admins have no
+// button.
+function appPeoplePanel(people, admins) {
+  if (!people.length) return null;
+  const roles = Object.fromEntries(admins.map((a) => [a.email, a.role]));
+  return el("section", { className: "app-people" }, [
+    sectionHead("People in the app", `${plural(people.length, "account")} · newest first`),
+    el(
+      "div",
+      { className: "card" },
+      people.map((p) => {
+        const banned = p.status === "banned";
+        const isAdminToo = roles[p.email] === "admin";
+        const ban = button("Ban", "btn btn-sm btn-danger", async () => {
+          const ok = await confirmAction({
+            title: `Ban @${p.username}?`,
+            text: "They can write nothing more in the app or in Capture, and nobody sees their posts or their page, until you unban them.",
+            ok: "Ban",
+          });
+          if (!ok) return;
+          await post(`/people/${p.userId}/ban`);
+          toast(`@${p.username} is banned`);
+          render();
+        });
+        const unban = button("Unban", "btn btn-sm", async () => {
+          await post(`/people/${p.userId}/unban`);
+          toast(`@${p.username} is unbanned`);
+          render();
+        });
+        return el("div", { className: "row person", attrs: { "data-user": p.userId } }, [
+          el("span", { className: "row-main" }, [
+            el("strong", { textContent: `@${p.username}` }),
+            el("span", { className: "muted small", textContent: ` ${p.email}` }),
+          ]),
+          banned ? el("span", { className: "tag", textContent: "banned" }) : null,
+          p.status === "deleting" ? el("span", { className: "tag", textContent: "being deleted" }) : null,
+          banned ? unban : isAdminToo || p.email === state.email || p.status !== "active" ? null : ban,
+        ]);
+      }),
+    ),
+  ]);
+}
+
 async function renderAdmins(isCurrent = () => true) {
-  const { admins } = await cachedGet("/admins");
+  const [{ admins }, { people: appPeople }] = await Promise.all([
+    cachedGet("/admins"),
+    cachedGet("/people").catch(() => ({ people: [] })),
+  ]);
   if (!isCurrent()) return;
 
   const input = el("input", {
@@ -1819,6 +1979,7 @@ async function renderAdmins(isCurrent = () => true) {
         ]);
       }),
     ]),
+    ...[appPeoplePanel(appPeople, admins)].filter(Boolean),
   );
 }
 

@@ -4,18 +4,33 @@
 // invite link (D4: a link makes two people friends at once; D5: no contacts
 // in the first build); and a person's page.
 //
-// Left out until their backends exist: Block and Report in a friend's menu
-// (B8), finding friends from contacts (D5).
+// "Block" is in a friend's menu and on anyone's page (B8); the people you
+// blocked are listed, with "Unblock", from the profile.
+//
+// "Report" is beside it (B8b, report.js).
+//
+// Left out until its backend exists: finding friends from contacts (D5).
 
 import { isNative } from "../install.js";
 import { getConfig } from "../lib/auth.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
-import { acceptInvite, cats as loadCats, friends as loadFriends, person as loadPerson, personPosts, removeFriend } from "./data.js";
+import {
+  acceptInvite,
+  block,
+  blocks as loadBlocks,
+  cats as loadCats,
+  friends as loadFriends,
+  person as loadPerson,
+  personPosts,
+  removeFriend,
+  unblock,
+} from "./data.js";
 import { Avatar } from "./feed.js";
 import { monthYear, t, tRich } from "./i18n.js";
 import { CatFace } from "./mascot.js";
 import { glass } from "./motion.js";
-import { get, push, useStore } from "./store.js";
+import { openReport } from "./report.js";
+import { get, pop, push, set, useStore } from "./store.js";
 import { termsFirst } from "./terms.js";
 import { Icon, confirm, openMenu, toast } from "./ui.js";
 
@@ -74,6 +89,36 @@ function useFriends(period, shown = true) {
   }, [period, shown, turn]);
   return { people, failed, reload: () => setTurn((n) => n + 1) };
 }
+
+// "Block Maya?", then the block. -> true once they are blocked.
+async function blockPerson(person) {
+  const name = person.displayName || person.username;
+  const yes = await confirm({
+    title: t("block.title", { name }),
+    body: t("block.body"),
+    button: t("block.button"),
+    danger: true,
+  });
+  if (!yes) return false;
+  try {
+    await block(person.userId);
+    // The feed already on screen drops their posts at once (feed.js).
+    set({ keptApart: [...(get().keptApart || []), person.userId] });
+    toast(t("block.done", { name }));
+    return true;
+  } catch (err) {
+    toast(t("error.generic", { message: err.message }));
+    return false;
+  }
+}
+
+// "Report", the last and red, as the prototype's friend menu has it.
+const reportItem = (person) => ({
+  label: t("report.report"),
+  icon: "flag",
+  danger: true,
+  pick: () => openReport({ type: "user", id: person.userId, name: person.displayName || person.username }),
+});
 
 // ------------------------------------------------------------ on Home
 
@@ -315,7 +360,11 @@ export function Friends() {
   const menu = (e, person) =>
     openMenu(e.currentTarget, {
       label: t("friends.optionsFor", { name: nameOf(person) }),
-      items: [{ label: t("friends.remove"), icon: "personMinus", pick: () => remove(person) }],
+      items: [
+        { label: t("friends.remove"), icon: "personMinus", pick: () => remove(person) },
+        { label: t("block.block"), icon: "block", pick: async () => (await blockPerson(person)) && reload() },
+        reportItem(person),
+      ],
     });
 
   const friends = (people || []).filter((person) => !person.me);
@@ -432,7 +481,38 @@ export function PersonPage({ userId }) {
   if (!person) return html`<p class="loading" role="status">${t("feed.loading")}</p>`;
   const name = person.displayName || person.username;
   const shown = (posts || []).filter((card) => card.photos[0]);
-  return html`<div class="person-page" data-person=${person.userId}>
+  const unfriend = async () => {
+    const yes = await confirm({
+      title: t("friends.removeTitle", { name }),
+      body: t("friends.removeBody"),
+      button: t("friends.removeButton"),
+      danger: true,
+    });
+    if (!yes) return;
+    try {
+      await removeFriend(person.userId);
+      setPerson({ ...person, friend: "no", friendSince: null });
+    } catch (err) {
+      toast(t("error.generic", { message: err.message }));
+    }
+  };
+  const menu = (e) =>
+    openMenu(e.currentTarget, {
+      label: t("friends.optionsFor", { name }),
+      items: [
+        ...(person.friend === "yes" ? [{ label: t("friends.remove"), icon: "personMinus", pick: unfriend }] : []),
+        // Blocked, their page is gone: back to where one came from.
+        { label: t("block.block"), icon: "block", pick: async () => (await blockPerson(person)) && pop() },
+        reportItem(person),
+      ],
+    });
+  return html`${!person.me &&
+    html`<div class="person-top">
+      <button type="button" class="glass-icon" ref=${glass} aria-label=${t("friends.optionsFor", { name })} aria-haspopup="menu" onClick=${menu}>
+        <${Icon} name="more" size=${22} width=${2.4} />
+      </button>
+    </div>`}
+    <div class="person-page" data-person=${person.userId}>
     <${Face} person=${person} size=${96} />
     <div class="person-names">
       <h1 class="person-name">${name}</h1>
@@ -466,5 +546,57 @@ export function PersonPage({ userId }) {
       })}
     </div>`}
     ${posts && !shown.length && html`<p class="card-empty">${t("person.noPosts", { name })}</p>`}
+  </div>`;
+}
+
+// ------------------------------------------------------------ blocked people
+
+// The people you blocked, so there is somewhere to unblock from. The
+// prototype has no such list (G4); it opens from the profile.
+export function Blocked() {
+  const [people, setPeople] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    loadBlocks()
+      .then((answer) => live && setPeople(answer.people))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const lift = async (person) => {
+    try {
+      await unblock(person.userId);
+      set({ keptApart: (get().keptApart || []).filter((id) => id !== person.userId) });
+      setPeople((now) => now.filter((p) => p.userId !== person.userId));
+      toast(t("block.lifted", { name: person.displayName || person.username }));
+    } catch (err) {
+      toast(t("error.generic", { message: err.message }));
+    }
+  };
+
+  return html`<div class="friends-page blocked-page">
+    <h1 class="page-title">${t("block.listTitle")}</h1>
+    <p class="page-lead">${t("block.listLead")}</p>
+    ${people?.length > 0 &&
+    html`<section class="card friends-list" aria-label=${t("block.listTitle")}>
+      ${people.map(
+        (person) => html`<div class="friends-row" key=${person.userId} data-person=${person.userId}>
+          <span class="friends-open">
+            <${Face} person=${person} size=${46} />
+            <span class="friend-who">
+              <span class="friend-name">${person.displayName || person.username}</span>
+              <span class="friend-found">@${person.username}</span>
+            </span>
+          </span>
+          <button type="button" class="unblock" onClick=${() => lift(person)}>${t("block.unblock")}</button>
+        </div>`,
+      )}
+    </section>`}
+    ${people && !people.length && html`<p class="empty">${t("block.none")}</p>`}
+    ${!people && failed && html`<p class="empty" role="alert">${t("block.failed")}</p>`}
+    ${!people && !failed && html`<p class="loading" role="status">${t("feed.loading")}</p>`}
   </div>`;
 }

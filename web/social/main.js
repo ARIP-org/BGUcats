@@ -16,6 +16,7 @@ import {
   forgetSignIn,
   idToken,
   login,
+  logout,
   readTokens,
   saveTokens,
   useConfig,
@@ -24,7 +25,7 @@ import { html, render } from "../vendor/preact-htm.js";
 import { AchievementsSheet } from "./achievements.js";
 import { CatPage } from "./cat.js";
 import { Feed } from "./feed.js";
-import { Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
+import { Blocked, Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
 import { Gallery } from "./gallery.js";
 import { Home, Profile } from "./home.js";
 import { MapPage } from "./map.js";
@@ -33,6 +34,7 @@ import { Stack } from "./stack.js";
 import { set, useStore } from "./store.js";
 import { TabBar, watchScroll } from "./tabbar.js";
 import { adoptTheme, applyTheme, savedTheme } from "./theme.js";
+import { ReportSheet } from "./report.js";
 import { Scan, openScan, startOutbox } from "./scan.js";
 import { Overlays, toast } from "./ui.js";
 import { unanswered } from "./asking.js";
@@ -78,10 +80,21 @@ function NotOpen() {
   `;
 }
 
+// An admin banned this account (B8c): every call answers 403 `banned`.
+function Banned() {
+  return html`
+    <main class="screen center" data-screen="banned">
+      <h1 class="title">${t("banned.title")}</h1>
+      <p class="lead">${t("banned.body")}</p>
+      <button class="glass-button" type="button" onClick=${() => logout(HOME)}>${t("signOut.button")}</button>
+    </main>
+  `;
+}
+
 // The frame (E1): the tabs' pages, the pages pushed over them, the tab
 // bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
 const TAB_PAGES = { feed: Feed, home: Home };
-const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage, map: MapPage };
+const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage, map: MapPage, blocked: Blocked };
 const onScroll = watchScroll();
 
 function Frame() {
@@ -106,6 +119,7 @@ function Frame() {
       <${TabBar} onScan=${() => openScan("scan")} />
       <${Scan} />
       <${AchievementsSheet} />
+      <${ReportSheet} />
       <${Overlays} />
     </div>
   `;
@@ -139,6 +153,10 @@ async function boot() {
   } catch (err) {
     if (err.status === 404) {
       show(html`<${NotOpen} />`);
+      return;
+    }
+    if (err.status === 403 && err.code === "banned") {
+      show(html`<${Banned} />`);
       return;
     }
     if (err.status === 403 && err.code === "not_admitted") {

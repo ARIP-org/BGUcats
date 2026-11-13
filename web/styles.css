@@ -1186,6 +1186,20 @@ code {
   font-size: 14px;
 }
 
+/* What people reported in the app, at the top of the Queue (B8b). */
+.report-text {
+  margin: 0;
+  padding: 0 16px;
+  overflow-wrap: anywhere;
+}
+
+.report-list {
+  margin: 0;
+  padding: 0 16px 4px 34px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
 /* A cat's name poll in the app, on the cat's page (B4b). */
 .name-poll:empty {
   display: none;
