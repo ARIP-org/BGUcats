@@ -139,7 +139,6 @@
   },
   "home.since": "since {date}",
   "home.friends": "Friends",
-  "home.friendsSoon": "Friends arrive here soon.",
   "home.found": {
     "one": "found {count} cat",
     "other": "found {count} cats"
@@ -227,5 +226,55 @@
   "poll.suggested": "Your name is in",
   "poll.notAccepted": "That name was not accepted.",
   "poll.tryAgain": "The poll just changed. Try again.",
-  "poll.slowDown": "That's enough for now. Try again later."
+  "poll.slowDown": "That's enough for now. Try again later.",
+  "post.openAuthor": "Open {name}'s page",
+  "friends.open": "Friends. Open all friends",
+  "friends.inviteNote": "Invite friends to see who finds the most cats.",
+  "friends.addFriend": "Add friend",
+  "friends.period": "Period",
+  "friends.period.month": "This month",
+  "friends.period.all": "All time",
+  "friends.podium": "Podium",
+  "friends.cats": {
+    "one": "{count} cat",
+    "other": "{count} cats"
+  },
+  "friends.search": "Search by name or username",
+  "friends.all": "All friends",
+  "friends.count": {
+    "one": "{count} friend",
+    "other": "{count} friends"
+  },
+  "friends.list": "Friends list",
+  "friends.noMatch": "No friends match “{search}”.",
+  "friends.empty": "No friends here yet. Send your link to someone: whoever opens it becomes your friend.",
+  "friends.failed": "Your friends could not be loaded.",
+  "friends.optionsFor": "Options for {name}",
+  "friends.remove": "Remove from friends",
+  "friends.removeTitle": "Remove {name} from friends?",
+  "friends.removeBody": "You will stop seeing roughly where they post, and they where you do. Either of you can send a link again.",
+  "friends.removeButton": "Remove",
+  "friends.invite": "Invite friends",
+  "friends.inviteBody": "Anyone who joins with your link becomes your friend automatically.",
+  "friends.copy": "Copy link",
+  "friends.copied": "Copied",
+  "friends.copyFailed": "The link could not be copied.",
+  "friends.share": "Share…",
+  "friends.shareText": "Find campus cats with me on BGU Cats.",
+  "friends.haveLink": "Got a link from a friend?",
+  "friends.pasteHere": "Paste it here",
+  "friends.add": "Add",
+  "friends.added": "You and {name} are friends now",
+  "friends.linkGone": "That link does not work.",
+  "friends.linkOwn": "That is your own link.",
+  "person.found": {
+    "one": "{count} cat found",
+    "other": "{count} cats found"
+  },
+  "person.friendsSince": "Friends since {date}",
+  "person.you": "This is you",
+  "person.posts": "Posts",
+  "person.latest": "latest",
+  "person.noPosts": "{name} has not posted yet.",
+  "person.gone": "This person is not here any more."
 }

@@ -45,7 +45,7 @@ A session ticks its row in the pull request that finishes it.
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
 | E5 | The map | |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
-| E7 | Friends | |
+| E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) built 2026-11-13 with B5a; Block and Report in a friend's menu wait for B8 |
 | E8 | Achievements | |
 | E9 | The states nobody drew, offline, accessibility | |
 | E10 | Languages and right-to-left | |
@@ -690,6 +690,27 @@ English file.
 ### E7. Friends
 
 - **Needs:** E6, B5 (B8 for block and report).
+- **E7a, built 2026-11-13** (`web/social/friends.js`), from the
+  prototype's friends page in `Feed.dc.html`:
+  - Home's Friends card is the first three of you and your friends by
+    cats found in all, each with the cats they met last; the card and
+    the button beside the profile pill open the friends page.
+  - The page: "This month" / "All time", the podium, a search over the
+    list the phone already holds, every friend with "Remove from
+    friends" in its menu.
+  - "Add friend" is the invite alone (D5: no contacts yet): the link,
+    **Copy link**, **Share…**.
+  - A person's page: the name, "N cats found", "Friends since", their
+    latest posts. A post's author in the feed opens it.
+  - **Not in the prototype, mine:** under the link, "Got a link from a
+    friend?" with a field to paste it into. A link tapped in a chat
+    opens the browser, not an app added to the home screen, and on an
+    iPhone the two share nothing; without the field a friend's link
+    could not be used from the installed app until links open the app
+    (N4). A link opened where the app does run (`app.html?invite=…`) is
+    kept across the sign-in and makes the friendship once the app is up.
+  - **Not built:** Block and Report (B8), contacts (D5), the page's
+    opening animation from the card, the folded tab bar.
 
 ### E8. Achievements
 

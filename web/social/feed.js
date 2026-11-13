@@ -119,11 +119,14 @@ function Card({ card, onChange, onGone }) {
   }
 
   const author = card.author.displayName || card.author.username;
+  const openAuthor = () => push("person", { userId: card.author.userId, title: author });
   return html`<article class="post" data-post=${card.postId} aria-label=${t("post.label", { name: author })}>
     <div class="post-head">
-      <${Avatar} person=${card.author} />
+      <button type="button" class="post-author" aria-label=${t("post.openAuthor", { name: author })} onClick=${openAuthor}>
+        <${Avatar} person=${card.author} />
+      </button>
       <div class="post-who">
-        <span class="post-name">${author}</span>
+        <button type="button" class="post-name" onClick=${openAuthor}>${author}</button>
         <h2 class="post-what">
           ${card.cat
             ? html`${t("post.met")}${" "}<button type="button" class="cat-link" onClick=${() => openCat(card.cat)}>

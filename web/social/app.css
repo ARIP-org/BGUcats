@@ -2173,3 +2173,503 @@ label.row {
   opacity: 0;
   pointer-events: none;
 }
+
+/* ------------------------------------------------------------ friends (E7) */
+
+/* Home's Friends card is one button: it opens the friends page. */
+button.friends-card {
+  inline-size: 100%;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+.friends-card .card-title,
+.friends-card .card-note {
+  display: block;
+}
+
+/* A post's author opens their page. */
+.post-author {
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+button.post-name {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+
+/* Level with the page's back button, at the other edge. */
+.friends-top {
+  position: sticky;
+  z-index: 3;
+  inset-block-start: -64px; /* from inside the scroller's padding, as the gallery's */
+  margin-block: -64px 16px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.add-friend {
+  pointer-events: auto;
+  block-size: 48px;
+  padding-block: 0;
+  padding-inline: 14px 18px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  background:
+    radial-gradient(70% 90% at var(--gx, 30%) var(--gy, 0%), color-mix(in srgb, var(--knob) calc(var(--gs, 0) * 100%), transparent), transparent 70%),
+    var(--glass-bg);
+}
+.friends-page {
+  max-inline-size: 640px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.page-title {
+  margin: 0 4px;
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* This month / All time: a thumb of glass slides under the chosen one. */
+.segments {
+  position: relative;
+  align-self: flex-start;
+  inline-size: 236px;
+  block-size: 40px;
+  padding: 4px;
+  border-radius: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--chip-neutral);
+  border: 1px solid var(--border);
+}
+.segment-thumb {
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-start: 3px;
+  inline-size: 114px;
+  block-size: 32px;
+  border-radius: 16px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  transition: translate 0.5s cubic-bezier(0.3, 1.25, 0.45, 1);
+}
+.segments[data-at="all"] .segment-thumb {
+  translate: calc(var(--dir) * 114px) 0;
+}
+.segments button {
+  position: relative;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.segments button[aria-selected="true"] {
+  color: var(--ink);
+}
+
+.podium {
+  padding: 20px 14px 14px;
+  border-radius: 28px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.podium-place {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.podium .avatar {
+  font-size: 15px;
+  font-weight: 800;
+}
+.podium-place[data-place="1"] .avatar,
+.podium-place[data-place="1"] .me-avatar {
+  box-shadow: 0 0 0 3px var(--heart);
+}
+.crown path {
+  fill: var(--heart);
+  stroke: var(--heart);
+}
+.podium-name {
+  max-inline-size: 100%;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.podium-found {
+  font-size: 13px;
+  color: var(--muted);
+}
+.podium-step {
+  inline-size: 100%;
+  block-size: 66px;
+  border-radius: 16px 16px 8px 8px;
+  background: var(--chip-neutral);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.podium-place[data-place="1"] .podium-step {
+  block-size: 92px;
+  background: var(--chip);
+  color: var(--accent);
+  font-size: 30px;
+}
+.podium-place[data-place="3"] .podium-step {
+  block-size: 50px;
+  font-size: 22px;
+}
+
+.friends-search {
+  block-size: 46px;
+  padding-inline: 16px;
+  border-radius: 23px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--chip-neutral);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: text;
+}
+.friends-search svg {
+  flex: none;
+}
+.friends-search input,
+.invite-paste input {
+  flex: 1;
+  min-inline-size: 0;
+  block-size: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* under 16px an iPhone zooms the page on focus */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.friends-search input::placeholder,
+.invite-paste input::placeholder {
+  color: var(--muted);
+}
+.friends-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.friends-head {
+  padding: 4px 6px 0;
+}
+.friends-list {
+  padding: 6px;
+}
+.friends-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.friends-open {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: none;
+  border-radius: 20px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.friends-open .avatar {
+  font-size: 15px;
+}
+.friends-open .friend-name,
+.friends-open .friend-found {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.friends-more {
+  flex: none;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.friends-none {
+  padding: 22px 12px;
+  text-align: center;
+}
+.friends-empty {
+  padding: 18px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* "Add friend": your link, and a place for a friend's. */
+.invite-sheet {
+  position: fixed;
+  z-index: 31;
+  inset-block-start: calc(env(safe-area-inset-top) + 72px);
+  inset-inline: 16px;
+  max-inline-size: 370px;
+  margin-inline-start: auto;
+  padding: 22px 20px 20px;
+  border-radius: 30px;
+  background: var(--menu-bg);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transform-origin: 50% 0;
+  animation: pop-in 0.34s cubic-bezier(0.3, 1.25, 0.45, 1);
+}
+.invite-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.invite-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.round-close {
+  inline-size: 36px;
+  block-size: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 18px;
+  background: var(--chip-neutral);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.invite-sheet p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.invite-link {
+  block-size: 50px;
+  padding-inline: 14px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--chip-neutral);
+  border: 1px solid var(--border);
+}
+.invite-link .icon {
+  flex: none;
+  color: var(--accent);
+}
+.invite-address {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.invite-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.invite-buttons button {
+  block-size: 50px;
+  border-radius: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.invite-copy {
+  border: none;
+  background: var(--heart);
+  color: var(--on-accent);
+}
+.invite-share {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--ink);
+}
+.invite-paste {
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.invite-paste label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.invite-paste-row {
+  display: flex;
+  gap: 8px;
+}
+.invite-paste input {
+  block-size: 46px;
+  padding-inline: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--chip-neutral);
+}
+.invite-paste button {
+  flex: none;
+  block-size: 46px;
+  padding-inline: 18px;
+  border: none;
+  border-radius: 23px;
+  background: var(--chip-neutral);
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* A person's page. */
+.person-page {
+  max-inline-size: 640px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.person-page > .avatar {
+  font-size: 32px;
+  font-weight: 800;
+}
+.person-names {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.person-name {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+.person-username {
+  font-size: 15px;
+  color: var(--muted);
+}
+.person-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.person-chip {
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: var(--chip-neutral);
+  font-size: 14px;
+  font-weight: 600;
+}
+.person-chip.accent {
+  background: var(--chip);
+  color: var(--accent);
+  font-weight: 700;
+}
+.person-posts-head {
+  align-self: stretch;
+  padding: 10px 6px 0;
+}
+.person-posts {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.person-posts > * {
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: block;
+}
+.person-posts > button {
+  cursor: pointer;
+}
+.person-posts img {
+  inline-size: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 14px;
+  display: block;
+}

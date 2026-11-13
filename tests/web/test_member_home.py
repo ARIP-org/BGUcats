@@ -38,7 +38,9 @@ def test_home_says_who_you_are_and_how_many_cats_you_met(open_member_app, shot):
     # year are the day the account was made.
     assert pill.locator(".me-met").inner_text() == "1 cat met"
     assert " · since " in pill.locator(".me-sub").inner_text()
+    # Nobody's friend yet: the card is you alone (tests/web/test_member_friends.py).
     you = page.locator(".friends-card .friend-row")
+    you.wait_for()
     assert you.locator(".friend-name").inner_text() == "You"
     assert you.locator(".friend-found").inner_text() == "found 1 cat"
     assert you.locator(".friend-found b").inner_text() == "1"
@@ -70,12 +72,6 @@ def test_someone_with_no_posts_is_told_how_to_make_one(open_member_app, shot):
     shot(page, "member-home-empty")
     posts.get_by_role("button", name="Scan a cat").click()
     page.get_by_role("dialog", name="Scan a cat").wait_for()
-
-
-def test_friends_are_not_there_yet_and_the_button_says_so(open_member_app):
-    page = home(open_member_app)
-    page.get_by_role("button", name="Friends").click()
-    page.locator(".toast.on").get_by_text("Friends arrive here soon.").wait_for()
 
 
 def test_the_bar_stays_at_the_top_and_folds_while_scrolling(open_member_app, shot):

@@ -48,6 +48,16 @@ export const removeAvatar = () => del("/v1/me/avatar");
 // The caller's own posts, newest first, each with its state.
 export const myPosts = () => api("/v1/me/posts");
 
+// Friends (B5). `friends`: {period, people, requests}, the caller among the
+// people, most cats found first. A person: {userId, username, displayName,
+// avatar, found, cats, friend, friendSince, me}.
+export const friends = (period) => api(`/v1/friends?period=${period}`);
+export const person = (userId) => api(`/v1/users/${userId}`);
+export const personPosts = (userId) => api(`/v1/users/${userId}/posts`);
+export const removeFriend = (userId) => del(`/v1/friends/${userId}`);
+// -> {person}. Refused with `gone` or `own_invite`.
+export const acceptInvite = (code) => post(`/v1/invites/${code}/accept`);
+
 // The campus places (web/regions.json), for an area's name and the
 // new-cat form.
 let regions = null;
