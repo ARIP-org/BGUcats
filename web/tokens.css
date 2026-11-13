@@ -251,3 +251,37 @@
   --avatar-3: #7A5E8A;
   --avatar-4: #8A6A3A;
 }
+
+/* The cat drawings (web/social/mascot.js): the illustration's own colours,
+   the same in every theme. The prototype's Mascot.dc.html coats. */
+.mascot {
+  --m-coat: #9097A0;
+  --m-stripe: #6F7680;
+  --m-light: #F6F6F4;
+  --m-ink: #20242A;
+  --m-pink: #EBA8A5;
+  --m-stripes: 1;
+  --m-shadow: rgba(0,0,0,0.16);
+  --m-glint: #ffffff;
+}
+.mascot[data-coat="ginger"] {
+  --m-coat: #E8913A;
+  --m-stripe: #C2671E;
+  --m-light: #FFF4E8;
+  --m-ink: #2B1D12;
+  --m-pink: #F2A29E;
+}
+.mascot[data-coat="black"] {
+  --m-coat: #2B2B30;
+  --m-stripe: #1B1B1F;
+  --m-light: #F5F2ED;
+  --m-ink: #F2C94C;
+  --m-pink: #E8A3A0;
+  --m-stripes: 0;
+}
+/* The default avatar: a black cat's face on the avatar's pale disc. */
+.cat-face {
+  --f-head: #1a1a1a;
+  --f-eye: #ffffff;
+  --f-nose: #E8913A;
+}

@@ -22,6 +22,7 @@ const PATHS = {
   person: html`<circle cx="12" cy="8" r="3.6" /><path d="M5 20a7 7 0 0 1 14 0" />`,
   globe: html`<circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.4 2.6 3.4 5.4 3.4 8.5s-1 5.9-3.4 8.5c-2.4-2.6-3.4-5.4-3.4-8.5s1-5.9 3.4-8.5z" />`,
   theme: html`<circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" />`,
+  friends: html`<circle cx="8.3" cy="4.6" r="2.5" /><circle cx="15.7" cy="4.6" r="2.5" /><path d="M5 21v-9.3A2.7 2.7 0 0 1 7.7 9h10.1a1.9 1.9 0 0 1 .5 3.7l-2.8.8V21" /><path d="M8.5 14.5V21M11.8 13.8V21" />`,
   signOut: html`<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /><path d="M10 8l-4 4 4 4M6 12h10" />`,
 };
 const MIRRORED = new Set(["back", "chevron", "signOut"]);

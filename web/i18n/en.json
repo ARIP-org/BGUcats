@@ -8,7 +8,6 @@
   "notOpen.title": "Not open yet",
   "notOpen.body": "The BGU Cats app is not open on this site yet.",
   "notOpen.desk": "Open the labeling desk and Capture",
-  "frame.hello": "Hi, {name}",
   "error.generic": "Something went wrong: {message}",
   "cats.count": {
     "one": "{count} cat",
@@ -20,7 +19,6 @@
   "tab.home": "Home",
   "feed.title": "Cats",
   "home.you": "You",
-  "home.soon": "Your friends and achievements arrive here soon.",
   "profile.title": "Your profile",
   "profile.settings": "Settings",
   "profile.account": "Account actions",
@@ -134,5 +132,32 @@
   "trait.shy": "Shy",
   "trait.ear-tipped": "Ear-tipped",
   "trait.kitten": "Kitten",
-  "trait.collar": "Has a collar"
+  "trait.collar": "Has a collar",
+  "home.profileOf": "Your profile, {name}",
+  "home.catsMet": {
+    "one": "{count} cat met",
+    "other": "{count} cats met"
+  },
+  "home.since": "since {date}",
+  "home.friends": "Friends",
+  "home.friendsSoon": "Friends arrive here soon.",
+  "home.found": {
+    "one": "found {count} cat",
+    "other": "found {count} cats"
+  },
+  "home.myPosts": "My posts",
+  "home.postTotal": {
+    "one": "{count} total",
+    "other": "{count} total"
+  },
+  "home.noPosts": "You haven't posted yet. Scan a cat to make your first post.",
+  "home.postsFailed": "Your posts could not be loaded.",
+  "home.openPost": "Open {name}",
+  "profile.you": "Account",
+  "profile.name": "Name",
+  "profile.postCount": {
+    "one": "{count} post",
+    "other": "{count} posts"
+  },
+  "profile.foot": "BGU Cats · Made on campus"
 }

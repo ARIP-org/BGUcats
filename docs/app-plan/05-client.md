@@ -32,7 +32,9 @@ at L3. An admin reaches the desk from a row in the profile (G14).
 it as it is.
 
 **Since E0:** `frontDoor` is written by `infra/main/web.tf` from
-`variables.tf` (`front_door`, `desk` in both accounts). `?desk` keeps the
+`variables.tf` (`front_door`; `app` on staging since 2026-11-13, when
+the owner installed the staging site and it opened on the desk; `desk` in
+production until L3). `?desk` keeps the
 desk for the rest of the session. Cognito sends every sign-in back to the
 site's root, where the desk's boot trades the code; a sign-in started on
 `app.html` leaves its address in `sessionStorage` (`takeReturnTo` in

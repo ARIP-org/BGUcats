@@ -182,6 +182,17 @@ locals {
     for name in fileset("${path.module}/../../web", "**") :
     name => local.web_types[reverse(split(".", name))[0]]
   }
+  # Staging's site is web/ with web-staging/ laid over it: a file there
+  # takes the place of the one in web/ it is named after. Today that is the
+  # home-screen icon with "BETA" on it (scripts/beta_icon.py) and the
+  # manifest that names the install "BGU Cats beta", so nobody mistakes the
+  # test copy on their phone for the real app. Nothing else differs, and a
+  # file with no namesake in web/ is not uploaded (a test refuses one).
+  web_overlay = var.environment == "staging" ? fileset("${path.module}/../../web-staging", "**") : toset([])
+  web_sources = {
+    for name, type in local.web_files :
+    name => contains(local.web_overlay, name) ? "${path.module}/../../web-staging/${name}" : "${path.module}/../../web/${name}"
+  }
 }
 
 resource "aws_s3_object" "web" {
@@ -189,9 +200,9 @@ resource "aws_s3_object" "web" {
 
   bucket       = aws_s3_bucket.web.id
   key          = each.key
-  source       = "${path.module}/../../web/${each.key}"
+  source       = local.web_sources[each.key]
   content_type = each.value
-  etag         = filemd5("${path.module}/../../web/${each.key}")
+  etag         = filemd5(local.web_sources[each.key])
 }
 
 # Generated rather than committed, so the page never contains a hand-copied

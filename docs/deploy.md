@@ -284,6 +284,23 @@ month, so fix the cause before anything else. `FullAWSAccess` and
 `bgucats-service-allowlist` (once it is on the root it will not be listed
 here) are not budget policies: leave them.
 
+## What staging's site has that production's does not
+
+The same `web/`, with `web-staging/` laid over it (`infra/main/web.tf`,
+staging only): a file there is uploaded in place of the one in `web/` it
+is named after. Today that is three icons and the manifest.
+
+- **The home-screen icon says "BETA"**, and the install is named "BGU
+  Cats beta", so the test copy on a phone is not mistaken for the real
+  app or for the TestFlight build. `python scripts/beta_icon.py` redraws
+  the icons from `web/icon-512.png`; a test fails if they are stale. A
+  phone keeps the icon it installed with: remove the old install and add
+  it again to see a new one.
+- **It opens on the member app** (`front_door = "app"` in
+  `variables.tf`, since 2026-11-13); production opens on the desk until
+  L3. The desk is in the profile ("Labeling desk and Capture") or at
+  `/?desk`.
+
 ## The iPhone app
 
 The iPhone app is `web/` packed with Capacitor (`native/`), built on
