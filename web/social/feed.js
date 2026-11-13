@@ -4,6 +4,7 @@
 
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { cats, deletePost, feedPage, regionName, setLike } from "./data.js";
+import { openGallery } from "./gallery.js";
 import { ago, t } from "./i18n.js";
 import { glass } from "./motion.js";
 import { push, useStore } from "./store.js";
@@ -192,12 +193,18 @@ function CatOfTheDay({ cat }) {
   </button>`;
 }
 
-// The two glass buttons over the feed: search (the gallery, E4) and new
-// post (the capture flow, E3).
+// The glass buttons over the feed: the gallery of every cat (E4), search,
+// which opens the gallery with its search field ready, and new post (the
+// capture flow, E3).
 function TopButtons() {
   const collapsed = useStore((s) => s.collapsed);
   return html`<div class=${collapsed ? "top-buttons collapsed" : "top-buttons"}>
-    <button type="button" class="search" ref=${glass} aria-label=${t("feed.search")} onClick=${() => toast(t("feed.searchSoon"))}>
+    <button type="button" class="glass-icon" ref=${glass} aria-label=${t("feed.gallery")} onClick=${() => openGallery()}>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true">
+        <rect x="4" y="4" width="6.5" height="6.5" rx="1.8" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8" />
+      </svg>
+    </button>
+    <button type="button" class="search" ref=${glass} aria-label=${t("feed.search")} onClick=${() => openGallery({ search: true })}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" />
       </svg>

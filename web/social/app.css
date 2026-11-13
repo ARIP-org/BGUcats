@@ -699,6 +699,9 @@ body:has(.frame) {
 .search svg {
   flex: none;
 }
+.top-buttons .search {
+  margin-inline-end: auto;
+}
 .search-words {
   font-size: 15px;
   color: var(--muted);
@@ -944,30 +947,238 @@ body:has(.frame) {
   block-size: 1px;
 }
 
-/* ------------------------------------------------------------ a cat's page */
+/* ------------------------------------------------------------ a cat's page (E4) */
 
-.cat-hero {
+/* The photos run edge to edge under the back button, so this page's
+   scroller has no padding of its own. */
+.page[data-page="cat"] .scroller {
+  padding-block-start: 0;
+  padding-inline: 0;
+}
+.cat-wait {
+  padding-block-start: calc(env(safe-area-inset-top) + 96px);
+}
+.cat-photos {
+  position: relative;
+  block-size: min(470px, 62vh);
+  background: var(--chip-neutral);
+}
+.cat-photos .photo-strip {
+  block-size: 100%;
+  border-radius: 0;
+}
+.cat-photos img {
+  flex: none;
   inline-size: 100%;
-  aspect-ratio: 4 / 5;
+  block-size: 100%;
   object-fit: cover;
-  border-radius: 22px;
+  scroll-snap-align: start;
   display: block;
+}
+.cat-photos .photo-count {
+  inset-block-start: calc(env(safe-area-inset-top) + 22px);
+  inset-inline-end: 16px;
+}
+.cat-body {
+  position: relative;
+  max-inline-size: 640px;
+  margin-block-start: -36px;
+  margin-inline: auto;
+  padding-inline: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cat-card {
+  border-radius: 28px;
+  padding: 20px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cat-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.cat-name {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.cat-named {
+  font-size: 13px;
+  color: var(--muted);
+}
+.cat-place {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.cat-place svg {
+  flex: none;
+}
+.cat-bio {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--body);
+}
+.cat-numbers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.cat-number {
+  background: var(--chip-neutral);
+  border-radius: 18px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.cat-number-value {
+  /* "Just now" has to fit a third of a narrow phone. */
+  font-size: clamp(15px, 4.6vw, 20px);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cat-number-label {
+  font-size: 12px;
+  color: var(--muted);
 }
 .cat-met {
   margin: 0;
+  font-size: 14px;
   color: var(--accent);
   font-weight: 600;
 }
-.cat-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+.cat-posts {
+  border-radius: 28px;
+  padding: 18px 12px 10px;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
-.cat-grid img {
+.cat-posts .card-title {
+  padding: 0 8px 4px;
+}
+.cat-post {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+}
+.cat-post .avatar {
+  font-size: 13px;
+}
+.cat-post-who {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cat-post-when {
+  flex: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ the gallery (E4) */
+
+.page[data-page="gallery"] .scroller {
+  padding-inline: 8px;
+}
+/* Beside the page's back button: the search field, sort, and new post. */
+.gallery-top {
+  position: sticky;
+  z-index: 3;
+  inset-block-start: -64px; /* from inside the scroller's padding: level with the back button */
+  margin-block: -64px 16px;
+  margin-inline: 66px 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gallery-search {
+  flex: 1 1 auto;
+  margin: 0;
+  cursor: text;
+}
+.gallery-search input {
+  flex: 1;
+  min-inline-size: 0;
+  block-size: 46px;
+  padding: 0;
+  padding-inline-end: 14px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* under 16px an iPhone zooms the page on focus */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.gallery-search input::placeholder {
+  color: var(--muted);
+}
+.gallery-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.gallery {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-inline-size: 640px;
+  margin-inline: auto;
+}
+.gallery-column {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gallery-tile {
+  display: block;
   inline-size: 100%;
-  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.gallery-tile img {
+  inline-size: 100%;
+  block-size: 100%;
   object-fit: cover;
-  border-radius: 12px;
+  display: block;
+}
+.gallery-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: 100%;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
 }
 
 /* ------------------------------------------------------------ the capture flow (E3) */
