@@ -61,6 +61,7 @@
   "post.like": "Like {name}",
   "post.likeFailed": "That like didn't go through. Try again when you have signal.",
   "post.seeCat": "See {name}",
+  "post.showOnMap": "Show on map",
   "post.delete": "Delete post",
   "post.deleteTitle": "Delete this post?",
   "post.deleteBody": "It disappears from the feed for everyone. The photos stay with the cat's records.",
@@ -356,5 +357,18 @@
   "ach.howPoints": "How you earn points",
   "rule.post": "Meet & post a cat",
   "rule.post.how": "Scan it and make a post. Once per cat a day.",
-  "ach.plus": "+{points}"
+  "ach.plus": "+{points}",
+  "cat.showOnMap": "Show on map",
+  "map.title": "BGU campus",
+  "map.campus": "BGU CAMPUS",
+  "map.lawn": "Lawn",
+  "map.wadi": "Wadi",
+  "map.habitat": "Habitat",
+  "map.close": "Close map",
+  "map.hint": "Drag the map · tap a habitat to see who lives there",
+  "map.livesHere": {
+    "one": "{count} cat lives here",
+    "other": "{count} cats live here"
+  },
+  "map.nobody": "No named cats here yet. Spotted one? Scan it."
 }

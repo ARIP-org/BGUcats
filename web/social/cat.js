@@ -6,12 +6,14 @@
 // The grade is a popularity grade the app works out (B7b, D9); a cat nobody
 // met lately shows a dash, and with the `gpa` flag off there is no chip.
 //
-// Left out until its backend exists: the map button (E5).
+// The button at the top opens the map on the cat's usual place (E5).
 
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { cat as loadCat, catPosts, names as loadNames, regionName, suggestName, takeVoteBack, voteFor } from "./data.js";
 import { Avatar } from "./feed.js";
 import { ago, oneDecimal, t } from "./i18n.js";
+import { openMap } from "./map.js";
+import { glass } from "./motion.js";
 import { REFUSED, moved } from "./poll.js";
 import { get } from "./store.js";
 import { termsFirst } from "./terms.js";
@@ -157,7 +159,14 @@ export function CatPage({ catId }) {
         ? t("cat.namedByVoteOf", { votes: leader.votes, total: poll.total })
         : t("cat.namedByVote")
       : t(source === "admin" ? "cat.namedByAdmins" : "cat.notNamed");
-  return html`<div class="cat-page" data-cat=${cat.catId}>
+  return html`<div class="cat-map">
+      <button type="button" class="glass-icon" ref=${glass} aria-label=${t("cat.showOnMap")} onClick=${() => openMap(cat.regionId)}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 4L3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5z" /><path d="M9 4v13.5M15 6.5V20" />
+        </svg>
+      </button>
+    </div>
+    <div class="cat-page" data-cat=${cat.catId}>
     <${Photos} cat=${cat} />
     <div class="cat-body">
       <section class="card cat-card">

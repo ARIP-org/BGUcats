@@ -3175,3 +3175,248 @@ button.post-name {
   color: var(--accent);
 }
 
+/* ------------------------------------------------------------ the map (E5) */
+
+/* Level with a cat's back button, at the other edge, over the photos. */
+.cat-map {
+  position: sticky;
+  z-index: 3;
+  inset-block-start: calc(env(safe-area-inset-top) + 12px);
+  block-size: 0;
+  padding-inline-end: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The map fills the page: no padding, no scrolling, and its own way back
+   in the sheet, so the page's back button and the tab bar step aside. */
+.page[data-page="map"] .scroller {
+  padding: 0;
+  overflow: hidden;
+}
+.page[data-page="map"] .page-top,
+.frame[data-top="map"] .tabbar {
+  display: none;
+}
+.map {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--map-outside);
+}
+.map-pan {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+}
+/* Geography does not turn round with the language. */
+.map-campus {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 900px;
+  block-size: 1300px;
+  direction: ltr;
+  will-change: translate;
+}
+.map-drawing {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  display: block;
+}
+.map-ground {
+  fill: var(--map-ground);
+}
+.map-green {
+  fill: var(--map-green);
+}
+.map-wadi {
+  fill: none;
+  stroke: var(--map-wadi);
+  stroke-width: 34;
+  stroke-linecap: round;
+}
+.map-road {
+  fill: none;
+  stroke: var(--map-road);
+  stroke-width: 18;
+}
+.map-road.ring {
+  stroke-width: 24;
+}
+.map-path {
+  fill: none;
+  stroke: var(--map-path);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.map-building {
+  fill: var(--map-building);
+  stroke: var(--map-building-stroke);
+  stroke-width: 1.5;
+}
+.map-label {
+  fill: var(--map-label);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-anchor: middle;
+}
+.map-habitat {
+  fill: var(--lens);
+  stroke: var(--heart);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 6;
+  cursor: pointer;
+  transition: fill 0.3s ease;
+}
+.map-habitat.chosen {
+  fill: var(--region-sel);
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+.map-chip {
+  position: absolute;
+  translate: -50% 0;
+  block-size: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--map-chip-shadow);
+  transition:
+    background 0.25s ease,
+    color 0.25s ease;
+}
+.map-chip.chosen {
+  background: var(--heart);
+  color: var(--on-accent);
+}
+.map-pin {
+  position: absolute;
+  inline-size: 52px;
+  block-size: 52px;
+  padding: 0;
+  border-radius: 26px;
+  border: 3px solid var(--knob);
+  overflow: hidden;
+  background: var(--surface);
+  cursor: pointer;
+  box-shadow: var(--map-pin-shadow);
+  transition:
+    scale 0.4s cubic-bezier(0.3, 1.5, 0.5, 1),
+    border-color 0.25s ease;
+}
+.map-pin.chosen {
+  border-color: var(--heart);
+  scale: 1.12;
+}
+.map-pin img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+.map-sheet {
+  position: absolute;
+  inset-inline: 12px;
+  inset-block-end: calc(env(safe-area-inset-bottom) + 24px);
+  max-inline-size: 520px;
+  margin-inline: auto;
+  padding: 14px;
+  border-radius: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--ink);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  backdrop-filter: blur(26px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--bar-shadow);
+}
+.map-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.map-back {
+  flex: none;
+  inline-size: 46px;
+  block-size: 46px;
+  border-radius: 23px;
+}
+.map-sheet-words {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.map-sheet-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-sheet-sub {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.map-scan {
+  flex: none;
+}
+.map-cats {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.map-cats::-webkit-scrollbar {
+  display: none;
+}
+.map-cat {
+  flex: none;
+  padding-block: 6px;
+  padding-inline: 6px 14px;
+  border: none;
+  border-radius: 22px;
+  background: var(--chip-neutral);
+  color: var(--ink);
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.map-cat img,
+.map-cat-empty {
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: var(--chip);
+}
+.map-cat-name {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.map-cat-gpa {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
