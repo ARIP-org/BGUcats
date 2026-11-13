@@ -52,6 +52,21 @@ def json_default(value):
     raise TypeError(f"not JSON serializable: {type(value)}")
 
 
+def preflight(event):
+    """The answer to a web view's CORS preflight, or None for any other call.
+
+    The iPhone app's pages are another origin to the API, so the web view
+    first sends an OPTIONS that carries no token. Its route has no
+    authorizer (infra/main/admin_api.tf, app_api.tf), and API Gateway does
+    not answer it by itself, as was assumed until 2026-11-13: it invokes
+    the route's Lambda and only adds the CORS headers (api.tf) to whatever
+    comes back. Every handler therefore answers it first, before asking who
+    is calling: 204 and nothing else. A preflight reads and changes nothing.
+    """
+    method = event.get("requestContext", {}).get("http", {}).get("method", "")
+    return {"statusCode": 204} if method == "OPTIONS" else None
+
+
 def caller_email(event):
     """Email claim from the token the JWT authorizer already verified."""
     claims = (

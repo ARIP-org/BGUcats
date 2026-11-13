@@ -357,7 +357,7 @@ deployed before the build that needs it:
 |---|---|---|
 | `cognito.tf` | `org.arip.bgucats://signin` on the client's callback list | Cognito refuses a sign-in that asks to be answered anywhere else |
 | `api.tf` | a CORS configuration on the API, any origin | inside the app the pages' address is `capacitor://localhost`, so the API is another origin to them. API Gateway accepts only `http(s)` origins or `*`. No route takes a cookie; every call still needs its token |
-| `admin_api.tf` | an `OPTIONS /api/{proxy+}` route without the authorizer | the web view asks first (a preflight, with no token), and on the authorized `ANY` route the answer was 401: every call failed with "Load failed". API Gateway answers this route from the CORS configuration; the Lambda never runs |
+| `admin_api.tf`, `app_api.tf` | an `OPTIONS` route without the authorizer, for each API | the web view asks first (a preflight, with no token), and on the authorized `ANY` route the answer was 401: every call failed with "Load failed". API Gateway hands the preflight to the Lambda, which answers 204 before anything else (`preflight` in `src/common/api.py`), and adds the CORS headers |
 | `s3.tf` | `capacitor://localhost` beside the web address in the media bucket's CORS | uploads go from the page straight to the bucket |
 
 The account that signs in must be on that deployment's allowlist, and for
@@ -369,7 +369,8 @@ on staging, in the staging app's People screen or with
 `make admin-add EMAIL=... PROFILE=bgucats-staging-admin`.
 
 To check a deployment answers the app's preflight (an empty 204 with the
-`access-control-*` headers; a 401 means every call from the app fails):
+`access-control-*` headers; a 401 means every call from the app fails).
+The deploy job runs the same check on both APIs after every apply:
 
 ```bash
 curl -si -X OPTIONS https://d2rysfyl47qmmz.cloudfront.net/api/cats -H "Origin: capacitor://localhost" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization" | head -1

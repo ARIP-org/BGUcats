@@ -12,6 +12,7 @@ do_OPTIONS), which is what the packed app depends on.
 
 import json
 import threading
+import urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -139,6 +140,27 @@ def open_native(app, browser, tmp_path):
         context.close()
     server.shutdown()
     assert not problems, problems
+
+
+@pytest.mark.parametrize("path", ["/api/me", "/api/v1/me"])
+def test_the_api_answers_the_web_views_preflight(app, path):
+    """Before every call the iPhone app's web view asks the API, with no
+    token, whether it may. Asked here by hand: the test browser never sends
+    a preflight to the server while Playwright routes its requests (it
+    answers them itself), which is how a 401 from the real handlers went
+    unseen until a phone showed "Load failed" (2026-11-13)."""
+    asked = urllib.request.Request(
+        app.url + path,
+        method="OPTIONS",
+        headers={
+            "Origin": "capacitor://localhost",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+    with urllib.request.urlopen(asked) as answer:  # raises on a 401
+        assert answer.status == 204
+        assert answer.headers["access-control-allow-origin"] == "*"
 
 
 def test_the_packed_app_opens_on_sign_in_not_on_the_install_page(open_native, shot):

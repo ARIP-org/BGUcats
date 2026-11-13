@@ -295,18 +295,25 @@ class LocalApp:
 
             def do_OPTIONS(self):
                 """A web view's preflight, which the iPhone app's pages send
-                because the API is not at their own address. API Gateway
-                answers it with what api.tf allows, but only because
-                OPTIONS has a route of its own without the authorizer
-                (admin_api.tf; tests/native checks it). Without that route
-                the real API answered 401 and this stand-in did not."""
-                if not urlsplit(self.path).path.startswith("/api/"):
+                because the API is not at their own address. It carries no
+                token, and its route has no authorizer (admin_api.tf,
+                app_api.tf; tests/native checks that), so API Gateway hands
+                it to the route's Lambda and adds what api.tf allows to the
+                answer. Until 2026-11-13 this stand-in answered 204 by
+                itself, the real handlers answered 401, and every call from
+                the iPhone app failed with "Load failed"."""
+                path = urlsplit(self.path).path
+                if not path.startswith("/api/"):
                     self._send(404, b"not found", "text/plain")
                     return
+                member = path.startswith("/api/v1/")
+                target = app_handler if member else admin_handler
+                event = gateway_event("OPTIONS", path, None, None, None)
+                answer = target.handler(event, None)
                 self._send(
-                    204,
-                    b"",
-                    "text/plain",
+                    answer["statusCode"],
+                    (answer.get("body") or "").encode(),
+                    "application/json",
                     [
                         ("access-control-allow-origin", "*"),
                         ("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE"),
