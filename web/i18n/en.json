@@ -210,5 +210,22 @@
   },
   "cat.lastSeen": "Last seen",
   "cat.never": "—",
-  "cat.recentPosts": "Recent posts"
+  "cat.recentPosts": "Recent posts",
+  "cat.namedByVoteOf": "Named by vote · {votes} of {total}",
+  "poll.title": "Name poll",
+  "poll.votes": {
+    "one": "{count} vote",
+    "other": "{count} votes"
+  },
+  "poll.lead": "Suggest your own name or vote for the one you like.",
+  "poll.locked": "The people who look after the cats have set the name: {name}. The poll goes on.",
+  "poll.voteFor": "Vote for a name",
+  "poll.leading": "LEADING",
+  "poll.checking": "Being checked",
+  "poll.suggest": "Suggest a name",
+  "poll.suggestButton": "Suggest",
+  "poll.suggested": "Your name is in",
+  "poll.notAccepted": "That name was not accepted.",
+  "poll.tryAgain": "The poll just changed. Try again.",
+  "poll.slowDown": "That's enough for now. Try again later."
 }

@@ -37,6 +37,7 @@ from common import (
     ids,
     limits,
     media,
+    polls,
     proposals,
     regions,
     tables,
@@ -722,6 +723,279 @@ def _met(user, cat_id):
 
 
 # --------------------------------------------------------------------------
+# The name poll (B4)
+# --------------------------------------------------------------------------
+
+SUGGESTIONS_PER_DAY = 10
+SUGGESTIONS_PER_CAT_PER_DAY = 3
+VOTES_PER_HOUR = 60
+# A vote reads, then writes on the condition that what it read still holds;
+# someone else's vote in between means reading again.
+VOTE_ATTEMPTS = 4
+
+
+def _require_cat(cat_id):
+    cat = tables.get_one(data_table, f"CAT#{cat_id}")
+    if cat is None:
+        raise ApiError(404, "no such cat", code="gone")
+    return cat
+
+
+def _admins_name(cat):
+    """(key, name) of the name the admins gave the cat, or (None, None). It
+    stands in the poll from the start, so people can vote to keep it."""
+    try:
+        name = polls.clean_name(cat.get("name"))
+    except ApiError:
+        return None, None  # none, or one the poll cannot hold
+    return name.casefold(), name
+
+
+def _options(cat_id):
+    return tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(f"CAT#{cat_id}")
+        & Key("SK").begins_with("NAME#"),
+        ConsistentRead=True,
+    )
+
+
+def _names_view(cat, user):
+    """The poll as this person may see it: the live options with their
+    votes, most first; their own vote; and their own suggestion while it is
+    being checked or if it was refused. Nobody else's pending name."""
+    cat_id, me = cat["catId"], user["userId"]
+    options = _options(cat_id)
+    public = tables.get_one(social_table, f"CAT#{cat_id}", "PUBLIC") or {}
+    vote = tables.get_one(social_table, f"CAT#{cat_id}", f"VOTE#{me}")
+    mine = vote["nameKey"] if vote else None
+
+    live = [o for o in options if o["status"] == "live"]
+    key, name = _admins_name(cat)
+    if key and key not in {o["nameKey"] for o in options}:
+        live.append({"nameKey": key, "name": name, "votes": 0, "createdAt": ""})
+    live.sort(key=lambda o: (-_number(o.get("votes")), o.get("createdAt") or "", o["nameKey"]))
+    own = [
+        o
+        for o in options
+        if o.get("suggestedBy") == me and o["status"] in ("pending", "rejected")
+    ]
+    own.sort(key=lambda o: o.get("createdAt") or "")
+
+    # The leader as these options make it, not as the events Lambda last
+    # wrote it: the page that just voted must not show the vote and the old
+    # name together. The same rule as `lead` in src/events/handler.py.
+    leader = next((o for o in live if _number(o.get("votes")) > 0), None)
+    locked = public.get("lockedName")
+
+    def shown(option, **extra):
+        return {
+            "nameKey": option["nameKey"],
+            "name": option["name"],
+            "votes": _number(option.get("votes")),
+            "leading": option is leader,
+            "mine": option["nameKey"] == mine,
+            **extra,
+        }
+
+    shown_now, source = shown_name(
+        cat, {"lockedName": locked, "leaderName": leader["name"] if leader else None}
+    )
+    return {
+        "catId": cat_id,
+        "name": shown_now,
+        "nameSource": source,
+        "options": [shown(o) for o in live]
+        + [shown(o, pending=True) for o in own if o["status"] == "pending"],
+        "total": sum(_number(o.get("votes")) for o in live),
+        "locked": locked,
+        "myVote": mine,
+        "mySuggestion": {"name": own[-1]["name"], "status": own[-1]["status"]}
+        if own
+        else None,
+    }
+
+
+def _get_names(user, cat_id, **_):
+    return _names_view(_require_cat(cat_id), user)
+
+
+def _votes_change(cat_id, option, by):
+    """One option's count moved by `by`, for a transaction, on the condition
+    that the option is still in the state it was read in: the total counts
+    live options only, so a name going live between the read and the write
+    must fail the write, not be miscounted."""
+    return {
+        "Update": {
+            "TableName": social_table.name,
+            "Key": polls.option_key(cat_id, option["nameKey"]),
+            "UpdateExpression": "ADD votes :by",
+            "ConditionExpression": "#status = :status",
+            "ExpressionAttributeNames": {"#status": "status"},
+            "ExpressionAttributeValues": {":by": by, ":status": option["status"]},
+        }
+    }
+
+
+def _move_vote(cat, user, new_key, create=None):
+    """The caller's vote moves to `new_key` (None takes it back), in one
+    transaction (03-data-model.md, "Writes that must be all-or-nothing"):
+    one off the old option, one on the new, the vote item itself, and the
+    cat's total if a live option gained or lost. The vote item must still
+    say what was read, so two taps at once cannot count twice.
+
+    `create` is a new option to write with the vote: a suggestion."""
+    cat_id, me = cat["catId"], user["userId"]
+    client = social_table.meta.client
+    for _ in range(VOTE_ATTEMPTS):
+        vote = tables.get_one(social_table, f"CAT#{cat_id}", f"VOTE#{me}")
+        old_key = vote["nameKey"] if vote else None
+        if old_key == new_key:
+            return
+        items, total = [], 0
+        if old_key:
+            old = tables.get_one(social_table, f"CAT#{cat_id}", f"NAME#{old_key}")
+            if old:
+                items.append(_votes_change(cat_id, old, -1))
+                total -= old["status"] == "live"
+        if new_key:
+            new = tables.get_one(social_table, f"CAT#{cat_id}", f"NAME#{new_key}")
+            if new is None and create is None:
+                raise ApiError(404, "no such name in this poll", code="gone")
+            if new is None:
+                items.append(
+                    {
+                        "Put": {
+                            "TableName": social_table.name,
+                            "Item": create,
+                            "ConditionExpression": "attribute_not_exists(PK)",
+                        }
+                    }
+                )
+                total += create["status"] == "live"
+            else:
+                if new["status"] in ("rejected", "removed"):
+                    raise ApiError(409, "this name was not accepted", code="not_accepted")
+                if new["status"] == "pending" and new.get("suggestedBy") != me:
+                    raise ApiError(
+                        409, "that name is being checked; try again", code="try_again"
+                    )
+                items.append(_votes_change(cat_id, new, 1))
+                total += new["status"] == "live"
+            was = (
+                {
+                    "ConditionExpression": "nameKey = :old",
+                    "ExpressionAttributeValues": {":old": old_key},
+                }
+                if old_key
+                else {"ConditionExpression": "attribute_not_exists(PK)"}
+            )
+            items.append(
+                {
+                    "Put": {
+                        "TableName": social_table.name,
+                        "Item": {
+                            **polls.vote_key(cat_id, me),
+                            "catId": cat_id,
+                            "userId": me,
+                            "nameKey": new_key,
+                            "at": api.now_iso(),
+                        },
+                        **was,
+                    }
+                }
+            )
+        else:
+            items.append(
+                {
+                    "Delete": {
+                        "TableName": social_table.name,
+                        "Key": polls.vote_key(cat_id, me),
+                        "ConditionExpression": "nameKey = :old",
+                        "ExpressionAttributeValues": {":old": old_key},
+                    }
+                }
+            )
+        if total:
+            items.append(_cat_counts(cat_id, voteTotal=total))
+        try:
+            client.transact_write_items(TransactItems=items)
+            return
+        except client.exceptions.TransactionCanceledException:
+            continue  # the poll moved under this vote: read it again
+    raise ApiError(503, "the poll is busy; try again", code="try_again")
+
+
+def _suggest_name(user, cat_id, body, **_):
+    """`POST /cats/{id}/names`: a name for the poll. One that is already an
+    option, whatever its capitals, is a vote for it. A new one is written
+    as pending with its author's vote and is theirs alone until it has been
+    checked (the events Lambda, where moderation goes, C1)."""
+    require_terms(user)
+    cat = _require_cat(cat_id)
+    name = polls.clean_name(body.get("name"))
+    key, me = name.casefold(), user["userId"]
+    if tables.get_one(social_table, f"CAT#{cat_id}", f"NAME#{key}"):
+        limits.take(social_table, f"{me}#votes", VOTES_PER_HOUR, 3600)
+        _move_vote(cat, user, key)
+        return _names_view(cat, user)
+
+    limits.take(social_table, f"{me}#suggestions", SUGGESTIONS_PER_DAY, 86400)
+    limits.take(
+        social_table, f"{me}#suggestions#{cat_id}", SUGGESTIONS_PER_CAT_PER_DAY, 86400
+    )
+    # The admins' own name needs no check: everyone reads it already.
+    admins_key, admins_name = _admins_name(cat)
+    theirs = key == admins_key
+    option = {
+        **polls.option_key(cat_id, key),
+        "catId": cat_id,
+        "nameKey": key,
+        "name": admins_name if theirs else name,
+        "votes": 1,
+        "status": "live" if theirs else "pending",
+        "createdAt": api.now_iso(),
+    }
+    if not theirs:
+        option["suggestedBy"] = me
+    _move_vote(cat, user, key, create=option)
+    return _names_view(cat, user)
+
+
+def _vote(user, cat_id, body, **_):
+    """`PUT /cats/{id}/vote`: the caller's one vote on this cat, moved."""
+    require_terms(user)
+    cat = _require_cat(cat_id)
+    key = body.get("nameKey")
+    if not isinstance(key, str) or not key:
+        raise ApiError(400, "nameKey is the option to vote for")
+    limits.take(social_table, f"{user['userId']}#votes", VOTES_PER_HOUR, 3600)
+    create = None
+    admins_key, admins_name = _admins_name(cat)
+    if key == admins_key:
+        # The first vote for the admins' own name writes it into the poll.
+        create = {
+            **polls.option_key(cat_id, key),
+            "catId": cat_id,
+            "nameKey": key,
+            "name": admins_name,
+            "votes": 1,
+            "status": "live",
+            "createdAt": api.now_iso(),
+        }
+    _move_vote(cat, user, key, create=create)
+    return _names_view(cat, user)
+
+
+def _unvote(user, cat_id, **_):
+    """`DELETE /cats/{id}/vote`: taken back. Not voting is not writing, so
+    it needs neither the terms nor a place in the hour's votes."""
+    cat = _require_cat(cat_id)
+    _move_vote(cat, user, None)
+    return _names_view(cat, user)
+
+
+# --------------------------------------------------------------------------
 # Posts, likes and the feed (B3a)
 # --------------------------------------------------------------------------
 
@@ -1335,6 +1609,10 @@ ROUTES = (
     ("GET", r"^/api/v1/cats$", _get_cats, "user"),
     ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})$", _get_cat, "user"),
     ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})/posts$", _cat_posts, "user"),
+    ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})/names$", _get_names, "user"),
+    ("POST", rf"^/api/v1/cats/(?P<cat_id>{ID})/names$", _suggest_name, "user"),
+    ("PUT", rf"^/api/v1/cats/(?P<cat_id>{ID})/vote$", _vote, "user"),
+    ("DELETE", rf"^/api/v1/cats/(?P<cat_id>{ID})/vote$", _unvote, "user"),
     ("GET", r"^/api/v1/feed$", _get_feed, "user"),
     ("POST", r"^/api/v1/posts$", _create_post, "user"),
     ("GET", rf"^/api/v1/posts/(?P<post_id>{ID})$", _get_post, "user"),

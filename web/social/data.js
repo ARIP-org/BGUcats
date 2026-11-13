@@ -14,6 +14,13 @@ export const cats = (redraw = () => {}) => cachedGet("/v1/cats", redraw);
 export const cat = (catId, redraw = () => {}) => cachedGet(`/v1/cats/${catId}`, redraw);
 export const catPosts = (catId) => api(`/v1/cats/${catId}/posts`);
 
+// A cat's name poll. Each answers with the whole poll as the caller sees
+// it: {name, nameSource, options, total, locked, myVote, mySuggestion}.
+export const names = (catId) => api(`/v1/cats/${catId}/names`);
+export const suggestName = (catId, name) => post(`/v1/cats/${catId}/names`, { name });
+export const voteFor = (catId, nameKey) => put(`/v1/cats/${catId}/vote`, { nameKey });
+export const takeVoteBack = (catId) => del(`/v1/cats/${catId}/vote`);
+
 // -> {postId, liked, likes}
 export const setLike = (postId, liked) =>
   liked ? put(`/v1/posts/${postId}/like`) : del(`/v1/posts/${postId}/like`);

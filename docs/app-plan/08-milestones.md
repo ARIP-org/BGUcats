@@ -23,7 +23,7 @@ A session ticks its row in the pull request that finishes it.
 | B1 | Profiles | B1a (name, settings) and B1b (photo) merged 2026-11-13; B1c (username) built the same day, in review; devices wait for B9 |
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
-| B4 | Name polls | |
+| B4 | Name polls | B4a (names, votes, the leader) built 2026-11-13, in review; B4b (the desk's remove and lock, votes in the feed) not built |
 | B5 | Friends and invites (B5b: phone and contacts) | |
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
@@ -42,7 +42,7 @@ A session ticks its row in the pull request that finishes it.
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
 | E3 | The capture flow | merged 2026-11-12 |
-| E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) built 2026-11-13, in review; the poll waits for B4 |
+| E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page built the same day with B4a, in review |
 | E5 | The map | |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | |
@@ -318,6 +318,21 @@ was built.
   concurrent votes (a test that votes in parallel); "mango" and
   "Mango " are one option; a pending suggestion is visible to its author
   only; a locked name wins over the poll.
+- **B4a, built 2026-11-13:** the four member routes (`04-api.md`), the
+  options and votes as `docs/data-model.md` has them, and in the events
+  Lambda the step that makes a pending name live (`publish_suggestion`,
+  where moderation goes, C1) and the leader (`lead`). A vote is one
+  transaction, conditional on the vote item and on each option's status
+  as read, so two taps count once and a name going live under a vote is
+  counted once; `tests/app/test_polls.py` drives those two races by
+  hand and checks after every move that the total is the votes on live
+  options and each count is the votes that name it. Threads against the
+  mocked table would prove nothing about DynamoDB. **Mine, not the
+  plan's:** the admins' own name stands in the poll from the start with
+  no votes, so it can be voted to stay.
+- **What an admin cannot do yet (B4b):** remove a name or lock one.
+  Until then the first vote on any suggestion renames the cat for
+  everyone, on staging. Votes as feed cards are B4b too.
 
 ### B5. Friends and invites
 
@@ -607,7 +622,10 @@ English file.
   and where it came from, the usual place, the description, posts, likes
   and last seen, and how often the caller met it; who posted it lately.
   Left out until their backends exist: the grade and "Highest GPA"
-  (B7b), the name poll (B4), the map button (E5). The gallery slides in
+  (B7b), the map button (E5). The name poll joined the page with B4a:
+  each option a bar of its share, the leader marked, the choice ringed;
+  a tap votes, a tap on your choice takes it back, and a name typed
+  below joins the poll, marked while it is being checked. The gallery slides in
   as a page from the end edge; the prototype brings it from the start.
 
 ### E5. The map
