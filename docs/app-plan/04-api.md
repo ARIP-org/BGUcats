@@ -53,9 +53,9 @@ A person, as others see them:
 | `POST /me/terms` | Records acceptance of the terms' current version. Until then every write answers `terms_required` |
 | `PATCH /me` | `displayName`, `language`, `theme`, `notifications`: only the fields sent change, and the answer is `GET /me`'s. A new display name is shown to its owner at once (`namePending: true`) and to others after moderation. The name needs the terms and counts against 10 changes a day; the settings need neither. Since B1a |
 | `PUT /me/username` | Chooses the username: 3–20 of `a-z 0-9 . _`, not on the reserved list, moderated. `name_taken` if in use |
-| `POST /me/avatar` | Returns an avatar id and a presigned upload that pins key, type and size |
-| `POST /me/avatar/{avatarId}/complete` | Confirms the object, checks its first bytes, refuses one with an EXIF block; the avatar goes to moderation |
-| `DELETE /me/avatar` | Removes it |
+| `POST /me/avatar` | Returns an avatar id and a presigned upload that pins key, type and size (JPEG, 200 KB). Needs the terms; 5 a day. Since B1b |
+| `POST /me/avatar/{avatarId}/complete` | Confirms the object, checks its first bytes, refuses one that is not a JPEG or still carries EXIF, XMP or IPTC (`bad_photo`, and the object is deleted); the avatar goes to moderation, its owner's meanwhile (`avatarPending`). Answers like `GET /me`. Removes the photo it replaces and any upload never confirmed |
+| `DELETE /me/avatar` | Removes it, published or waiting: every version of every object under the person's `avatars/` prefix |
 | `PUT /me/devices/{deviceId}` | Registers this phone's push token and Apple environment |
 | `DELETE /me/devices/{deviceId}` | On sign-out, and when the switch is turned off |
 | `GET /me/posts` | The caller's posts, pending and hidden ones included, each with its state |

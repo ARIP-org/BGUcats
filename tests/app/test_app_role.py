@@ -66,9 +66,35 @@ def test_the_writes_are_on_the_social_table():
             ), sid
 
 
-def test_the_media_bucket_is_only_read_and_only_derivatives():
-    s3 = [(sid, text) for sid, _, text in statements() if '"s3:' in text]
-    assert s3, "no S3 statement: nothing to check"
-    for sid, text in s3:
-        assert set(re.findall(r'"(s3:[A-Za-z*]+)"', text)) == {"s3:GetObject"}, sid
-        assert "/derived/*" in text, sid
+def test_the_media_bucket_is_read_for_derivatives_and_written_only_for_avatars():
+    """People's photos of cats (raw/, derived/) are the dataset: the member
+    API signs addresses for the derivatives and can do nothing else to
+    them. Since B1b it also keeps profile photos, under avatars/ alone
+    (docs/app-plan/02-architecture.md, "Storage"). A statement that would
+    let it write or delete anywhere else fails here."""
+    s3 = {sid: text for sid, _, text in statements() if '"s3:' in text}
+    assert set(s3) == {"SignDerivatives", "ProfilePhotos", "ListProfilePhotos"}
+
+    def actions(sid):
+        # An action's name starts with a capital; "s3:prefix" is a
+        # condition's key.
+        return set(re.findall(r'"(s3:[A-Z*][A-Za-z*]*)"', s3[sid]))
+
+    def resources(sid):
+        return re.findall(r"aws_s3_bucket\.media\.arn\}?(/[^\"]*)?", s3[sid])
+
+    assert actions("SignDerivatives") == {"s3:GetObject"}
+    assert resources("SignDerivatives") == ["/derived/*"]
+
+    assert actions("ProfilePhotos") == {
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+    }
+    assert resources("ProfilePhotos") == ["/avatars/*"]
+
+    # Listing is on the bucket itself, so the prefix is a condition.
+    assert actions("ListProfilePhotos") == {"s3:ListBucketVersions"}
+    assert resources("ListProfilePhotos") == [""]
+    assert re.search(r'"s3:prefix"\s*=\s*"avatars/\*"', s3["ListProfilePhotos"])

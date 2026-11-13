@@ -2,7 +2,12 @@
 owner's at once and everyone's once it has been checked, which the events
 Lambda does; the settings are simply stored."""
 
+import base64
+import io
+import json
+
 import pytest
+from PIL import Image
 
 from app import handler
 from events import handler as events
@@ -134,3 +139,160 @@ def test_nobody_else_is_changed_and_nobody_elses_pending_name_is_shown(people):
     assert profile(people["social"], ADMIN)["displayName"] == "Sasha"
     _, me = call("GET", "/api/v1/me")
     assert (me["displayName"], me["namePending"]) == ("Sasha", False)
+
+
+# ------------------------------------------------------- the profile photo
+
+BUCKET = "bgucats-media-test"
+
+
+def picture(kind="JPEG", **options):
+    """A small picture's bytes: what a phone's canvas would hand over, or,
+    with `exif`, what a camera writes."""
+    out = io.BytesIO()
+    Image.new("RGB", (64, 64), "orange").save(out, kind, **options)
+    return out.getvalue()
+
+
+def camera_picture():
+    exif = Image.Exif()
+    exif[0x010F] = "A phone maker"
+    return picture(exif=exif)
+
+
+@pytest.fixture
+def bucket(people):
+    """The media bucket, keeping versions as the real one does."""
+    s3 = handler.s3
+    s3.create_bucket(Bucket=BUCKET)
+    s3.put_bucket_versioning(
+        Bucket=BUCKET, VersioningConfiguration={"Status": "Enabled"}
+    )
+    return {**people, "s3": s3}
+
+
+def stored(s3):
+    """Every version of every object in the bucket, by key."""
+    listing = s3.list_object_versions(Bucket=BUCKET)
+    return sorted(v["Key"] for v in listing.get("Versions", []) + listing.get("DeleteMarkers", []))
+
+
+def upload(s3, email=ADMIN, body=None):
+    """Asks where to send a photo and puts one there, as the phone's POST
+    would. Returns (avatarId, key)."""
+    status, started = call("POST", "/api/v1/me/avatar", email=email)
+    assert status == 200, started
+    key = started["upload"]["fields"]["key"]
+    s3.put_object(Bucket=BUCKET, Key=key, Body=body or picture(), ContentType="image/jpeg")
+    return started["avatarId"], key
+
+
+def test_the_upload_is_pinned_to_the_persons_own_key_type_and_size(bucket):
+    status, started = call("POST", "/api/v1/me/avatar")
+    assert status == 200
+    user_id = profile(bucket["social"], ADMIN)["userId"]
+    fields = started["upload"]["fields"]
+    assert fields["key"] == f"avatars/{user_id}/{started['avatarId']}.jpg"
+    assert fields["Content-Type"] == "image/jpeg"
+    policy = json.loads(base64.b64decode(fields["policy"]))
+    assert ["content-length-range", 1, 200_000] in policy["conditions"]
+    assert {"key": fields["key"]} in policy["conditions"]
+    assert {"Content-Type": "image/jpeg"} in policy["conditions"]
+
+
+def test_a_new_photo_is_its_owners_at_once_and_everyones_once_checked(bucket):
+    avatar_id, key = upload(bucket["s3"])
+    status, me = call("POST", f"/api/v1/me/avatar/{avatar_id}/complete")
+    assert status == 200
+    assert key in me["avatar"] and me["avatarPending"] is True
+    kept = profile(bucket["social"], ADMIN)
+    assert kept["pendingAvatarKey"] == key and "avatarKey" not in kept
+
+    assert bucket["stream"].settle() > 0
+    now = profile(bucket["social"], ADMIN)
+    assert now["avatarKey"] == key and "pendingAvatarKey" not in now
+    _, me = call("GET", "/api/v1/me")
+    assert key in me["avatar"] and me["avatarPending"] is False
+    # Confirming twice (a lost answer, sent again) changes nothing.
+    assert call("POST", f"/api/v1/me/avatar/{avatar_id}/complete")[0] == 200
+    assert profile(bucket["social"], ADMIN) == now
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        (camera_picture(), "EXIF"),
+        (picture("PNG"), "not a JPEG"),
+        (b"not a picture at all", "not a JPEG"),
+    ],
+)
+def test_a_photo_with_the_cameras_data_or_that_is_no_jpeg_is_refused_and_removed(
+    bucket, body, why
+):
+    avatar_id, _ = upload(bucket["s3"], body=body)
+    status, answer = call("POST", f"/api/v1/me/avatar/{avatar_id}/complete")
+    assert (status, answer["code"]) == (400, "bad_photo")
+    assert why in answer["error"]
+    # Not kept anywhere: no version of it is left in the bucket.
+    assert stored(bucket["s3"]) == []
+    assert "pendingAvatarKey" not in profile(bucket["social"], ADMIN)
+
+
+def test_confirming_before_the_photo_arrived_says_try_again(bucket):
+    _, started = call("POST", "/api/v1/me/avatar")
+    status, answer = call("POST", f"/api/v1/me/avatar/{started['avatarId']}/complete")
+    assert (status, answer["code"]) == (409, "try_again")
+
+
+def test_nobody_can_confirm_someone_elses_photo_as_their_own(bucket):
+    avatar_id, key = upload(bucket["s3"], email=HELPER)
+    status, answer = call("POST", f"/api/v1/me/avatar/{avatar_id}/complete")
+    assert (status, answer["code"]) == (409, "try_again")
+    assert "pendingAvatarKey" not in profile(bucket["social"], ADMIN)
+    assert stored(bucket["s3"]) == [key]  # and theirs is untouched
+
+
+def test_a_replaced_photo_is_removed_but_the_published_one_stays_until_then(bucket):
+    s3 = bucket["s3"]
+    first_id, first = upload(s3)
+    call("POST", f"/api/v1/me/avatar/{first_id}/complete")
+    bucket["stream"].settle()  # first is published
+
+    second_id, second = upload(s3)
+    upload(s3)  # sent, never confirmed
+    call("POST", f"/api/v1/me/avatar/{second_id}/complete")
+    # Everyone still sees the first; the second waits; the stray is gone.
+    assert stored(s3) == sorted([first, second])
+    bucket["stream"].settle()
+    assert profile(bucket["social"], ADMIN)["avatarKey"] == second
+
+    third_id, third = upload(s3)
+    call("POST", f"/api/v1/me/avatar/{third_id}/complete")
+    assert stored(s3) == sorted([second, third])  # the first, at last
+
+
+def test_removing_the_photo_removes_every_version_of_it(bucket):
+    s3 = bucket["s3"]
+    avatar_id, key = upload(s3)
+    call("POST", f"/api/v1/me/avatar/{avatar_id}/complete")
+    bucket["stream"].settle()
+    s3.put_object(Bucket=BUCKET, Key=key, Body=picture())  # a second version
+    _, other = upload(s3, email=HELPER)
+
+    status, me = call("DELETE", "/api/v1/me/avatar")
+    assert (status, me["avatar"], me["avatarPending"]) == (200, None, False)
+    assert "avatarKey" not in profile(bucket["social"], ADMIN)
+    assert stored(s3) == [other]  # nobody else's photo was touched
+    # A photo removed while it waited is not published afterwards.
+    bucket["stream"].settle()
+    assert "avatarKey" not in profile(bucket["social"], ADMIN)
+
+
+def test_five_photos_a_day_and_the_terms_first(bucket, monkeypatch):
+    monkeypatch.setattr(handler, "AVATAR_CHANGES_PER_DAY", 1)
+    assert call("POST", "/api/v1/me/avatar")[0] == 200
+    status, answer = call("POST", "/api/v1/me/avatar")
+    assert (status, answer["code"]) == (429, "rate_limited")
+    monkeypatch.setattr(handler, "TERMS_VERSION", "2027-01")  # new terms
+    status, answer = call("POST", "/api/v1/me/avatar", email=HELPER)
+    assert (status, answer["code"]) == (403, "terms_required")

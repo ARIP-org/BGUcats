@@ -194,3 +194,99 @@ def test_the_theme_follows_the_account_to_another_phone(open_member_app, app):
     other = open_member_app(COLLABORATOR)
     other.wait_for_selector("[data-screen=frame]")
     other.wait_for_function("document.documentElement.dataset.theme === 'cats-light'")
+
+
+def camera_file():
+    """What a phone's camera writes: a large JPEG that says who made the
+    phone. The app must send neither the size nor the note."""
+    import io
+
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x010F] = "A phone maker"
+    out = io.BytesIO()
+    image = Image.effect_mandelbrot((1600, 1200), (-2, -1.5, 1, 1.5), 60).convert("RGB")
+    image.save(out, "JPEG", quality=95, exif=exif)
+    return {"name": "IMG_0001.jpg", "mimeType": "image/jpeg", "buffer": out.getvalue()}
+
+
+def test_a_profile_photo_is_made_small_on_the_phone_and_shown(open_member_app, app, shot):
+    """Chosen from the library (B1b): cut square, scaled and re-encoded on
+    the phone, which also drops what the camera wrote into it; then its
+    owner's at once, and on their posts for everyone once it is checked."""
+    import io
+
+    from PIL import Image
+
+    from common import media
+
+    page = home(open_member_app)
+    profile = open_profile(page)
+    profile.get_by_role("button", name="Change profile photo").click()
+    menu = page.get_by_role("menu", name="Profile photo")
+    assert [b.inner_text().strip() for b in menu.get_by_role("menuitem").all()] == [
+        "Take photo",
+        "Choose from library",
+    ]
+    shot(page, "member-profile-photo-menu")
+    page.keyboard.press("Escape")
+
+    with page.expect_response(lambda res: res.url.endswith("/complete")) as confirmed:
+        profile.locator("input[data-photo=library]").set_input_files(camera_file())
+    assert confirmed.value.status == 200
+    page.locator(".toast.on").get_by_text("Photo saved").wait_for()
+    page.wait_for_function(
+        "(() => { const i = document.querySelector('[data-page=profile] .me-avatar img');"
+        " return i && i.complete && i.naturalWidth > 0; })()"
+    )
+    shot(page, "member-profile-photo")
+
+    # What reached storage: a 512px square JPEG under 200 KB with no EXIF.
+    _, me = app.api("GET", "/api/v1/me", email=COLLABORATOR)
+    assert me["avatar"] and me["avatarPending"] is False  # published already
+    [key] = [
+        o["Key"]
+        for o in app.s3.list_objects_v2(Bucket=app.bucket, Prefix="avatars/")["Contents"]
+    ]
+    assert key.startswith(f"avatars/{me['userId']}/") and key in me["avatar"]
+    stored = app.s3.get_object(Bucket=app.bucket, Key=key)["Body"].read()
+    assert len(stored) <= media.AVATAR_MAX_BYTES
+    assert media.jpeg_problem(stored) is None
+    picture = Image.open(io.BytesIO(stored))
+    assert (picture.format, picture.size) == ("JPEG", (512, 512))
+    assert not picture.getexif()
+
+    # Home's pill has it, and another member sees it on the post.
+    page.get_by_role("button", name="Back").click()
+    assert page.locator(".me-pill .me-avatar img").count() == 1
+    _, feed = app.api("GET", "/api/v1/feed", email=ADMIN)
+    assert key in feed["cards"][0]["author"]["avatar"]
+    other = open_member_app(ADMIN)
+    other.wait_for_selector("article.post .avatar img")
+
+
+def test_a_profile_photo_can_be_removed(open_member_app, app):
+    page = home(open_member_app)
+    profile = open_profile(page)
+    with page.expect_response(lambda res: res.url.endswith("/complete")):
+        profile.locator("input[data-photo=library]").set_input_files(camera_file())
+    page.wait_for_selector("[data-page=profile] .me-avatar img")
+    profile.get_by_role("button", name="Change profile photo").click()
+    page.get_by_role("menuitem", name="Remove photo").click()
+    page.locator(".toast.on").get_by_text("Photo removed").wait_for()
+    assert profile.locator(".me-avatar img").count() == 0
+    assert profile.locator(".me-avatar svg.cat-face").count() == 1
+    assert "Contents" not in app.s3.list_objects_v2(Bucket=app.bucket, Prefix="avatars/")
+    _, me = app.api("GET", "/api/v1/me", email=COLLABORATOR)
+    assert me["avatar"] is None
+
+
+def test_a_file_that_is_no_picture_is_refused_on_the_phone(open_member_app, app):
+    page = home(open_member_app)
+    profile = open_profile(page)
+    profile.locator("input[data-photo=library]").set_input_files(
+        {"name": "notes.jpg", "mimeType": "image/jpeg", "buffer": b"not a picture"}
+    )
+    page.locator(".toast.on").get_by_text("That picture could not be used.").wait_for()
+    assert "Contents" not in app.s3.list_objects_v2(Bucket=app.bucket, Prefix="avatars/")

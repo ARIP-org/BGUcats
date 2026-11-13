@@ -106,7 +106,7 @@ dataset's.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey`, `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
+| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey` (the published profile photo's object) and `pendingAvatarKey`, `pendingAvatarAt` (B1b: a new photo, its owner's alone until the events Lambda publishes it), `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
 | Sign-in lookup **(F4)** | `IDENTITY#{email}` | `META` | `userId` |
 | Username lookup **(F4)** | `USERNAME#{username}` | `META` | `userId` |
 | Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |

@@ -66,6 +66,31 @@ resource "aws_iam_role_policy" "app_lambda_access" {
         Resource = "${aws_s3_bucket.media.arn}/derived/*"
       },
       {
+        # Profile photos (B1b), under avatars/ alone: signing an upload
+        # that is pinned to the person's own key, reading the first bytes
+        # to check it, signing its address, and removing it. The bucket
+        # keeps versions, so removing a photo for good means removing each
+        # version (DeleteObjectVersion).
+        Sid    = "ProfilePhotos"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:DeleteObjectVersion",
+        ]
+        Resource = "${aws_s3_bucket.media.arn}/avatars/*"
+      },
+      {
+        # Finding a person's photos to remove them: the versions under
+        # avatars/, and nothing else in the bucket.
+        Sid       = "ListProfilePhotos"
+        Effect    = "Allow"
+        Action    = "s3:ListBucketVersions"
+        Resource  = aws_s3_bucket.media.arn
+        Condition = { StringLike = { "s3:prefix" = "avatars/*" } }
+      },
+      {
         # Accounts, and everything people do in the app.
         Sid    = "SocialItems"
         Effect = "Allow"
