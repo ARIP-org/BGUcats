@@ -240,9 +240,13 @@ def _me_payload(user, role):
         "userId": user["userId"],
         "email": user["email"],
         "username": user["username"],
-        "displayName": user["displayName"],
+        # A name just changed is shown to its owner at once; everyone else
+        # sees `displayName` until the new one has been checked (B1).
+        "displayName": user.get("pendingName") or user["displayName"],
+        "namePending": bool(user.get("pendingName")),
         "inviteCode": user["inviteCode"],
         "language": user.get("language", "en"),
+        "theme": user.get("theme"),
         "notifications": user.get("notifications", True),
         "role": role,
         "since": user["createdAt"],
@@ -277,6 +281,68 @@ def _counters_of(user):
         }
 
     return {"all": counts("STATS#ALL"), "month": counts(f"STATS#{month}")}
+
+
+NAME_MAX = 30
+NAME_CHANGES_PER_DAY = 10
+LANGUAGES = ("en", "he", "ru", "ar")
+THEMES = ("bgu-light", "bgu-dark", "cats-light", "cats-dark")
+
+
+def _update_me(user, role, body, **_):
+    """`PATCH /me`: the display name, and the settings that follow a person
+    from phone to phone. Only the fields sent change.
+
+    A display name is what other people read, so it is written beside the
+    published one (`pendingName`) and takes its place once it has been
+    checked: the events Lambda does that (publish_name; moderation, C1,
+    goes there). Its owner sees it at once. The settings are the person's
+    own business and are simply stored.
+    """
+    sets, removes, values = [], [], {}
+    if "displayName" in body:
+        require_terms(user)
+        name = text.clean(body["displayName"], "displayName", NAME_MAX)
+        if name == user["displayName"]:
+            # Back to the name everyone already sees: nothing to check.
+            removes += ["pendingName", "pendingNameAt"]
+        elif name != user.get("pendingName"):
+            limits.take(
+                social_table, f"{user['userId']}#names", NAME_CHANGES_PER_DAY, 86400
+            )
+            sets += ["pendingName = :name", "pendingNameAt = :now"]
+            values |= {":name": name, ":now": api.now_iso()}
+    for field, allowed in (("language", LANGUAGES), ("theme", THEMES)):
+        if field in body:
+            if body[field] not in allowed:
+                raise ApiError(400, f"{field} is one of: {', '.join(allowed)}")
+            sets.append(f"#{field} = :{field}")
+            values[f":{field}"] = body[field]
+    if "notifications" in body:
+        if not isinstance(body["notifications"], bool):
+            raise ApiError(400, "notifications is true or false")
+        sets.append("notifications = :notifications")
+        values[":notifications"] = body["notifications"]
+    if not sets and not removes:
+        if "displayName" in body:
+            return _get_me(user, role)  # the name it already is
+        raise ApiError(
+            400, "nothing to change: displayName, language, theme, notifications"
+        )
+
+    expression = (f"SET {', '.join(sets)} " if sets else "") + (
+        f"REMOVE {', '.join(removes)}" if removes else ""
+    )
+    names = {f"#{f}": f for f in ("language", "theme") if f"#{f} = :{f}" in sets}
+    changed = social_table.update_item(
+        Key={"PK": user["PK"], "SK": "PROFILE"},
+        UpdateExpression=expression.strip(),
+        ConditionExpression="attribute_exists(PK)",
+        ReturnValues="ALL_NEW",
+        **({"ExpressionAttributeNames": names} if names else {}),
+        **({"ExpressionAttributeValues": values} if values else {}),
+    )["Attributes"]
+    return _get_me(changed, role)
 
 
 def _accept_terms(user, role, body, **_):
@@ -1054,6 +1120,7 @@ ID = r"[0-9A-Za-z]+"
 
 ROUTES = (
     ("GET", r"^/api/v1/me$", _get_me, "user"),
+    ("PATCH", r"^/api/v1/me$", _update_me, "user"),
     ("POST", r"^/api/v1/me/terms$", _accept_terms, "user"),
     ("GET", r"^/api/v1/cats$", _get_cats, "user"),
     ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})$", _get_cat, "user"),

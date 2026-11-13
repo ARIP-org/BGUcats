@@ -4,17 +4,19 @@
 // posts; and on the profile the photo, the name, your posts, the settings.
 //
 // What the API cannot answer yet is left out, not drawn with made-up
-// numbers: friends (E7), achievements (E8), changing the name and the photo
-// (B1), notifications (N2), deleting the account (B10).
+// numbers: friends (E7), achievements (E8), changing the photo (B1b),
+// notifications (N2), deleting the account (B10). The name is changed in
+// its row on the profile (B1a).
 
 import { logout } from "../lib/auth.js";
-import { html, useEffect, useState } from "../vendor/preact-htm.js";
-import { me as loadMe, myPosts } from "./data.js";
+import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
+import { me as loadMe, myPosts, updateMe } from "./data.js";
 import { dayMonth, monthYear, t, tRich } from "./i18n.js";
 import { CatFace, Mascot } from "./mascot.js";
 import { glass } from "./motion.js";
 import { openScan } from "./scan.js";
 import { push, set, useStore } from "./store.js";
+import { termsFirst } from "./terms.js";
 import { THEMES, chooseTheme } from "./theme.js";
 import { Icon, confirm, openMenu, toast } from "./ui.js";
 
@@ -197,6 +199,46 @@ export function Profile() {
     if (yes) logout(HOME);
   };
 
+  // The name is saved when the field is left or "done" is pressed, as the
+  // prototype's is. Its owner sees it at once; everyone else once it has
+  // been checked (04-api.md, PATCH /me).
+  // The field is the browser's own while someone types in it. Given the
+  // name as `value`, Preact would write it back on every redraw, and Home
+  // asks who you are again just as the profile opens: the letters typed
+  // meanwhile were gone, and "done" saved nothing.
+  const nameField = useRef(null);
+  const shownName = nameOf(me);
+  useEffect(() => {
+    const field = nameField.current;
+    if (field && document.activeElement !== field) field.value = shownName;
+  }, [shownName]);
+
+  const saveName = async (e) => {
+    const field = e.currentTarget;
+    const before = nameOf(me);
+    const name = field.value.replace(/\s+/g, " ").trim();
+    if (!name || name === before) {
+      field.value = before;
+      return;
+    }
+    try {
+      if (!(await termsFirst())) {
+        field.value = before;
+        return;
+      }
+      const next = await updateMe({ displayName: name });
+      field.value = nameOf(next); // as the server cleaned it
+      set({ me: next });
+      toast(t("profile.nameSaved"));
+    } catch (err) {
+      field.value = before;
+      toast(err.code === "rate_limited" ? t("profile.nameLimit") : t("error.generic", { message: err.message }));
+    }
+  };
+  const doneOnEnter = (e) => {
+    if (e.key === "Enter") e.currentTarget.blur();
+  };
+
   return html`<div class="tab-content profile">
     <div class="profile-head">
       <${Me} size=${112} />
@@ -207,12 +249,25 @@ export function Profile() {
     </div>
 
     <section class="group" aria-label=${t("profile.you")}>
-      <div class="row" data-row="name">
+      <label class="row" data-row="name">
         <span class="row-icon" aria-hidden="true"><${Icon} name="person" /></span>
         <span class="row-label">${t("profile.name")}</span>
-        <span class="row-value">${nameOf(me)}</span>
-      </div>
+        <input
+          class="row-input"
+          ref=${nameField}
+          defaultValue=${shownName}
+          aria-label=${t("profile.nameLabel")}
+          placeholder=${t("profile.namePlaceholder")}
+          maxlength="30"
+          autocomplete="nickname"
+          autocapitalize="words"
+          enterkeyhint="done"
+          onChange=${saveName}
+          onKeyDown=${doneOnEnter}
+        />
+      </label>
     </section>
+    ${me?.namePending && html`<p class="group-note" role="status">${t("profile.nameChecking")}</p>`}
 
     <${MyPosts} posts=${posts} failed=${failed} small=${true} />
 

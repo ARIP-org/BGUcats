@@ -1680,8 +1680,35 @@ button.post-tile {
   font-size: 14px;
   color: var(--muted);
 }
-div.row {
-  cursor: default;
+label.row {
+  cursor: text;
+}
+.row-input {
+  flex: 1;
+  min-inline-size: 0;
+  block-size: 52px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px; /* under 16px an iPhone zooms the page on focus */
+  text-align: end;
+}
+.row-input:focus {
+  color: var(--ink);
+}
+.row-input::placeholder {
+  color: inherit;
+  opacity: 0.5;
+}
+.group-note {
+  margin: -6px 0 0;
+  padding-inline: 16px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
 }
 .profile-foot {
   margin: 4px 0 0;

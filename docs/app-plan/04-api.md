@@ -51,7 +51,7 @@ A person, as others see them:
 |---|---|
 | `GET /me` | The caller's profile, role, counters, and the **flags**. Creates the user on the first call (D1's rule applies: `not_admitted` if the address is not let in). The client calls this first, always. Since B3b `counters` is `{all, month}`, each `{catsMet, encounters}`, a second or two behind a pick or a label |
 | `POST /me/terms` | Records acceptance of the terms' current version. Until then every write answers `terms_required` |
-| `PATCH /me` | `displayName`, `language`, `theme`, `notifications`. A new display name is shown to its owner at once and to others after moderation |
+| `PATCH /me` | `displayName`, `language`, `theme`, `notifications`: only the fields sent change, and the answer is `GET /me`'s. A new display name is shown to its owner at once (`namePending: true`) and to others after moderation. The name needs the terms and counts against 10 changes a day; the settings need neither. Since B1a |
 | `PUT /me/username` | Chooses the username: 3–20 of `a-z 0-9 . _`, not on the reserved list, moderated. `name_taken` if in use |
 | `POST /me/avatar` | Returns an avatar id and a presigned upload that pins key, type and size |
 | `POST /me/avatar/{avatarId}/complete` | Confirms the object, checks its first bytes, refuses one with an EXIF block; the avatar goes to moderation |
