@@ -600,16 +600,7 @@ def _counters(cat_ids):
     return found
 
 
-def shown_name(cat, public):
-    """(name, where it came from): an admin's lock, else the poll's leader,
-    else the admin's name (docs/app-plan/03-data-model.md, D6)."""
-    if public.get("lockedName"):
-        return public["lockedName"], "admin"
-    if public.get("leaderName"):
-        return public["leaderName"], "poll"
-    if cat.get("name"):
-        return cat["name"], "admin"
-    return None, "none"
+shown_name = polls.shown_name
 
 
 def _photos_of(cat_id, newest_first, limit):
@@ -769,6 +760,12 @@ def _names_view(cat, user):
     public = tables.get_one(social_table, f"CAT#{cat_id}", "PUBLIC") or {}
     vote = tables.get_one(social_table, f"CAT#{cat_id}", f"VOTE#{me}")
     mine = vote["nameKey"] if vote else None
+    # A vote for a name an admin has since removed is no vote (it is deleted
+    # a moment later, by the events Lambda).
+    if mine and any(
+        o["nameKey"] == mine and o["status"] in ("removed", "rejected") for o in options
+    ):
+        mine = None
 
     live = [o for o in options if o["status"] == "live"]
     key, name = _admins_name(cat)
@@ -785,7 +782,7 @@ def _names_view(cat, user):
     # The leader as these options make it, not as the events Lambda last
     # wrote it: the page that just voted must not show the vote and the old
     # name together. The same rule as `lead` in src/events/handler.py.
-    leader = next((o for o in live if _number(o.get("votes")) > 0), None)
+    leader = polls.leader(live)
     locked = public.get("lockedName")
 
     def shown(option, **extra):
@@ -855,7 +852,10 @@ def _move_vote(cat, user, new_key, create=None):
         items, total = [], 0
         if old_key:
             old = tables.get_one(social_table, f"CAT#{cat_id}", f"NAME#{old_key}")
-            if old:
+            # A name an admin removed or the check refused is out of the
+            # poll and its count is no longer this vote's to change: the
+            # events Lambda takes its votes away as a whole (`remove_name`).
+            if old and old["status"] in ("live", "pending"):
                 items.append(_votes_change(cat_id, old, -1))
                 total -= old["status"] == "live"
         if new_key:

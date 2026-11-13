@@ -1186,6 +1186,29 @@ code {
   font-size: 14px;
 }
 
+/* A cat's name poll in the app, on the cat's page (B4b). */
+.name-poll:empty {
+  display: none;
+}
+
+.name-poll {
+  margin-bottom: 18px;
+}
+
+.name-poll .row {
+  padding-inline: 0;
+  flex-wrap: wrap;
+}
+
+.name-poll .row-main .muted {
+  display: block;
+}
+
+.name-poll .poll-removed,
+.name-poll .poll-none {
+  margin: 12px 0 0;
+}
+
 .panel-row {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);

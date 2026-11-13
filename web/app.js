@@ -959,15 +959,90 @@ async function openCat(catId, { redrawn = false } = {}) {
 
   const back = button("← All cats", "btn btn-ghost back", () => setView("cats"));
 
+  // The cat's name poll in the app, where the app is open (B4b). Its own
+  // request: the page stands without it.
+  const poll = el("div", { className: "name-poll" });
+  if (isAdmin() && state.social) {
+    api(`/cats/${catId}/names`)
+      .then((answer) => isCurrent() && drawNamePoll(poll, cat, answer))
+      .catch(() => {});
+  }
+
   if (!redrawn) window.scrollTo(0, 0);
   $("#main").replaceChildren(
     back,
     sectionHead(cat.name, plural(photos.length, "photo"), isAdmin() ? [rename, publicInfo, remove] : []),
+    poll,
     photos.length
       ? el("div", { className: "card" }, [
           el("div", { className: "grid" }, photos.map((p) => thumb(p, photos))),
         ])
       : emptyState("cat-calico", "No photos left", "Every photo of this cat was deleted or moved."),
+  );
+}
+
+// What the app calls the cat and why, every name people suggested, and an
+// admin's two answers to one that should not be there: remove it from the
+// poll, or lock the name the app shows (docs/app-plan/, D6). Each answer
+// comes back with the poll as it now is, and the panel is drawn again.
+function drawNamePoll(holder, cat, poll) {
+  const redraw = (answer) => drawNamePoll(holder, cat, answer);
+  const shown = poll.shown ? `“${poll.shown}”` : "no name";
+  const why = {
+    locked: `The app shows ${shown}: locked by ${poll.lockedBy || "an admin"}. People still vote, and it changes nothing until the lock is lifted.`,
+    poll: `The app shows ${shown}: it leads the poll.`,
+    admin: `The app shows ${shown}, the name given here. No suggestion has a vote.`,
+    none: "The app shows no name for this cat yet.",
+  }[poll.source];
+
+  const lock = button(poll.locked ? "Change" : "Lock the name", "btn btn-sm", async () => {
+    const answer = await ask({
+      title: "Lock the name the app shows",
+      text: "Everyone sees this name, whatever the poll says, until you unlock it.",
+      fields: [{ name: "name", label: "Name", value: poll.shown || cat.name, required: true, maxLength: 80 }],
+      ok: "Lock",
+    });
+    const name = answer?.name.trim();
+    if (!name) return;
+    redraw(await post(`/cats/${poll.catId}/name-lock`, { name }));
+    toast(`The app now shows “${name}”`);
+  });
+  const unlock = button("Unlock", "btn btn-sm", async () => {
+    redraw(await post(`/cats/${poll.catId}/name-lock`, { name: null }));
+    toast("The poll names the cat again");
+  });
+
+  const inPoll = poll.options.filter((o) => o.status === "live" || o.status === "pending");
+  const removed = poll.options.filter((o) => o.status === "removed");
+  const rows = inPoll.map((o) =>
+    el("div", { className: "row poll-name", attrs: { "data-name": o.nameKey } }, [
+      el("span", { className: "row-main" }, [
+        el("strong", { textContent: o.name }),
+        o.suggestedBy ? el("span", { className: "muted small", textContent: `by @${o.suggestedBy}` }) : null,
+      ]),
+      o.leading ? el("span", { className: "tag good", textContent: "leading" }) : null,
+      o.status === "pending" ? el("span", { className: "tag", textContent: "being checked" }) : null,
+      el("span", { className: "muted small", textContent: plural(o.votes, "vote") }),
+      button("Remove", "btn btn-sm btn-danger", async () => {
+        const ok = await confirmAction({
+          title: `Remove “${o.name}” from the poll?`,
+          text: `Its ${plural(o.votes, "vote")} ${o.votes === 1 ? "goes" : "go"} with it, and nobody can suggest this name for this cat again.`,
+          ok: "Remove name",
+        });
+        if (!ok) return;
+        redraw(await post(`/cats/${poll.catId}/names/remove`, { nameKey: o.nameKey }));
+        toast(`“${o.name}” removed`);
+      }),
+    ]),
+  );
+
+  holder.replaceChildren(
+    panel("Name poll", why, poll.locked ? [lock, unlock] : [lock], [
+      ...(rows.length ? rows : [el("p", { className: "muted small poll-none", textContent: "Nobody has suggested a name yet." })]),
+      removed.length
+        ? el("p", { className: "muted small poll-removed", textContent: `Removed: ${removed.map((o) => o.name).join(", ")}` })
+        : null,
+    ]),
   );
 }
 
@@ -1958,6 +2033,7 @@ async function boot() {
   try {
     const me = await api("/me");
     state.role = me.role;
+    state.social = !!me.social;
     $("#new-app").hidden = !me.social;
     localStorage.setItem(ROLE_KEY, state.role);
   } catch (err) {
