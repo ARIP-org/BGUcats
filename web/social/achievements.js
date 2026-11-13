@@ -13,7 +13,7 @@ import { html, useEffect, useState } from "../vendor/preact-htm.js";
 import { achievements as load } from "./data.js";
 import { t, tRich } from "./i18n.js";
 import { glass } from "./motion.js";
-import { set, useStore } from "./store.js";
+import { get, set, useStore } from "./store.js";
 import { toast } from "./ui.js";
 
 // The prototype's badge drawings; the last two are drawn for this build
@@ -102,12 +102,14 @@ export function AchievementsSheet() {
   const { data, failed } = useAchievements(open);
   const close = () => set({ achievementsOpen: false });
 
+  // One listener for the life of the frame, asking the store whether the
+  // sheet is open. Added when the sheet opened, it was not there yet for a
+  // key pressed in the same instant: an effect runs after the paint.
   useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => e.key === "Escape" && close();
+    const onKey = (e) => e.key === "Escape" && get().achievementsOpen && close();
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [open]);
+  }, []);
 
   if (!open) return null;
   const level = data?.level;
