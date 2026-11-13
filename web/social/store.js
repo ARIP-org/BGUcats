@@ -23,8 +23,12 @@ export function set(changes) {
 
 export function useStore(pick = (s) => s) {
   const [, redraw] = useState(0);
+  const drawn = pick(state);
   useEffect(() => {
-    let last = pick(state);
+    // What was drawn, not what is there now: a change made between the
+    // first draw and this effect (a toast at launch) had no listener yet,
+    // and was lost.
+    let last = drawn;
     const listener = (next) => {
       const now = pick(next);
       if (now !== last) {
@@ -33,9 +37,10 @@ export function useStore(pick = (s) => s) {
       }
     };
     listeners.add(listener);
+    listener(state);
     return () => listeners.delete(listener);
   }, []);
-  return pick(state);
+  return drawn;
 }
 
 // Pages over the tab bar: a cat, a person, a post, settings.

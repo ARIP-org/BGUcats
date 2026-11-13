@@ -30,7 +30,8 @@ import { set, useStore } from "./store.js";
 import { TabBar, watchScroll } from "./tabbar.js";
 import { adoptTheme, applyTheme, savedTheme } from "./theme.js";
 import { Scan, openScan, startOutbox } from "./scan.js";
-import { Overlays } from "./ui.js";
+import { Overlays, toast } from "./ui.js";
+import { unanswered } from "./asking.js";
 
 const HOME = "/app.html";
 const root = document.getElementById("root");
@@ -144,6 +145,11 @@ async function boot() {
   // uploading, and an unfinished capture flow comes back where it was.
   startOutbox();
   show(html`<${Frame} />`);
+  // The app was last closed while the phone was being asked for something
+  // (asking.js): it no longer asks for that by itself, and says so once.
+  const left = unanswered();
+  if (left.includes("location")) toast(t("scan.locationHeld"), 7000);
+  else if (left.includes("camera")) toast(t("scan.cameraHeldToast"), 7000);
 }
 
 boot().catch((err) => show(html`<${SignIn} note=${t("error.generic", { message: err.message })} />`));

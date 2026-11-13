@@ -180,5 +180,9 @@
   "profile.usernameSaved": "Username saved",
   "profile.usernameTaken": "That username is taken. Try another.",
   "profile.usernameRule": "A username is 3 to 20 letters a-z, digits, dots or underscores.",
-  "profile.usernameLimit": "That's enough username changes for today. Try again tomorrow."
+  "profile.usernameLimit": "That's enough username changes for today. Try again tomorrow.",
+  "scan.locationHeld": "The app stopped last time while asking for your location, so it won't ask by itself. Turn on Add location on a post to try again.",
+  "scan.cameraHeldToast": "The app stopped last time while asking for the camera, so the live camera is off. You can turn it back on from the camera screen.",
+  "scan.cameraHeld": "The live camera is off: the app stopped last time while asking for it. The phone's camera button below still works.",
+  "scan.cameraTry": "Try the live camera"
 }
