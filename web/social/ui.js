@@ -23,6 +23,9 @@ const PATHS = {
   globe: html`<circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.4 2.6 3.4 5.4 3.4 8.5s-1 5.9-3.4 8.5c-2.4-2.6-3.4-5.4-3.4-8.5s1-5.9 3.4-8.5z" />`,
   theme: html`<circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" />`,
   friends: html`<circle cx="8.3" cy="4.6" r="2.5" /><circle cx="15.7" cy="4.6" r="2.5" /><path d="M5 21v-9.3A2.7 2.7 0 0 1 7.7 9h10.1a1.9 1.9 0 0 1 .5 3.7l-2.8.8V21" /><path d="M8.5 14.5V21M11.8 13.8V21" />`,
+  pencil: html`<path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13 7l4 4" />`,
+  library: html`<rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M20.5 16l-5-5-8 8.5" />`,
+  trash: html`<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />`,
   signOut: html`<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /><path d="M10 8l-4 4 4 4M6 12h10" />`,
 };
 const MIRRORED = new Set(["back", "chevron", "signOut"]);
@@ -157,12 +160,14 @@ function Menu() {
       ${menu.items.map(
         (item) => html`<button
           type="button"
+          class=${item.danger ? "danger" : undefined}
           role=${item.checked == null ? "menuitem" : "menuitemradio"}
           aria-checked=${item.checked == null ? undefined : String(item.checked)}
           onClick=${() => pick(item)}
         >
           <span class="menu-lead" aria-hidden="true">
             ${item.swatch && html`<span class="swatch" data-swatch=${item.swatch}></span>`}
+            ${item.icon && html`<${Icon} name=${item.icon} size=${21} width=${1.8} />`}
           </span>
           <span class="menu-label">${item.label}</span>
           ${item.checked && html`<span class="menu-check"><${Icon} name="check" width=${2.6} /></span>`}

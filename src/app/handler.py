@@ -244,6 +244,9 @@ def _me_payload(user, role):
         # sees `displayName` until the new one has been checked (B1).
         "displayName": user.get("pendingName") or user["displayName"],
         "namePending": bool(user.get("pendingName")),
+        # The same for a photo: the owner sees the new one while it waits.
+        "avatar": _avatar_url(user.get("pendingAvatarKey") or user.get("avatarKey")),
+        "avatarPending": bool(user.get("pendingAvatarKey")),
         "inviteCode": user["inviteCode"],
         "language": user.get("language", "en"),
         "theme": user.get("theme"),
@@ -343,6 +346,113 @@ def _update_me(user, role, body, **_):
         **({"ExpressionAttributeValues": values} if values else {}),
     )["Attributes"]
     return _get_me(changed, role)
+
+
+# --------------------------------------------------------------------------
+# The profile photo (B1b)
+# --------------------------------------------------------------------------
+
+AVATAR_CHANGES_PER_DAY = 5
+AVATAR_UPLOAD_TTL_SECONDS = 300
+
+
+def _avatar_url(key):
+    """A signed address for a profile photo, or None. An avatar's object is
+    never rewritten (a new photo is a new key), so it may be cached like a
+    cat's photo."""
+    return media.presign(s3, MEDIA_BUCKET, key) if key else None
+
+
+def _start_avatar(user, **_):
+    """`POST /me/avatar`: where to send the picture. The phone has already
+    scaled and re-encoded it (02-architecture.md, "Storage"); the upload is
+    pinned to this person's own key, to JPEG and to 200 KB."""
+    require_terms(user)
+    limits.take(
+        social_table, f"{user['userId']}#avatars", AVATAR_CHANGES_PER_DAY, 86400
+    )
+    avatar_id = ids.new_ulid()
+    upload = s3.generate_presigned_post(
+        Bucket=MEDIA_BUCKET,
+        Key=media.avatar_key(user["userId"], avatar_id),
+        Fields={"Content-Type": media.AVATAR_TYPE},
+        Conditions=[
+            {"Content-Type": media.AVATAR_TYPE},
+            ["content-length-range", 1, media.AVATAR_MAX_BYTES],
+        ],
+        ExpiresIn=AVATAR_UPLOAD_TTL_SECONDS,
+    )
+    return {"avatarId": avatar_id, "upload": upload}
+
+
+def _complete_avatar(user, role, avatar_id, **_):
+    """`POST /me/avatar/{id}/complete`: the picture arrived. Checked by its
+    own bytes, never by what the phone said it was, and refused if it still
+    carries the camera's metadata. Then it waits beside the published one
+    (`pendingAvatarKey`) for the events Lambda, as a changed name does."""
+    key = media.avatar_key(user["userId"], avatar_id)
+    if key in (user.get("pendingAvatarKey"), user.get("avatarKey")):
+        return _get_me(user, role)  # a retry of a call that already worked
+    try:
+        head = s3.head_object(Bucket=MEDIA_BUCKET, Key=key)
+        start = s3.get_object(
+            Bucket=MEDIA_BUCKET, Key=key, Range=f"bytes=0-{media.AVATAR_HEAD_BYTES - 1}"
+        )["Body"].read()
+    except s3.exceptions.ClientError:
+        raise ApiError(409, "the photo has not reached storage yet", code="try_again")
+    problem = (
+        "it is too large"
+        if head["ContentLength"] > media.AVATAR_MAX_BYTES
+        else media.jpeg_problem(start)
+    )
+    if problem:
+        _delete_avatar_objects(user, keep=_avatar_keys(user))
+        raise ApiError(
+            400, f"this photo cannot be a profile photo: {problem}", code="bad_photo"
+        )
+    changed = social_table.update_item(
+        Key={"PK": user["PK"], "SK": "PROFILE"},
+        UpdateExpression="SET pendingAvatarKey = :key, pendingAvatarAt = :now",
+        ConditionExpression="attribute_exists(PK)",
+        ExpressionAttributeValues={":key": key, ":now": api.now_iso()},
+        ReturnValues="ALL_NEW",
+    )["Attributes"]
+    # What this photo replaces, and any upload that was never confirmed.
+    # The published one stays until this one is.
+    _delete_avatar_objects(changed, keep=_avatar_keys(changed))
+    return _get_me(changed, role)
+
+
+def _remove_avatar(user, role, **_):
+    """`DELETE /me/avatar`: back to the cat's face, at once and for everyone."""
+    changed = social_table.update_item(
+        Key={"PK": user["PK"], "SK": "PROFILE"},
+        UpdateExpression="REMOVE avatarKey, pendingAvatarKey, pendingAvatarAt",
+        ConditionExpression="attribute_exists(PK)",
+        ReturnValues="ALL_NEW",
+    )["Attributes"]
+    _delete_avatar_objects(changed, keep=set())
+    return _get_me(changed, role)
+
+
+def _avatar_keys(user):
+    return {user.get("avatarKey"), user.get("pendingAvatarKey")} - {None}
+
+
+def _delete_avatar_objects(user, keep):
+    """Every version of every object under this person's avatar prefix that
+    is not in `keep`. The bucket keeps versions, so a plain delete would
+    leave the picture there: a removed photo has to be gone."""
+    prefix = f"avatars/{user['userId']}/"
+    paginator = s3.get_paginator("list_object_versions")
+    for page in paginator.paginate(Bucket=MEDIA_BUCKET, Prefix=prefix):
+        targets = [
+            {"Key": v["Key"], "VersionId": v["VersionId"]}
+            for v in (page.get("Versions", []) + page.get("DeleteMarkers", []))
+            if v["Key"] not in keep
+        ]
+        if targets:
+            s3.delete_objects(Bucket=MEDIA_BUCKET, Delete={"Objects": targets})
 
 
 def _accept_terms(user, role, body, **_):
@@ -1029,6 +1139,9 @@ def _cards(posts, user):
                 "userId": p["authorId"],
                 "username": author.get("username"),
                 "displayName": author.get("displayName"),
+                # The published photo only: one still waiting is its
+                # owner's alone (`GET /me`).
+                "avatar": _avatar_url(author.get("avatarKey")),
             },
             "cat": {"catId": p["catId"], "name": names.get(p["catId"])}
             if p.get("catId")
@@ -1121,6 +1234,14 @@ ID = r"[0-9A-Za-z]+"
 ROUTES = (
     ("GET", r"^/api/v1/me$", _get_me, "user"),
     ("PATCH", r"^/api/v1/me$", _update_me, "user"),
+    ("POST", r"^/api/v1/me/avatar$", _start_avatar, "user"),
+    (
+        "POST",
+        rf"^/api/v1/me/avatar/(?P<avatar_id>{api.ULID_PATTERN})/complete$",
+        _complete_avatar,
+        "user",
+    ),
+    ("DELETE", r"^/api/v1/me/avatar$", _remove_avatar, "user"),
     ("POST", r"^/api/v1/me/terms$", _accept_terms, "user"),
     ("GET", r"^/api/v1/cats$", _get_cats, "user"),
     ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})$", _get_cat, "user"),

@@ -545,6 +545,7 @@ actual product question.
   derived/{photoId}/medium-1024.webp
   exports/{datasetVersion}/manifest.json
   exports/{datasetVersion}/images/...
+  avatars/{userId}/{avatarId}.jpg        a member's profile photo (the app, B1b)
   ```
 - Single DynamoDB table, three GSIs: photos-in-session, labeling queue by
   status, photos-of-a-cat for export. Every key it holds:

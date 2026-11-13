@@ -6,6 +6,9 @@ data "aws_caller_identity" "current" {}
 #   derived/{photoId}/medium-1024.webp
 #   exports/{datasetVersion}/manifest.json
 #   exports/{datasetVersion}/images/...
+#   avatars/{userId}/{avatarId}.jpg        a member's profile photo, written
+#                                          by their phone with a presigned POST
+#                                          (docs/app-plan/02-architecture.md)
 resource "aws_s3_bucket" "media" {
   bucket = "bgucats-media-${data.aws_caller_identity.current.account_id}"
 

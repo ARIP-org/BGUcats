@@ -164,5 +164,16 @@
   "profile.namePlaceholder": "Your name",
   "profile.nameSaved": "Name saved",
   "profile.nameChecking": "Others see your new name once it has been checked.",
-  "profile.nameLimit": "That's enough name changes for today. Try again tomorrow."
+  "profile.nameLimit": "That's enough name changes for today. Try again tomorrow.",
+  "profile.photoChange": "Change profile photo",
+  "profile.photoMenu": "Profile photo",
+  "profile.photoTake": "Take photo",
+  "profile.photoChoose": "Choose from library",
+  "profile.photoRemove": "Remove photo",
+  "profile.photoSaved": "Photo saved",
+  "profile.photoRemoved": "Photo removed",
+  "profile.photoChecking": "Others see your new photo once it has been checked.",
+  "profile.photoLimit": "That's enough photo changes for today. Try again tomorrow.",
+  "profile.photoBad": "That picture could not be used. Try another one.",
+  "profile.photoOf": "Your profile photo"
 }

@@ -20,7 +20,7 @@ A session ticks its row in the pull request that finishes it.
 | F2 | Shared code, and one catalogue of every key | merged 2026-11-12 |
 | F3 | The social table, the events Lambda, the seed | merged 2026-11-12. The local app and the seed learn the table in B3c |
 | F4 | The member API: who you are, flags, who may sign up | merged 2026-11-12 |
-| B1 | Profiles | B1a (the name and the settings) built 2026-11-13, in review |
+| B1 | Profiles | B1a (the name and the settings) merged 2026-11-13; B1b (the photo) built the same day, in review |
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | |
@@ -44,7 +44,7 @@ A session ticks its row in the pull request that finishes it.
 | E3 | The capture flow | merged 2026-11-12 |
 | E4 | The gallery, a cat's page, the poll | |
 | E5 | The map | |
-| E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a; the photo waits for B1b |
+| E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | |
 | E8 | Achievements | |
 | E9 | The states nobody drew, offline, accessibility | |
@@ -212,7 +212,18 @@ was built.
   that it is still the name that was read. Language, theme and
   notifications are stored as sent. On the profile the name is edited in
   its row and saved on "done"; the theme chosen there follows the account
-  to the next phone. Still to build: the username, the avatar, devices.
+  to the next phone.
+- **B1b, built 2026-11-13:** the profile photo. The phone cuts it
+  square, scales it to 512 px and re-encodes it (`web/social/avatar.js`),
+  which drops the camera's metadata; the API signs an upload pinned to
+  `avatars/{userId}/{avatarId}.jpg`, checks the file's own bytes on
+  confirm and refuses one that still carries EXIF, XMP or IPTC
+  (`jpeg_problem` in `src/common/media.py`). It waits as
+  `pendingAvatarKey` and the events Lambda publishes it, as a name. The
+  member API's role gains `avatars/*` in the media bucket and nothing
+  else there. A replaced photo is removed at the person's next change:
+  the events Lambda has no access to the bucket. Still to build: the
+  username, devices.
 
 ### B2. Cats for members, regions
 

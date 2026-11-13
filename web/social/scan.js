@@ -232,7 +232,7 @@ async function finish({ posting }) {
       sending: [
         {
           postId: posted.body.postId,
-          author: { userId: me?.userId, username: me?.username, displayName: me?.displayName },
+          author: { userId: me?.userId, username: me?.username, displayName: me?.displayName, avatar: me?.avatar },
           cat: cat ? { catId: cat.catId, name: cat.name } : null,
           photos: scan.shots.map((s) => ({ photoId: s.photoId, medium: s.thumb, thumb: s.thumb })),
           text: posted.body.text || "",

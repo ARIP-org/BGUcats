@@ -4,13 +4,14 @@
 // posts; and on the profile the photo, the name, your posts, the settings.
 //
 // What the API cannot answer yet is left out, not drawn with made-up
-// numbers: friends (E7), achievements (E8), changing the photo (B1b),
-// notifications (N2), deleting the account (B10). The name is changed in
-// its row on the profile (B1a).
+// numbers: friends (E7), achievements (E8), notifications (N2), deleting
+// the account (B10). The name is changed in its row on the profile (B1a),
+// the photo with the pencil on it (B1b).
 
 import { logout } from "../lib/auth.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
-import { me as loadMe, myPosts, updateMe } from "./data.js";
+import { squareJpeg } from "./avatar.js";
+import { me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
 import { dayMonth, monthYear, t, tRich } from "./i18n.js";
 import { CatFace, Mascot } from "./mascot.js";
 import { glass } from "./motion.js";
@@ -46,9 +47,11 @@ function useMyPosts(shown) {
   return { posts, failed };
 }
 
+// The caller's photo, or the cat's face until they choose one.
 function Me({ size = 48 }) {
+  const photo = useStore((s) => s.me?.avatar);
   return html`<span class="me-avatar" aria-hidden="true" style=${{ "--size": `${size}px` }}>
-    <${CatFace} size=${Math.round(size * 0.7)} />
+    ${photo ? html`<img src=${photo} alt="" />` : html`<${CatFace} size=${Math.round(size * 0.7)} />`}
   </span>`;
 }
 
@@ -239,9 +242,68 @@ export function Profile() {
     if (e.key === "Enter") e.currentTarget.blur();
   };
 
+  // The photo: taken now or chosen, made small on the phone (avatar.js),
+  // sent, and shown at once. Everyone else sees it once it has been checked.
+  const camera = useRef(null);
+  const library = useRef(null);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const photoPicked = async (e) => {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = ""; // the same picture can be chosen again
+    if (!file) return;
+    try {
+      if (!(await termsFirst())) return;
+      setSavingPhoto(true);
+      set({ me: await saveAvatar(await squareJpeg(file)) });
+      toast(t("profile.photoSaved"));
+    } catch (err) {
+      toast(
+        err.code === "rate_limited"
+          ? t("profile.photoLimit")
+          : err.status
+            ? t("error.generic", { message: err.message })
+            : t("profile.photoBad"),
+      );
+    } finally {
+      setSavingPhoto(false);
+    }
+  };
+  const removePhoto = async () => {
+    try {
+      set({ me: await removeAvatar() });
+      toast(t("profile.photoRemoved"));
+    } catch (err) {
+      toast(t("error.generic", { message: err.message }));
+    }
+  };
+  const photoMenu = (e) =>
+    openMenu(e.currentTarget, {
+      label: t("profile.photoMenu"),
+      items: [
+        { label: t("profile.photoTake"), icon: "camera", pick: () => camera.current?.click() },
+        { label: t("profile.photoChoose"), icon: "library", pick: () => library.current?.click() },
+        ...(me?.avatar ? [{ label: t("profile.photoRemove"), icon: "trash", danger: true, pick: removePhoto }] : []),
+      ],
+    });
+
   return html`<div class="tab-content profile">
     <div class="profile-head">
-      <${Me} size=${112} />
+      <div class=${savingPhoto ? "profile-photo busy" : "profile-photo"}>
+        <${Me} size=${112} />
+        <button
+          type="button"
+          class="glass-icon"
+          ref=${glass}
+          aria-label=${t("profile.photoChange")}
+          aria-haspopup="menu"
+          disabled=${savingPhoto}
+          onClick=${photoMenu}
+        >
+          <${Icon} name="pencil" size=${17} />
+        </button>
+        <input ref=${camera} class="hidden-input" type="file" accept="image/*" capture="user" tabindex="-1" aria-hidden="true" data-photo="camera" onChange=${photoPicked} />
+        <input ref=${library} class="hidden-input" type="file" accept="image/*" tabindex="-1" aria-hidden="true" data-photo="library" onChange=${photoPicked} />
+      </div>
       <h1 class="profile-name">${nameOf(me)}</h1>
       <span class="profile-sub"
         >@${me?.username || ""}${me?.since && ` · ${t("home.since", { date: monthYear(me.since) })}`}</span
@@ -268,6 +330,7 @@ export function Profile() {
       </label>
     </section>
     ${me?.namePending && html`<p class="group-note" role="status">${t("profile.nameChecking")}</p>`}
+    ${me?.avatarPending && html`<p class="group-note" role="status">${t("profile.photoChecking")}</p>`}
 
     <${MyPosts} posts=${posts} failed=${failed} small=${true} />
 

@@ -480,6 +480,9 @@ body:has(.frame) {
   text-align: start;
   cursor: pointer;
 }
+.menu button.danger {
+  color: var(--danger);
+}
 .menu button:hover,
 .menu button:focus-visible {
   background: var(--hover);
@@ -1766,4 +1769,43 @@ label.row {
 }
 .cat-face .f-nose {
   fill: var(--f-nose);
+}
+
+/* The profile photo (B1b): a person's own picture in the disc, and on the
+   profile the glass pencil at its edge that changes it. */
+.me-avatar img,
+.avatar img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 50%;
+}
+.avatar {
+  overflow: hidden;
+}
+.profile-photo {
+  position: relative;
+  margin-block-end: 14px;
+}
+.profile-head .profile-photo .me-avatar {
+  margin: 0;
+}
+.profile-photo .glass-icon {
+  position: absolute;
+  inset-block-end: -2px;
+  inset-inline-end: -2px;
+  inline-size: 38px;
+  block-size: 38px;
+  border-radius: 19px;
+}
+.profile-photo.busy .me-avatar {
+  opacity: 0.5;
+}
+.hidden-input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
 }

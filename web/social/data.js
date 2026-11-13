@@ -3,7 +3,7 @@
 // Reads reuse a recent answer (the shared cachedGet); likes change on
 // screen at once and are sent, and a refusal puts the old state back.
 
-import { api, cachedGet, del, patch, put } from "../lib/api.js";
+import { api, cachedGet, del, patch, post, put } from "../lib/api.js";
 
 const query = (cursor) => (cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
 
@@ -24,6 +24,18 @@ export const deletePost = (postId) => del(`/v1/posts/${postId}`);
 export const me = () => api("/v1/me");
 // Changes the caller's display name or settings; answers like `me`.
 export const updateMe = (changes) => patch("/v1/me", changes);
+// A new profile photo (a JPEG Blob from avatar.js): asks where to send it,
+// sends it straight to storage, then confirms. Answers like `me`.
+export async function saveAvatar(blob) {
+  const { avatarId, upload } = await post("/v1/me/avatar");
+  const form = new FormData();
+  for (const [name, value] of Object.entries(upload.fields)) form.append(name, value);
+  form.append("file", blob); // must be the last field
+  const sent = await fetch(upload.url, { method: "POST", body: form });
+  if (!sent.ok) throw new Error(`storage refused the photo (${sent.status})`);
+  return post(`/v1/me/avatar/${avatarId}/complete`);
+}
+export const removeAvatar = () => del("/v1/me/avatar");
 // The caller's own posts, newest first, each with its state.
 export const myPosts = () => api("/v1/me/posts");
 

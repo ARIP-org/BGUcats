@@ -25,12 +25,13 @@ function hue(id = "") {
   return n;
 }
 
+// A person's photo, or their initials on their colour until they have one.
 export function Avatar({ person, size = 42 }) {
   return html`<span
     class="avatar"
     aria-hidden="true"
     style=${{ "--size": `${size}px`, background: `var(--avatar-${hue(person.userId)})` }}
-    >${initials(person)}</span
+    >${person.avatar ? html`<img src=${person.avatar} alt="" loading="lazy" />` : initials(person)}</span
   >`;
 }
 

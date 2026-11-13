@@ -439,9 +439,40 @@ def publish_name(record):
         return  # changed again, or gone: the newer change has its own record
 
 
+def publish_avatar(record):
+    """A new profile photo becomes the one everyone sees (B1b), exactly as
+    a name does: moved from `pendingAvatarKey` on the condition that it is
+    still the photo that was read. Moderation of photos (C4) goes here.
+
+    The photo it replaces stays in the bucket until the person's next
+    change or removal, when the member API sweeps their prefix: this
+    Lambda has no access to the bucket and needs none.
+    """
+    changed = _image(record)
+    key = (changed or {}).get("pendingAvatarKey")
+    if not key:
+        return
+    try:
+        social_table.update_item(
+            Key={"PK": changed["PK"], "SK": "PROFILE"},
+            UpdateExpression="SET avatarKey = :key REMOVE pendingAvatarKey, pendingAvatarAt",
+            ConditionExpression="pendingAvatarKey = :key",
+            ExpressionAttributeValues={":key": key},
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        return  # replaced or removed since: nothing of this one to publish
+
+
+def publish_profile(record):
+    """What a person changed about themselves, made public: each part by
+    itself, so a name never waits for a photo."""
+    publish_name(record)
+    publish_avatar(record)
+
+
 HANDLERS = {kind: _not_built_yet for _, _, kind in KINDS}
 HANDLERS["post"] = publish_post
-HANDLERS["profile"] = publish_name
+HANDLERS["profile"] = publish_profile
 HANDLERS["encounter"] = count_encounter
 HANDLERS["proposal"] = decide_proposal
 

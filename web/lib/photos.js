@@ -64,8 +64,9 @@ export function stablePhotoUrl(value) {
 }
 
 // Every "...Url" field in a response: thumbUrl, mediumUrl, coverUrl, videoUrl;
-// and the member API's photos, {thumb, medium} (since E2).
-const PHOTO_KEYS = new Set(["thumb", "medium"]);
+// and the member API's photos, {thumb, medium} (since E2), and a person's
+// profile photo, `avatar` (B1b).
+const PHOTO_KEYS = new Set(["thumb", "medium", "avatar"]);
 export function keepPhotoUrls(data) {
   if (Array.isArray(data)) {
     for (const item of data) keepPhotoUrls(item);
