@@ -85,8 +85,13 @@ export function Stack({ pages }) {
   const [leaving, setLeaving] = useState([]);
   const before = useRef(stack);
 
+  // The pages popped since the last draw. They are drawn as leaving in this
+  // very draw: found only afterwards (in the effect), a popped page was
+  // gone for one frame and then made again to slide away, so it lost what
+  // it showed and asked the server for it once more.
+  const gone = before.current.filter((p) => !stack.includes(p) && !leaving.includes(p));
+
   useEffect(() => {
-    const gone = before.current.filter((p) => !stack.includes(p));
     before.current = stack;
     if (!gone.length) return undefined;
     setLeaving((now) => [...now, ...gone]);
@@ -103,7 +108,7 @@ export function Stack({ pages }) {
   // moves from shown to leaving.
   const all = [
     ...stack.map((entry) => ({ entry, leaving: false })),
-    ...leaving.map((entry) => ({ entry, leaving: true })),
+    ...[...leaving, ...gone].map((entry) => ({ entry, leaving: true })),
   ];
   return html`${all.map(
     ({ entry, leaving: going }) =>

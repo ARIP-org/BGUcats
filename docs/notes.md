@@ -44,6 +44,11 @@ an hour that a sentence would have saved.
   it once too few. From the moment an option is `removed`, only the
   events Lambda changes its count (`_move_vote` in `src/app/handler.py`,
   `remove_name` in `src/events/handler.py`; B4b, 2026-11-13).
+- **`ADD` cannot make an entry in a map that is not there.** A counter
+  per month as `pop.#month` fails on the first write of each item
+  ("document path invalid"), and making the map first is a second write
+  that can race. One plain attribute a month (`pop2026-11`) needs
+  neither (B7b, 2026-11-13).
 - **Mocks are always consistent.** moto answers every read with the latest
   write, so none of the above can fail in a unit test. They were found by
   running real calls against a real table.

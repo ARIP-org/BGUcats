@@ -13,6 +13,7 @@ from .test_me import aws  # noqa: F401  (the fixture)
 # purpose, or it is not sent: the admins' notes, and who made the cat, never
 # are.
 LIST_KEYS = {
+    "gpa",
     "catId",
     "name",
     "nameSource",

@@ -21,6 +21,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -627,11 +628,44 @@ def _number(value):
     return int(value) if value is not None else 0
 
 
-def public_cat(cat, public, cover):
+# The grade looks at this month and the two before (D9).
+GPA_MONTHS = 3
+
+
+def _popularity(public, today):
+    """A cat's popularity now: its counted encounters, and the points they
+    earned, over the current month and the two before (`pop{yyyy-mm}`, kept
+    by the events Lambda)."""
+    month, total = today.isoformat()[:7], 0
+    for _ in range(GPA_MONTHS):
+        total += _number(public.get(f"pop{month}"))
+        month = _previous_month(month)
+    return total
+
+
+def grades(counters, today):
+    """{catId: GPA}: a popularity grade the app works out; nobody grades a
+    cat (D9). `1 + 3 × √(popularity ÷ the most popular cat's)`, to one
+    decimal, so the most popular cat has 4.0 and the square root keeps the
+    rest of the campus off the floor. A cat nobody met in that time has
+    none, not a low one. With the `gpa` flag off, nobody has one."""
+    if not FLAGS.get("gpa"):
+        return {}
+    popular = {c: _popularity(public, today) for c, public in counters.items()}
+    top = max(popular.values(), default=0)
+    return {
+        c: round(1 + 3 * math.sqrt(points / top), 1)
+        for c, points in popular.items()
+        if points > 0
+    }
+
+
+def public_cat(cat, public, cover, gpa=None):
     """What a user may see of a cat. The desk's own fields (notes, who
     created it) never leave here: tests/app/test_cats.py lists every key."""
     name, source = shown_name(cat, public)
     return {
+        "gpa": gpa,
         "catId": cat["catId"],
         "name": name,
         "nameSource": source,
@@ -670,11 +704,16 @@ def _israel_today():
 def _get_cats(**_):
     cats = _cats()
     counters = _counters([c["catId"] for c in cats])
+    today = _israel_today()
+    gpa = grades(counters, today)
     listed = []
     for cat in cats:
-        cover = next(iter(_photos_of(cat["catId"], newest_first=False, limit=1)), None)
-        listed.append(public_cat(cat, counters.get(cat["catId"], {}), cover))
-    return {"cats": listed, "catOfTheDay": cat_of_the_day(listed, _israel_today())}
+        cat_id = cat["catId"]
+        cover = next(iter(_photos_of(cat_id, newest_first=False, limit=1)), None)
+        listed.append(
+            public_cat(cat, counters.get(cat_id, {}), cover, gpa.get(cat_id))
+        )
+    return {"cats": listed, "catOfTheDay": cat_of_the_day(listed, today)}
 
 
 def _get_cat(user, cat_id, **_):
@@ -684,9 +723,11 @@ def _get_cat(user, cat_id, **_):
     public = tables.get_one(social_table, f"CAT#{cat_id}", "PUBLIC") or {}
     photos = _photos_of(cat_id, newest_first=True, limit=CAT_PAGE_PHOTOS)
     oldest = next(iter(_photos_of(cat_id, newest_first=False, limit=1)), None)
+    # A grade is relative to the most popular cat, so it needs them all.
+    gpa = grades(_counters([c["catId"] for c in _cats()]), _israel_today())
     return {
         "cat": {
-            **public_cat(cat, public, oldest),
+            **public_cat(cat, public, oldest, gpa.get(cat_id)),
             "bio": cat.get("bio") or "",
             "met": _met(user, cat_id),
             "photos": [

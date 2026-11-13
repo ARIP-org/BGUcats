@@ -116,7 +116,8 @@ dataset's.
 | Block (B8; an invite already refuses to cross one, B5a) | `USER#{a}` | `BLOCK#{b}` | `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}`, so "who must not see me" is one query |
 | Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
 | Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; `posts`, `fed`, `namesVoted`, `namesLed`; `points` on `ALL` only |
-| A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. (`METM#{yyyy-mm}#{catId}`, planned for the month's count, is not written: `STATS#{yyyy-mm}.catsMet` holds it) |
+| A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. |
+| What a person gives a cat's popularity **(since B7b)** | `USER#{id}` | `METM#{yyyy-mm}#{catId}` | `catId`, `month`, `points`: one for each day they met the cat that month, five more for a day that became a post. The cat's `pop{yyyy-mm}` is the sum of these over everyone, and moves by the difference in one transaction with this item. Deleted at zero |
 | Badge | `USER#{id}` | `BADGE#{badgeId}` | `at` |
 | An encounter, as the app counts it **(since B3b)** | `USER#{id}` | `ENC#{sessionId}` | `userId`, `sessionId`, `proposalId` (B6: the encounter's new-cat proposal), `claimedCatId` (the pick, or the post's claim if there was no pick), `labelCatId` (the session's label, following merges), `rejected`, `day` (the Israel date the encounter began), `regionId`, `postId`, `updatedAt` |
 
@@ -166,15 +167,16 @@ Its index keys:
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop` (popularity per month, a map of `yyyy-mm` to a number; months older than three are dropped), `voteTotal`, `leaderKey`, `leaderName`, `lockedName` (an admin's lock; written by the desk's API since B4b, with `lockedBy` and `lockedAt`) |
+| Public counters | `CAT#{catId}` | `PUBLIC` | `posts`, `likes`, `lastSeenAt`, `lastFedAt`, `pop{yyyy-mm}` (**since B7b**: the cat's popularity in that month, one attribute a month, e.g. `pop2026-11`. Not a map: `ADD` cannot make an entry in a map that is not there yet, and a plain attribute needs no first write. Old months are left: twelve small numbers a year), `voteTotal`, `leaderKey`, `leaderName`, `lockedName` (an admin's lock; written by the desk's API since B4b, with `lockedBy` and `lockedAt`) |
 | Name option **(written since B4a)** | `CAT#{catId}` | `NAME#{nameKey}` | `catId`, `nameKey` (the name cleaned and case-folded, so "Mango" and "mango " are one option), `name` (the first spelling suggested), `votes`, `suggestedBy` (absent on the admins' own name), `status` (`pending` / `live` / `rejected` / `removed`), `createdAt`. Removed by an admin (B4b): the desk's API sets `status` to `removed` with `removedFrom` (the status it had), `removedBy`, `removedAt`; the events Lambda then sets `votes` to 0, takes them off `voteTotal` if it was live, and deletes the votes that name it |
 | Vote **(written since B4a)** | `CAT#{catId}` | `VOTE#{userId}` | `catId`, `userId`, `nameKey`, `at`. One per person per cat. On `GSI2` as `FEED#{yyyy-mm}` / `{at}#V#{catId}#{userId}`, which is how a vote becomes a card in friends' feeds (written since B5a; a vote cast before it has no feed keys and makes no card) |
 | Feeding (D10) | `CAT#{catId}` | `FED#{at}#{userId}` | `feedingId` (from the phone), `spotId`, `removed` |
 
 There is no grade item: nobody grades a cat (D9). GPA is worked out from
-`pop` when the cats are read (`01-product.md`, "GPA"). `pop` is kept by
-the events Lambda from the same `ENC` items as "met", so a
-label that corrects an encounter corrects the cat's popularity too.
+`pop{yyyy-mm}` when the cats are read (`grades` in `src/app/handler.py`;
+`01-product.md`, "GPA"). The numbers are kept by the events Lambda
+(`count_popularity`) from the same `ENC` items as "met", so a label that
+corrects an encounter corrects the cat's popularity too.
 
 `lastFedAt` is the newest feeding that has not been removed. Removing a
 feeding re-reads the partition's last `FED#` item rather than trusting a

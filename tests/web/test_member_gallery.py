@@ -33,8 +33,9 @@ def test_the_gallery_shows_every_cat_in_two_columns(open_member_app, shot):
     page = gallery(open_member_app)
     assert sorted(reading_order(page)) == ["Mitzi", "Pilpel", "Shunra"]
     assert page.locator(".gallery-column").count() == 2
-    # Seen most recently first: Mitzi is the one that was posted.
+    # The highest grade first: Mitzi is the only cat anyone met in the app.
     assert reading_order(page)[0] == "Mitzi"
+    assert page.locator(".gallery").get_attribute("data-sort") == "gpa"
     page.wait_for_function(
         "[...document.querySelectorAll('.gallery-tile img')].every(i => i.complete && i.naturalWidth)"
     )
@@ -69,12 +70,13 @@ def test_the_cats_can_be_sorted(open_member_app, shot):
     page.get_by_role("button", name="Sort cats").click()
     menu = page.get_by_role("menu", name="Sort cats by")
     assert [b.inner_text().strip() for b in menu.get_by_role("menuitemradio").all()] == [
+        "Highest GPA",
         "Recently seen",
         "Most posts",
         "Newest on campus",
         "Name A–Z",
     ]
-    assert menu.get_by_role("menuitemradio", name="Recently seen").get_attribute("aria-checked") == "true"
+    assert menu.get_by_role("menuitemradio", name="Highest GPA").get_attribute("aria-checked") == "true"
     shot(page, "member-gallery-sort")
     menu.get_by_role("menuitemradio", name="Name A–Z").click()
     page.wait_for_selector(".gallery[data-sort=name]")
@@ -130,3 +132,34 @@ def test_a_cat_nobody_has_met_or_posted_says_so(open_member_app):
     assert cat.locator(".cat-met").inner_text() == "You haven't met this cat yet."
     assert cat.locator(".cat-number-value").all_inner_texts()[:2] == ["0", "0"]
     assert cat.get_by_role("region", name="Recent posts").count() == 0
+
+
+def test_a_cats_grade_is_on_its_page_and_a_cat_nobody_met_has_a_dash(open_member_app):
+    """The grade is worked out from how many people met the cat lately
+    (B7b): the seeded collaborator met and posted Mitzi, so she is the most
+    popular cat and reads 4.0; nobody met Shunra in the app."""
+    page = gallery(open_member_app)
+    page.get_by_role("button", name="Open Mitzi").click()
+    page.wait_for_selector("[data-page=cat][data-state=shown]")
+    chip = page.locator("[data-page=cat] .cat-gpa")
+    assert chip.inner_text().split() == ["GPA", "4.0", "/", "4"]
+    assert chip.get_attribute("aria-label") == "GPA 4.0 out of 4"
+
+    # Going back, the page slides away as the element it was: until
+    # 2026-11-13 it was removed and made again for the slide, and asked the
+    # server for the cat a second time.
+    page.evaluate("document.querySelector('[data-page=cat]').dataset.mark = 'mitzi'")
+    asked = []
+    page.on("request", lambda r: "/api/v1/cats/" in r.url and asked.append(r.url))
+    page.locator("[data-page=cat]").get_by_role("button", name="Back").click()
+    assert page.evaluate(
+        "[...document.querySelectorAll('[data-page=cat]')].map(e => e.dataset.mark + ':' + e.dataset.state)"
+    ) == ["mitzi:leaving"]
+    page.wait_for_function("document.querySelectorAll('[data-page=cat]').length === 0")
+    assert asked == []
+    page.get_by_role("button", name="Open Shunra").click()
+    page.locator("[data-page=cat] h1", has_text="Shunra").wait_for()
+    chip = page.locator("[data-page=cat] .cat-gpa")
+    assert chip.locator(".cat-gpa-value").inner_text() == "\u2014"
+    assert chip.get_attribute("aria-label") == "No GPA yet: nobody met this cat lately"
+

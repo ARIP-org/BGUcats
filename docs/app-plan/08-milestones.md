@@ -26,7 +26,7 @@ A session ticks its row in the pull request that finishes it.
 | B4 | Name polls | B4a (names, votes, the leader) merged 2026-11-13; B4b (the desk's remove and lock) built the same day, in review. Votes as feed cards moved to B5: a vote card is friends' votes |
 | B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
 | B6 | New-cat proposals | merged 2026-11-12 |
-| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | |
+| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) built 2026-11-13; the achievements themselves and feedings not built |
 | B8 | Reports, blocks, bans, the desk's tools | |
 | B9 | Push | |
 | B10 | Deleting an account | |
@@ -427,6 +427,17 @@ was built.
   flag. **Done when:** the most popular seeded cat reads 4.0, a cat with
   no encounter in three months reads null, and relabeling an encounter
   moves both cats' grades by exactly what a recount gives.
+- **B7b, built 2026-11-13:** the events Lambda keeps, per person, what
+  they give each cat a month (`METM#`), and moves the cat's
+  `pop{yyyy-mm}` by the difference in one transaction
+  (`count_popularity`), so a record seen twice changes nothing.
+  `GET /cats` and `GET /cats/{id}` carry `gpa` (`grades`); the `gpa`
+  flag is on in both accounts' settings and hides it everywhere when
+  off. In the app: the chip beside a cat's name, a dash for a cat nobody
+  met lately, and "Highest GPA", the gallery's first sort and the one it
+  opens with. `tests/app/test_gpa.py` compares the stored numbers with a
+  recount from the encounters after every step. **Not built:** the
+  recount as a script (with B7), the map's habitat sheet (E5).
 - **B7c, feedings** (D10, answered: build it): the feeding route and its
   limits, `lastFedAt`, points for two a day, the desk's remove, the
   feeding spots in the regions file. **Needs** O12 for the real spots
