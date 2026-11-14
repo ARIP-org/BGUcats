@@ -72,7 +72,7 @@ its owner's alone.
 | Route | Does |
 |---|---|
 | `GET /friends?period=month\|all` | `{period, people, requests}`. `people`: the caller (`me: true`) and their friends, each a person with `found` for the period and `cats`, the ids of the three cats they met last; most found first, so the podium is the first three. `requests` is 0 until there are requests. Default `month`. Since B5a |
-| `GET /users/{userId}` | `{person}`, with all-time `found` and `cats`. Their posts are a second call. `gone` for nobody, or an account that is banned or being deleted. Since B5a |
+| `GET /users/{userId}` | `{person}`, with all-time `found`, `cats` and `mutual` (how many friends the caller and they have in common, never who; null for oneself). Their posts are a second call. `gone` for nobody, or an account that is banned or being deleted. Since B5a |
 | `GET /users/{userId}/posts` | Their visible posts, newest first, a page of them (D3: the whole campus reads every visible post). Since B5a |
 | `DELETE /friends/{userId}` | Removes the friendship, both sides, in one transaction. The same answer if they were not friends. Since B5a |
 | `POST /invites/{code}/accept` | Makes the caller and the code's owner friends, in one transaction. `{person}`, the same whether new or already friends; `gone` for an unknown code, an account that is going away, or a block between them; `own_invite` (409) for the caller's own. Needs the terms; 30 a day. Since B5a |
@@ -94,12 +94,15 @@ Search over friends is done on the phone, over the list it already has.
 | `PUT /cats/{catId}/vote` | `{nameKey}`. Moves the caller's vote: one transaction, conditional on the vote and on both options being as they were read. Answers like `GET …/names`. Needs the terms; 60 an hour. Since B4a |
 | `DELETE /cats/{catId}/vote` | Takes it back. Answers like `GET …/names`. Since B4a |
 | `GET /cats/{catId}/posts` | Visible posts of this cat |
-| `POST /cats/{catId}/feedings` | `{feedingId, spotId?}`. Logs that the caller fed this cat (D10). Limits: six a day; one per cat every four hours. Answers with the cat's new "last fed" |
+| `POST /cats/{catId}/feedings` | `{feedingId, spotId?}`. Logs that the caller fed this cat (D10). Limits: six a day (`rate_limited`); one per cat per person every four hours (`too_soon`, with `retryAfter`). Answers `{lastFedAt, feedingId}`; the same `feedingId` again answers as the first time. 404 with the `feeding` flag off. Since B7c |
 
 There is no route to grade a cat: GPA is computed (D9).
 
-The desk gains `POST /api/cats/{catId}/feedings/{feedingId}/remove`
-(admins), for a feeding that was reported or wrong.
+The desk has `GET /api/cats/{catId}/feedings` (the latest twenty, with
+who logged each) and `POST /api/cats/{catId}/feedings/{feedingId}/remove`
+(admins), for a feeding that was wrong. It only marks the feeding; the
+events Lambda puts "last fed" back and takes the points back (since
+B7c).
 
 **Cat of the day:** chosen on the server from the Israel date, so
 everyone sees the same cat and nothing is stored: among active cats seen

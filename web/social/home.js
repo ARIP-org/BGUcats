@@ -12,9 +12,9 @@ import { logout } from "../lib/auth.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { AchievementsCard } from "./achievements.js";
 import { squareJpeg } from "./avatar.js";
-import { chooseUsername, me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
+import { chooseUsername, deletePost, me as loadMe, myPosts, removeAvatar, saveAvatar, updateMe } from "./data.js";
 import { FriendsCard, openFriends } from "./friends.js";
-import { dayMonth, monthYear, t } from "./i18n.js";
+import { dayMonth, keepLanguage, language, LANGUAGES, monthYear, t } from "./i18n.js";
 import { CatFace, Mascot } from "./mascot.js";
 import { glass } from "./motion.js";
 import { openScan } from "./scan.js";
@@ -46,7 +46,29 @@ function useMyPosts(shown) {
       live = false;
     };
   }, [shown]);
-  return { posts, failed };
+  // A post its author removed leaves the list at once.
+  const gone = (card) => setPosts((now) => now?.filter((c) => c.postId !== card.postId));
+  return { posts, failed, gone };
+}
+
+// A post of the caller's that others cannot see (hidden after reports, or
+// by an admin): "This wasn't published", with no reason given, and one tap
+// to remove it (05-client.md, "States the design does not draw").
+async function notPublished(card, gone) {
+  const yes = await confirm({
+    title: t("post.notPublishedTitle"),
+    body: t("post.notPublishedBody"),
+    button: t("post.remove"),
+    danger: true,
+  });
+  if (!yes) return;
+  try {
+    await deletePost(card.postId);
+    gone(card);
+    toast(t("post.deleted"));
+  } catch (err) {
+    toast(t("error.generic", { message: err.message }));
+  }
 }
 
 // The caller's photo, or the cat's face until they choose one.
@@ -64,7 +86,7 @@ function postLabel(card) {
 
 // A post in "My posts": on Home with its cat and day, on the profile the
 // photo alone. One still being checked, or hidden, says so on the photo.
-function PostTile({ card, small }) {
+function PostTile({ card, small, onGone }) {
   const photo = card.photos[0];
   const marked = card.state && card.state !== "visible";
   const inside = html`<span class="post-tile-photo">
@@ -76,6 +98,11 @@ function PostTile({ card, small }) {
       <span class="post-tile-name">${card.cat?.name || t("post.photoPosted")}</span>
       <span class="post-tile-date">${dayMonth(card.createdAt)}</span>
     </span>`}`;
+  if (card.state === "hidden") {
+    return html`<button type="button" class="post-tile" data-post=${card.postId} data-state="hidden" aria-label=${t("post.notPublishedTitle")} aria-haspopup="dialog" onClick=${() => notPublished(card, onGone)}>
+      ${inside}
+    </button>`;
+  }
   if (!card.cat) return html`<div class="post-tile" data-post=${card.postId}>${inside}</div>`;
   return html`<button
     type="button"
@@ -88,7 +115,7 @@ function PostTile({ card, small }) {
   </button>`;
 }
 
-function MyPosts({ posts, failed, small }) {
+function MyPosts({ posts, failed, small, onGone }) {
   return html`<section class=${small ? "card my-posts small" : "card my-posts"} aria-label=${t("home.myPosts")}>
     <div class="card-head">
       <h2 class="card-title">${t("home.myPosts")}</h2>
@@ -97,7 +124,7 @@ function MyPosts({ posts, failed, small }) {
     </div>
     ${posts?.length > 0 &&
     html`<div class="post-grid">
-      ${posts.map((card) => html`<${PostTile} key=${card.postId} card=${card} small=${small} />`)}
+      ${posts.map((card) => html`<${PostTile} key=${card.postId} card=${card} small=${small} onGone=${onGone} />`)}
     </div>`}
     ${posts && !posts.length &&
     html`<p class="card-empty">${t("home.noPosts")}</p>
@@ -141,7 +168,7 @@ function HomeTop({ me }) {
 export function Home() {
   const me = useStore((s) => s.me);
   const shown = useStore((s) => s.tab === "home");
-  const { posts, failed } = useMyPosts(shown);
+  const { posts, failed, gone } = useMyPosts(shown);
 
   // The counters move with every pick and label: ask again when Home opens.
   useEffect(() => {
@@ -155,7 +182,7 @@ export function Home() {
     <div class="tab-content home">
       <${FriendsCard} shown=${shown}><${Mascot} coat="gray" size=${64} /><//>
       <${AchievementsCard} shown=${shown} />
-      <${MyPosts} posts=${posts} failed=${failed} />
+      <${MyPosts} posts=${posts} failed=${failed} onGone=${gone} />
     </div>`;
 }
 
@@ -203,7 +230,7 @@ function TextRow({ row, icon, label, value, shown, field, save, errors = {} }) {
 export function Profile() {
   const me = useStore((s) => s.me);
   const theme = useStore((s) => s.theme);
-  const { posts, failed } = useMyPosts(true);
+  const { posts, failed, gone } = useMyPosts(true);
 
   const themeMenu = (e) =>
     openMenu(e.currentTarget, {
@@ -215,11 +242,29 @@ export function Profile() {
         pick: () => chooseTheme(id),
       })),
     });
-  // One language until E10; the menu is where the others will appear.
+  // The languages this account is offered (`flags.languages`), each by its
+  // own name. Choosing one saves it with the account and on this phone, and
+  // starts the app again in it: every screen is drawn from the strings.
+  const offered = (me?.flags?.languages || ["en"]).filter((code) => code in LANGUAGES);
+  const chooseLanguage = async (code) => {
+    if (code === language()) return;
+    try {
+      await updateMe({ language: code });
+    } catch (err) {
+      toast(t("error.generic", { message: err.message }));
+      return;
+    }
+    keepLanguage(code);
+    location.reload();
+  };
   const languageMenu = (e) =>
     openMenu(e.currentTarget, {
       label: t("profile.language"),
-      items: [{ label: t("language.en"), checked: true, pick: () => {} }],
+      items: offered.map((code) => ({
+        label: LANGUAGES[code],
+        checked: code === language(),
+        pick: () => chooseLanguage(code),
+      })),
     });
   const signOut = async () => {
     const yes = await confirm({
@@ -344,13 +389,13 @@ export function Profile() {
     ${me?.namePending && html`<p class="group-note" role="status">${t("profile.nameChecking")}</p>`}
     ${me?.avatarPending && html`<p class="group-note" role="status">${t("profile.photoChecking")}</p>`}
 
-    <${MyPosts} posts=${posts} failed=${failed} small=${true} />
+    <${MyPosts} posts=${posts} failed=${failed} small=${true} onGone=${gone} />
 
     <section class="group" aria-label=${t("profile.settings")}>
-      <button type="button" class="row" aria-haspopup="menu" onClick=${languageMenu}>
+      <button type="button" class="row" aria-haspopup="menu" data-row="language" onClick=${languageMenu}>
         <span class="row-icon" aria-hidden="true"><${Icon} name="globe" /></span>
         <span class="row-label">${t("profile.language")}</span>
-        <span class="row-value">${t("language.en")}</span>
+        <span class="row-value">${LANGUAGES[language()]}</span>
         <${Icon} name="updown" size=${16} width=${2.2} />
       </button>
       <div class="divider" aria-hidden="true"></div>

@@ -48,21 +48,31 @@ def test_the_sheet_shows_the_level_the_badges_and_how_points_are_earned(app, ope
     assert sheet.get_by_role("progressbar").get_attribute("aria-valuenow") == "10"
     assert [t.inner_text().split("\n") for t in sheet.locator(".ach-tile").all()] == [
         ["1", "Cat met"],
-        ["1", "Encounter"],
+        ["0", "Cats fed"],
         ["1", "Post"],
     ]
-    assert sheet.locator(".ach-section-head span").inner_text() == f"{len(earned)} of 6"
+    assert sheet.locator(".ach-section-head span").inner_text() == f"{len(earned)} of 7"
     names = [b.inner_text() for b in sheet.locator(".ach-badge").all()]
-    assert names == ["First Meow", "Night Owl", "Explorer", "Name Giver", "Dean’s List", "Cat Whisperer"]
+    assert names == [
+        "First Meow",
+        "Snack Giver",
+        "Night Owl",
+        "Explorer",
+        "Name Giver",
+        "Dean’s List",
+        "Cat Whisperer",
+    ]
     got = [
         b.get_attribute("data-badge")
         for b in sheet.locator(".ach-badge[data-earned=true]").all()
     ]
     assert got == earned
-    rule = sheet.locator(".ach-rule")
-    assert rule.count() == 1
-    assert rule.locator(".ach-rule-name").inner_text() == "Meet & post a cat"
-    assert rule.locator(".ach-rule-points").inner_text() == "+5"
+    # The prototype's order: the largest reward first.
+    rules = [r.inner_text().split("\n") for r in sheet.locator(".ach-rule").all()]
+    assert [(r[0], r[-1]) for r in rules] == [
+        ("Feed a cat", "+10"),
+        ("Meet & post a cat", "+5"),
+    ]
     page.wait_for_timeout(500)  # the sheet has settled
     shot(page, "member-achievements")
 
@@ -89,5 +99,5 @@ def test_someone_who_has_done_nothing_yet_starts_at_zero(app, open_member_app):
     sheet = open_sheet(page)
     assert sheet.locator(".ach-number").inner_text() == "0"
     assert sheet.locator(".ach-level-next").inner_text() == "50 to Level 2"
-    assert sheet.locator(".ach-section-head span").inner_text() == "0 of 6"
-    assert sheet.locator(".ach-badge.locked").count() == 6
+    assert sheet.locator(".ach-section-head span").inner_text() == "0 of 7"
+    assert sheet.locator(".ach-badge.locked").count() == 7

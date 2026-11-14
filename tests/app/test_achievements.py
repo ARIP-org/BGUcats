@@ -264,7 +264,9 @@ def test_levels_are_the_files_thresholds(points, level, start, following):
 def test_the_rules_file_is_what_both_lambdas_read_and_ship():
     rules = json.loads((REPO / "web" / "achievements.json").read_text())
     assert achievements.rules() == rules == events.RULES
-    assert list(rules["badges"]) == BADGES
+    # Snack Giver is shown only with the `feeding` flag (test_feedings.py).
+    assert [b for b in rules["badges"] if b != "snack-giver"] == BADGES
+    assert list(rules["badges"])[1] == "snack-giver"
     assert rules["levels"] == sorted(set(rules["levels"])) and rules["levels"][0] == 0
     # Every badge the events Lambda keeps from encounters is in the file.
     assert set(events.ENCOUNTER_BADGES) <= set(rules["badges"])

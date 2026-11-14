@@ -34,6 +34,9 @@ locals {
       # The member app (docs/app-plan/): off until it opens (L3).
       social        = false
       signup_policy = "allowlist"
+      # The languages the profile offers. English until a native speaker
+      # has read a draft (docs/app-plan/OWNER_STEPS.md, O14).
+      languages = ["en"]
       # Which page the site opens on: "desk" (the labeling desk and
       # Capture, index.html) or "app" (the member app, app.html). The
       # desk until L3 (docs/app-plan/05-client.md).
@@ -46,6 +49,8 @@ locals {
       # because staging never holds real contributors' photos.
       social        = true
       signup_policy = "allowlist"
+      # Every draft, so it can be read on a phone before it is offered.
+      languages = ["en", "he", "ru", "ar"]
       # The member app since 2026-11-13 (the owner: the installed staging
       # app opened on the desk, and the new screens only in a browser
       # tab). The desk is one tap away (the profile, or `?desk`).
@@ -72,6 +77,10 @@ locals {
     gpa = true
     # Points, levels and badges (B7, E8): the card on Home and its sheet.
     achievements = true
+    # "I fed this cat" (D10, B7c): the log, "last fed", its points and badge.
+    feeding = true
+    # Which languages the profile's menu offers (E10).
+    languages = local.settings.languages
   }
 
   # count for the bot's resources: 1 in production, 0 in staging.

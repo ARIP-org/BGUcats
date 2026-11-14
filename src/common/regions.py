@@ -30,6 +30,16 @@ def ids():
     return frozenset(r["id"] for r in regions())
 
 
+def feeding_spots():
+    """The campus's set feeding spots (D10): an id, names, its region and
+    where it is. Made-up ones until the owner's list (O12)."""
+    return _load().get("feedingSpots", [])
+
+
+def feeding_spot_ids():
+    return frozenset(s["id"] for s in feeding_spots())
+
+
 def _metres(lat1, lon1, lat2, lon2):
     # Short distances on one campus: an equirectangular approximation is
     # within a metre of the haversine and easy to read.

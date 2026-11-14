@@ -1858,6 +1858,75 @@ def _remove_name(cat_id, body, email, **_):
     return _get_cat_names(cat_id)
 
 
+FEEDINGS_SHOWN = 20
+
+
+def _feedings(cat_id):
+    return social_table.query(
+        KeyConditionExpression=Key("PK").eq(f"CAT#{cat_id}")
+        & Key("SK").begins_with("FED#"),
+        ConsistentRead=True,
+        ScanIndexForward=False,
+        Limit=FEEDINGS_SHOWN,
+    )["Items"]
+
+
+def _get_cat_feedings(cat_id, **_):
+    """`GET /api/cats/{id}/feedings`: the cat's latest feedings as people
+    logged them in the app (D10), newest first, with who and whether an
+    admin removed it. "Last fed" in the app is the newest still standing."""
+    _poll_cat(cat_id)
+    known = {}
+    feedings = _feedings(cat_id)
+    standing = next((f for f in feedings if not f.get("removed")), None)
+    return {
+        "catId": cat_id,
+        "lastFedAt": standing["at"] if standing else None,
+        "feedings": [
+            {
+                "feedingId": f["feedingId"],
+                "at": f["at"],
+                "by": _username(f["userId"], known),
+                "spotId": f.get("spotId"),
+                "removed": bool(f.get("removed")),
+            }
+            for f in feedings
+        ],
+    }
+
+
+def _remove_feeding(cat_id, feeding_id, email, **_):
+    """`POST /api/cats/{id}/feedings/{feedingId}/remove`: a feeding that
+    was wrong. The desk only marks it; the events Lambda puts the cat's
+    "last fed" back to the one before and takes back what it earned.
+    Removing twice is removing once."""
+    _poll_cat(cat_id)
+    feeding = next(
+        (
+            f
+            for f in tables.query_all(
+                social_table,
+                KeyConditionExpression=Key("PK").eq(f"CAT#{cat_id}")
+                & Key("SK").begins_with("FED#"),
+                ConsistentRead=True,
+            )
+            if f["feedingId"] == feeding_id
+        ),
+        None,
+    )
+    if feeding is None:
+        raise ApiError(404, "no such feeding of this cat")
+    if not feeding.get("removed"):
+        social_table.update_item(
+            Key={"PK": feeding["PK"], "SK": feeding["SK"]},
+            UpdateExpression="SET removed = :yes, removedBy = :by, removedAt = :now",
+            ConditionExpression="attribute_exists(PK)",
+            ExpressionAttributeValues={":yes": True, ":by": email, ":now": _now_iso()},
+        )
+        logger.info("user=%s removed feeding=%s cat=%s", email, feeding_id, cat_id)
+    return _get_cat_feedings(cat_id)
+
+
 def _lock_name(cat_id, body, email, **_):
     """`POST /api/cats/{id}/name-lock` `{name}`: the name the app shows,
     whatever the poll says; null gives the name back to the poll. Votes go
@@ -2016,6 +2085,23 @@ def _create_encounter(body, email, **_):
         # A retry from the outbox after a lost response. Same person: the
         # encounter is already there, which is the outcome they wanted.
         existing = _require_encounter(session_id, email)
+        # Or the phone learned where it is a moment after the first photo
+        # (GPS takes seconds; a person does not wait for it). An encounter
+        # with no place takes the one sent now; one that has a place keeps
+        # it, whatever is sent.
+        place = _location_fields(body)
+        if place and existing.get("coarseLat") is None:
+            names = {f"#{n}": n for n in place}
+            try:
+                table.update_item(
+                    Key={"PK": f"SESSION#{session_id}", "SK": "META"},
+                    UpdateExpression="SET " + ", ".join(f"#{n} = :{n}" for n in place),
+                    ConditionExpression="attribute_not_exists(coarseLat)",
+                    ExpressionAttributeNames=names,
+                    ExpressionAttributeValues={f":{n}": v for n, v in place.items()},
+                )
+            except table.meta.client.exceptions.ConditionalCheckFailedException:
+                pass  # another retry placed it first
         return {"sessionId": session_id, "startedAt": existing.get("startedAt")}
     _record_app_contributor(email)
     return {"sessionId": session_id, "startedAt": now}
@@ -2438,6 +2524,13 @@ ROUTES = (
     ("GET", rf"^/api/cats/(?P<cat_id>{ID})/names$", _get_cat_names, ADMINS),
     ("POST", rf"^/api/cats/(?P<cat_id>{ID})/names/remove$", _remove_name, ADMINS),
     ("POST", rf"^/api/cats/(?P<cat_id>{ID})/name-lock$", _lock_name, ADMINS),
+    ("GET", rf"^/api/cats/(?P<cat_id>{ID})/feedings$", _get_cat_feedings, ADMINS),
+    (
+        "POST",
+        rf"^/api/cats/(?P<cat_id>{ID})/feedings/(?P<feeding_id>{ID})/remove$",
+        _remove_feeding,
+        ADMINS,
+    ),
     ("GET", r"^/api/cats$", _get_cats, ANYONE),
     ("POST", r"^/api/cats$", _create_cat, ADMINS),
     ("GET", rf"^/api/cats/(?P<cat_id>{ID})$", _get_cat, ANYONE),

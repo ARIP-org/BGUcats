@@ -23,11 +23,11 @@ A session ticks its row in the pull request that finishes it.
 | B1 | Profiles | B1a (name, settings), B1b (photo) and B1c (username) merged 2026-11-13; devices wait for B9 |
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
-| B4 | Name polls | B4a (names, votes, the leader) merged 2026-11-13; B4b (the desk's remove and lock) built the same day, in review. Votes as feed cards moved to B5: a vote card is friends' votes |
-| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) built 2026-11-13; mutual counts and blocks (B8) not built |
+| B4 | Name polls | merged 2026-11-13 (B4a: names, votes, the leader; B4b: the desk's remove and lock). Votes as feed cards moved to B5: a vote card is friends' votes |
+| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) merged 2026-11-13; blocks with B8; mutual counts built the same day, in review |
 | B6 | New-cat proposals | merged 2026-11-12 |
-| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7b (the grade) merged 2026-11-13; B7a (points, levels, six badges) built the same day; feedings (B7c) and the recount scripts not built |
-| B8 | Reports, blocks, bans, the desk's tools | B8a (blocks, with their screens) and B8b (reports: the route, the email, hiding at three, the desk's queue, Report in the app) built 2026-11-13; B8c (bans, the desk's list of the app's people) built the same day |
+| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script built the same day, in review |
+| B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
 | B9 | Push | |
 | B10 | Deleting an account | |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
@@ -41,14 +41,14 @@ A session ticks its row in the pull request that finishes it.
 | E0 | Client groundwork | merged 2026-11-12 |
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
-| E3 | The capture flow | merged 2026-11-12 |
+| E3 | The capture flow | merged 2026-11-12; every page drawn as the prototype draws it 2026-11-13, in review |
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
-| E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) built 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
+| E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) merged 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a, Report since B8b |
-| E8 | Achievements | E8a (Home's card and the sheet) built 2026-11-13 with B7a |
-| E9 | The states nobody drew, offline, accessibility | |
-| E10 | Languages and right-to-left | |
+| E8 | Achievements | E8a (Home's card and the sheet) merged 2026-11-13 with B7a; "Cats fed", Snack Giver and "Feed a cat" with B7c |
+| E9 | The states nobody drew, offline, accessibility | built 2026-11-13, in review: the missing states, the contrast test, the touch-target test |
+| E10 | Languages and right-to-left | built 2026-11-13 as drafts, in review: Hebrew, Russian and Arabic, the language menu, every screen checked from the right. Offered in staging only until a speaker has read them (O14) |
 | N1 | The member app in the iPhone app, with the model | merged 2026-11-13; on the owner's phone once the API answered its preflight (the same day) |
 | N2 | Push on the phone | |
 | N3 | Share, haptics (and contacts) | |
@@ -376,8 +376,10 @@ was built.
   takes the card away; the cursor carries the cats already shown. In
   the app (`VoteCard` in `web/social/feed.js`) a tap on a name votes,
   as on the cat's page.
-- **Not built:** mutual-friend counts, and the "friend" events (a push,
-  B9).
+- **Mutual-friend counts, built 2026-11-13:** `GET /users/{id}` carries
+  `mutual`, how many friends the caller and that person have in common
+  (never who; null on one's own page), and the person's page says it.
+- **Not built:** the "friend" events (a push, B9).
 - **B5b, phone and contacts:** only if D5 says so; needs O17 for codes.
   The HMAC lookup, the match route and its tight limit.
 
@@ -465,6 +467,33 @@ was built.
   inside four hours is refused; a third feeding in a day earns nothing;
   removing the newest feeding puts "last fed" back to the one before.
   The screens for it wait for the design (G6).
+- **B7c, built 2026-11-13**, behind the `feeding` flag (on in both
+  accounts' settings; off, the route is 404 and nothing of it shows).
+  `POST /cats/{id}/feedings` writes the feeding under the cat and a copy
+  under the person in one transaction with `FEDCAT#{catId}`, a pointer
+  whose write condition is the four-hour rule; six a day by the shared
+  limiter. The events Lambda (`count_feeding`) reads the cat's newest
+  feeding that stands into `lastFedAt`, and works the person's
+  `fedPoints`, `catsFed` and Snack Giver out again from their copies
+  (`fed`), so a record seen twice changes nothing. Points shown are the
+  encounters' plus the feedings'. The desk's cat page lists a cat's
+  feedings with **Remove**, which only marks. The rules file has
+  `points.feed`, `feedingsCountedADay` and the badge; `web/regions.json`
+  has three made-up feeding spots until the owner's list (O12).
+  `tests/app/test_feedings.py` covers the three "done when" and the
+  flag. In the app (G6, drawn like the other cards): the card on a cat's
+  page and its sheet (`web/social/feeding.js`); "Cats fed", Snack Giver
+  and "Feed a cat +10" in Achievements. **Not built:** feeding spots on
+  the map (their look is the designer's); reporting a single feeding
+  (nobody sees one to report: the cat's page shows only the last time).
+- **The recount, built 2026-11-13:** `scripts/recount.py` reads the
+  app's table once and works every stored sum out again with the events
+  Lambda's own functions: a person's encounters, cats met, points,
+  posts, badges and feeding numbers, what they give each cat's
+  popularity, each cat's `pop{yyyy-mm}` and "last fed". One line per
+  difference; it only reads (`docs/deploy.md`, "Post-deploy checks").
+  `tests/app/test_recount.py`: nothing differs after meeting, posting,
+  feeding, relabeling and removing; a counter changed by hand is named.
 
 ### B8. Reports, blocks, bans, the desk's tools
 
@@ -725,6 +754,44 @@ English file.
   the flash (no torch in an iPhone's web view), three frames per press
   (D12, the `capture_burst` flag), the service worker sending posts with
   the app closed (Chrome on Android only; the open app sends them).
+- **Pages 1, 2a and 2b drawn as the prototype draws them (2026-11-13):**
+  "Which cat?" has the photo just taken at the top between Close and
+  Retake, the model's three as large photos (two and one), and every
+  other cat four to a row after a dashed "New cat" tile; tiles are
+  photos only, and a cat with no photo yet shows its name. "You met X"
+  has the cat's photo with yours over its corner, "Usually near …" and
+  the cat's name poll (the one on its page, `NamePoll` in `poll.js`;
+  a vote from here is an ordinary vote). The new-cat form has the tall
+  photo strip with "Add photo · 1 of 4", the coats with their colours
+  (tokens.css), and the prototype's chips. Both pages end in two buttons
+  that stay at the foot of the screen: "Just save" / "Create a post",
+  "Just add" / "Add & post". The top button is Close on the flow's first
+  page and Back after it (`pageBefore` in `scan.js`): back from "You
+  met" is "not this cat". Choosing a cat for a post ("Tag a cat" from
+  "+", or "Change") comes straight back to the post. The model is not
+  served in the tests, so the test of the three candidates stands in for
+  `recognition.js` at its one meeting point with `scan.js`.
+- **Pages 3 and 4 the same way (2026-11-13):** the post page has its
+  title and "Post" in the bar at the top; "You met **X**" with the cat's
+  face and "Change" (from "+": "Tag a cat · Optional", and a tag can be
+  removed); the photos large and numbered "1/2", with "Add photo · 1 of
+  4", or one large "Take a photo" when there is none; the description
+  in a card with its count; "Add location" with the small map and "Near
+  Aranne Library" when the phone is inside a place the campus names
+  (`placeAt` in `scan.js`, the server's `region_at` on the same rounded
+  point; a test holds the two together); "Save without posting" as a
+  quiet line after a scan. "Tag a cat" from "+" is the prototype's page
+  4: every cat by name, three to a row, the chosen one ringed, no "New
+  cat". **A place the phone learns late still reaches the post:** GPS
+  takes seconds and the first photo does not wait for it, so the
+  encounter often went to the server with no place while the page showed
+  one. The outbox now sends the place as a step of its own, before the
+  answer and the post, and `POST /api/encounters` takes a place for an
+  encounter that has none (and never replaces one). **Not yet:** the
+  sideways swipe back, and removing a photo from
+  the strip: a photo taken is already part of the encounter in the
+  dataset, and whether "remove" should also delete it there is the
+  owner's to decide.
 
 ### E4. The gallery, a cat's page, the poll
 
@@ -840,12 +907,78 @@ English file.
 - **Builds:** every row of "States the design does not draw"
   (`05-client.md`), with a screenshot of each for the owner; the contrast
   test; touch-target sizes.
+- **Built 2026-11-13.** The rows of that table that were missing:
+  - *Nothing here yet:* the mascot, one line and the next thing to do
+    (`Empty` in `mascot.js`) in the feed ("Scan a cat"), the gallery, a
+    search with no match and the blocked list; a feed or gallery that
+    could not be loaded says so the same way, the feed with "Try again".
+  - *No signal:* the feed keeps its first page on the phone, per person,
+    and shows it with one quiet line when the server cannot be reached;
+    it asks again by itself when the signal returns. A like or a vote
+    already said it did not go through.
+  - *A post being sent:* a ring over its photo that fills as the photos
+    arrive, and under it the outbox's own reason for waiting ("No
+    signal…", or "Trying again. Last try: …").
+  - *Not published:* a post of the caller's that others cannot see
+    reads "Not published" in My posts; a tap says "This wasn't
+    published", with no reason, and removes it in one more.
+  - Already there: no model, "Being checked", a new cat's post waiting,
+    "—" for no grade, "No feeding logged yet", posting while photos
+    upload, the refusal at sign-in, the terms before the first post, and
+    deleting one's own post from the photo's menu (G11).
+  - **Contrast** (`tests/web/test_contrast.py`, no browser): thirteen
+    pairs of words and ground in each of the four themes, by WCAG's
+    formula on `tokens.css`. All pass 4.5 to 1 but one: white on the
+    prototype's red, the words of a "Delete post" button, is 3.7 to 1 in
+    every theme. Listed in the test as known, for the designer; it may
+    not get worse.
+  - **Touch targets** (`tests/web/test_touch_targets.py`): every control
+    on every screen is pressed 21 px off its centre, each way. Those the
+    design draws smaller than 44 px (chips, a sheet's close, the map's
+    place names, the friends' period switch, "Change") keep their look
+    and have room around them that takes the touch (`app.css`, "room for
+    a finger"). Not held to it: the two names inside a post's heading,
+    which are text in a sentence; the photo beside them and the photo's
+    menu lead to the same places.
+  - Pictures: `member-feed-empty`, `member-feed-no-signal`,
+    `member-feed-failed`, `member-gallery-no-match`,
+    `member-post-sending`, `member-post-not-published`.
 
 ### E10. Languages and right-to-left
 
 - **Needs:** D17. E9. O14 before a language is offered.
 - **Builds:** `he.json`, `ru.json`, `ar.json` as drafts; the language
   menu; a Hebrew and an Arabic screenshot of every screen.
+- **Built 2026-11-13, as drafts.** `web/i18n/he.json`, `ru.json` and
+  `ar.json` say everything English says (`tests/web/test_languages.py`:
+  the same keys in the same order, the same placeholders, and exactly
+  the plural forms each language's rules can ask for: three in Hebrew,
+  four in Russian, six in Arabic). Written by the model, not by a
+  speaker: **nobody has read them** (O14). They avoid addressing the
+  reader by gender where the language allows.
+  - **Which languages the profile offers is the account's setting**
+    (`languages` in `infra/main/variables.tf`, sent as
+    `flags.languages`): English alone in production, all four in
+    staging, so a draft can be read on a phone before it is offered.
+    The menu names each language in its own words. Choosing one saves
+    it with the account and on the phone and starts the app again in
+    it; a new phone opens in the account's language; one no longer
+    offered falls back to English.
+  - **Right to left** was built in from the first line of CSS, so
+    Hebrew and Arabic needed no layout change. What a person wrote (a
+    post's text, a name being typed) keeps its own direction
+    (`dir="auto"`).
+  - `tests/web/test_member_languages.py` walks fourteen screens in
+    Hebrew, Arabic and Russian and holds each to: no page scrolls
+    sideways and nothing visible hangs past an edge. Pictures:
+    `member-*-he`, `member-*-ar`, `member-*-ru`. Russian's longer words
+    were shortened where they did not fit a button.
+  - Found on the way: `tRich` put the number after any plural form that
+    said it in words ("one cat found" in Hebrew); such a form now has
+    nothing in bold.
+  - **Not translated:** the names of the campus places
+    (`web/regions.json` has English only, and they are placeholders
+    until O12), the desk, and the server's own error sentences.
 
 ---
 

@@ -269,7 +269,10 @@ product). Its old sessions and photos stay in the table with
   written. Before 2026-10-29, 48 photos stalled for an hour without a word.
 - **Location comes from the phone's GPS at the moment of capture**, with its
   accuracy (`locationSource = "app-gps"`, `locationAccuracyM`), rounded to
-  3 decimals like everything else.
+  3 decimals like everything else. GPS takes seconds and the first photo
+  does not wait for it: an encounter with no place takes the one the
+  phone sends a moment later (the outbox's `placeEncounter`, since
+  2026-11-13), and one that has a place never changes it.
 - **Installed app only.** A browser tab gets the install page (web/install.js:
   what the app is for, how to use it, how to install it — Hebrew, English,
   Russian, Arabic) instead of the app. It is a front door, not security: the
@@ -320,7 +323,10 @@ product). Its old sessions and photos stay in the table with
   `web/vendor/`, pinned by checksum and never from a CDN; every colour in
   `web/tokens.css` (four themes, from the prototype); every string through
   `t()` and `web/i18n/en.json`; only logical CSS properties
-  (`tests/web/test_client_rules.py`). Signing in, the API client and the
+  (`tests/web/test_client_rules.py`). Hebrew, Russian and Arabic are
+  drafts no speaker has read (`tests/web/test_languages.py` holds each
+  to English's keys); which languages the profile offers is the
+  account's `languages` setting, English alone in production. Signing in, the API client and the
   photo-address cache are shared from `web/lib/`. Which page opens first
   is `frontDoor` in `config.json` (`app` on staging since 2026-11-13,
   `desk` in production until L3); `?desk` keeps the desk, and each page

@@ -269,7 +269,8 @@ def test_a_persons_page_and_their_posts(people):
     status, body = call("GET", f"/api/v1/users/{helper}", email=ADMIN)
     assert status == 200
     theirs = body["person"]
-    assert set(theirs) == PERSON_KEYS | {"cats"}
+    assert set(theirs) == PERSON_KEYS | {"cats", "mutual"}
+    assert theirs["mutual"] == 0
     assert (theirs["username"], theirs["found"], theirs["friend"], theirs["cats"]) == (
         people["me"][HELPER]["username"],
         7,
@@ -287,7 +288,7 @@ def test_a_persons_page_and_their_posts(people):
 
     # Yourself, and nobody.
     mine = call("GET", f"/api/v1/users/{helper}", email=HELPER)[1]["person"]
-    assert (mine["me"], mine["friend"]) == (True, "no")
+    assert (mine["me"], mine["friend"], mine["mutual"]) == (True, "no", None)
     for path in ("/api/v1/users/01JD0000000000000000000XXX", "/api/v1/users/01JD0000000000000000000XXX/posts"):
         status, body = call("GET", path, email=ADMIN)
         assert (status, body["code"]) == (404, "gone")
@@ -418,3 +419,25 @@ def test_a_cats_card_is_not_repeated_on_the_next_page(voting, monkeypatch):
     rest = feed(ADMIN, first["cursor"])
     assert rest["cards"] == []  # HELPER's older vote is already in that card
     assert "cursor" not in rest
+
+
+def test_a_persons_page_counts_the_friends_in_common(people):
+    """How many, never who: the third person is a friend of both."""
+    helper = people["me"][HELPER]["userId"]
+    third = people["me"][THIRD]["userId"]
+
+    def mutual(of, seen_by):
+        return call("GET", f"/api/v1/users/{of}", email=seen_by)[1]["person"]["mutual"]
+
+    assert mutual(helper, ADMIN) == 0
+    accept(people, of=THIRD, by=ADMIN)
+    assert mutual(helper, ADMIN) == 0  # a friend of one is not a friend in common
+    accept(people, of=THIRD, by=HELPER)
+    assert mutual(helper, ADMIN) == 1 == mutual(people["me"][ADMIN]["userId"], HELPER)
+    # Being friends with each other adds nobody in common.
+    accept(people, of=HELPER, by=ADMIN)
+    assert mutual(helper, ADMIN) == 1
+    assert THIRD not in str(call("GET", f"/api/v1/users/{helper}", email=ADMIN)[1])
+    # Someone the caller blocked is not counted.
+    assert call("PUT", f"/api/v1/blocks/{third}", email=ADMIN)[0] == 200
+    assert mutual(helper, ADMIN) == 0

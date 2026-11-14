@@ -3,15 +3,40 @@
 // line"). No sentence is built by joining pieces: "met {name}" is one string
 // with a placeholder, because the order differs by language. A value that is
 // an object holds plural forms, chosen with Intl.PluralRules by `count`.
-// English is complete first; a language joins the menu only once a native
-// speaker has read it (E10, O14).
+// English is complete first. The others are drafts (E10) until a native
+// speaker has read them (O14); which ones the profile offers is the
+// account's setting (`flags.languages`, infra/main/variables.tf).
 
 import { html } from "../vendor/preact-htm.js";
 
 const RIGHT_TO_LEFT = new Set(["he", "ar"]);
 
+// Each language by its own name: the same whatever language is showing.
+export const LANGUAGES = { en: "English", he: "עברית", ru: "Русский", ar: "العربية" };
+const KEY = "bgucats.language";
+
 let lang = "en";
 let strings = {};
+
+// The language this phone was last put in, so the sign-in screen is in it
+// too. English if none, or if it is no language of the app's.
+export function savedLanguage() {
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved in LANGUAGES) return saved;
+  } catch {
+    /* no storage: English */
+  }
+  return "en";
+}
+
+export function keepLanguage(code) {
+  try {
+    localStorage.setItem(KEY, code);
+  } catch {
+    /* for this visit only */
+  }
+}
 
 // Relative to this module, so it works the same from the site and from the
 // files packed inside the iPhone app.
@@ -49,6 +74,9 @@ export function tRich(key, values, strong) {
   const text = template(key, values);
   if (text == null) return key;
   const fill = (part) => part.replace(/\{(\w+)\}/g, (whole, name) => (name in values ? shown(values[name]) : whole));
+  // A plural form may say the number in words ("one cat", "two cats" in
+  // Hebrew or Arabic) and leave the placeholder out: then nothing is bold.
+  if (!text.includes(`{${strong}}`)) return fill(text);
   const [before, after = ""] = text.split(`{${strong}}`);
   return html`${fill(before)}<b>${shown(values[strong])}</b>${fill(after)}`;
 }

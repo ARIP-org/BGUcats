@@ -170,6 +170,22 @@ the made-up ones of `make seed-staging`:
 If a model or photo fetch fails, check the media bucket's CORS rule first
 (`s3.tf`).
 
+**The app's counters, counted again** (`scripts/recount.py`, since
+2026-11-13). Points, cats met, badges, a cat's popularity and "last fed"
+are sums the events Lambda keeps. The script reads the app's table once,
+works every sum out again with the Lambda's own functions and prints one
+line for each stored number that differs. It only reads, and refuses any
+profile that is not read-only:
+
+```
+AWS_PROFILE=bgucats-staging-ro python scripts/recount.py
+```
+
+Worth a run after a change to how anything is counted, or when a number
+in the app looks wrong. A person acting while the table is read can show
+as a difference that the next run does not. A real difference is put
+right by the Lambda the next time one of that person's items changes.
+
 ## Rollback
 
 ```bash

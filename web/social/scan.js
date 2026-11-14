@@ -17,9 +17,10 @@ import { createOutbox, ulid } from "../outbox.js";
 import { createRecognition } from "../recognition.js";
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { askAgain, asking, painted, quiet } from "./asking.js";
-import { cats as loadCats, places as loadPlaces } from "./data.js";
-import { t } from "./i18n.js";
+import { cats as loadCats, names as loadNames, places as loadPlaces } from "./data.js";
+import { t, tRich } from "./i18n.js";
 import { glass } from "./motion.js";
+import { NamePoll } from "./poll.js";
 import { get, set, useStore } from "./store.js";
 import { termsFirst } from "./terms.js";
 import { Icon, toast } from "./ui.js";
@@ -95,9 +96,16 @@ function findPlace({ again = false } = {}) {
   else if (located === scan.sessionId || quiet("location")) return;
   located = scan.sessionId;
   asking("location", locate).then((fix) => {
-    if (fix && get().scan?.sessionId === scan.sessionId) update({ fix });
+    if (!fix || get().scan?.sessionId !== scan.sessionId) return;
+    update({ fix });
+    // The first photo may have been faster than the GPS: its encounter
+    // gets the place now, so the post says what this page says. Nothing
+    // happens if there is no encounter yet, or it has a place.
+    place(scan.sessionId, fix);
   });
 }
+
+const place = (sessionId, fix) => outbox.placeEncounter(sessionId, { lat: fix.lat, lon: fix.lon, accuracyM: fix.accuracyM });
 
 // entry: "scan" (the centre tab) or "post" (the feed's +).
 export async function openScan(entry) {
@@ -157,6 +165,11 @@ async function keep(blob) {
   // to the page that asked for another photo.
   const next = scan.returnTo || (scan.entry === "scan" ? "which" : "post");
   update({ shots, step: next, returnTo: null });
+  // The GPS may have answered while this photo was being kept, after the
+  // encounter was written without a place and before there was a photo to
+  // show for it.
+  const fix = get().scan?.fix;
+  if (fix && !scan.fix) place(scan.sessionId, fix);
   guess(shots);
 }
 
@@ -292,6 +305,23 @@ async function close() {
   set({ scan: null, scanOpen: false });
 }
 
+// How far a post made on this phone has got (feed.js, the sending card):
+// `done` is the part of its photos that have arrived, `sent` whether the
+// post itself has gone, `error` the outbox's reason if the last try failed.
+export async function sendingState(card) {
+  if (!outbox) return { done: 0, sent: false, error: null };
+  const { items, encounters, lastError } = await outbox.snapshot();
+  const mine = items.filter((item) => card.photos.some((p) => p.photoId === item.photoId));
+  const part = mine.reduce((sum, item) => sum + (1 - (item.progress ?? 0)), 0);
+  const count = Math.max(1, card.photos.length);
+  const waiting = encounters.some((e) => (e.after || []).some((w) => w.body?.postId === card.postId));
+  return {
+    done: Math.max(0, Math.min(1, 1 - part / count)),
+    sent: !waiting && !mine.length,
+    error: mine.find((item) => item.error)?.error || lastError || null,
+  };
+}
+
 const catName = (catId) => (get().cats || []).find((c) => c.catId === catId)?.name || t("cat.noName");
 
 // ------------------------------------------------------------------ pages
@@ -370,10 +400,15 @@ function Camera({ scan }) {
   </div>`;
 }
 
+// A cat to choose, as its photo: the prototype's tiles carry no words. A
+// cat with no photo yet shows its name, or there would be nothing to know
+// it by. The big ones are the model's closest matches.
 function CatTile({ cat, big, onPick }) {
-  return html`<button type="button" class=${big ? "cat-tile big" : "cat-tile"} onClick=${() => onPick(cat)} aria-label=${cat.name || t("cat.noName")}>
-    ${cat.cover ? html`<img src=${cat.cover.thumb} alt="" />` : html`<span class="cat-tile-empty" aria-hidden="true"></span>`}
-    ${!big && html`<span class="cat-tile-name">${cat.name || t("cat.noName")}</span>`}
+  const name = cat.name || t("cat.noName");
+  return html`<button type="button" class=${big ? "cat-tile big" : "cat-tile"} data-cat=${cat.catId} onClick=${() => onPick(cat)} aria-label=${name}>
+    ${cat.cover
+      ? html`<img src=${big ? cat.cover.medium : cat.cover.thumb} alt="" loading="lazy" />`
+      : html`<span class="cat-tile-empty"><span class="cat-tile-name">${name}</span></span>`}
   </button>`;
 }
 
@@ -381,48 +416,79 @@ function Which({ scan, cats }) {
   const ranked = (scan.ranked || []).map((r) => cats.find((c) => c.catId === r.catId)).filter(Boolean);
   const top = ranked.slice(0, SHOWN);
   const rest = [...ranked.slice(SHOWN), ...cats.filter((c) => !ranked.includes(c))];
-  const pick = (cat) => update({ catId: cat.catId, isNew: false, step: "met" });
+  // Tagging a post goes back to the post; a scan goes on to "You met".
+  const pick = (cat) => update({ catId: cat.catId, isNew: false, step: tagging(scan) ? "post" : "met", changing: false });
+  // The photo just taken and "retake" are in the bar at the top (Scan).
   return html`<div class="scan-page" data-step="which">
     <h1 class="title">${t("scan.which")}</h1>
-    ${scan.shots[0]?.thumb && html`<img class="your-photo" src=${scan.shots[0].thumb} alt=${t("scan.yourPhoto")} />`}
-    ${top.length > 0 && html`<div class="candidates">${top.map((cat) => html`<${CatTile} cat=${cat} big onPick=${pick} />`)}</div>`}
+    ${top.length > 0 &&
+    html`<div class="candidates" role="group" aria-label=${t("scan.closest")}>
+      ${top.map((cat) => html`<${CatTile} key=${cat.catId} cat=${cat} big onPick=${pick} />`)}
+    </div>`}
     <h2 class="subtitle">${top.length ? t("scan.notThese") : t("scan.everyCat")}</h2>
     <div class="cat-grid-pick">
       <button type="button" class="cat-tile new" onClick=${() => update({ isNew: true, catId: null, step: "new" })}>
-        <span class="cat-tile-empty plus" aria-hidden="true">+</span>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         <span class="cat-tile-name">${t("scan.newCat")}</span>
       </button>
-      ${rest.map((cat) => html`<${CatTile} cat=${cat} onPick=${pick} />`)}
+      ${rest.map((cat) => html`<${CatTile} key=${cat.catId} cat=${cat} onPick=${pick} />`)}
     </div>
-    <button type="button" class="link-button" onClick=${() => update({ step: "camera", returnTo: "which" })}>${t("scan.retake")}</button>
   </div>`;
 }
 
-function Met({ scan, cats }) {
+// The flow's two ways on, side by side at the foot of the page, the
+// prototype's: the quiet one saves, the accent one goes to the post.
+function TwoWays({ save, saveLabel, post, postLabel }) {
+  return html`<div class="scan-bar" role="group" aria-label=${t("scan.postOrSave")}>
+    <button type="button" class="scan-way" onClick=${save}>${saveLabel}</button>
+    <button type="button" class="scan-way main" onClick=${post}><${Icon} name="pencil" size=${19} />${postLabel}</button>
+  </div>`;
+}
+
+const toPost = () => update({ step: "post", changing: false });
+
+function Met({ scan, cats, places }) {
   const cat = cats.find((c) => c.catId === scan.catId);
   const met = recognition?.encountersOf?.(scan.catId) || 0;
+  // The cat's name poll, the prototype's "Name" card. With no signal the
+  // page is whole without it.
+  const [poll, setPoll] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setPoll(null);
+    loadNames(scan.catId)
+      .then((answer) => live && setPoll(answer))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [scan.catId]);
+  const place = places.find((r) => r.id === cat?.regionId)?.names?.en;
   return html`<div class="scan-page" data-step="met">
     <div class="met-photos">
-      ${cat?.cover && html`<img class="met-cat" src=${cat.cover.medium} alt="" />`}
-      ${scan.shots[0]?.thumb && html`<img class="met-yours" src=${scan.shots[0].thumb} alt=${t("scan.yourPhoto")} />`}
+      <span class="met-cat">${cat?.cover && html`<img src=${cat.cover.medium} alt="" />`}</span>
+      ${scan.shots[0]?.thumb && html`<span class="met-yours"><img src=${scan.shots[0].thumb} alt=${t("scan.yourPhoto")} /></span>`}
     </div>
-    <h1 class="title">${t("scan.youMet", { name: cat?.name || t("cat.noName") })}</h1>
-    ${met > 0 && html`<p class="lead">${t("scan.metBefore", { count: met + 1 })}</p>`}
-    <div class="scan-actions">
-      <button type="button" class="primary-button" onClick=${() => update({ step: "post" })}>${t("scan.createPost")}</button>
-      <button type="button" class="glass-button" onClick=${() => finish({ posting: false })}>${t("scan.saveOnly")}</button>
+    <div class="met-words">
+      <h1 class="title">${t("scan.youMet", { name: cat?.name || t("cat.noName") })}</h1>
+      ${place && html`<p class="met-sub">${t("cat.usuallyNear", { place })}</p>`}
+      ${met > 0 && html`<p class="met-sub">${t("scan.metBefore", { count: met + 1 })}</p>`}
     </div>
-    <button type="button" class="link-button" onClick=${() => update({ step: "which" })}>${t("scan.notThisCat")}</button>
+    ${poll && html`<${NamePoll} poll=${poll} change=${setPoll} />`}
+    <${TwoWays} save=${() => finish({ posting: false })} saveLabel=${t("scan.justSave")} post=${toPost} postLabel=${t("scan.createPost")} />
   </div>`;
 }
 
-function Chips({ options, chosen, multi, label, labelOf, onChange }) {
+// `swatch`: a dot of colour before each word (the coats, tokens.css).
+function Chips({ options, chosen, multi, label, labelOf, swatch, onChange }) {
   const has = (v) => (multi ? chosen.includes(v) : chosen === v);
   const toggle = (v) => onChange(multi ? (has(v) ? chosen.filter((x) => x !== v) : [...chosen, v]) : has(v) ? null : v);
   return html`<fieldset class="chips">
     <legend>${label}</legend>
     ${options.map(
-      (v) => html`<button type="button" class="chip" aria-pressed=${String(has(v))} onClick=${() => toggle(v)}>${labelOf(v)}</button>`,
+      (v) => html`<button type="button" class=${swatch ? "chip with-swatch" : "chip"} aria-pressed=${String(has(v))} onClick=${() => toggle(v)}>
+        ${swatch && html`<span class="chip-swatch" aria-hidden="true" style=${{ background: `var(--${swatch}-${v})` }}></span>`}${labelOf(v)}
+      </button>`,
     )}
   </fieldset>`;
 }
@@ -434,10 +500,10 @@ function NewCat({ scan, places }) {
     <h1 class="title">${t("scan.newCatTitle")}</h1>
     <${Shots} scan=${scan} />
     <label class="field">
-      <span>${t("scan.nameIdea")}</span>
-      <input maxlength="24" placeholder=${t("scan.nameIdeaHint")} value=${p.nameIdea} onInput=${(e) => change({ nameIdea: e.currentTarget.value })} />
+      <span>${t("scan.nameIdea")} <span class="optional">${t("scan.optional")}</span></span>
+      <input maxlength="24" dir="auto" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder=${t("scan.nameIdeaHint")} value=${p.nameIdea} onInput=${(e) => change({ nameIdea: e.currentTarget.value })} />
     </label>
-    <${Chips} label=${t("scan.coat")} options=${COATS} chosen=${p.coat} labelOf=${(v) => t(`coat.${v}`)} onChange=${(coat) => change({ coat })} />
+    <${Chips} label=${t("scan.coat")} options=${COATS} chosen=${p.coat} swatch="coat" labelOf=${(v) => t(`coat.${v}`)} onChange=${(coat) => change({ coat })} />
     <${Chips}
       label=${t("scan.where")}
       options=${[...places.map((r) => r.id), "elsewhere"]}
@@ -447,66 +513,180 @@ function NewCat({ scan, places }) {
     />
     <${Chips} label=${t("scan.traits")} options=${TRAITS} chosen=${p.traits} multi labelOf=${(v) => t(`trait.${v}`)} onChange=${(traits) => change({ traits })} />
     <p class="lead small">${t("scan.newCatNote")}</p>
-    <div class="scan-actions">
-      <button type="button" class="primary-button" onClick=${() => update({ step: "post" })}>${t("scan.addAndPost")}</button>
-      <button type="button" class="glass-button" onClick=${() => finish({ posting: false })}>${t("scan.addOnly")}</button>
-    </div>
+    <${TwoWays} save=${() => finish({ posting: false })} saveLabel=${t("scan.addOnly")} post=${toPost} postLabel=${t("scan.addAndPost")} />
   </div>`;
 }
 
-function Shots({ scan }) {
-  return html`<div class="shots">
+// The encounter's photos and the way to add one. `big`: the post page's,
+// one photo nearly the screen's width, numbered "1/2".
+function Shots({ scan, big }) {
+  const count = scan.shots.length;
+  const add = () => update({ step: "camera", returnTo: scan.step });
+  if (big && !count) {
+    return html`<button type="button" class="first-shot" onClick=${add}>
+      <span class="first-shot-icon" aria-hidden="true"><${Icon} name="camera" size=${32} width=${1.9} /></span>
+      <span>${t("scan.takePhoto")}</span>
+    </button>`;
+  }
+  return html`<div class=${big ? "shots big" : "shots"} role="group" aria-label=${t("scan.photos")}>
     ${scan.shots.map(
-      (s, i) => html`<span class="shot">${s.thumb ? html`<img src=${s.thumb} alt=${t("scan.photoN", { n: i + 1 })} />` : null}<b>${i + 1}</b></span>`,
+      (s, i) =>
+        html`<span class="shot" key=${s.photoId}
+          >${s.thumb ? html`<img src=${s.thumb} alt=${t("scan.photoN", { n: i + 1 })} />` : null}<b>${big ? `${i + 1}/${count}` : i + 1}</b></span
+        >`,
     )}
-    ${scan.shots.length < MAX_PHOTOS &&
-    html`<button type="button" class="shot add" aria-label=${scan.shots.length ? t("scan.another") : t("scan.takePhoto")} onClick=${() => update({ step: "camera", returnTo: scan.step })}>
-      <${Icon} name="camera" size=${22} />
-      <span>${scan.shots.length ? t("scan.another") : t("scan.takePhoto")}</span>
+    ${count < MAX_PHOTOS &&
+    html`<button type="button" class="shot add" onClick=${add}>
+      <span class="shot-add-icon" aria-hidden="true"><${Icon} name="camera" size=${22} /></span>
+      <span class="shot-add-label">${count ? t("scan.addPhoto") : t("scan.takePhoto")}</span>
+      <span class="shot-add-count">${t("scan.photosOf", { count, max: MAX_PHOTOS })}</span>
     </button>`}
   </div>`;
 }
 
-function PostPage({ scan, cats }) {
+const PAW = html`<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <ellipse cx="12" cy="16" rx="4.6" ry="3.8" /><circle cx="6" cy="10.5" r="2" /><circle cx="9.6" cy="6.8" r="2" /><circle cx="14.4" cy="6.8" r="2" /><circle cx="18" cy="10.5" r="2" />
+</svg>`;
+const CROSS = html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>`;
+const PIN = html`<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.4" />
+</svg>`;
+
+// The campus place a point is in: the nearest whose circle holds it, from
+// the point rounded as the server keeps it (common/regions.py does the
+// same for the post). Only for the words under "Add location".
+export function placeAt(fix, places) {
+  if (!fix) return null;
+  const rad = Math.PI / 180;
+  const lat = Math.round(fix.lat * 1000) / 1000;
+  const lon = Math.round(fix.lon * 1000) / 1000;
+  let best = null;
+  for (const r of places) {
+    const x = (r.lon - lon) * rad * Math.cos(((r.lat + lat) / 2) * rad);
+    const d = 6371000 * Math.hypot(x, (r.lat - lat) * rad);
+    if (d <= r.radiusM && (!best || d < best.d)) best = { d, r };
+  }
+  return best ? best.r : null;
+}
+
+// The prototype's small map under the switch: a drawing, not the place
+// itself, with the area's name on it.
+function NearMap({ place }) {
+  return html`<div class="near-map">
+    <svg viewBox="0 0 346 128" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <rect class="nm-ground" x="-10" y="-10" width="370" height="150" />
+      <rect class="nm-green" x="18" y="14" width="96" height="58" rx="14" />
+      <rect class="nm-green" x="250" y="70" width="84" height="48" rx="14" />
+      <path class="nm-road" d="M-10 92 C 80 80, 150 100, 360 84" stroke-width="12" />
+      <path class="nm-road" d="M170 -10 C 160 40, 190 80, 176 140" stroke-width="9" />
+      <rect class="nm-building" x="196" y="18" width="70" height="40" rx="8" />
+      <rect class="nm-building" x="62" y="98" width="64" height="26" rx="7" />
+      <circle class="nm-halo" cx="182" cy="64" r="30" />
+      <path class="nm-pin" d="M182 70s-11-9.5-11-18.5a11 11 0 0 1 22 0c0 9-11 18.5-11 18.5z" />
+      <circle class="nm-dot" cx="182" cy="51.5" r="4" />
+    </svg>
+    <span class="near-name">${t("scan.near", { place: place.near?.en || place.names.en })}</span>
+  </div>`;
+}
+
+function PostPage({ scan, cats, places }) {
   const cat = cats.find((c) => c.catId === scan.catId);
-  const tag = scan.isNew
-    ? html`${scan.proposal.nameIdea || t("scan.newCat")} <span class="badge">${t("scan.newBadge")}</span>`
-    : cat
-      ? cat.name || t("cat.noName")
-      : t("scan.noTag");
+  const tagged = scan.isNew || !!cat;
+  const name = scan.isNew ? scan.proposal.nameIdea || t("scan.newCat") : cat?.name || t("cat.noName");
+  const face = scan.isNew ? scan.shots[0]?.thumb : cat?.cover?.thumb;
+  const near = scan.shareRegion ? placeAt(scan.fix, places) : null;
+  // From "+", the cat is chosen on the page of every cat by name; after a
+  // scan, on "Which cat?" again.
+  const choose = () => update({ step: scan.entry === "post" ? "tag" : "which", changing: true });
   return html`<div class="scan-page" data-step="post">
-    <h1 class="title">${t("scan.newPost")}</h1>
-    <div class="row tag-row">
-      <span class="row-label">${tag}</span>
-      <span class="row-value"></span>
-      <button type="button" class="link-button" onClick=${() => update({ step: "which" })}>${scan.catId || scan.isNew ? t("scan.change") : t("scan.tag")}</button>
-    </div>
-    <${Shots} scan=${scan} />
-    <label class="field">
-      <span>${t("scan.description")}</span>
-      <textarea maxlength="280" rows="3" placeholder=${t("scan.descriptionHint")} value=${scan.text} onInput=${(e) => update({ text: e.currentTarget.value })}></textarea>
+    ${tagged
+      ? html`<div class="tag-row tagged">
+          <span class="tagged-face" aria-hidden="true">${face && html`<img src=${face} alt="" />`}</span>
+          <span class="tagged-words"
+            >${scan.entry === "scan" && !scan.isNew ? tRich("scan.youMet", { name }, "name") : html`<b>${name}</b>`}
+            ${scan.isNew && html` <span class="badge">${t("scan.newBadge")}</span>`}</span
+          >
+          <button type="button" class="tagged-button" onClick=${choose}>${t("scan.change")}</button>
+          ${scan.entry === "post" &&
+          html`<button type="button" class="tagged-button round" aria-label=${t("scan.untag")} onClick=${() => update({ catId: null, isNew: false })}>${CROSS}</button>`}
+        </div>`
+      : html`<button type="button" class="tag-row tag-ask" onClick=${choose}>
+          <span class="tag-ask-icon" aria-hidden="true">${PAW}</span>
+          <span class="tag-ask-words">${t("scan.tag")}</span>
+          <span class="optional">${t("scan.optionalWord")}</span>
+        </button>`}
+    <${Shots} scan=${scan} big />
+    <label class="describe">
+      <span class="describe-label">${t("scan.description")} <span class="optional">${t("scan.optional")}</span></span>
+      <textarea
+        maxlength="280"
+        rows="3"
+        dir="auto"
+        autocapitalize="sentences"
+        enterkeyhint="done"
+        placeholder=${t("scan.descriptionHint")}
+        value=${scan.text}
+        onInput=${(e) => update({ text: e.currentTarget.value })}
+      ></textarea>
+      <span class="describe-count" aria-live="polite">${t("scan.textCount", { count: scan.text.length, max: 280 })}</span>
     </label>
-    <button
-      type="button"
-      role="switch"
-      class="row switch-row"
-      aria-checked=${String(scan.shareRegion)}
-      onClick=${() => {
-        // Turned on by hand with no place yet: ask the phone now, also if
-        // it had stopped asking by itself.
-        if (!scan.shareRegion && !scan.fix) findPlace({ again: true });
-        update({ shareRegion: !scan.shareRegion });
-      }}
-    >
-      <span class="row-label">${t("scan.location")}</span>
-      <span class="row-value">${scan.shareRegion ? t("scan.locationOn") : t("scan.locationOff")}</span>
-      <span class="switch" aria-hidden="true"><span></span></span>
-    </button>
-    <div class="scan-actions">
-      <button type="button" class="primary-button" disabled=${!scan.shots.length} onClick=${() => finish({ posting: true })}>${t("scan.post")}</button>
-      ${scan.shots.length > 0 && html`<button type="button" class="glass-button" onClick=${() => finish({ posting: false })}>${t("scan.saveOnly")}</button>`}
+    <section class="locate" aria-label=${t("scan.location")}>
+      <button
+        type="button"
+        role="switch"
+        class="locate-row"
+        aria-checked=${String(scan.shareRegion)}
+        onClick=${() => {
+          // Turned on by hand with no place yet: ask the phone now, also if
+          // it had stopped asking by itself.
+          if (!scan.shareRegion && !scan.fix) findPlace({ again: true });
+          update({ shareRegion: !scan.shareRegion });
+        }}
+      >
+        <span class="locate-icon" aria-hidden="true">${PIN}</span>
+        <span class="locate-words">
+          <span class="locate-title">${t("scan.location")}</span>
+          <span class="locate-sub">${scan.shareRegion ? t("scan.locationOn") : t("scan.locationOff")}</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span></span></span>
+      </button>
+      <div class="near" data-open=${String(!!near)} aria-hidden=${String(!near)}>${near && html`<${NearMap} place=${near} />`}</div>
+    </section>
+    ${scan.entry === "scan" &&
+    scan.shots.length > 0 &&
+    html`<button type="button" class="link-button quiet" onClick=${() => finish({ posting: false })}>${t("scan.saveOnly")}</button>`}
+  </div>`;
+}
+
+// "+" → "Tag a cat": every cat by name, the prototype's page 4. The one
+// already chosen is ringed.
+function Tag({ scan, cats }) {
+  const pick = (cat) => update({ catId: cat.catId, isNew: false, step: "post", changing: false });
+  return html`<div class="scan-page" data-step="tag">
+    <h1 class="title">${t("scan.which")}</h1>
+    <div class="tag-grid" role="radiogroup" aria-label=${t("scan.campusCats")}>
+      ${cats.map(
+        (cat) => html`<button type="button" role="radio" class="tag-cat" key=${cat.catId} aria-checked=${String(cat.catId === scan.catId)} onClick=${() => pick(cat)}>
+          <span class="tag-cat-photo">${cat.cover && html`<img src=${cat.cover.thumb} alt="" loading="lazy" />`}</span>
+          <span class="tag-cat-name">${cat.name || t("cat.noName")}</span>
+        </button>`,
+      )}
     </div>
   </div>`;
+}
+
+// Choosing a cat for a post already being written: from the feed's "+", or
+// "Change" on the post page.
+const tagging = (scan) => !!scan.changing || scan.entry === "post";
+
+// The page the back button leads to; null on the flow's first page, where
+// the button closes the flow instead (the prototype's X).
+export function pageBefore(scan) {
+  if (scan.step === "which") return tagging(scan) ? "post" : null;
+  if (scan.step === "tag") return "post";
+  if (scan.step === "met" || scan.step === "new") return "which";
+  if (scan.step === "post" && scan.entry !== "post") return scan.isNew ? "new" : scan.catId ? "met" : "which";
+  return null;
 }
 
 export function Scan() {
@@ -527,13 +707,28 @@ export function Scan() {
       .catch(() => {});
   }, [open]);
   if (!scan || !open) return null;
-  const Page = { camera: Camera, which: Which, met: Met, new: NewCat, post: PostPage }[scan.step] || Which;
+  const Page = { camera: Camera, which: Which, met: Met, new: NewCat, post: PostPage, tag: Tag }[scan.step] || Which;
+  const before = pageBefore(scan);
   return html`<section class="scan" role="dialog" aria-label=${t("scan.label")} data-step=${scan.step}>
     ${scan.step !== "camera" &&
-    html`<header class="page-top scan-top">
-      <button type="button" class="glass-icon" ref=${glass} aria-label=${t("ui.close")} onClick=${() => close()}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-      </button>
+    html`<header class="scan-top">
+      ${before
+        ? html`<button type="button" class="glass-icon" key="back" ref=${glass} aria-label=${t("ui.back")} onClick=${() => update({ step: before })}>
+            <${Icon} name="back" size=${22} />
+          </button>`
+        : html`<button type="button" class="glass-icon" key="close" ref=${glass} aria-label=${t("ui.close")} onClick=${() => close()}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>`}
+      ${scan.step === "which" &&
+      html`${scan.shots[0]?.thumb && html`<span class="scan-shot"><img src=${scan.shots[0].thumb} alt=${t("scan.yourPhoto")} /></span>`}
+        <button type="button" class="glass-icon" ref=${glass} aria-label=${t("scan.retakePhoto")} onClick=${() => update({ step: "camera", returnTo: "which" })}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 8h3l1.6-2.4h6.8L17 8h3v11H4z" /><circle cx="12" cy="13" r="3.4" />
+          </svg>
+        </button>`}
+      ${scan.step === "post" &&
+      html`<h1 class="scan-title">${t("scan.newPost")}</h1>
+        <button type="button" class="scan-post" ref=${glass} disabled=${!scan.shots.length} onClick=${() => finish({ posting: true })}>${t("scan.post")}</button>`}
     </header>`}
     <div class="scroller" key=${scan.step}><${Page} scan=${scan} cats=${cats} places=${places} /></div>
   </section>`;

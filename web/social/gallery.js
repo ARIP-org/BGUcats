@@ -7,6 +7,7 @@
 import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
 import { cats as loadCats } from "./data.js";
 import { t } from "./i18n.js";
+import { Empty } from "./mascot.js";
 import { glass } from "./motion.js";
 import { openScan } from "./scan.js";
 import { get, push, set, useStore } from "./store.js";
@@ -115,8 +116,11 @@ export function Gallery({ search: focusSearch }) {
     <div class="gallery" data-sort=${sort}>
       ${columns.map((column) => html`<div class="gallery-column">${column}</div>`)}
     </div>
-    ${cats && !shown.length && html`<p class="empty">${search.trim() ? t("gallery.noMatch", { search: search.trim() }) : t("gallery.empty")}</p>`}
-    ${!cats && failed && html`<p class="empty" role="alert">${t("gallery.failed")}</p>`}
+    ${cats && !shown.length &&
+    (search.trim()
+      ? html`<${Empty} line=${t("gallery.noMatch", { search: search.trim() })} coat="black" />`
+      : html`<${Empty} line=${t("gallery.empty")} coat="black" action=${t("tab.scan")} onAction=${() => openScan("scan")} />`)}
+    ${!cats && failed && html`<${Empty} line=${t("gallery.failed")} alert />`}
     ${!cats && !failed && html`<p class="loading" role="status">${t("feed.loading")}</p>`}`;
 }
 

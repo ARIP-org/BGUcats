@@ -1201,20 +1201,24 @@ code {
 }
 
 /* A cat's name poll in the app, on the cat's page (B4b). */
-.name-poll:empty {
+.name-poll:empty,
+.cat-feedings:empty {
   display: none;
 }
 
-.name-poll {
+.name-poll,
+.cat-feedings {
   margin-bottom: 18px;
 }
 
-.name-poll .row {
+.name-poll .row,
+.cat-feedings .row {
   padding-inline: 0;
   flex-wrap: wrap;
 }
 
-.name-poll .row-main .muted {
+.name-poll .row-main .muted,
+.cat-feedings .row-main .muted {
   display: block;
 }
 

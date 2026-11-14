@@ -217,6 +217,15 @@
   --dim: rgba(0,0,0,0.45);
   --sheen: rgba(255,255,255,0.22);
   --clear: rgba(255,255,255,0);
+  /* A coat, as a dot on its chip (the new-cat form). */
+  --coat-ginger: #D9873F;
+  --coat-black: #1E1E1E;
+  --coat-white: #F4F2EE;
+  --coat-gray: #8C8C8C;
+  --coat-tabby: repeating-linear-gradient(135deg, #8A6A44 0 4px, #4A3A28 4px 7px);
+  --coat-calico: conic-gradient(#F4F2EE 0 33%, #D9873F 0 66%, #1E1E1E 0);
+  --coat-tuxedo: linear-gradient(90deg, #1E1E1E 50%, #F4F2EE 50%);
+  --coat-ring: rgba(0,0,0,0.12);
   /* The bouncier springs of menus, the toast and the dialog. */
   --ease-pop: cubic-bezier(0.3, 1.25, 0.45, 1);
   --ease-toast: cubic-bezier(0.3, 1.3, 0.5, 1);
@@ -291,6 +300,9 @@
 .badge-disc[data-badge="first-meow"] {
   --b-fill: #E8913A;
   --b-ink: #1a1a1a;
+}
+.badge-disc[data-badge="snack-giver"] {
+  --b-fill: #5E8A6E;
 }
 .badge-disc[data-badge="night-owl"] {
   --b-fill: #5E6A9A;

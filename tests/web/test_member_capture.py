@@ -2,6 +2,7 @@
 form and the post, each ending writing what 01-product.md's table says,
 through the outbox, so a reload or a dead signal loses nothing."""
 
+import json
 import time
 
 from app import handler as app_handler
@@ -71,12 +72,31 @@ def test_save_without_posting_records_the_encounter_and_the_pick(
     # No model in the local app: "Which cat?" is the grid of every cat.
     page.wait_for_timeout(600)  # the page's slide
     shot(page, "member-scan-which")
-    page.locator(".cat-grid-pick .cat-tile", has_text="Mitzi").click()
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
     page.get_by_role("heading", name="You met Mitzi").wait_for()
+    # The cat as the app knows it, your photo over its corner, and its name
+    # poll: a vote from here counts like one from the cat's page.
+    assert page.locator(".met-yours img").get_attribute("alt") == "Your photo"
+    poll = page.locator(".scan .poll")
+    poll.get_by_role("radio", name="Mitzi").click()
+    poll.locator(".poll-option[aria-checked=true]").wait_for()
+    cat = app.data["cats"]["Mitzi"]
+    eventually(
+        page,
+        lambda: app.api("GET", f"/api/v1/cats/{cat}/names", email=COLLABORATOR)[1][
+            "myVote"
+        ],
+    )
     page.wait_for_timeout(600)  # the page's slide
     shot(page, "member-scan-met")
+    # Back is "not this cat": the grid again, and another choice.
+    page.locator(".scan-top").get_by_role("button", name="Back").click()
+    page.get_by_role("heading", name="Which cat?").wait_for()
+    assert page.locator(".scan-top").get_by_role("button", name="Close").count() == 1
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
+    page.get_by_role("heading", name="You met Mitzi").wait_for()
     before = len(my_posts(app))
-    page.get_by_role("button", name="Save without posting").click()
+    page.get_by_role("button", name="Just save").click()
     page.wait_for_selector(".toast.on")
     assert "Mitzi saved" in page.get_by_role("status").inner_text()
 
@@ -86,10 +106,85 @@ def test_save_without_posting_records_the_encounter_and_the_pick(
     assert len(my_posts(app)) == before  # no post
 
 
+def with_a_model(page, ranked):
+    """The recognition model is not served here (localapp.py). This stands
+    in for its module, at the one place scan.js meets it: the model is
+    ready, and it ranks every photo the same way."""
+    stub = (
+        "export function createRecognition() { return {"
+        " state: { version: 'test-model' },"
+        " prepareForCapture: async () => true,"
+        f" guessShots: async () => ({{ ranked: {json.dumps(ranked)} }}),"
+        " encountersOf: () => 0 }; }"
+    )
+    page.route(
+        "**/recognition.js",
+        lambda route: route.fulfill(content_type="text/javascript", body=stub),
+    )
+    page.reload()
+    page.wait_for_selector("[data-screen=frame]")
+
+
+def test_the_models_closest_cats_are_offered_first(app, open_member_app, shot):
+    cats = dict(app.data["cats"])
+    for name in ("Ziggy", "Luna", "Kfir", "Tutit", "Shemesh"):
+        status, body = app.api("POST", "/api/cats", {"name": name}, email=ADMIN)
+        assert status == 200, body
+        cats[name] = body["catId"]
+    order = ["Shunra", "Mitzi", "Pilpel", "Luna"]
+    page = frame(open_member_app)
+    with_a_model(
+        page, [{"catId": cats[n], "score": 0.9 - i / 10} for i, n in enumerate(order)]
+    )
+    scan_one(page)
+
+    # The three closest, large, in the model's order; a cat with no photo
+    # yet is known by its name.
+    big = page.locator(".candidates .cat-tile")
+    page.wait_for_function(
+        "document.querySelectorAll('.candidates .cat-tile').length === 3"
+    )
+    assert [b.get_attribute("aria-label") for b in big.all()] == order[:3]
+    assert big.nth(2).inner_text() == "Pilpel"
+    page.get_by_role("heading", name="Not one of these?").wait_for()
+    # Below: a new cat first, then the model's next guess, then the rest.
+    rest = page.locator(".cat-grid-pick .cat-tile")
+    assert [b.get_attribute("aria-label") or b.inner_text() for b in rest.all()][:2] == [
+        "New cat",
+        "Luna",
+    ]
+    assert rest.count() == 1 + len(cats) - 3
+    # The prototype's layout: two matches side by side and one centred
+    # under them, then four to a row.
+    page.wait_for_timeout(600)  # the page's slide
+    boxes = [b.bounding_box() for b in big.all()]
+    assert boxes[0]["y"] == boxes[1]["y"] < boxes[2]["y"]
+    centre = page.viewport_size["width"] / 2
+    assert abs(boxes[2]["x"] + boxes[2]["width"] / 2 - centre) < 1
+    row = [b.bounding_box()["y"] for b in rest.all()]
+    assert row[0] == row[3] < row[4]
+    # The photo just taken, at the top between Close and Retake.
+    assert page.locator(".scan-top .scan-shot img").get_attribute("alt") == "Your photo"
+    shot(page, "member-scan-which-matches")
+
+    page.get_by_role("button", name="Retake photo").click()
+    shoot(page)
+    page.wait_for_selector(".scan[data-step=which]")
+    page.locator(".candidates").get_by_role("button", name="Shunra").click()
+    page.get_by_role("heading", name="You met Shunra").wait_for()
+    assert page.locator(".scan-top .scan-shot").count() == 0
+    page.get_by_role("button", name="Just save").click()
+    session = eventually(page, lambda: (s := newest_session(app)) and s["photos"] and s)
+    pick = eventually(page, lambda: pick_of(app, session["session"]["sessionId"]))
+    assert (pick["choice"], pick["catId"]) == ("cat", cats["Shunra"])
+    assert pick["shown"] == [cats[n] for n in order[:3]]
+    assert pick["modelVersion"] == "test-model"
+
+
 def test_create_a_post_shows_it_at_once_and_sends_it(app, open_member_app, shot):
     page = frame(open_member_app)
     scan_one(page)
-    page.locator(".cat-grid-pick .cat-tile", has_text="Shunra").click()
+    page.locator(".cat-grid-pick").get_by_role("button", name="Shunra", exact=True).click()
     page.get_by_role("button", name="Create a post").click()
     page.get_by_role("heading", name="New post").wait_for()
     page.fill("textarea", "Guarding the vending machine.")
@@ -120,8 +215,23 @@ def test_a_new_cat_goes_to_the_admins_and_its_post_waits(app, open_member_app, s
     page.get_by_role("button", name="Ginger").click()
     page.get_by_role("button", name="Kitten").click()
     page.wait_for_timeout(600)  # the page's slide
+    page.locator(".scan .scroller").evaluate("e => e.scrollTo(0, 0)")
     shot(page, "member-scan-new")
-    page.get_by_role("button", name="Add cat & create a post").click()
+    # The coats carry their colour; a chosen chip is marked.
+    ginger = page.get_by_role("button", name="Ginger")
+    assert ginger.get_attribute("aria-pressed") == "true"
+    assert ginger.locator(".chip-swatch").count() == 1
+    assert "1 of 4" in page.locator(".shot.add").inner_text()
+    # Back to the grid and in again: the form is as it was left.
+    page.locator(".scan-top").get_by_role("button", name="Back").click()
+    page.get_by_role("heading", name="Which cat?").wait_for()
+    page.get_by_role("button", name="New cat").click()
+    assert page.input_value("input[maxlength='24']") == "Hummus"
+    page.get_by_role("button", name="Add & post").click()
+    page.get_by_role("heading", name="New post").wait_for()
+    page.locator(".scan-top").get_by_role("button", name="Back").click()
+    page.get_by_role("heading", name="New cat").wait_for()
+    page.get_by_role("button", name="Add & post").click()
     page.get_by_role("button", name="Post", exact=True).click()
     page.wait_for_selector(".toast.on")
     assert "An admin will look" in page.get_by_role("status").inner_text()
@@ -152,7 +262,7 @@ def test_posting_from_plus_with_no_cat(app, open_member_app):
     page.get_by_role("button", name="Take a photo").click()
     shoot(page)
     page.get_by_role("heading", name="New post").wait_for()
-    assert "No cat tagged" in page.locator(".tag-row").inner_text()
+    assert "Tag a cat" in page.locator(".tag-row").inner_text()
     page.get_by_role("button", name="Post", exact=True).click()
     post = eventually(
         page, lambda: next((c for c in my_posts(app) if c["cat"] is None), None)
@@ -160,10 +270,155 @@ def test_posting_from_plus_with_no_cat(app, open_member_app):
     assert post["state"] == "visible"
 
 
+AT_THE_LIBRARY = {
+    "geolocation": {"latitude": 31.2621, "longitude": 34.8029},
+    "permissions": ["geolocation"],
+}
+
+
+def test_the_post_page_names_the_area_and_counts_the_words(app, open_member_app, shot):
+    page = frame(open_member_app, **AT_THE_LIBRARY)
+    scan_one(page)
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
+    page.get_by_role("button", name="Create a post").click()
+    page.get_by_role("heading", name="New post").wait_for()
+    # Who the post is about, the photo numbered, and how to add another.
+    assert page.locator(".tag-row").inner_text().split("\n")[0] == "You met Mitzi"
+    assert page.locator(".shots.big .shot b").inner_text() == "1/1"
+    assert "1 of 4" in page.locator(".shot.add").inner_text()
+    page.fill("textarea", "Asleep on the returns desk.")
+    assert page.locator(".describe-count").inner_text() == "27/280"
+    # The phone is in a place the campus names: the small map says which.
+    near = page.locator(".near")
+    page.wait_for_selector(".near[data-open=true]")
+    assert near.inner_text() == "Near Aranne Library"
+    page.wait_for_timeout(700)  # the page's slide and the map opening
+    shot(page, "member-scan-post-near")
+    # Off: the map closes and the words say the spot stays with you.
+    switch = page.get_by_role("switch", name="Add location")
+    switch.click()
+    page.wait_for_selector(".near[data-open=false]")
+    assert "the spot stays with you" in switch.inner_text()
+    switch.click()
+    page.wait_for_selector(".near[data-open=true]")
+    page.get_by_role("button", name="Post", exact=True).click()
+    post = eventually(
+        page,
+        lambda: next(
+            (c for c in my_posts(app) if c["text"] == "Asleep on the returns desk."),
+            None,
+        ),
+    )
+    # What the phone showed is what the server decided.
+    assert post["region"] == "library"
+
+
+# A phone whose GPS answers only when the test says so.
+SLOW_GPS = """
+Object.defineProperty(navigator, "geolocation", { configurable: true, value: {
+  getCurrentPosition: (ok) => { window.answerLocation = () =>
+    ok({ coords: { latitude: 31.2621, longitude: 34.8029, accuracy: 9 } }); },
+}});
+"""
+
+
+def test_a_place_the_phone_learns_after_the_photo_still_reaches_the_post(app, open_member_app):
+    """GPS takes seconds and nobody waits for it: the first photo, and so
+    the encounter, is often there before the phone knows where it is. Until
+    2026-11-13 such a post showed "Near Aranne Library" on the phone and
+    had no area on the server."""
+    page = open_member_app(COLLABORATOR, wait=None)
+    page.context.add_init_script(SLOW_GPS)
+    page.reload()
+    page.wait_for_selector("[data-screen=frame]")
+    scan_one(page)
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
+    page.get_by_role("button", name="Create a post").click()
+    page.get_by_role("heading", name="New post").wait_for()
+    # The encounter has gone to the server with no place.
+    session = eventually(page, lambda: (s := newest_session(app)) and s["photos"] and s)
+    assert session["session"].get("coarseLat") is None
+    assert page.locator(".near[data-open=false]").count() == 1
+    # Now the phone knows.
+    page.wait_for_function("typeof window.answerLocation === 'function'")
+    page.evaluate("window.answerLocation()")
+    page.wait_for_selector(".near[data-open=true]")
+    assert page.locator(".near").inner_text() == "Near Aranne Library"
+    page.fill("textarea", "Found before the GPS did.")
+    page.get_by_role("button", name="Post", exact=True).click()
+    post = eventually(
+        page,
+        lambda: next(
+            (c for c in my_posts(app) if c["text"] == "Found before the GPS did."), None
+        ),
+    )
+    assert post["region"] == "library"
+
+
+def test_tagging_a_post_comes_back_to_the_post(app, open_member_app, shot):
+    page = frame(open_member_app)
+    page.get_by_role("button", name="New post").click()
+    page.get_by_role("button", name="Take a photo").click()
+    shoot(page)
+    page.fill("textarea", "Tagged on the way.")
+    top = page.locator(".scan-top")
+    # The flow's first page here is the post: its button closes.
+    assert top.get_by_role("button", name="Close").count() == 1
+    page.get_by_role("button", name="Tag a cat").click()
+    # Every cat by name, three to a row, and nothing else to choose.
+    page.get_by_role("heading", name="Which cat?").wait_for()
+    cats = page.locator(".tag-grid").get_by_role("radio")
+    assert sorted(c.inner_text() for c in cats.all()) == ["Mitzi", "Pilpel", "Shunra"]
+    assert page.get_by_role("button", name="New cat").count() == 0
+    page.wait_for_timeout(600)  # the page's slide
+    shot(page, "member-scan-tag")
+    top.get_by_role("button", name="Back").click()
+    page.get_by_role("heading", name="New post").wait_for()
+    assert "Tag a cat" in page.locator(".tag-row").inner_text()
+    page.get_by_role("button", name="Tag a cat").click()
+    cats.filter(has_text="Shunra").click()
+    # Straight back to the post, with what was written.
+    page.get_by_role("heading", name="New post").wait_for()
+    assert "Shunra" in page.locator(".tag-row").inner_text()
+    assert page.input_value("textarea") == "Tagged on the way."
+    # The tag can be changed, where the chosen cat is marked, and removed.
+    page.get_by_role("button", name="Change").click()
+    assert page.locator(".tag-cat[aria-checked=true]").inner_text() == "Shunra"
+    cats.filter(has_text="Mitzi").click()
+    assert "Mitzi" in page.locator(".tag-row").inner_text()
+    page.get_by_role("button", name="Remove cat tag").click()
+    assert "Tag a cat" in page.locator(".tag-row").inner_text()
+    page.get_by_role("button", name="Tag a cat").click()
+    cats.filter(has_text="Shunra").click()
+    page.get_by_role("button", name="Post", exact=True).click()
+    post = eventually(
+        page,
+        lambda: next(
+            (c for c in my_posts(app) if c["text"] == "Tagged on the way."), None
+        ),
+    )
+    assert post["cat"]["name"] == "Shunra"
+
+
+def test_changing_the_cat_from_the_post_comes_back_to_it(open_member_app):
+    page = frame(open_member_app)
+    scan_one(page)
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
+    page.get_by_role("button", name="Create a post").click()
+    page.get_by_role("heading", name="New post").wait_for()
+    page.get_by_role("button", name="Change").click()
+    page.locator(".cat-grid-pick").get_by_role("button", name="Shunra", exact=True).click()
+    page.get_by_role("heading", name="New post").wait_for()
+    assert "Shunra" in page.locator(".tag-row").inner_text()
+    # And back from the post is the cat just chosen.
+    page.locator(".scan-top").get_by_role("button", name="Back").click()
+    page.get_by_role("heading", name="You met Shunra").wait_for()
+
+
 def test_a_reload_lands_back_on_the_same_page(open_member_app):
     page = frame(open_member_app)
     scan_one(page)
-    page.locator(".cat-grid-pick .cat-tile", has_text="Mitzi").click()
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
     page.get_by_role("heading", name="You met Mitzi").wait_for()
     page.reload()
     page.wait_for_selector("[data-screen=frame]")
@@ -174,7 +429,7 @@ def test_a_reload_lands_back_on_the_same_page(open_member_app):
 def test_with_no_signal_everything_arrives_later(app, open_member_app):
     page = frame(open_member_app)
     scan_one(page)
-    page.locator(".cat-grid-pick .cat-tile", has_text="Pilpel").click()
+    page.locator(".cat-grid-pick").get_by_role("button", name="Pilpel", exact=True).click()
     page.get_by_role("button", name="Create a post").click()
     page.fill("textarea", "Posted from under the bridge.")
     page.context.set_offline(True)
@@ -200,7 +455,7 @@ def test_new_terms_are_accepted_before_posting(app, open_member_app, monkeypatch
     monkeypatch.setattr(app_handler, "TERMS_VERSION", "2026-12")
     page = frame(open_member_app)
     scan_one(page)
-    page.locator(".cat-grid-pick .cat-tile", has_text="Mitzi").click()
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
     page.get_by_role("button", name="Create a post").click()
     page.fill("textarea", "With the new terms.")
     page.get_by_role("button", name="Post", exact=True).click()

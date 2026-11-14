@@ -34,6 +34,18 @@ export function Mascot({ coat = "gray", size = 64 }) {
   </svg>`;
 }
 
+// A screen with nothing on it yet, or one that could not be loaded: the
+// mascot, one line, and the next thing to do if there is one (the design
+// draws none of these: 05-client.md, "States the design does not draw").
+// The line keeps the class "empty", which the screens had before.
+export function Empty({ line, coat = "gray", action, onAction, alert }) {
+  return html`<div class="empty-state">
+    <${Mascot} coat=${coat} size=${96} />
+    <p class="empty" role=${alert ? "alert" : null}>${line}</p>
+    ${action && html`<button type="button" class="glass-button" onClick=${onAction}>${action}</button>`}
+  </div>`;
+}
+
 // The cat's face a person has until they choose a photo (B1).
 export function CatFace({ size = 34 }) {
   return html`<svg class="cat-face" width=${size} height=${size} viewBox="0 0 24 24" aria-hidden="true">

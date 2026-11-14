@@ -71,13 +71,25 @@ export const acceptInvite = (code) => post(`/v1/invites/${code}/accept`);
 // The campus places (web/regions.json), for an area's name and the
 // new-cat form.
 let regions = null;
+let spots = [];
 export async function places() {
   if (!regions) {
     const res = await fetch(new URL("../regions.json", import.meta.url));
-    regions = res.ok ? (await res.json()).regions : [];
+    const file = res.ok ? await res.json() : {};
+    regions = file.regions || [];
+    spots = file.feedingSpots || [];
   }
   return regions;
 }
+
+// The campus's feeding spots (D10), from the same file.
+export async function feedingSpots() {
+  await places();
+  return spots;
+}
+// -> {lastFedAt}. Refused with `too_soon` (this cat, inside four hours) or
+// `rate_limited` (six logs a day).
+export const logFeeding = (catId, feeding) => post(`/v1/cats/${catId}/feedings`, feeding);
 
 export async function regionName(id, lang = "en") {
   if (!id) return null;

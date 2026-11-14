@@ -1080,11 +1080,20 @@ async function openCat(catId, { redrawn = false } = {}) {
       .catch(() => {});
   }
 
+  // And its feedings, as people logged them in the app (B7c).
+  const feedings = el("div", { className: "cat-feedings" });
+  if (isAdmin() && state.social) {
+    api(`/cats/${catId}/feedings`)
+      .then((answer) => isCurrent() && drawFeedings(feedings, answer))
+      .catch(() => {});
+  }
+
   if (!redrawn) window.scrollTo(0, 0);
   $("#main").replaceChildren(
     back,
     sectionHead(cat.name, plural(photos.length, "photo"), isAdmin() ? [rename, publicInfo, remove] : []),
     poll,
+    feedings,
     photos.length
       ? el("div", { className: "card" }, [
           el("div", { className: "grid" }, photos.map((p) => thumb(p, photos))),
@@ -1156,6 +1165,38 @@ function drawNamePoll(holder, cat, poll) {
         : null,
     ]),
   );
+}
+
+// The cat's latest feedings, newest first, and an admin's answer to one
+// that was wrong: remove it. The app's "last fed" is then the newest that
+// still stands. Nothing is drawn for a cat nobody has fed.
+function drawFeedings(holder, answer) {
+  if (!answer.feedings.length) return holder.replaceChildren();
+  const rows = answer.feedings.map((f) =>
+    el("div", { className: "row feeding", attrs: { "data-feeding": f.feedingId } }, [
+      el("span", { className: "row-main" }, [
+        el("strong", { textContent: fmtDate(f.at) }),
+        el("span", {
+          className: "muted small",
+          textContent: [f.by ? `by @${f.by}` : "by someone who left", f.spotId ? `at ${f.spotId}` : null].filter(Boolean).join(" · "),
+        }),
+      ]),
+      f.removed
+        ? el("span", { className: "tag", textContent: "removed" })
+        : button("Remove", "btn btn-sm btn-danger", async () => {
+            const ok = await confirmAction({
+              title: "Remove this feeding?",
+              text: "It no longer counts for the cat's “last fed”, and the points it earned are taken back.",
+              ok: "Remove feeding",
+            });
+            if (!ok) return;
+            drawFeedings(holder, await post(`/cats/${answer.catId}/feedings/${f.feedingId}/remove`));
+            toast("Feeding removed");
+          }),
+    ]),
+  );
+  const last = answer.lastFedAt ? `The app shows “last fed” as ${fmtDate(answer.lastFedAt)}.` : "The app shows no feeding for this cat.";
+  holder.replaceChildren(panel("Feedings", `${last} Logged by people in the app, newest first.`, [], rows));
 }
 
 // --------------------------------------------------------------------------

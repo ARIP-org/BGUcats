@@ -3,6 +3,8 @@ friend" (an invite link, D4), and a person's page. The seeded campus has
 two people who are not friends yet: the collaborator, who met and posted
 Mitzi, and the admin."""
 
+from app import handler as app_handler
+
 from .localapp import ADMIN, COLLABORATOR
 from .test_member_home import home, loaded
 
@@ -194,6 +196,33 @@ def test_a_posts_author_opens_their_page(app, open_member_app, shot):
     person.locator(".person-posts button").click()
     page.wait_for_selector("[data-page=cat][data-state=shown]")
     assert page.locator("[data-page=cat] h1").inner_text() == "Mitzi"
+
+
+def test_a_persons_page_says_how_many_friends_you_share(app, open_member_app):
+    # A third member, a friend of both the admin and the collaborator.
+    third = "third@example.com"
+    status, body = app.api("POST", "/api/admins", {"email": third, "role": "user"}, email=ADMIN)
+    assert status == 200, body
+    for who in (ADMIN, third):
+        assert app.api("GET", "/api/v1/me", email=who)[0] == 200  # their account
+        status, body = app.api(
+            "POST", "/api/v1/me/terms", {"version": app_handler.TERMS_VERSION}, email=who
+        )
+        assert status == 200, body
+    for other in (ADMIN, COLLABORATOR):
+        status, body = app.api(
+            "POST", f"/api/v1/invites/{code_of(app, other)}/accept", email=third
+        )
+        assert status == 200, body
+    page = open_member_app(ADMIN)
+    post = page.locator("article.post").first
+    post.wait_for()
+    post.get_by_role("button", name="Open collaborator's page").click()
+    person = page.locator("[data-page=person]")
+    person.locator(".person-name").wait_for()
+    # How many, never who.
+    assert person.locator(".person-chip[data-chip=mutual]").inner_text() == "1 friend in common"
+    assert "third" not in person.inner_text()
 
 
 def test_someone_who_is_not_a_friend_shows_no_friendship(app, open_member_app):
