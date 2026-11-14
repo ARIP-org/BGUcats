@@ -401,6 +401,13 @@ when unsure, and come back to cats already met.
 - **Cost:** ~40 MB per device per model version (29.5 MB int8 model + 10 MB
   runtime), ~150–250 MB of memory while running. AWS cost is cents: storage
   and CloudFront egress.
+- **Starting the model stops the thread it starts on for seconds.** The
+  desk starts it on the page, in the background of a screen nobody is
+  tapping. The member app must not: its capture flow runs the model in
+  the runtime's worker (`createRecognition({ worker: true })`) and starts
+  it after the screen is drawn, never inside the tap that opens it. That
+  tap froze the owner's iPhone until 2026-11-14
+  (`tests/web/test_member_model.py`).
 
 #### Shared vectors
 
@@ -609,4 +616,5 @@ only; no AWS.
 and signed on GitHub's macOS runners. No Mac, no stored certificate.
 
 **In the browser:** MegaDescriptor-T-224, int8 ONNX, on ONNX Runtime Web 1.17.3
-(WebAssembly, one thread) — self-hosted under the admin site's `model/`.
+(WebAssembly, one thread; in the member app, inside the runtime's worker) —
+self-hosted under the admin site's `model/`.

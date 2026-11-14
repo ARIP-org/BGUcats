@@ -30,6 +30,9 @@ const MAX_PHOTOS = 4;
 const SHOWN = 3; // candidates on "Which cat?"
 const COATS = ["ginger", "black", "white", "gray", "tabby", "calico", "tuxedo"];
 const TRAITS = ["friendly", "shy", "ear-tipped", "kitten", "collar"];
+// How long after the flow's screen is drawn the model starts loading: the
+// opening animation is over by then.
+const WARM_UP_AFTER_MS = 900;
 const NO_MODEL = "none"; // the pick's modelVersion when no model ranked
 
 const blobs = new Map(); // photoId -> Blob, this visit only
@@ -40,7 +43,7 @@ export function startOutbox() {
   outbox ??= createOutbox({ post, onChange: () => set({ outboxTick: Date.now() }) });
   // In the iPhone app the model comes from the site, another origin there
   // (N1; CORS on /model/ in infra/main/web.tf).
-  recognition ??= createRecognition({ api, post, base: isNative() ? getConfig().apiBase || "" : "" });
+  recognition ??= createRecognition({ api, post, base: isNative() ? getConfig().apiBase || "" : "", worker: true });
   outbox.kick();
   const saved = load();
   if (saved) set({ scan: saved });
@@ -133,7 +136,10 @@ export async function openScan(entry) {
   // The camera page asks for the camera first and for the place after it
   // (Camera, below); a post started with "+" has no camera yet.
   if (scan.step !== "camera") findPlace();
-  recognition?.prepareForCapture().catch(() => {});
+  // The model starts once the screen is there and has finished arriving,
+  // never inside the tap: reading 30 MB and handing it to the model's
+  // worker is the heaviest thing this app does (recognition.js).
+  setTimeout(() => recognition?.prepareForCapture().catch(() => {}), WARM_UP_AFTER_MS);
 }
 
 async function keep(blob) {

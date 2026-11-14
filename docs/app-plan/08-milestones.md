@@ -782,7 +782,12 @@ English file.
   point; a test holds the two together); "Save without posting" as a
   quiet line after a scan. "Tag a cat" from "+" is the prototype's page
   4: every cat by name, three to a row, the chosen one ringed, no "New
-  cat". **A place the phone learns late still reaches the post:** GPS
+  cat". **The flow no longer freezes as it opens** (2026-11-14): it
+  started the recognition model inside the tap, on the page's thread,
+  which stopped every touch for seconds on the owner's iPhone, from "+"
+  and from "Scan a cat" alike. The model now runs in the runtime's
+  worker and starts after the screen is drawn (`docs/notes.md`, "The
+  iPhone app"). **A place the phone learns late still reaches the post:** GPS
   takes seconds and the first photo does not wait for it, so the
   encounter often went to the server with no place while the page showed
   one. The outbox now sends the place as a step of its own, before the

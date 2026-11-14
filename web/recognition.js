@@ -52,7 +52,23 @@ const GALLERY_REFRESH_MS = 60 * 1000;
 // Vectors per upload request (the API's VECTOR_WRITE_BATCH).
 const VECTOR_UPLOAD_BATCH = 25;
 
-export function createRecognition({ api, post, base = "" }) {
+const NO_WORKER = "bgucats.modelWorker.failed";
+
+export function createRecognition({ api, post, base = "", worker = false }) {
+  // Asked for, and not known to fail on this phone.
+  let inWorker = worker;
+  try {
+    if (localStorage.getItem(NO_WORKER)) inWorker = false;
+  } catch {
+    /* no storage: try the worker */
+  }
+  const noWorkerHere = () => {
+    try {
+      localStorage.setItem(NO_WORKER, new Date().toISOString());
+    } catch {
+      /* it will be tried again next launch */
+    }
+  };
   // A path the manifest names, from the site that published it.
   const fromSite = (path) => (path.startsWith("/") ? base + path : path);
   const listeners = new Set();
@@ -240,10 +256,18 @@ export function createRecognition({ api, post, base = "" }) {
 
       await loadScript(fromSite(manifest.runtime.script));
       const ort = window.ort;
-      ort.env.wasm.wasmPaths = fromSite(manifest.runtime.wasmPath);
+      // A whole address: the runtime's worker is made from a blob, where a
+      // path alone means nothing.
+      ort.env.wasm.wasmPaths = new URL(fromSite(manifest.runtime.wasmPath), location.href).href;
       // One thread: several need cross-origin isolation headers this site
       // does not send, and one is enough for a photo every second or so.
       ort.env.wasm.numThreads = 1;
+      // `worker`: the runtime's own worker holds the model, so starting it
+      // (seconds of work for 30 MB) and every guess happen off the page's
+      // thread and the screen never stops answering touches. Starting it
+      // on the page's thread stopped every touch for about five seconds:
+      // on the owner's iPhone, the capture flow froze as it opened.
+      if (inWorker) ort.env.wasm.proxy = true;
 
       const kept = await readFile(manifest.version);
       const bytes = kept || (await download(fromSite(manifest.file), manifest.bytes));
@@ -255,10 +279,17 @@ export function createRecognition({ api, post, base = "" }) {
       }
       if (!kept) await keepFile(manifest.version, bytes);
       set({ detail: "starting the model", progress: null });
-      session = await ort.InferenceSession.create(bytes, {
-        executionProviders: ["wasm"],
-        graphOptimizationLevel: "all",
-      });
+      try {
+        session = await ort.InferenceSession.create(bytes, {
+          executionProviders: ["wasm"],
+          graphOptimizationLevel: "all",
+        });
+      } catch (err) {
+        // A phone whose browser cannot start the worker: from its next
+        // launch the model runs on the page's thread, as the desk's does.
+        if (inWorker) noWorkerHere();
+        throw err;
+      }
       return true;
     })().catch((err) => {
       loading = null; // let the next queue visit try again

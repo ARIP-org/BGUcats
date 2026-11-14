@@ -174,6 +174,29 @@ an hour that a sentence would have saved.
   unanswered when the app was closed is not asked again by itself, with a
   line saying so and a way to ask again. A page cannot see itself
   freeze, so the fix is to make the freeze a one-off.
+- **That was not the cause, or not the whole of it: the freeze was the
+  recognition model starting on the page's own thread** (2026-11-14).
+  The owner updated iOS and "+" and "Scan a cat" still froze. Both
+  called `prepareForCapture` as the flow opened, and that reads 30 MB,
+  checks it and builds the model's session in WebAssembly, on the thread
+  that draws and takes touches: about five seconds blocked in Chromium
+  slowed four times, 1.3 s in WebKitGTK on a fast machine, with the new
+  screen still at the invisible first frame of its opening animation. So
+  nothing appeared and nothing answered. It also explains what the first
+  diagnosis took as support: the next launch resumed the saved flow,
+  which skipped the model as well as the questions. Now the member app
+  runs the model in the runtime's own worker (`worker: true`,
+  `ort.env.wasm.proxy`; 52 ms blocked in WebKitGTK, the same scores to
+  the last digit) and starts it 0.9 s after the screen is drawn. The
+  worker is made from a blob, so the runtime's files need a whole
+  address, not a path. A phone where the worker cannot start remembers
+  it and uses the page's thread from its next launch. The desk still
+  runs the model on the page, as it has since October.
+- **Two candidate causes that the same evidence fits are one unfinished
+  diagnosis.** The first fix was reasoned, not measured, and its note
+  said so; the measurement that settled it (a `longtask` observer, the
+  published model served to the local app) took twenty minutes and could
+  have been made the first time.
 - **Nothing here runs Safari.** The screen tests are Chromium. WebKitGTK
   (`apt-get install gir1.2-webkit2-4.1 python3-gi`, run under
   `xvfb-run` with the system's Python 3.12) loads the local app and
