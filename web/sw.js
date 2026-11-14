@@ -26,7 +26,7 @@
 // ULIDs, so a photo the app and the worker both send lands once. Safari has
 // no Background Sync: on an iPhone, uploads move only while the app is open.
 
-const CACHE = "bgucats-shell-v18";
+const CACHE = "bgucats-shell-v19";
 const MODEL_CACHE = "bgucats-model";
 const MODEL_PATH = /^\/model\/([^/]+)\/[^/]+$/;
 const SHELL = [
@@ -57,6 +57,8 @@ const SHELL = [
   "/social/gallery.js",
   "/social/friends.js",
   "/social/achievements.js",
+  "/social/appinfo.js",
+  "/social/trail.js",
   "/social/map.js",
   "/social/report.js",
   "/social/poll.js",

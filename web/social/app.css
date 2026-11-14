@@ -82,6 +82,21 @@ body {
   line-height: 1.4;
   color: var(--muted);
 }
+/* "Copy app info" where the phone would not copy: the text, to be copied
+   by hand. */
+.starting-info {
+  inline-size: min(320px, 100%);
+  block-size: 160px;
+  padding: 10px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--chip);
+  color: var(--ink);
+  font: 12px/1.4 ui-monospace, Menlo, monospace;
+}
+.starting-info[hidden] {
+  display: none;
+}
 
 .top {
   display: flex;
@@ -4162,6 +4177,24 @@ button.post-name {
 }
 .blocked-page .friends-open {
   cursor: default;
+}
+/* "App info": the app's own account of itself, as it was kept, to read or
+   to select and copy by hand. */
+.app-info-page .glass-button {
+  align-self: flex-start;
+}
+.app-info {
+  margin: 0;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--ink);
+  font: 12px/1.5 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: start;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .unblock {
   flex: none;

@@ -32,6 +32,7 @@ const PATHS = {
   personPlus: html`<circle cx="10" cy="8" r="3.5" /><path d="M3.5 20a6.5 6.5 0 0 1 13 0M18.5 8v6M15.5 11h6" />`,
   personMinus: html`<circle cx="10" cy="8" r="3.5" /><path d="M3.5 20a6.5 6.5 0 0 1 13 0M16 11h5" />`,
   flag: html`<path d="M5 21V4M5 4h11l-2 4 2 4H5" />`,
+  info: html`<circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5M12 7.5v.2" />`,
   block: html`<circle cx="12" cy="12" r="8.5" /><path d="M6 6l12 12" />`,
   more: html`<circle cx="5.5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="18.5" cy="12" r="1.2" />`,
   signOut: html`<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /><path d="M10 8l-4 4 4 4M6 12h10" />`,

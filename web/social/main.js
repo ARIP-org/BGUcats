@@ -23,6 +23,7 @@ import {
 } from "../lib/auth.js";
 import { html, render } from "../vendor/preact-htm.js";
 import { AchievementsSheet } from "./achievements.js";
+import { AppInfo, CopyInfo } from "./appinfo.js";
 import { CatPage } from "./cat.js";
 import { Feed } from "./feed.js";
 import { Blocked, Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
@@ -36,6 +37,7 @@ import { TabBar, watchScroll } from "./tabbar.js";
 import { adoptTheme, applyTheme, savedTheme } from "./theme.js";
 import { ReportSheet } from "./report.js";
 import { Scan, openScan, startOutbox } from "./scan.js";
+import { mark } from "./trail.js";
 import { Overlays, toast } from "./ui.js";
 import { unanswered } from "./asking.js";
 import { FeedingSheet } from "./feeding.js";
@@ -57,6 +59,7 @@ const STEP_MS = 15000;
 // to leave a black screen for as long as anyone cared to wait.
 async function step(name, work) {
   document.documentElement.dataset.boot = name;
+  mark(`start: ${name}`);
   let timer;
   const late = new Promise((_, refuse) => {
     timer = setTimeout(() => refuse(new Error(t("start.tooLong"))), window.bgucatsStepMs || STEP_MS);
@@ -82,6 +85,7 @@ function StartFailed({ at, message, signedIn }) {
       <button class="glass-button" type="button" onClick=${() => location.reload()}>${t("ui.tryAgain")}</button>
       <button class="link-button" type="button" onClick=${() => window.bgucatsReset?.()}>${t("start.reset")}</button>
       <p class="starting-note">${t("start.resetNote")}</p>
+      <${CopyInfo} quiet=${true} />
       ${signedIn && html`<button class="link-button quiet" type="button" onClick=${() => logout(HOME)}>${t("signOut.button")}</button>`}
     </main>
   `;
@@ -138,7 +142,16 @@ function Banned() {
 // The frame (E1): the tabs' pages, the pages pushed over them, the tab
 // bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
 const TAB_PAGES = { feed: Feed, home: Home };
-const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage, map: MapPage, blocked: Blocked };
+const PAGES = {
+  profile: Profile,
+  cat: CatPage,
+  gallery: Gallery,
+  friends: Friends,
+  person: PersonPage,
+  map: MapPage,
+  blocked: Blocked,
+  appInfo: AppInfo,
+};
 const onScroll = watchScroll();
 
 function Frame() {
@@ -189,6 +202,7 @@ async function boot() {
 
   const token = await step("sign-in", () => idToken());
   if (!token) {
+    mark("start: not signed in");
     show(html`<${SignIn} note=${takeNote()} />`);
     return;
   }
@@ -228,6 +242,7 @@ async function boot() {
   // uploading, and an unfinished capture flow comes back where it was.
   startOutbox();
   document.documentElement.dataset.boot = "ready";
+  mark("start: ready");
   show(html`<${Frame} />`);
   // The app was last closed while the phone was being asked for something
   // (asking.js): it no longer asks for that by itself, and says so once.
@@ -239,6 +254,7 @@ async function boot() {
 
 // A start that fails says so, and where. It used to show the sign-in
 // screen with a note, to someone who was signed in.
-boot().catch((err) =>
-  show(html`<${StartFailed} at=${err.step || "files"} message=${err.message} signedIn=${!!readTokens()} />`),
-);
+boot().catch((err) => {
+  mark(`start failed at ${err.step || "files"}: ${err.message}`);
+  show(html`<${StartFailed} at=${err.step || "files"} message=${err.message} signedIn=${!!readTokens()} />`);
+});

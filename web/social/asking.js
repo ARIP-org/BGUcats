@@ -8,6 +8,8 @@
 // for that by itself, says so, and asks again only when the person chooses
 // to (askAgain). One freeze must not be every launch.
 
+import { mark } from "./trail.js";
+
 const ASKING = "bgucats.asking"; // what is being asked right now
 const QUIET = "bgucats.notAsking"; // what is no longer asked without being told to
 
@@ -35,6 +37,7 @@ export function unanswered() {
   if (!left.length) return [];
   keep(QUIET, [...new Set([...kept(QUIET), ...left])]);
   keep(ASKING, []);
+  mark(`closed last time while asking for: ${left.join(", ")}`);
   return left;
 }
 
@@ -48,8 +51,14 @@ export function askAgain(kind) {
 // ask() -> a promise that settles when the phone has answered, either way.
 export async function asking(kind, ask) {
   keep(ASKING, [...new Set([...kept(ASKING), kind])]);
+  mark(`asking the phone for the ${kind}`);
   try {
-    return await ask();
+    const answer = await ask();
+    mark(`the ${kind}: ${answer ? "answered" : "nothing"}`);
+    return answer;
+  } catch (err) {
+    mark(`the ${kind}: refused (${err?.name || err})`);
+    throw err;
   } finally {
     keep(ASKING, kept(ASKING).filter((k) => k !== kind));
   }
