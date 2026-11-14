@@ -49,7 +49,16 @@ def test_the_page_says_loading_until_the_app_draws_and_then_gets_out_of_the_way(
 def test_a_slow_start_says_which_step_and_offers_the_ways_out(open_member_app):
     page = open_member_app(COLLABORATOR, wait=None)
     page.context.add_init_script("window.bgucatsStartWaitMs = 600; window.bgucatsStepMs = 60000;")
-    page.route("**/config.json", hang)
+    # The settings never answer until "Try again" is tapped. Taking the
+    # block off instead would let the waiting request through, and the app
+    # would start by itself before the tap.
+    tapped = []
+
+    def answers_once_tapped(route):
+        if tapped:
+            route.continue_()
+
+    page.route("**/config.json", answers_once_tapped)
     page.reload()
     help = page.locator("#starting-help")
     help.wait_for(state="visible")
@@ -61,7 +70,7 @@ def test_a_slow_start_says_which_step_and_offers_the_ways_out(open_member_app):
         "Reset the app on this phone",
     ]
     # "Try again" is the page again; this time the request answers.
-    page.unroute("**/config.json")
+    tapped.append(True)
     help.get_by_role("button", name="Try again").click()
     page.wait_for_selector("[data-screen=frame]")
 

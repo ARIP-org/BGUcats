@@ -305,6 +305,13 @@ an hour that a sentence would have saved.
   changes.** Running only the tests of the screen being changed let two
   failures reach CI that night: a second `role="status"` on the page
   broke a test of another screen that asked for "the" status.
+- **Taking a block off a request lets the waiting request through.**
+  `page.unroute()` on a route whose handler never answered releases
+  what it was holding, so the page carries on by itself. The start's
+  test took the block off and then tapped "Try again"; on CI's slower
+  machine the app had already started and the button was gone
+  (2026-11-14). A request that should answer later gets a handler that
+  decides, not an unroute.
 
 ## Agents and sessions
 
