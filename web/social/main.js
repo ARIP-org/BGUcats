@@ -93,6 +93,50 @@ function StartFailed({ at, message, signedIn }) {
   `;
 }
 
+// The account as the server last gave it, kept for a start with no signal.
+// One person's, on their own phone, like the feed's first page (feed.js).
+const ME_KEY = "bgucats.me";
+
+function keepMe(who, me) {
+  try {
+    localStorage.setItem(ME_KEY, JSON.stringify({ who, me }));
+  } catch {
+    /* the next start with no signal says it cannot start */
+  }
+}
+
+function keptMe(who) {
+  try {
+    const kept = JSON.parse(localStorage.getItem(ME_KEY));
+    return kept?.who === who ? kept.me : null;
+  } catch {
+    return null;
+  }
+}
+
+// Started from memory: the account is read again when the phone says it is
+// back, and once a minute until then (a phone on bad Wi-Fi never says).
+// An answer that refuses this person starts the app again, to be told so
+// by the start itself.
+function readAccountWhenBack(who) {
+  let timer = 0;
+  const again = async () => {
+    try {
+      const me = await api("/v1/me");
+      keepMe(who, me);
+      set({ me });
+      mark("the account read again");
+    } catch (err) {
+      if (err.status) location.reload();
+      return;
+    }
+    removeEventListener("online", again);
+    clearInterval(timer);
+  };
+  addEventListener("online", again);
+  timer = setInterval(again, 60000);
+}
+
 function takeNote() {
   try {
     const note = sessionStorage.getItem(LOGIN_NOTE_KEY);
@@ -210,9 +254,13 @@ async function boot() {
   }
   saveTokens(readTokens()); // the service worker's copy, as the desk keeps it
 
+  // Whose account: the kept copy below is used only for the same sign-in.
+  const who = claims(token).sub;
   let me;
+  let fromMemory = false;
   try {
     me = await step("account", () => api("/v1/me"));
+    keepMe(who, me);
   } catch (err) {
     if (err.status === 404) {
       show(html`<${NotOpen} />`);
@@ -229,7 +277,16 @@ async function boot() {
       show(html`<${SignIn} note=${takeNote()} />`);
       return;
     }
-    throw err;
+    // The sign-in ended (the API refused the token): the sign-in screen is
+    // up already (onSignedOut), and that is all there is to say.
+    if (!readTokens()) return;
+    // No answer at all: no signal, or too slow. The app opens with the
+    // account as this phone last read it, because the thing it is for
+    // works with no signal: photos taken now upload later (outbox.js).
+    me = !err.status && keptMe(who);
+    if (!me) throw err;
+    fromMemory = true;
+    mark("start: the account as last read (no answer)");
   }
   set({ me });
   adoptTheme(me.theme);
@@ -246,6 +303,7 @@ async function boot() {
   document.documentElement.dataset.boot = "ready";
   mark("start: ready");
   show(html`<${Frame} />`);
+  if (fromMemory) readAccountWhenBack(who);
   // The app was last closed while the phone was being asked for something
   // (asking.js): it no longer asks for that by itself, and says so once.
   const left = unanswered();

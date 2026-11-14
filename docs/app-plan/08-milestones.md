@@ -952,6 +952,14 @@ English file.
   failed start offer "Copy app info" too. The service worker keeps each
   page under its own name and opens the kept copy when the network has
   not answered in four seconds; the member app registers it itself.
+- **A start with no signal, 2026-11-14:** the app could be opened from
+  the kept page and then said "could not start", because the first thing
+  it does is read the account. It now opens with the account as this
+  phone last read it (the same sign-in only), so a cat can be
+  photographed where there is no signal and the photos go later; the
+  account is read again when the phone is back. A sign-in the API no
+  longer takes goes to the sign-in screen, where it used to say "could
+  not start".
 - **Built 2026-11-13.** The rows of that table that were missing:
   - *Nothing here yet:* the mascot, one line and the next thing to do
     (`Empty` in `mascot.js`) in the feed ("Scan a cat"), the gallery, a

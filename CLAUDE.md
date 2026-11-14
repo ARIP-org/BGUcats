@@ -307,7 +307,10 @@ product). Its old sessions and photos stay in the table with
   service worker and its kept files only: sign-in, the upload queue and
   the model stay). Each step of the start has a time limit and a failure
   says where. The site's root sends an installed app to its front door
-  before fetching anything else of the desk.
+  before fetching anything else of the desk. With no signal the app opens
+  with the account it last read on this phone (the same sign-in only)
+  and reads it again when the signal is back; a phone that has never
+  read it says it cannot start.
 - **The phone keeps what the app was doing** (since 2026-11-14;
   `app.html`, `web/social/trail.js`, `tests/web/test_member_appinfo.py`):
   the last eighty lines, in localStorage. The start's steps, the capture
