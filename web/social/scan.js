@@ -96,9 +96,16 @@ function findPlace({ again = false } = {}) {
   else if (located === scan.sessionId || quiet("location")) return;
   located = scan.sessionId;
   asking("location", locate).then((fix) => {
-    if (fix && get().scan?.sessionId === scan.sessionId) update({ fix });
+    if (!fix || get().scan?.sessionId !== scan.sessionId) return;
+    update({ fix });
+    // The first photo may have been faster than the GPS: its encounter
+    // gets the place now, so the post says what this page says. Nothing
+    // happens if there is no encounter yet, or it has a place.
+    place(scan.sessionId, fix);
   });
 }
+
+const place = (sessionId, fix) => outbox.placeEncounter(sessionId, { lat: fix.lat, lon: fix.lon, accuracyM: fix.accuracyM });
 
 // entry: "scan" (the centre tab) or "post" (the feed's +).
 export async function openScan(entry) {
@@ -158,6 +165,11 @@ async function keep(blob) {
   // to the page that asked for another photo.
   const next = scan.returnTo || (scan.entry === "scan" ? "which" : "post");
   update({ shots, step: next, returnTo: null });
+  // The GPS may have answered while this photo was being kept, after the
+  // encounter was written without a place and before there was a photo to
+  // show for it.
+  const fix = get().scan?.fix;
+  if (fix && !scan.fix) place(scan.sessionId, fix);
   guess(shots);
 }
 

@@ -2085,6 +2085,23 @@ def _create_encounter(body, email, **_):
         # A retry from the outbox after a lost response. Same person: the
         # encounter is already there, which is the outcome they wanted.
         existing = _require_encounter(session_id, email)
+        # Or the phone learned where it is a moment after the first photo
+        # (GPS takes seconds; a person does not wait for it). An encounter
+        # with no place takes the one sent now; one that has a place keeps
+        # it, whatever is sent.
+        place = _location_fields(body)
+        if place and existing.get("coarseLat") is None:
+            names = {f"#{n}": n for n in place}
+            try:
+                table.update_item(
+                    Key={"PK": f"SESSION#{session_id}", "SK": "META"},
+                    UpdateExpression="SET " + ", ".join(f"#{n} = :{n}" for n in place),
+                    ConditionExpression="attribute_not_exists(coarseLat)",
+                    ExpressionAttributeNames=names,
+                    ExpressionAttributeValues={f":{n}": v for n, v in place.items()},
+                )
+            except table.meta.client.exceptions.ConditionalCheckFailedException:
+                pass  # another retry placed it first
         return {"sessionId": session_id, "startedAt": existing.get("startedAt")}
     _record_app_contributor(email)
     return {"sessionId": session_id, "startedAt": now}

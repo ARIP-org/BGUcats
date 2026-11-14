@@ -300,6 +300,10 @@
     "other": "{count} cats found"
   },
   "person.friendsSince": "Friends since {date}",
+  "person.mutual": {
+    "one": "{count} friend in common",
+    "other": "{count} friends in common"
+  },
   "person.you": "This is you",
   "person.posts": "Posts",
   "person.latest": "latest",

@@ -231,7 +231,7 @@ function SendingCard({ card }) {
         </svg>
       </span>
     </div>
-    <p class="sending-why" role="status">${why}</p>
+    <p class="sending-why">${why}</p>
     ${card.text && html`<p class="post-text" dir="auto">${card.text}</p>`}
   </article>`;
 }

@@ -521,6 +521,7 @@ export function PersonPage({ userId }) {
     <div class="person-chips">
       <span class="person-chip accent">${t("person.found", { count: person.found })}</span>
       ${person.friend === "yes" && html`<span class="person-chip">${t("person.friendsSince", { date: monthYear(person.friendSince) })}</span>`}
+      ${person.mutual > 0 && html`<span class="person-chip" data-chip="mutual">${t("person.mutual", { count: person.mutual })}</span>`}
       ${person.me && html`<span class="person-chip">${t("person.you")}</span>`}
     </div>
     <div class="card-head person-posts-head">

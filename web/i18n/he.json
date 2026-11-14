@@ -314,6 +314,11 @@
     "other": "{count} חתולים נמצאו"
   },
   "person.friendsSince": "חברים מאז {date}",
+  "person.mutual": {
+    "one": "חבר משותף אחד",
+    "two": "שני חברים משותפים",
+    "other": "{count} חברים משותפים"
+  },
   "person.you": "זה הדף שלך",
   "person.posts": "פוסטים",
   "person.latest": "אחרונים",

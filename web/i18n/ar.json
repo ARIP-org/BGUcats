@@ -356,6 +356,14 @@
     "other": "{count} قطة مكتشفة"
   },
   "person.friendsSince": "أصدقاء منذ {date}",
+  "person.mutual": {
+    "zero": "لا أصدقاء مشتركون",
+    "one": "صديق مشترك واحد",
+    "two": "صديقان مشتركان",
+    "few": "{count} أصدقاء مشتركين",
+    "many": "{count} صديقًا مشتركًا",
+    "other": "{count} صديق مشترك"
+  },
   "person.you": "هذه صفحتك",
   "person.posts": "المنشورات",
   "person.latest": "الأحدث",

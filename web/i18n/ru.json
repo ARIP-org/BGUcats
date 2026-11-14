@@ -328,6 +328,12 @@
     "other": "Найдено {count} кота"
   },
   "person.friendsSince": "Друзья с {date}",
+  "person.mutual": {
+    "one": "{count} общий друг",
+    "few": "{count} общих друга",
+    "many": "{count} общих друзей",
+    "other": "{count} общего друга"
+  },
   "person.you": "Это вы",
   "person.posts": "Посты",
   "person.latest": "последние",

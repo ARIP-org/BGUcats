@@ -249,6 +249,23 @@ an hour that a sentence would have saved.
   every request of the page, and failed by timing (E3, 2026-11-12). Wait
   with `page.wait_for_timeout`.
 
+- **A test that fails one run in five is telling the truth about one
+  phone in five.** The area test of 2026-11-13 failed in CI and passed
+  here: the phone's GPS answered sometimes before the first photo and
+  sometimes a moment after, and in the second case the post page said
+  "Near Aranne Library" while the encounter had gone to the server with
+  no place. Three windows had to close: the place arriving after the
+  encounter was written, while it was being written, and while its
+  request was on its way (`placeEncounter` in `web/outbox.js`, a step of
+  its own; the server takes a place only for an encounter that has
+  none). The test that found the rest answers the GPS by hand, after
+  the photo. A timing a test meets by chance deserves a test that
+  chooses it.
+- **The whole browser suite, before the push, when a shared piece
+  changes.** Running only the tests of the screen being changed let two
+  failures reach CI that night: a second `role="status"` on the page
+  broke a test of another screen that asked for "the" status.
+
 ## Agents and sessions
 
 - **The token does not choose the model.** It decides whose Claude plan

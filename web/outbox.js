@@ -140,6 +140,16 @@ export function createOutbox({ post, onChange }) {
     kick();
   }
 
+  // The phone learned where it is after the encounter was made (GPS takes
+  // seconds; nobody waits for it to take a photo). The place is kept with
+  // the encounter and marked as still to send: a step of its own, because
+  // the encounter itself may be on its way, or there, at this moment. The
+  // server takes a place only for an encounter that has none.
+  async function placeEncounter(sessionId, place) {
+    await patch("encounters", sessionId, (latest) => (latest.lat == null ? { ...latest, ...place, placeSent: false } : null));
+    kick();
+  }
+
   async function addItem(item) {
     await put("items", { ...item, state: "queued", error: null });
     onChange();
@@ -184,10 +194,12 @@ export function createOutbox({ post, onChange }) {
       const queued = await itemsWithState();
       const withItems = new Set(queued.map((q) => q.item.sessionId));
       for (const encounter of await all("encounters")) {
-        if (encounter.created || encounter.failed) continue;
+        // A place learned late goes to an encounter that is already there.
+        const placing = encounter.created && encounter.placeSent === false;
+        if ((encounter.created && !placing) || encounter.failed) continue;
         // Created server side with its first photo, never before: an
         // encounter closed with nothing in it is no one's business.
-        if (!withItems.has(encounter.sessionId) && !encounter.pick) continue;
+        if (!placing && !withItems.has(encounter.sessionId) && !encounter.pick) continue;
         try {
           await post("/encounters", {
             sessionId: encounter.sessionId,
@@ -210,13 +222,21 @@ export function createOutbox({ post, onChange }) {
           }
           continue;
         }
-        await updateEncounter(encounter.sessionId, { created: true });
+        // What was sent is what this pass read: a place that arrived while
+        // the request was on its way stays marked, and goes next pass.
+        await updateEncounter(encounter.sessionId, { created: true, ...(encounter.lat != null ? { placeSent: true } : {}) });
       }
       // A contributor's answer to "Is it one of these?" (capture.js). It
       // follows its encounter, and a re-send simply overwrites the same
       // answer server side.
       for (const encounter of await all("encounters")) {
         if (!encounter.created || !encounter.pick || encounter.pickSent) continue;
+        // The answer and what follows it read the encounter's place: a
+        // place still to send goes first.
+        if (encounter.placeSent === false) {
+          retryLater = true;
+          continue;
+        }
         try {
           await post(`/encounters/${encounter.sessionId}/pick`, encounter.pick);
         } catch (err) {
@@ -274,6 +294,10 @@ export function createOutbox({ post, onChange }) {
       for (const encounter of await all("encounters")) {
         if (!encounter.created || !encounter.after?.length) continue;
         if (encounter.pick && !encounter.pickSent) continue;
+        if (encounter.placeSent === false) {
+          retryLater = true;
+          continue;
+        }
         if (waiting.has(encounter.sessionId)) continue;
         const sent = new Set(encounter.afterSent || []);
         for (const request of encounter.after) {
@@ -402,6 +426,7 @@ export function createOutbox({ post, onChange }) {
         !pickPending &&
         !afterPending &&
         empty &&
+        (encounter.placeSent !== false || !encounter.created) &&
         (encounter.created || (!encounter.pick && !encounter.after?.length))
       ) {
         await remove("encounters", encounter.sessionId);
@@ -516,6 +541,7 @@ export function createOutbox({ post, onChange }) {
 
   return {
     addEncounter,
+    placeEncounter,
     addItem,
     setPick,
     setAfter,

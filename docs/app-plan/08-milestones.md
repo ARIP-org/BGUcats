@@ -782,7 +782,13 @@ English file.
   point; a test holds the two together); "Save without posting" as a
   quiet line after a scan. "Tag a cat" from "+" is the prototype's page
   4: every cat by name, three to a row, the chosen one ringed, no "New
-  cat". **Not yet:** the sideways swipe back, and removing a photo from
+  cat". **A place the phone learns late still reaches the post:** GPS
+  takes seconds and the first photo does not wait for it, so the
+  encounter often went to the server with no place while the page showed
+  one. The outbox now sends the place as a step of its own, before the
+  answer and the post, and `POST /api/encounters` takes a place for an
+  encounter that has none (and never replaces one). **Not yet:** the
+  sideways swipe back, and removing a photo from
   the strip: a photo taken is already part of the encounter in the
   dataset, and whether "remove" should also delete it there is the
   owner's to decide.

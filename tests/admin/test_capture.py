@@ -418,3 +418,25 @@ def test_the_upload_path_never_reads_a_stale_copy(app, monkeypatch):
     assert reads
     stale = [read["Key"]["PK"] for read in reads if not read.get("ConsistentRead")]
     assert not stale, f"read without ConsistentRead: {stale}"
+
+
+def test_a_place_that_arrives_after_the_first_photo_is_taken_once(app):
+    """GPS takes seconds, and nobody waits for it to take a photo: the
+    outbox sends the encounter again with the place. An encounter with no
+    place takes it; one that has a place keeps it."""
+
+    def place():
+        item = app["table"].get_item(Key={"PK": f"SESSION#{ENCOUNTER}", "SK": "META"})["Item"]
+        return item.get("coarseLat"), item.get("coarseLon"), item.get("locationSource")
+
+    assert _encounter()[0] == 200
+    assert place() == (None, None, None)
+    library = {"lat": 31.26219, "lon": 34.80312, "accuracyM": 8}
+    status, body = _encounter(library)
+    assert status == 200 and body["sessionId"] == ENCOUNTER
+    assert [str(v) for v in place()] == ["31.262", "34.803", "app-gps"]
+    # Sent again from somewhere else: the first place stands.
+    assert _encounter({"lat": 31.3, "lon": 34.9})[0] == 200
+    assert [str(v) for v in place()] == ["31.262", "34.803", "app-gps"]
+    # And nobody places someone else's encounter.
+    assert _encounter({"lat": 31.3, "lon": 34.9}, email=ADMIN)[0] == 403

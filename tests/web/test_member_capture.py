@@ -313,6 +313,48 @@ def test_the_post_page_names_the_area_and_counts_the_words(app, open_member_app,
     assert post["region"] == "library"
 
 
+# A phone whose GPS answers only when the test says so.
+SLOW_GPS = """
+Object.defineProperty(navigator, "geolocation", { configurable: true, value: {
+  getCurrentPosition: (ok) => { window.answerLocation = () =>
+    ok({ coords: { latitude: 31.2621, longitude: 34.8029, accuracy: 9 } }); },
+}});
+"""
+
+
+def test_a_place_the_phone_learns_after_the_photo_still_reaches_the_post(app, open_member_app):
+    """GPS takes seconds and nobody waits for it: the first photo, and so
+    the encounter, is often there before the phone knows where it is. Until
+    2026-11-13 such a post showed "Near Aranne Library" on the phone and
+    had no area on the server."""
+    page = open_member_app(COLLABORATOR, wait=None)
+    page.context.add_init_script(SLOW_GPS)
+    page.reload()
+    page.wait_for_selector("[data-screen=frame]")
+    scan_one(page)
+    page.locator(".cat-grid-pick").get_by_role("button", name="Mitzi", exact=True).click()
+    page.get_by_role("button", name="Create a post").click()
+    page.get_by_role("heading", name="New post").wait_for()
+    # The encounter has gone to the server with no place.
+    session = eventually(page, lambda: (s := newest_session(app)) and s["photos"] and s)
+    assert session["session"].get("coarseLat") is None
+    assert page.locator(".near[data-open=false]").count() == 1
+    # Now the phone knows.
+    page.wait_for_function("typeof window.answerLocation === 'function'")
+    page.evaluate("window.answerLocation()")
+    page.wait_for_selector(".near[data-open=true]")
+    assert page.locator(".near").inner_text() == "Near Aranne Library"
+    page.fill("textarea", "Found before the GPS did.")
+    page.get_by_role("button", name="Post", exact=True).click()
+    post = eventually(
+        page,
+        lambda: next(
+            (c for c in my_posts(app) if c["text"] == "Found before the GPS did."), None
+        ),
+    )
+    assert post["region"] == "library"
+
+
 def test_tagging_a_post_comes_back_to_the_post(app, open_member_app, shot):
     page = frame(open_member_app)
     page.get_by_role("button", name="New post").click()
