@@ -189,9 +189,13 @@ an hour that a sentence would have saved.
   `ort.env.wasm.proxy`; 52 ms blocked in WebKitGTK, the same scores to
   the last digit) and starts it 0.9 s after the screen is drawn. The
   worker is made from a blob, so the runtime's files need a whole
-  address, not a path. A phone where the worker cannot start remembers
-  it and uses the page's thread from its next launch. The desk still
-  runs the model on the page, as it has since October.
+  address, not a path. For a few hours a phone where the worker failed once
+  remembered it and used the page's thread from its next launch: one bad
+  moment, and the phone was back on the path that froze it, for good,
+  with nothing on screen to say so. A fallback must not be the failure
+  it replaces. Now a start that fails in the worker means no guesses
+  that time, and the mark is removed from any phone that kept it. The
+  desk still runs the model on the page, as it has since October.
 - **A start with nothing on screen cannot be diagnosed from anywhere.**
   The same morning the owner's installed app showed a gray screen, then
   a black one, for three minutes, and I could not say why: staging

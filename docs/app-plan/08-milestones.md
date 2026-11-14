@@ -24,9 +24,9 @@ A session ticks its row in the pull request that finishes it.
 | B2 | Cats for members, regions | merged 2026-11-12 |
 | B3 | Posts, the feed, likes | merged 2026-11-12 (B3a, B3b, B3c); the smoke test posts on staging since step 18 |
 | B4 | Name polls | merged 2026-11-13 (B4a: names, votes, the leader; B4b: the desk's remove and lock). Votes as feed cards moved to B5: a vote card is friends' votes |
-| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) merged 2026-11-13; blocks with B8; mutual counts built the same day, in review |
+| B5 | Friends and invites (B5b: phone and contacts) | B5a (invite links, the list, a person's page, friends and their name votes in the feed) merged 2026-11-13; blocks with B8; mutual counts merged 2026-11-14 |
 | B6 | New-cat proposals | merged 2026-11-12 |
-| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script built the same day, in review |
+| B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script merged 2026-11-14 |
 | B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
 | B9 | Push | |
 | B10 | Deleting an account | |
@@ -41,14 +41,14 @@ A session ticks its row in the pull request that finishes it.
 | E0 | Client groundwork | merged 2026-11-12 |
 | E1 | The frame: tabs, navigation, themes | merged 2026-11-12 |
 | E2 | The feed | merged 2026-11-12 |
-| E3 | The capture flow | merged 2026-11-12; every page drawn as the prototype draws it 2026-11-13, in review |
+| E3 | The capture flow | merged 2026-11-12; every page drawn as the prototype draws it, merged 2026-11-14 |
 | E4 | The gallery, a cat's page, the poll | E4a (gallery and cat page) merged 2026-11-13; the poll on the cat's page merged the same day with B4a |
 | E5 | The map | E5a (the drawn campus, dragging, the habitats and their sheet) merged 2026-11-13; feeding spots wait for the design (G6), the real places for O12 |
 | E6 | Home, profile, settings | E6a (the screens) merged 2026-11-13; the name is edited since B1a, the photo since B1b |
 | E7 | Friends | E7a (Home's card, the friends page, the invite, a person's page) merged 2026-11-13 with B5a; Block in a friend's menu since B8a, Report since B8b |
 | E8 | Achievements | E8a (Home's card and the sheet) merged 2026-11-13 with B7a; "Cats fed", Snack Giver and "Feed a cat" with B7c |
-| E9 | The states nobody drew, offline, accessibility | built 2026-11-13, in review: the missing states, the contrast test, the touch-target test |
-| E10 | Languages and right-to-left | built 2026-11-13 as drafts, in review: Hebrew, Russian and Arabic, the language menu, every screen checked from the right. Offered in staging only until a speaker has read them (O14) |
+| E9 | The states nobody drew, offline, accessibility | merged 2026-11-14: the missing states, the contrast test, the touch-target test |
+| E10 | Languages and right-to-left | merged 2026-11-14 as drafts: Hebrew, Russian and Arabic, the language menu, every screen checked from the right. Offered in staging only until a speaker has read them (O14) |
 | N1 | The member app in the iPhone app, with the model | merged 2026-11-13; on the owner's phone once the API answered its preflight (the same day) |
 | N2 | Push on the phone | |
 | N3 | Share, haptics (and contacts) | |

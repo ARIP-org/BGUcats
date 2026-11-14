@@ -104,24 +104,28 @@ def test_the_plus_button_opens_the_post_page_before_the_model_too(open_member_ap
     assert started(page)["worker"] is True
 
 
-def test_a_phone_that_cannot_start_the_worker_stops_trying(open_member_app):
+def test_a_worker_that_cannot_start_never_sends_the_model_to_the_page(open_member_app):
     page = open_member_app(COLLABORATOR, wait=None)
+    # A phone that kept the mark of one failed start, from the day the app
+    # answered it with the page's thread for good.
+    page.evaluate("localStorage.setItem('bgucats.modelWorker.failed', '2026-11-14T06:40:00Z')")
     with_a_model(page, refuse=True)
     page.wait_for_selector("article.post")
     page.get_by_role("button", name="Scan a cat").click()
     assert started(page)["worker"] is True
-    page.wait_for_function("() => localStorage.getItem('bgucats.modelWorker.failed') !== null")
+    assert page.evaluate("localStorage.getItem('bgucats.modelWorker.failed')") is None
     # The flow is whole without the model: the camera page is there.
     page.wait_for_selector(".scan[data-step=camera]")
-    # From the next launch the model runs on the page's thread, as the
-    # desk's does, still only after the screen has arrived.
+    # The next launch tries the worker again, and only the worker.
     page.locator(".camera-bar").get_by_role("button", name="Close").click()
     page.wait_for_selector(".scan", state="detached")
     page.reload()
     page.wait_for_selector("[data-screen=frame]")
     page.get_by_role("button", name="Scan a cat").click()
     page.wait_for_selector(".scan")
-    assert started(page)["worker"] is False
+    assert started(page)["worker"] is True
+    assert page.evaluate("window.ortStarts.every((start) => start.worker)")
+    assert page.evaluate("localStorage.getItem('bgucats.modelWorker.failed')") is None
 
 
 def test_the_desk_keeps_its_model_on_the_page(open_app):
