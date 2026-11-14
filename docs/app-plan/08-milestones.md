@@ -912,6 +912,11 @@ English file.
 - **Builds:** every row of "States the design does not draw"
   (`05-client.md`), with a screenshot of each for the owner; the contrast
   test; touch-target sizes.
+- **The start itself, 2026-11-14:** a launch that stalls was a black
+  screen with nothing to press. The page now says it is loading before
+  any of the app has arrived, names the step when it is slow, bounds
+  every step, and offers "Try again" and "Reset the app on this phone"
+  (`web/app.html`, `boot` in `main.js`).
 - **Built 2026-11-13.** The rows of that table that were missing:
   - *Nothing here yet:* the mascot, one line and the next thing to do
     (`Empty` in `mascot.js`) in the feed ("Scan a cat"), the gallery, a

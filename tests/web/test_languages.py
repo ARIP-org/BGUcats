@@ -87,3 +87,11 @@ def test_a_draft_is_translated_not_copied(code):
         and "BGU" not in json.dumps(v)
     ]
     assert same in ([], ["language.en"]), same
+
+
+def test_the_words_built_into_the_app_are_englishs_own():
+    """A start that failed may have failed to read the strings: its words
+    are also in i18n.js, and must not drift from en.json."""
+    client = (REPO / "web" / "social" / "i18n.js").read_text()
+    built = json.loads(re.search(r"const BUILT_IN = (\{.*?\n\});", client, re.DOTALL).group(1))
+    assert built and {k: ENGLISH[k] for k in built} == built

@@ -18,6 +18,23 @@ const KEY = "bgucats.language";
 let lang = "en";
 let strings = {};
 
+// The words of a start that failed, in English, for when the strings file
+// is the thing that could not be had. tests/web/test_languages.py holds
+// them to en.json.
+const BUILT_IN = {
+  "start.failedTitle": "The app could not start",
+  "start.tooLong": "It took too long.",
+  "start.step.files": "It stopped while loading its own files.",
+  "start.step.strings": "It stopped while loading its words.",
+  "start.step.settings": "It stopped while loading its settings.",
+  "start.step.sign-in": "It stopped while checking your sign-in.",
+  "start.step.account": "It stopped while reading your account.",
+  "start.reset": "Reset the app on this phone",
+  "start.resetNote": "Resetting fetches the app again. You stay signed in, and photos still waiting to upload are kept.",
+  "ui.tryAgain": "Try again",
+  "signOut.button": "Sign out"
+};
+
 // The language this phone was last put in, so the sign-in screen is in it
 // too. English if none, or if it is no language of the app's.
 export function savedLanguage() {
@@ -53,7 +70,7 @@ export async function loadLanguage(code = "en") {
 
 // The string for `key` in the right plural form, its placeholders untouched.
 function template(key, values) {
-  const text = strings[key];
+  const text = strings[key] ?? BUILT_IN[key];
   if (text == null || typeof text !== "object") return text;
   const form = new Intl.PluralRules(lang).select(Number(values.count ?? 0));
   return text[form] ?? text.other;

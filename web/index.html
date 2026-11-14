@@ -6,6 +6,32 @@
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#fbf6ec" />
     <title>BGU cats</title>
+    <script>
+      // The installed app opens here, and where the front door is the
+      // member app this page's only job is to send it on. It does that
+      // before fetching anything: until 2026-11-14 the hand-over waited for
+      // the desk's whole script, the settings and the fonts' stylesheet
+      // from another site, any of which can stall a phone on a blank
+      // screen. A sign-in coming back (?code), ?desk, ?browser and a
+      // browser tab all stay on this page. The setting is the one this
+      // phone read at its last launch (useConfig, lib/auth.js).
+      (function () {
+        try {
+          var standalone =
+            (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+          if (
+            standalone &&
+            !location.search &&
+            localStorage.getItem("bgucats.frontDoor") === "app" &&
+            sessionStorage.getItem("bgucats.desk") !== "1"
+          ) {
+            location.replace("/app.html");
+          }
+        } catch (e) {
+          /* the page's own script decides, as before */
+        }
+      })();
+    </script>
     <!-- Installable: "Add to Home Screen" opens it full-screen with its own
          icon. iOS still reads the apple-* tags rather than the manifest. -->
     <link rel="manifest" href="/manifest.webmanifest" />
