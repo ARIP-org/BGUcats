@@ -561,6 +561,60 @@ def _accept_terms(user, role, body, **_):
     return _me_payload({**user, "termsVersion": version, "termsAcceptedAt": now}, role)
 
 
+# A phone that takes notifications (B9). At most this many per person: a
+# sixth pushes out the one heard from longest ago.
+MAX_DEVICES = 5
+APNS_TOKEN = re.compile(r"^[0-9a-f]{64,200}$")
+APNS_ENVIRONMENTS = ("production", "development")
+
+
+def _devices(user):
+    return tables.query_all(
+        social_table,
+        KeyConditionExpression=Key("PK").eq(user["PK"]) & Key("SK").begins_with("DEVICE#"),
+        ConsistentRead=True,
+    )
+
+
+def _put_device(user, device_id, body, **_):
+    """`PUT /me/devices/{deviceId}`: this phone's address for Apple's
+    notifications, and which of Apple's two worlds it belongs to (a build
+    from Xcode is `development`, TestFlight and the App Store `production`).
+    Sent by the phone at every launch with notifications on: the same call
+    again only renews it. The events Lambda reads it and nothing else does;
+    no route gives a token back."""
+    token = body.get("apnsToken")
+    if not isinstance(token, str) or not APNS_TOKEN.match(token):
+        raise ApiError(400, "apnsToken is the device token, in lowercase hex")
+    environment = body.get("environment")
+    if environment not in APNS_ENVIRONMENTS:
+        raise ApiError(400, "environment is production or development")
+    now = api.now_iso()
+    social_table.put_item(
+        Item={
+            "PK": user["PK"],
+            "SK": f"DEVICE#{device_id}",
+            "userId": user["userId"],
+            "deviceId": device_id,
+            "apnsToken": token,
+            "environment": environment,
+            "updatedAt": now,
+        }
+    )
+    devices = sorted(_devices(user), key=lambda d: d.get("updatedAt") or "", reverse=True)
+    for old in devices[MAX_DEVICES:]:
+        social_table.delete_item(Key={"PK": old["PK"], "SK": old["SK"]})
+    return {"deviceId": device_id, "environment": environment, "updatedAt": now}
+
+
+def _delete_device(user, device_id, **_):
+    """`DELETE /me/devices/{deviceId}`: at sign-out, and when the person
+    turns notifications off on this phone. Removing one that is not there
+    removes nothing and says the same."""
+    social_table.delete_item(Key={"PK": user["PK"], "SK": f"DEVICE#{device_id}"})
+    return {"deviceId": device_id, "removed": True}
+
+
 def require_terms(user):
     """For every route that writes (B1 onward): the terms come first."""
     if user.get("termsVersion") != TERMS_VERSION:
@@ -1301,6 +1355,9 @@ def _accept_invite(user, code, **_):
                     "friendId": b,
                     "since": now,
                     "via": "invite",
+                    # Who accepted: the other one's link it was (the
+                    # events Lambda tells them, B9).
+                    "by": me,
                 },
                 "ConditionExpression": "attribute_not_exists(PK)",
             }
@@ -2334,6 +2391,8 @@ def _cat_posts(user, cat_id, **_):
 
 
 ID = r"[0-9A-Za-z]+"
+# A phone's own name for itself: an id the app makes once and keeps.
+DEVICE_ID = r"[0-9A-Za-z-]{8,64}"
 
 ROUTES = (
     ("GET", r"^/api/v1/me$", _get_me, "user"),
@@ -2348,6 +2407,8 @@ ROUTES = (
     ),
     ("DELETE", r"^/api/v1/me/avatar$", _remove_avatar, "user"),
     ("POST", r"^/api/v1/me/terms$", _accept_terms, "user"),
+    ("PUT", rf"^/api/v1/me/devices/(?P<device_id>{DEVICE_ID})$", _put_device, "user"),
+    ("DELETE", rf"^/api/v1/me/devices/(?P<device_id>{DEVICE_ID})$", _delete_device, "user"),
     ("GET", r"^/api/v1/cats$", _get_cats, "user"),
     ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})$", _get_cat, "user"),
     ("GET", rf"^/api/v1/cats/(?P<cat_id>{ID})/posts$", _cat_posts, "user"),

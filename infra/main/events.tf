@@ -8,6 +8,10 @@
 # (docs/deploy.md, "When an alert email arrives"). The item it was about
 # stays as it was, so nothing is lost by moving on.
 
+locals {
+  apns_key_arn = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter${local.apns.key_parameter}"
+}
+
 data "archive_file" "events" {
   type        = "zip"
   source_dir  = "${path.module}/../../build/events"
@@ -38,7 +42,7 @@ resource "aws_iam_role_policy_attachment" "events_lambda_logs" {
 }
 
 # What it does: read the stream, write bgucats-social (never the dataset),
-# report a failed record.
+# report a failed record, and read the one secret push needs.
 resource "aws_iam_role_policy" "events_lambda_access" {
   name = "bgucats-events-lambda-access"
   role = aws_iam_role.events_lambda.id
@@ -89,6 +93,26 @@ resource "aws_iam_role_policy" "events_lambda_access" {
         Action   = "sns:Publish"
         Resource = aws_sns_topic.alerts.arn
       },
+      {
+        # Apple's push key (B9): this one parameter, which the owner sets
+        # (infra/scripts/set-secret.sh apns-auth-key). Absent until O7; the
+        # Lambda then sends nothing and says so.
+        Sid      = "ReadPushKey"
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = local.apns_key_arn
+      },
+      {
+        # Decrypting it, and only it: the key is the account's SSM key,
+        # which every SecureString here shares.
+        Sid      = "DecryptPushKey"
+        Effect   = "Allow"
+        Action   = "kms:Decrypt"
+        Resource = data.aws_kms_alias.ssm.target_key_arn
+        Condition = {
+          StringEquals = { "kms:EncryptionContext:PARAMETER_ARN" = local.apns_key_arn }
+        }
+      },
     ]
   })
 }
@@ -111,6 +135,13 @@ resource "aws_lambda_function" "events" {
       # topic, which this role may already publish to.
       ALERTS_TOPIC_ARN = aws_sns_topic.alerts.arn
       ENVIRONMENT      = var.environment
+      # Notifications (B9; src/events/push.py). Apple is reached over the
+      # internet: this Lambda is in no VPC.
+      PUSH               = local.settings.push ? "on" : "off"
+      APNS_KEY_PARAMETER = local.apns.key_parameter
+      APNS_KEY_ID        = local.apns.key_id
+      APNS_TEAM_ID       = local.apns.team_id
+      APNS_TOPIC         = local.apns.topic
     }
   }
 }

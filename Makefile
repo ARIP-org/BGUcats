@@ -106,13 +106,21 @@ build-app:
 	$(call copy-common,app)
 	$(call lambda-compile,app)
 
-# What happens after a write to bgucats-social (infra/main/events.tf). No
-# dependencies beyond the runtime's boto3, so nothing to install; the
-# stream filter ships beside the handler.
+# What happens after a write to bgucats-social (infra/main/events.tf). The
+# stream filter and the rules files ship beside the handler, and the app's
+# strings with them: a notification is worded in its reader's language.
+# Its packages are push's (src/events/push.py). The second platform is for
+# cffi, whose released wheels carry only the older tag; they run on Lambda
+# all the same.
 build-events:
-	rm -rf build/events && mkdir -p build/events/events
-	cp src/events/__init__.py src/events/handler.py src/events/filters.json \
-		web/achievements.json web/regions.json build/events/events/
+	rm -rf build/events && mkdir -p build/events/events/i18n
+	$(LAMBDA_PIP) --platform manylinux2014_x86_64 --target build/events \
+		-r src/events/requirements.txt
+	cp src/events/__init__.py src/events/handler.py src/events/push.py \
+		src/events/filters.json build/events/events/
+	cp web/achievements.json web/regions.json build/events/events/
+	cp web/i18n/*.json build/events/events/i18n/
+	rm -rf build/events/bin  # httpx's command: unused, and it names the builder's python
 	$(call lambda-compile,events)
 
 # Every target that calls AWS from a person's shell takes the profile by

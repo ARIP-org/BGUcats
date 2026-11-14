@@ -262,3 +262,45 @@ def test_a_post_for_a_rejected_proposal_is_refused(campus):  # noqa: F811
     desk_call("POST", f"/api/proposals/{PROPOSAL}/reject")
     status, body = post_new_cat()
     assert (status, body["code"]) == (400, "not_accepted")
+
+
+# --------------------------------------------------------------- push (B9)
+
+
+def test_an_approved_cat_is_told_to_whoever_added_it_and_a_rejected_one_is_not(
+    campus,  # noqa: F811
+    monkeypatch,
+):
+    from events import handler as events
+
+    sent = []
+    monkeypatch.setattr(events, "PUSH", True)
+    monkeypatch.setattr(
+        events, "_deliver", lambda device, payload, key: sent.append(payload) or "sent"
+    )
+    call(
+        "PUT",
+        "/api/v1/me/devices/phone-0001",
+        {"apnsToken": "ab" * 32, "environment": "production"},
+        email=HELPER,
+    )
+    encounter(campus)
+    assert propose()[0] == 200
+    campus["stream"].settle()
+    assert sent == []
+
+    assert desk_call("POST", f"/api/proposals/{PROPOSAL}/approve", {"name": "Hummus"})[0] == 200
+    campus["stream"].settle()
+    (push,) = sent
+    assert push["aps"]["alert"]["body"] == "The new cat you added was approved"
+    assert push["opens"] == {"kind": "cat", "id": PROPOSAL}
+    assert "Hummus" not in str(push)
+
+    # Another one, rejected: said in the app, never on a lock screen.
+    other_session = "01JD0000000000000000000SE2"
+    encounter(campus, session=other_session, photo="01JD0000000000000000000PH2")
+    assert propose(OTHER_PROPOSAL, session=other_session)[0] == 200
+    campus["stream"].settle()
+    assert desk_call("POST", f"/api/proposals/{OTHER_PROPOSAL}/reject")[0] == 200
+    campus["stream"].settle()
+    assert len(sent) == 1

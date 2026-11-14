@@ -18,6 +18,9 @@
 #                            identity, so an existing salt is never replaced
 #   google-oauth             paste the Google OAuth client ID and secret;
 #                            creates or updates Cognito's Google provider
+#   apns-auth-key <file>     Apple's push key, from the AuthKey_XXXXXXXXXX.p8
+#                            file Apple lets you download once (step O7).
+#                            Read from the file, never typed or pasted
 #
 # Values are typed at a hidden prompt and handed to aws/curl on stdin, never
 # as arguments, so they stay out of shell history and the process list.
@@ -31,6 +34,7 @@ set -euo pipefail
 TOKEN_PARAM=/bgucats/telegram/bot-token
 SECRET_PARAM=/bgucats/telegram/webhook-secret
 SALT_PARAM=/bgucats/submitter-hash-salt
+APNS_PARAM=/bgucats/apns-auth-key # infra/main/events.tf, src/events/push.py
 USER_POOL_NAME=bgucats-admins
 API_NAME=bgucats-api
 ALLOWED_UPDATES='["message","callback_query"]' # as set-telegram-webhook.sh
@@ -183,8 +187,25 @@ google-oauth)
   fi
   ;;
 
+apns-auth-key)
+  file="${2:-}"
+  [ -n "$file" ] && [ -f "$file" ] || {
+    echo "give the path of the .p8 file: set-secret.sh apns-auth-key ~/AuthKey_XXXXXXXXXX.p8" >&2
+    exit 1
+  }
+  # A private key in PEM, and nothing else: not a certificate, not a page
+  # saved by mistake.
+  grep -q -- '-----BEGIN PRIVATE KEY-----' "$file" && grep -q -- '-----END PRIVATE KEY-----' "$file" || {
+    echo "$file is not an Apple .p8 key (no BEGIN/END PRIVATE KEY lines)" >&2
+    exit 1
+  }
+  ssm_put "$APNS_PARAM" "$(cat "$file")" overwrite
+  echo "The events Lambda reads it when it next starts; nothing to deploy."
+  echo "Delete the file, or keep it somewhere safe: Apple will not give it again."
+  ;;
+
 *)
-  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
   ;;
 esac

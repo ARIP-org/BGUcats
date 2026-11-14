@@ -180,9 +180,9 @@ blocked on someone else.
   `infra/scripts/set-secret.sh`. Claude may apply the first two in the
   owner's session when asked. A secret's value is typed by the owner only.
   All are in `docs/deploy.md` and `infra/README.md`.
-- **No secret value in Terraform.** The bot's secrets (SSM) and the Google
-  OAuth client (Cognito) are set with `set-secret.sh`; Terraform only names
-  them. Anything it manages lands in the state, which every PR's CI run can
+- **No secret value in Terraform.** The bot's secrets (SSM), Apple's push
+  key (SSM, since B9) and the Google OAuth client (Cognito) are set with
+  `set-secret.sh`; Terraform only names them. Anything it manages lands in the state, which every PR's CI run can
   read. Never add a secret `variable`, `aws_ssm_parameter` value or
   `aws_cognito_identity_provider` back.
 - **Rollback is `git revert`** of the merge commit, merged like any change.
@@ -621,7 +621,8 @@ actual product question.
 
 ## Stack
 
-**Collection:** Python 3.12 (Pillow, imagehash) · Terraform · Lambda, no VPC ·
+**Collection:** Python 3.12 (Pillow, imagehash; httpx with h2 and PyJWT in
+the events Lambda alone, for Apple's push) · Terraform · Lambda, no VPC ·
 API Gateway HTTP API · S3 + DynamoDB on-demand · secrets in SSM Parameter Store
 (SecureString).
 

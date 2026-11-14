@@ -196,3 +196,31 @@ Sent by the events Lambda, never by a request. Payloads carry no text a
 person wrote: "Maya posted a cat", not the description, so an unchecked
 or later-removed text never sits on a lock screen. Tapping one opens the
 post or the friends screen by id.
+
+**Built in B9** (`notify` in `src/events/handler.py`, the sending in
+`src/events/push.py`). Four things are told (D18):
+
+| What happened | Who is told | It says | `opens` |
+|---|---|---|---|
+| A post became visible | The author's friends (at most 200) | "{name} posted a cat" | `post`, its id |
+| Someone accepted an invite link | Whose link it was | "{name} joined with your invite" | `person`, their id |
+| A name took the poll's lead with at least two votes | Who suggested it | "A name you suggested is in the lead" | `cat`, its id |
+| An admin approved a new cat | Who proposed it | "The new cat you added was approved" | `cat`, its id |
+
+`{name}` is the shown name (the published display name, or the username),
+the one thing in a payload a person chose. The words are the reader's
+language's (`push.*` in `web/i18n/`). The payload: `aps.alert` (title "BGU
+Cats", the body), `aps.sound`, `aps.thread-id` and `what` (the kind), and
+`opens` (`{kind, id}`) for the phone to act on (N2).
+
+Not told: with the `push` flag off; to someone whose `notifications` is
+off, who is not active or who has no device; the same thing twice; and
+past five in a UTC day (`USER#{id}` / `PUSHED#{day}`: one conditional
+write takes a place and refuses a repeat). A device Apple calls gone is
+deleted. A failure to tell never fails the change that caused it.
+
+`PUT /me/devices/{deviceId}` takes `{apnsToken, environment}`: lowercase
+hex, and `production` (TestFlight, the App Store) or `development` (a
+build from Xcode). `deviceId` is an id the app makes once (8 to 64 of
+`A-Z a-z 0-9 -`). At most five per person; a sixth removes the one heard
+from longest ago. No route returns a token.

@@ -504,7 +504,11 @@ The names: `telegram-bot-token` (paste from @BotFather after `/revoke`),
 `telegram-webhook-secret` (generated), `google-oauth` (paste the client ID
 and secret), `submitter-hash-salt` (new accounts only: it never replaces an
 existing salt, because that would give every Telegram contributor a new
-identity). The Telegram ones register the webhook themselves, at the API's
+identity), `apns-auth-key <file>` (Apple's push key, read from the `.p8`
+file Apple lets you download once; step O7, not set yet: until it is, and
+its Key ID and Team ID are written in `infra/main/variables.tf`, the events
+Lambda sends no notification and logs "push is not set up" once per
+start). The Telegram ones register the webhook themselves, at the API's
 address, and stop if Telegram refuses it. **Revoking a token also drops the
 bot's webhook**: on 2026-10-31 the first version of the script asked
 Telegram for the old address, found none, and the bot went silent until

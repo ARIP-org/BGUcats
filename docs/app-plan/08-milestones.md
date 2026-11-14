@@ -28,7 +28,7 @@ A session ticks its row in the pull request that finishes it.
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script merged 2026-11-14 |
 | B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
-| B9 | Push | |
+| B9 | Push | built 2026-11-14, in review: the device routes, the four notifications, the cap, the sender. Sends nothing until a phone registers (N2) and Apple's key is set (O7) |
 | B10 | Deleting an account | |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
 | C2 | Moderation in the desk, and measured | |
@@ -565,6 +565,34 @@ was built.
   the triggers, the per-person daily cap, the `push` flag.
 - **Done when:** in tests, the collected pushes for a seeded day are
   exactly the expected ones and carry no user-written text.
+- **Built 2026-11-14** (`04-api.md`, "Push"; `tests/app/test_push.py`,
+  `tests/events/test_push.py`). `PUT` and `DELETE /me/devices/{id}`; the
+  four notifications of D18 that have something to happen yet (a friend's
+  post, an accepted invite, a name taking the lead, a new cat approved);
+  five a day per person; each told once however often its change is
+  delivered; a device Apple calls gone is forgotten; the `push` flag (on
+  in staging, off in production).
+  - **The sending** is `src/events/push.py`: HTTP/2 to Apple with a token
+    signed by the team's key, which is what Apple takes and Python's own
+    library has neither of. So the events Lambda has packages for the
+    first time (`src/events/requirements.txt`: httpx with h2, PyJWT with
+    cryptography, every one pinned). They are loaded only when something
+    is sent: counters and badges cannot be broken by them.
+  - **Nothing is sent yet, anywhere.** No phone can register until N2,
+    and the key is the owner's step O7. With either missing the Lambda
+    does one extra read per change and stops.
+  - **For O7's brief** (written with N2, when a phone can show the
+    result): the key goes in with `infra/scripts/set-secret.sh
+    apns-auth-key <file>`; its Key ID and the Team ID are not secrets and
+    go in `infra/main/variables.tf` (`apns`), by pull request.
+  - **Mine:** five a day ("a few", D18); a name's suggester is told only
+    when it takes the lead from another name with at least two votes (its
+    author's own vote makes a first name "lead"; nobody needs telling);
+    a rejected new cat is not told (the app says it); the day is UTC's;
+    a post is told to at most 200 friends.
+  - **Not built:** "someone asked to be your friend" (friend requests are
+    not written yet, D4); the profile's switch and asking the phone's
+    permission (N2, G15).
 
 ### B10. Deleting an account
 

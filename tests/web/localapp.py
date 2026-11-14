@@ -182,6 +182,7 @@ class LocalApp:
         self.table = dynamodb.Table(admin_handler.TABLE_NAME)
         self.social = dynamodb.Table(app_handler.SOCIAL_TABLE_NAME)
         self.stream = Stream(self.social)
+        self.pushes = []  # what Apple would have been sent (_collect_push)
 
         # The handlers bind their clients and settings when they are
         # imported. Point them here for as long as this app runs, with the
@@ -199,11 +200,20 @@ class LocalApp:
             (app_handler, "s3", self.s3),
             (app_handler, "MEDIA_BUCKET", self.bucket),
             (app_handler, "SOCIAL", True),
-            (app_handler, "FLAGS", {"social": True, "gpa": True, "achievements": True, "feeding": True, "languages": ["en", "he", "ru", "ar"]}),
+            (app_handler, "FLAGS", {"social": True, "gpa": True, "achievements": True, "feeding": True, "push": True, "languages": ["en", "he", "ru", "ar"]}),
             (events_handler, "social_table", self.social),
+            # Push (B9): on, and Apple is this list. A phone that registers
+            # (`PUT /api/v1/me/devices/{id}`) is "sent" what the app would
+            # send; nothing leaves the machine.
+            (events_handler, "PUSH", True),
+            (events_handler, "_deliver", self._collect_push),
         ):
             self._patched.append((module, name, getattr(module, name)))
             setattr(module, name, value)
+
+    def _collect_push(self, device, payload, collapse):
+        self.pushes.append({"to": device["userId"], "key": collapse, **payload})
+        return "sent"
 
     def _stop_aws(self):
         for module, name, original in self._patched:

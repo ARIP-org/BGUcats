@@ -196,6 +196,13 @@ an hour that a sentence would have saved.
   it replaces. Now a start that fails in the worker means no guesses
   that time, and the mark is removed from any phone that kept it. The
   desk still runs the model on the page, as it has since October.
+- **`--platform` means that tag and no older one.** The Lambda builds
+  install with `--platform manylinux_2_28_x86_64`, and pip then takes
+  only wheels carrying exactly that tag. cffi's releases carry the older
+  `manylinux2014` one, so for the events Lambda (B9) pip quietly chose a
+  beta of cffi that happened to have the newer tag. `build-events` names
+  both platforms; every package is pinned, the indirect ones too, so a
+  new release cannot change the zip.
 - **Ask the phone, do not guess.** Three fixes for the owner's phone
   went out on 2026-11-14 without anyone having seen the fault: the model
   in a worker (#94), the visible start (#95), the fallback removed
