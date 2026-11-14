@@ -8,7 +8,7 @@
 // never from a CDN: the page holds sign-in tokens and the iPhone app must
 // open with no signal.
 
-import { isInstalled } from "../install.js";
+import { isInstalled, isNative } from "../install.js";
 import { api, onSignedOut } from "../lib/api.js";
 import {
   LOGIN_NOTE_KEY,
@@ -53,6 +53,8 @@ const show = (view) => {
 
 // How long one step of the start may take before the app says it failed.
 const STEP_MS = 15000;
+// The service worker is registered this long after the first screen.
+const WORKER_AFTER_MS = 4000;
 
 // One step of the start, named on the page (app.html reads it when the
 // start is slow) and given a time limit: a request that never answers used
@@ -250,6 +252,14 @@ async function boot() {
   if (left.includes("location")) toast(t("scan.locationHeld"), 7000);
   else if (left.includes("camera")) toast(t("scan.cameraHeldToast"), 7000);
   takeInvite();
+  // Opens with no signal, and uploads with the app closed where the
+  // browser can (sw.js). The desk registers it too; since the installed
+  // app comes straight here (index.html) and "Reset" removes the worker,
+  // this page must. Later, so it competes with nothing at the start. The
+  // iPhone app needs none: its files are already on the phone.
+  if ("serviceWorker" in navigator && !isNative()) {
+    setTimeout(() => navigator.serviceWorker.register("/sw.js").catch(() => {}), WORKER_AFTER_MS);
+  }
 }
 
 // A start that fails says so, and where. It used to show the sign-in

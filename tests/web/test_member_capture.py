@@ -113,6 +113,7 @@ def with_a_model(page, ranked):
     stub = (
         "export function createRecognition() { return {"
         " state: { version: 'test-model' },"
+        " onChange: () => () => {},"
         " prepareForCapture: async () => true,"
         f" guessShots: async () => ({{ ranked: {json.dumps(ranked)} }}),"
         " encountersOf: () => 0 }; }"

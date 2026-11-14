@@ -308,6 +308,14 @@ product). Its old sessions and photos stay in the table with
   the model stay). Each step of the start has a time limit and a failure
   says where. The site's root sends an installed app to its front door
   before fetching anything else of the desk.
+- **The phone keeps what the app was doing** (since 2026-11-14;
+  `app.html`, `web/social/trail.js`, `tests/web/test_member_appinfo.py`):
+  the last eighty lines, in localStorage. The start's steps, the capture
+  flow, what it asked the phone for, the model's stages, failures nobody
+  caught, and every time the screen stopped answering. Profile has "App
+  info" to read and copy it. A line says what happened, never who: no
+  name, no address, no token, nothing anyone wrote. A bug on someone's
+  phone is asked for with "copy App info", not guessed at.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`
   in cognito.tf). Sign-out only forgets the app's tokens and stays in the
@@ -317,6 +325,10 @@ product). Its old sessions and photos stay in the table with
   `/api/`, photos or other origins — the distribution's no-caching rule still
   means a deploy reaches everyone on their next load. The one exception is
   the content-addressed `/model/{version}/`, cached first (see 1c below).
+  A page (never a script) waits four seconds for the network and then
+  opens from the kept copy, each page under its own name; both pages
+  register the worker (`tests/web/test_service_worker.py`, the only tests
+  that run it).
 - **Uploads keep going after the app is left, where the browser allows
   it.** Chrome on Android has Background Sync: the outbox registers it with
   every photo and when the app is hidden, and the service worker runs the
