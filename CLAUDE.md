@@ -300,6 +300,14 @@ product). Its old sessions and photos stay in the table with
   `/model/`, which CloudFront answers with an AWS-managed CORS policy (no
   new resource kind), and is kept in IndexedDB, since no service worker
   caches it there.
+- **A launch is never a blank screen** (since 2026-11-14;
+  `tests/web/test_member_start.py`). `app.html` carries its own
+  "Loading…" in the page, which after twelve seconds names the step it
+  is on and offers "Try again" and "Reset the app on this phone" (the
+  service worker and its kept files only: sign-in, the upload queue and
+  the model stay). Each step of the start has a time limit and a failure
+  says where. The site's root sends an installed app to its front door
+  before fetching anything else of the desk.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`
   in cognito.tf). Sign-out only forgets the app's tokens and stays in the

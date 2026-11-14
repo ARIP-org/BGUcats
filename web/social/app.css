@@ -43,6 +43,46 @@ body {
   gap: 12px;
 }
 
+/* The page's own "Loading…" (app.html), there until the app draws a
+   screen, and the two ways out it offers when the start is slow. */
+.starting {
+  position: fixed;
+  inset: 0;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  background: var(--bg);
+  color: var(--ink);
+}
+.starting-line {
+  margin: 0;
+  max-inline-size: 320px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.starting-help {
+  margin-block-start: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.starting-help[hidden] {
+  display: none;
+}
+.starting-note {
+  margin: 0;
+  max-inline-size: 300px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 .top {
   display: flex;
   align-items: center;

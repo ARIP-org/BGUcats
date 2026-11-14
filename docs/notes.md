@@ -192,6 +192,23 @@ an hour that a sentence would have saved.
   address, not a path. A phone where the worker cannot start remembers
   it and uses the page's thread from its next launch. The desk still
   runs the model on the page, as it has since October.
+- **A start with nothing on screen cannot be diagnosed from anywhere.**
+  The same morning the owner's installed app showed a gray screen, then
+  a black one, for three minutes, and I could not say why: staging
+  served exactly `main`, the deploy had passed, and both the local app
+  and the real site loaded in WebKitGTK. Nothing loads the model at a
+  launch. What the code did show: the installed app opens on `/`, which
+  fetched the desk's whole script, the settings and a stylesheet from
+  Google Fonts before handing over to `app.html`, which fetches some
+  thirty files and then makes four requests, three with no time limit,
+  with an empty black page throughout. Any one of them stalling is that
+  screen. Since 2026-11-14: `/` hands an installed app over before
+  fetching anything (it remembers the front door from the last launch);
+  `app.html` itself says "Loading…" and, after twelve seconds, which
+  step it is on, with "Try again" and "Reset the app on this phone"
+  (the service worker and its copy of the app's files, nothing else);
+  every step is bounded, and a start that fails says where. The cause on
+  that phone is still unknown; the next time, the screen will name it.
 - **Two candidate causes that the same evidence fits are one unfinished
   diagnosis.** The first fix was reasoned, not measured, and its note
   said so; the measurement that settled it (a `longtask` observer, the

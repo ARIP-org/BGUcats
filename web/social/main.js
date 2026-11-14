@@ -42,7 +42,50 @@ import { FeedingSheet } from "./feeding.js";
 
 const HOME = "/app.html";
 const root = document.getElementById("root");
-const show = (view) => render(view, root);
+// A screen of the app's own: the page's "Loading…" (app.html) goes.
+const show = (view) => {
+  window.bgucatsStarted = true;
+  document.getElementById("starting")?.remove();
+  render(view, root);
+};
+
+// How long one step of the start may take before the app says it failed.
+const STEP_MS = 15000;
+
+// One step of the start, named on the page (app.html reads it when the
+// start is slow) and given a time limit: a request that never answers used
+// to leave a black screen for as long as anyone cared to wait.
+async function step(name, work) {
+  document.documentElement.dataset.boot = name;
+  let timer;
+  const late = new Promise((_, refuse) => {
+    timer = setTimeout(() => refuse(new Error(t("start.tooLong"))), window.bgucatsStepMs || STEP_MS);
+  });
+  try {
+    return await Promise.race([work(), late]);
+  } catch (err) {
+    err.step ??= name;
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// The start did not finish: which step, why, and the ways out. Signing out
+// is offered once there is a sign-in to leave.
+function StartFailed({ at, message, signedIn }) {
+  return html`
+    <main class="screen center" data-screen="start-failed" data-step=${at}>
+      <h1 class="title">${t("start.failedTitle")}</h1>
+      <p class="lead" role="alert">${t(`start.step.${at}`)}</p>
+      ${message && html`<p class="note">${message}</p>`}
+      <button class="glass-button" type="button" onClick=${() => location.reload()}>${t("ui.tryAgain")}</button>
+      <button class="link-button" type="button" onClick=${() => window.bgucatsReset?.()}>${t("start.reset")}</button>
+      <p class="starting-note">${t("start.resetNote")}</p>
+      ${signedIn && html`<button class="link-button quiet" type="button" onClick=${() => logout(HOME)}>${t("signOut.button")}</button>`}
+    </main>
+  `;
+}
 
 function takeNote() {
   try {
@@ -140,11 +183,11 @@ async function boot() {
   applyTheme(savedTheme());
   // The language this phone was last in; English if its strings cannot be
   // had (a draft taken away, or no signal on a first visit).
-  await loadLanguage(savedLanguage()).catch(() => loadLanguage("en"));
-  useConfig(await (await fetch("/config.json")).json());
+  await step("strings", () => loadLanguage(savedLanguage()).catch(() => loadLanguage("en")));
+  useConfig(await step("settings", async () => (await fetch("/config.json")).json()));
   onSignedOut(() => show(html`<${SignIn} note=${takeNote()} />`));
 
-  const token = await idToken();
+  const token = await step("sign-in", () => idToken());
   if (!token) {
     show(html`<${SignIn} note=${takeNote()} />`);
     return;
@@ -153,7 +196,7 @@ async function boot() {
 
   let me;
   try {
-    me = await api("/v1/me");
+    me = await step("account", () => api("/v1/me"));
   } catch (err) {
     if (err.status === 404) {
       show(html`<${NotOpen} />`);
@@ -184,6 +227,7 @@ async function boot() {
   // The photos, picks, proposals and posts waiting on this phone go on
   // uploading, and an unfinished capture flow comes back where it was.
   startOutbox();
+  document.documentElement.dataset.boot = "ready";
   show(html`<${Frame} />`);
   // The app was last closed while the phone was being asked for something
   // (asking.js): it no longer asks for that by itself, and says so once.
@@ -193,4 +237,8 @@ async function boot() {
   takeInvite();
 }
 
-boot().catch((err) => show(html`<${SignIn} note=${t("error.generic", { message: err.message })} />`));
+// A start that fails says so, and where. It used to show the sign-in
+// screen with a note, to someone who was signed in.
+boot().catch((err) =>
+  show(html`<${StartFailed} at=${err.step || "files"} message=${err.message} signedIn=${!!readTokens()} />`),
+);

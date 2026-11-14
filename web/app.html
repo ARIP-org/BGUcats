@@ -21,5 +21,57 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- What is on screen until the app has drawn its first screen, in the
+         page itself: the app is some thirty files, and a start that stalls
+         on any of them was a black screen with nothing to press (the
+         owner's phone, 2026-11-14). main.js takes this away when it shows
+         a screen. English only: the strings are one of the files. -->
+    <main class="starting" id="starting">
+      <h1 class="title">BGU Cats</h1>
+      <p class="starting-line" id="starting-line" role="status">Loading…</p>
+      <div class="starting-help" id="starting-help" hidden>
+        <button class="glass-button" type="button" id="starting-again">Try again</button>
+        <button class="link-button" type="button" id="starting-reset">Reset the app on this phone</button>
+        <p class="starting-note">Resetting fetches the app again. You stay signed in, and photos still waiting to upload are kept.</p>
+      </div>
+    </main>
+    <script>
+      (function () {
+        // The app's files as the service worker keeps them, and the worker
+        // itself: both are fetched again. Sign-in and the upload queue live
+        // elsewhere and are not touched; nor is the recognition model.
+        window.bgucatsReset = function () {
+          var again = function () { location.reload(); };
+          var jobs = [];
+          try {
+            if (navigator.serviceWorker) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (all) {
+                return Promise.all(all.map(function (one) { return one.unregister(); }));
+              }));
+            }
+            if (window.caches) {
+              jobs.push(caches.keys().then(function (keys) {
+                return Promise.all(keys.filter(function (key) { return key.indexOf("bgucats-shell") === 0; })
+                  .map(function (key) { return caches.delete(key); }));
+              }));
+            }
+          } catch (e) { /* reload all the same */ }
+          Promise.all(jobs).then(again, again);
+          setTimeout(again, 4000);
+        };
+        var steps = { strings: "the app's words", settings: "the app's settings", "sign-in": "your sign-in", account: "your account" };
+        // After this long with no screen, say so and offer the two ways out.
+        setTimeout(function () {
+          var help = document.getElementById("starting-help");
+          if (window.bgucatsStarted || !help) return;
+          var step = steps[document.documentElement.getAttribute("data-boot")];
+          document.getElementById("starting-line").textContent =
+            "Still loading " + (step || "the app's files") + ". This is taking longer than it should.";
+          help.hidden = false;
+        }, window.bgucatsStartWaitMs || 12000);
+        document.getElementById("starting-again").onclick = function () { location.reload(); };
+        document.getElementById("starting-reset").onclick = window.bgucatsReset;
+      })();
+    </script>
   </body>
 </html>

@@ -14,6 +14,13 @@ let config = null;
 // The site's public config.json, read once at boot by whichever shell runs.
 export function useConfig(value) {
   config = value;
+  // Which page is this site's front door, for the next launch: the root
+  // page reads it before fetching anything else (index.html).
+  try {
+    localStorage.setItem("bgucats.frontDoor", value.frontDoor || "desk");
+  } catch {
+    /* the next launch asks again */
+  }
 }
 
 export const getConfig = () => config;
@@ -135,6 +142,10 @@ export function forgetSignIn(note) {
   }
 }
 
+// Cognito answers in well under a second; a request with no time limit
+// held the app's start for as long as the connection stayed open.
+const TOKEN_TIMEOUT_MS = 12_000;
+
 async function exchangeToken(body) {
   const res = await fetch(`https://${config.cognitoDomain}/oauth2/token`, {
     method: "POST",
@@ -143,6 +154,7 @@ async function exchangeToken(body) {
       client_id: config.userPoolClientId,
       ...body,
     }),
+    signal: AbortSignal.timeout?.(TOKEN_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`token endpoint returned ${res.status}`);
   const data = await res.json();
@@ -215,7 +227,7 @@ export async function idToken() {
     // No connection is not a rejected login: keep the refresh token for when
     // the phone is back online. The stale token fails its API call, and the
     // upload outbox simply retries later.
-    if (err instanceof TypeError) return tokens.idToken;
+    if (err instanceof TypeError || err.name === "TimeoutError" || err.name === "AbortError") return tokens.idToken;
     dropTokens();
     return null;
   }
