@@ -586,7 +586,9 @@ actual product question.
 - Single DynamoDB table, three GSIs: photos-in-session, labeling queue by
   status, photos-of-a-cat for export. Every key it holds:
   `docs/data-model.md`, kept true by a test; a pull request that adds a
-  key adds it there.
+  key adds it there, and says in `scripts/privacy_table.py` what it holds
+  about a person (`docs/privacy-data.md` is that script's output: the
+  App Store's privacy answers, held to the code by a test).
 
 ## Processing rules
 

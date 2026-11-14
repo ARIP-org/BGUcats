@@ -1079,6 +1079,28 @@ which parts no person has run.
 - **Builds:** each permission's sentence in every offered language; the
   privacy manifest; the table of collected data for O16, generated from
   the code and checked by a test so it cannot drift.
+- **The table, built early, 2026-11-14** (`docs/privacy-data.md`, the
+  output of `scripts/privacy_table.py`; `tests/test_privacy_table.py`).
+  For each of Apple's kinds of data: whether the app has it, why, and
+  where it is kept. Every key the code writes says what it holds about a
+  person, or that it holds nothing; a new key with no answer fails the
+  test, so the question is asked when the key is added, not at review.
+  Built before B10, C1 and N2, each of which changes an answer.
+  - **For the owner, found while writing it:**
+    1. **Apple calls the stored location precise.** Its line is three
+       decimal places, which is exactly what is stored. The form's answer
+       is "Precise Location", and the privacy text should say "about
+       100 m", not "approximate".
+    2. **An original photo keeps its EXIF.** `raw/` is write-once by
+       design, so a photo that arrived as a file holds the exact position
+       it was taken at, though no screen or route gives it out.
+    3. **The servers' logs are kept for ever** and name account ids, and
+       email addresses where an admin adds a person. Setting a retention
+       needs log groups in Terraform, which would be a new kind of
+       resource: the owner's decision.
+    4. **Friends as "Contacts".** Apple's kind includes a social graph,
+       so the friend list is declared under it; the address book is not
+       read. A judgment, to confirm.
 
 ### N6. Sign in with Apple
 
