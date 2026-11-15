@@ -16,7 +16,7 @@ Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: {
   register: async () => ({}), ready: new Promise(() => {}), controller: null,
 }});
 Object.defineProperty(window, "caches", { configurable: true, value: {
-  keys: async () => ["bgucats-shell-v18", "bgucats-model-v1"],
+  keys: async () => ["bgucats-shell-v19", "bgucats-model-v1"],
   delete: async (key) => { window.reset.deleted.push(key); sessionStorage.setItem("test.deleted", JSON.stringify(window.reset.deleted)); return true; },
   open: async () => ({ match: async () => undefined, put: async () => {}, keys: async () => [] }),
   match: async () => undefined,
@@ -26,6 +26,11 @@ Object.defineProperty(window, "caches", { configurable: true, value: {
 
 def hang(route):
     """A request that never answers."""
+
+
+# A phone that has never read this account: nothing to open from when the
+# account cannot be read (main.js, keptMe).
+NEW_PHONE = "localStorage.removeItem('bgucats.me');"
 
 
 def test_the_page_says_loading_until_the_app_draws_and_then_gets_out_of_the_way(open_member_app):
@@ -48,7 +53,12 @@ def test_the_page_says_loading_until_the_app_draws_and_then_gets_out_of_the_way(
 
 def test_a_slow_start_says_which_step_and_offers_the_ways_out(open_member_app):
     page = open_member_app(COLLABORATOR, wait=None)
-    page.context.add_init_script("window.bgucatsStartWaitMs = 600; window.bgucatsStepMs = 60000;")
+    page.context.add_init_script(
+        "window.bgucatsStartWaitMs = 600; window.bgucatsStepMs = 60000;"
+        # A phone that will not copy for the page.
+        "Object.defineProperty(navigator, 'clipboard', { configurable: true,"
+        " value: { writeText: () => Promise.reject(new Error('not allowed')) } });"
+    )
     # The settings never answer until "Try again" is tapped. Taking the
     # block off instead would let the waiting request through, and the app
     # would start by itself before the tap.
@@ -68,7 +78,14 @@ def test_a_slow_start_says_which_step_and_offers_the_ways_out(open_member_app):
     assert help.get_by_role("button").all_inner_texts() == [
         "Try again",
         "Reset the app on this phone",
+        "Copy app info",
     ]
+    # What the phone kept can be had from here too, with no app to show it:
+    # copied, or shown to be copied by hand where the phone will not.
+    help.get_by_role("button", name="Copy app info").click()
+    box = page.locator("#starting-info-text")
+    box.wait_for(state="visible")
+    assert "still loading the app's settings" in box.input_value()
     # "Try again" is the page again; this time the request answers.
     tapped.append(True)
     help.get_by_role("button", name="Try again").click()
@@ -77,7 +94,7 @@ def test_a_slow_start_says_which_step_and_offers_the_ways_out(open_member_app):
 
 def test_a_step_that_never_answers_fails_by_name(open_member_app, shot):
     page = open_member_app(COLLABORATOR, wait=None)
-    page.context.add_init_script("window.bgucatsStepMs = 500;")
+    page.context.add_init_script(NEW_PHONE + "window.bgucatsStepMs = 500;")
     page.route("**/api/v1/me", hang)
     page.reload()
     failed = page.locator("[data-screen=start-failed]")
@@ -90,19 +107,70 @@ def test_a_step_that_never_answers_fails_by_name(open_member_app, shot):
     assert failed.get_by_role("button").all_inner_texts() == [
         "Try again",
         "Reset the app on this phone",
+        "Copy app info",
         "Sign out",
     ]
+    assert "start failed at account: It took too long." in page.evaluate("window.bgucatsInfo()")
     shot(page, "member-start-failed")
 
 
 def test_a_request_that_fails_at_the_start_is_said_not_shown_as_signed_out(open_member_app):
     page = open_member_app(COLLABORATOR, wait=None)
+    page.context.add_init_script(NEW_PHONE)
     page.route("**/api/v1/me", lambda route: route.abort())
     page.reload()
     failed = page.locator("[data-screen=start-failed]")
     failed.wait_for()
     assert failed.get_attribute("data-step") == "account"
     assert page.locator("[data-screen=sign-in]").count() == 0
+
+
+def test_with_no_signal_the_app_opens_with_the_account_it_last_read(open_member_app):
+    page = open_member_app(COLLABORATOR)
+    page.wait_for_selector("[data-screen=frame]")
+    name = page.evaluate("JSON.parse(localStorage.getItem('bgucats.me')).me.username")
+    # The next launch cannot reach the API at all.
+    page.route("**/api/v1/**", lambda route: route.abort())
+    page.reload()
+    page.wait_for_selector("[data-screen=frame]")
+    assert "start: the account as last read (no answer)" in page.evaluate("window.bgucatsInfo()")
+    # It is the same person's app: the capture flow opens, for photos that
+    # will upload later.
+    page.get_by_role("button", name="Scan a cat").click()
+    page.wait_for_selector(".scan[data-step=camera]")
+    page.locator(".camera-bar").get_by_role("button", name="Close").click()
+    # The phone says the signal is back: the account is read again.
+    page.unroute("**/api/v1/**")
+    page.evaluate("dispatchEvent(new Event('online'))")
+    page.wait_for_function("window.bgucatsInfo().includes('the account read again')")
+    assert page.evaluate("JSON.parse(localStorage.getItem('bgucats.me')).me.username") == name
+
+
+def test_another_persons_kept_account_is_never_opened(open_member_app):
+    page = open_member_app(COLLABORATOR)
+    page.wait_for_selector("[data-screen=frame]")
+    # What this phone kept belongs to some other sign-in.
+    page.evaluate(
+        "localStorage.setItem('bgucats.me', JSON.stringify({ who: 'someone-else',"
+        " me: JSON.parse(localStorage.getItem('bgucats.me')).me }))"
+    )
+    page.route("**/api/v1/me", lambda route: route.abort())
+    page.reload()
+    page.locator("[data-screen=start-failed]").wait_for()
+
+
+def test_a_sign_in_the_api_no_longer_takes_goes_to_the_sign_in_screen(open_member_app):
+    page = open_member_app(COLLABORATOR)
+    page.wait_for_selector("[data-screen=frame]")
+    page.route(
+        "**/api/v1/me",
+        lambda route: route.fulfill(status=401, content_type="application/json", body="{}"),
+    )
+    page.reload()
+    # Not "could not start", and not the kept account: signed out is signed out.
+    page.wait_for_selector("[data-screen=sign-in]")
+    page.wait_for_timeout(300)
+    assert page.locator("[data-screen=start-failed], [data-screen=frame]").count() == 0
 
 
 def test_the_words_of_a_failed_start_do_not_need_the_strings_file(open_member_app):
@@ -118,7 +186,7 @@ def test_the_words_of_a_failed_start_do_not_need_the_strings_file(open_member_ap
 
 def test_reset_fetches_the_app_again_and_keeps_the_sign_in_and_the_model(open_member_app):
     page = open_member_app(COLLABORATOR, wait=None)
-    page.context.add_init_script(KEPT + "window.bgucatsStepMs = 500;")
+    page.context.add_init_script(NEW_PHONE + KEPT + "window.bgucatsStepMs = 500;")
     page.route("**/api/v1/me", hang)
     page.reload()
     failed = page.locator("[data-screen=start-failed]")
@@ -127,7 +195,7 @@ def test_reset_fetches_the_app_again_and_keeps_the_sign_in_and_the_model(open_me
     with page.expect_navigation():
         failed.get_by_role("button", name="Reset the app on this phone").click()
     # The app's files went; the model's 40 MB and the sign-in stayed.
-    assert page.evaluate("JSON.parse(sessionStorage.getItem('test.deleted'))") == ["bgucats-shell-v18"]
+    assert page.evaluate("JSON.parse(sessionStorage.getItem('test.deleted'))") == ["bgucats-shell-v19"]
     assert page.evaluate("!!localStorage.getItem('bgucats.tokens')")
     page.wait_for_selector("[data-screen=frame]")
 

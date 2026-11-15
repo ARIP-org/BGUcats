@@ -6,4 +6,7 @@ Pillow==13.0.0
 numpy==2.5.2
 python-ulid==4.1.0
 tzdata==2026.6
+# The events Lambda's push (src/events/push.py): HTTP/2 and ES256 for Apple.
+httpx[http2]==0.28.1
+PyJWT[crypto]==2.15.1
 boto3==1.43.123          # provided by the Lambda runtime; pinned for local parity

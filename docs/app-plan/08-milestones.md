@@ -28,7 +28,7 @@ A session ticks its row in the pull request that finishes it.
 | B6 | New-cat proposals | merged 2026-11-12 |
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script merged 2026-11-14 |
 | B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
-| B9 | Push | |
+| B9 | Push | built 2026-11-14, in review: the device routes, the four notifications, the cap, the sender. Sends nothing until a phone registers (N2) and Apple's key is set (O7) |
 | B10 | Deleting an account | |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
 | C2 | Moderation in the desk, and measured | |
@@ -565,6 +565,34 @@ was built.
   the triggers, the per-person daily cap, the `push` flag.
 - **Done when:** in tests, the collected pushes for a seeded day are
   exactly the expected ones and carry no user-written text.
+- **Built 2026-11-14** (`04-api.md`, "Push"; `tests/app/test_push.py`,
+  `tests/events/test_push.py`). `PUT` and `DELETE /me/devices/{id}`; the
+  four notifications of D18 that have something to happen yet (a friend's
+  post, an accepted invite, a name taking the lead, a new cat approved);
+  five a day per person; each told once however often its change is
+  delivered; a device Apple calls gone is forgotten; the `push` flag (on
+  in staging, off in production).
+  - **The sending** is `src/events/push.py`: HTTP/2 to Apple with a token
+    signed by the team's key, which is what Apple takes and Python's own
+    library has neither of. So the events Lambda has packages for the
+    first time (`src/events/requirements.txt`: httpx with h2, PyJWT with
+    cryptography, every one pinned). They are loaded only when something
+    is sent: counters and badges cannot be broken by them.
+  - **Nothing is sent yet, anywhere.** No phone can register until N2,
+    and the key is the owner's step O7. With either missing the Lambda
+    does one extra read per change and stops.
+  - **For O7's brief** (written with N2, when a phone can show the
+    result): the key goes in with `infra/scripts/set-secret.sh
+    apns-auth-key <file>`; its Key ID and the Team ID are not secrets and
+    go in `infra/main/variables.tf` (`apns`), by pull request.
+  - **Mine:** five a day ("a few", D18); a name's suggester is told only
+    when it takes the lead from another name with at least two votes (its
+    author's own vote makes a first name "lead"; nobody needs telling);
+    a rejected new cat is not told (the app says it); the day is UTC's;
+    a post is told to at most 200 friends.
+  - **Not built:** "someone asked to be your friend" (friend requests are
+    not written yet, D4); the profile's switch and asking the phone's
+    permission (N2, G15).
 
 ### B10. Deleting an account
 
@@ -917,6 +945,21 @@ English file.
   any of the app has arrived, names the step when it is slow, bounds
   every step, and offers "Try again" and "Reset the app on this phone"
   (`web/app.html`, `boot` in `main.js`).
+- **What the phone can say, 2026-11-14 (mine: no design):** the page
+  keeps the last eighty things the app did, with a line for every time
+  the screen stopped answering, and Profile has "App info" to read and
+  copy it (`web/social/appinfo.js`, `trail.js`); the slow start and the
+  failed start offer "Copy app info" too. The service worker keeps each
+  page under its own name and opens the kept copy when the network has
+  not answered in four seconds; the member app registers it itself.
+- **A start with no signal, 2026-11-14:** the app could be opened from
+  the kept page and then said "could not start", because the first thing
+  it does is read the account. It now opens with the account as this
+  phone last read it (the same sign-in only), so a cat can be
+  photographed where there is no signal and the photos go later; the
+  account is read again when the phone is back. A sign-in the API no
+  longer takes goes to the sign-in screen, where it used to say "could
+  not start".
 - **Built 2026-11-13.** The rows of that table that were missing:
   - *Nothing here yet:* the mascot, one line and the next thing to do
     (`Empty` in `mascot.js`) in the feed ("Scan a cat"), the gallery, a
@@ -1036,6 +1079,28 @@ which parts no person has run.
 - **Builds:** each permission's sentence in every offered language; the
   privacy manifest; the table of collected data for O16, generated from
   the code and checked by a test so it cannot drift.
+- **The table, built early, 2026-11-14** (`docs/privacy-data.md`, the
+  output of `scripts/privacy_table.py`; `tests/test_privacy_table.py`).
+  For each of Apple's kinds of data: whether the app has it, why, and
+  where it is kept. Every key the code writes says what it holds about a
+  person, or that it holds nothing; a new key with no answer fails the
+  test, so the question is asked when the key is added, not at review.
+  Built before B10, C1 and N2, each of which changes an answer.
+  - **For the owner, found while writing it:**
+    1. **Apple calls the stored location precise.** Its line is three
+       decimal places, which is exactly what is stored. The form's answer
+       is "Precise Location", and the privacy text should say "about
+       100 m", not "approximate".
+    2. **An original photo keeps its EXIF.** `raw/` is write-once by
+       design, so a photo that arrived as a file holds the exact position
+       it was taken at, though no screen or route gives it out.
+    3. **The servers' logs are kept for ever** and name account ids, and
+       email addresses where an admin adds a person. Setting a retention
+       needs log groups in Terraform, which would be a new kind of
+       resource: the owner's decision.
+    4. **Friends as "Contacts".** Apple's kind includes a social graph,
+       so the friend list is declared under it; the address book is not
+       read. A judgment, to confirm.
 
 ### N6. Sign in with Apple
 

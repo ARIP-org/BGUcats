@@ -23,6 +23,7 @@ import { glass } from "./motion.js";
 import { NamePoll } from "./poll.js";
 import { get, set, useStore } from "./store.js";
 import { termsFirst } from "./terms.js";
+import { mark } from "./trail.js";
 import { Icon, toast } from "./ui.js";
 
 const KEY = "bgucats.scan";
@@ -43,10 +44,22 @@ export function startOutbox() {
   outbox ??= createOutbox({ post, onChange: () => set({ outboxTick: Date.now() }) });
   // In the iPhone app the model comes from the site, another origin there
   // (N1; CORS on /model/ in infra/main/web.tf).
-  recognition ??= createRecognition({ api, post, base: isNative() ? getConfig().apiBase || "" : "", worker: true });
+  if (!recognition) {
+    recognition = createRecognition({ api, post, base: isNative() ? getConfig().apiBase || "" : "", worker: true });
+    // Each stage of the model, once (trail.js): a download says so once,
+    // not with every piece that arrives.
+    let said = "";
+    recognition.onChange((now) => {
+      const stage = `${now.phase}: ${now.progress == null ? now.error || now.detail : "downloading"}`;
+      if (stage !== said) mark(`model ${(said = stage)}`);
+    });
+  }
   outbox.kick();
   const saved = load();
-  if (saved) set({ scan: saved });
+  if (saved) {
+    mark(`capture flow kept from before: ${saved.step}, ${saved.shots?.length || 0} photos`);
+    set({ scan: saved });
+  }
   return outbox;
 }
 
@@ -112,6 +125,7 @@ const place = (sessionId, fix) => outbox.placeEncounter(sessionId, { lat: fix.la
 
 // entry: "scan" (the centre tab) or "post" (the feed's +).
 export async function openScan(entry) {
+  mark(`capture flow opened (${entry}${get().scan ? ", the one kept" : ""})`);
   if (get().scan) {
     set({ scanOpen: true });
     return;
@@ -133,13 +147,17 @@ export async function openScan(entry) {
   save(scan);
   set({ scan, scanOpen: true });
   await painted();
+  mark("capture flow drawn");
   // The camera page asks for the camera first and for the place after it
   // (Camera, below); a post started with "+" has no camera yet.
   if (scan.step !== "camera") findPlace();
   // The model starts once the screen is there and has finished arriving,
   // never inside the tap: reading 30 MB and handing it to the model's
   // worker is the heaviest thing this app does (recognition.js).
-  setTimeout(() => recognition?.prepareForCapture().catch(() => {}), WARM_UP_AFTER_MS);
+  setTimeout(() => {
+    mark("model asked to get ready");
+    recognition?.prepareForCapture().catch(() => {});
+  }, WARM_UP_AFTER_MS);
 }
 
 async function keep(blob) {
@@ -171,6 +189,7 @@ async function keep(blob) {
   // to the page that asked for another photo.
   const next = scan.returnTo || (scan.entry === "scan" ? "which" : "post");
   update({ shots, step: next, returnTo: null });
+  mark(`photo ${shots.length} kept`);
   // The GPS may have answered while this photo was being kept, after the
   // encounter was written without a place and before there was a photo to
   // show for it.
@@ -301,6 +320,7 @@ async function finish({ posting }) {
 }
 
 async function close() {
+  mark("capture flow closed");
   const scan = get().scan;
   if (scan?.shots.length) {
     // Photos already taken stay with the cats' records; only the post and

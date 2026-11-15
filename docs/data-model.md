@@ -111,10 +111,10 @@ dataset's.
 | Username lookup **(F4)** | `USERNAME#{username}` | `META` | `userId` |
 | Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |
 | Invite code **(F4)** | `INVITE#{code}` | `META` | `userId`. The code is random, not derived from the username |
-| Friend **(written since B5a)** | `USER#{a}` | `FRIEND#{b}` | `userId` (a), `friendId` (b), `since`, `via` (`invite` / `request` / `contacts`; only `invite` is written yet). Always written and deleted with its mirror (`USER#{b}` / `FRIEND#{a}`), in one transaction |
+| Friend **(written since B5a)** | `USER#{a}` | `FRIEND#{b}` | `userId` (a), `friendId` (b), `since`, `via` (`invite` / `request` / `contacts`; only `invite` is written yet), `by` (since B9: who accepted; the other one is told). Always written and deleted with its mirror (`USER#{b}` / `FRIEND#{a}`), in one transaction |
 | Friend request (D4) | `USER#{to}` | `FREQ#IN#{from}` | `at`. Mirror: `USER#{from}` / `FREQ#OUT#{to}` |
 | Block **(written since B8a)** | `USER#{a}` | `BLOCK#{b}` | `userId` (a), `blockedId` (b), `at`. Mirror: `USER#{b}` / `BLOCKEDBY#{a}` with `userId` (b), `blockerId` (a), `at`; always written and deleted together, in one transaction that also deletes the two `FRIEND` items. One read of a person's `BLOCK…` items is everyone a block keeps them apart from, either way |
-| Device | `USER#{id}` | `DEVICE#{deviceId}` | `apnsToken`, `environment`, `updatedAt` |
+| Device **(written since B9)** | `USER#{id}` | `DEVICE#{deviceId}` | `userId`, `deviceId`, `apnsToken`, `environment` (`production` / `development`: which of Apple's two it registered with), `updatedAt`. At most five per person; the events Lambda deletes one Apple says is gone. No route returns a token |
 | Counters | `USER#{id}` | `STATS#ALL`, `STATS#{yyyy-mm}` | `catsMet`, `encounters` and `countedAt` **(written since B3b)**; on `ALL` only, **since B7a**: `points` (five for each day a cat was met and posted) and `posts` (encounters that became a post). Planned, not written: `fed`, `namesVoted`, `namesLed` **Since B7c**, on `ALL`: `fedPoints` (ten for each feeding, at most two a day), `catsFed`, `feedings`, `fedCountedAt`, set by `count_feeding` and never by the encounters' recount; the API shows `points + fedPoints` |
 | A cat met **(since B3b)** | `USER#{id}` | `MET#{catId}` | `catId`, `firstDay`, `lastDay`, `days` (different days), `encounters`. Deleted when no encounter counts for the cat any more. |
 | What a person gives a cat's popularity **(since B7b)** | `USER#{id}` | `METM#{yyyy-mm}#{catId}` | `catId`, `month`, `points`: one for each day they met the cat that month, five more for a day that became a post. The cat's `pop{yyyy-mm}` is the sum of these over everyone, and moves by the difference in one transaction with this item. Deleted at zero |
@@ -214,7 +214,7 @@ cat's `name` in the dataset; else nothing (D6).
 |---|---|---|---|
 | A person's counter for an action | `RATE#{userId}#{action}#{bucket}` | `META` | `count`, `expiresAt` |
 | Decision 1 use today (K3) | `SPEND#{yyyy-mm-dd}` | `DECISIONS` | `calls`, `tokens`, `expiresAt` |
-| Pushes sent to a person today | `USER#{id}` | `PUSHED#{yyyy-mm-dd}` | `count`, `expiresAt` |
+| Pushes sent to a person today **(since B9)** | `USER#{id}` | `PUSHED#{yyyy-mm-dd}` | `count` (at most five), `sent` (a set: the key of each notification, so a change delivered twice is told once), `expiresAt` (three days on). The day is UTC's |
 
 ## Who may write what
 

@@ -37,6 +37,8 @@ locals {
       # The languages the profile offers. English until a native speaker
       # has read a draft (docs/app-plan/OWNER_STEPS.md, O14).
       languages = ["en"]
+      # Notifications (B9). Off until the app opens.
+      push = false
       # Which page the site opens on: "desk" (the labeling desk and
       # Capture, index.html) or "app" (the member app, app.html). The
       # desk until L3 (docs/app-plan/05-client.md).
@@ -51,6 +53,9 @@ locals {
       signup_policy = "allowlist"
       # Every draft, so it can be read on a phone before it is offered.
       languages = ["en", "he", "ru", "ar"]
+      # On, and nothing is sent until a phone registers (N2) and Apple's
+      # key is set (O7).
+      push = true
       # The member app since 2026-11-13 (the owner: the installed staging
       # app opened on the desk, and the new screens only in a browser
       # tab). The desk is one tap away (the profile, or `?desk`).
@@ -81,6 +86,21 @@ locals {
     feeding = true
     # Which languages the profile's menu offers (E10).
     languages = local.settings.languages
+    # Notifications (B9): whether the phone offers its switch (N2).
+    push = local.settings.push
+  }
+
+  # Apple's push (B9, src/events/push.py). The key itself is a secret, set
+  # by the owner with infra/scripts/set-secret.sh and only named here. The
+  # Key ID and the Team ID are not secrets (they travel in every request's
+  # header) but are not known until the owner has made the key (O7): until
+  # they are written here, nothing is sent. One key serves both of Apple's
+  # environments and both accounts.
+  apns = {
+    key_parameter = "/bgucats/apns-auth-key"
+    key_id        = ""
+    team_id       = ""
+    topic         = "org.arip.bgucats" # the app's bundle id (native/)
   }
 
   # count for the bot's resources: 1 in production, 0 in staging.

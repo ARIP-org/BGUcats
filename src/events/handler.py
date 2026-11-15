@@ -7,8 +7,8 @@ batch, and hands it to that kind's handler in HANDLERS. Since B3a, a new
 post is published (publish_post). Since B3b, a change to an encounter
 recounts what its person met and keeps its post's cat on the label
 (count_encounter). Since B6, an admin's decision on a new cat releases or
-hides the post that waited for it (decide_proposal). Moderation (C1), points and badges (B7) and push (B9)
-arrive the same way.
+hides the post that waited for it (decide_proposal). Since B9, four of these changes tell someone's phone
+(notify, and push.py for the sending). Moderation (C1) arrives the same way.
 
 The rules every handler keeps:
 
@@ -26,6 +26,7 @@ The rules every handler keeps:
 import json
 import logging
 import os
+import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,12 +52,44 @@ def _rules_file(name):
     raise FileNotFoundError(f"{name} is not beside the handler nor in web/")
 
 
+_words = {}
+
+
+def words(language):
+    """The app's strings in one language (web/i18n), read once."""
+    language = language if language in LANGUAGES else "en"
+    if language not in _words:
+        _words[language] = _rules_file(f"i18n/{language}.json")
+    return _words[language]
+
+
 # What earns points and badges (docs/app-plan/01-product.md, "The rules"),
 # and the campus places "Explorer" asks for.
 RULES = _rules_file("achievements.json")
 CAMPUS_REGIONS = frozenset(r["id"] for r in _rules_file("regions.json")["regions"])
 # The badges an encounter can give or, corrected by a label, take back.
 ENCOUNTER_BADGES = ("first-meow", "night-owl", "explorer", "cat-whisperer")
+
+# Push (B9, D18). Off unless the account's `push` flag is on. A person is
+# told of four things, at most PUSH_DAILY_CAP times a day in all, in their
+# own language, and never in words anyone wrote but a name: the plan's "no
+# more than a few a day" is five here.
+PUSH = os.environ.get("PUSH", "off") == "on"
+PUSH_DAILY_CAP = 5
+# A post is told to at most this many friends: one change must finish
+# within the Lambda's minute. Far above anyone in the beta.
+PUSH_FRIENDS_MAX = 200
+# How long the day's count is kept (the table's TTL removes it).
+PUSH_COUNT_KEPT_S = 3 * 86400
+# What each notification says (web/i18n/{language}.json) and what a tap on
+# it opens.
+PUSH_WORDS = {
+    "friendPosted": "push.friendPosted",
+    "friendJoined": "push.friendJoined",
+    "nameLeads": "push.nameLeads",
+    "proposalApproved": "push.proposalApproved",
+}
+LANGUAGES = ("en", "he", "ru", "ar")
 
 # Reports (B8). This many different people reporting a post hide it until
 # an admin looks: common/reports.py's HIDE_AT, held equal by a test (this
@@ -370,6 +403,7 @@ def release(post_pk):
                 raise
             return
         raise
+    tell_friends(post, author)
 
 
 def _hide(post, reason):
@@ -401,6 +435,14 @@ def decide_proposal(record):
     enc = _get(f"USER#{proposal['proposerId']}", f"ENC#{proposal['sessionId']}") or {}
     if enc.get("postId"):
         release(f"POST#{enc['postId']}")
+    before = _image(record, "OldImage") or {}
+    if before.get("status") == "open" and proposal.get("status") == "approved":
+        notify(
+            proposal["proposerId"],
+            "proposalApproved",
+            f"proposal:{proposal['proposalId']}",
+            opens={"kind": "cat", "id": proposal.get("catId")},
+        )
 
 
 def _get(pk, sk):
@@ -1095,6 +1137,16 @@ def lead(cat_pk):
             UpdateExpression="SET leaderKey = :key, leaderName = :name",
             ExpressionAttributeValues={":key": now[0], ":name": now[1]},
         )
+        # "A name you suggested is in the lead": told once somebody else
+        # has voted for it too. One vote is usually the suggester's own.
+        if leader.get("suggestedBy") and int(leader["votes"]) >= 2:
+            cat_id = cat_pk.split("#", 1)[1]
+            notify(
+                leader["suggestedBy"],
+                "nameLeads",
+                f"lead:{cat_id}:{leader['nameKey']}",
+                opens={"kind": "cat", "id": cat_id},
+            )
     else:
         social_table.update_item(
             Key={"PK": cat_pk, "SK": "PUBLIC"},
@@ -1122,6 +1174,149 @@ HANDLERS["encounter"] = count_encounter
 HANDLERS["feeding"] = count_feeding
 HANDLERS["proposal"] = decide_proposal
 HANDLERS["report"] = take_report
+
+
+# ---------------------------------------------------------------------------
+# Push (B9): who is told what
+# ---------------------------------------------------------------------------
+
+
+def _shown_name(profile):
+    """The name others see: the published one, never one still waiting."""
+    return profile.get("displayName") or profile.get("username") or ""
+
+
+def _deliver(device, payload, collapse):
+    """One payload to one device, through Apple (push.py). Its packages are
+    loaded here, the first time anything is sent, and by nothing else in
+    this Lambda. Tests and the local app put a list in its place."""
+    from . import push
+
+    return push.send(device, payload, collapse)
+
+
+def _take_push(user_id, key):
+    """One of today's notifications for this person, unless this very one
+    was sent already (a change delivered twice) or today is full. One
+    conditional write, so two changes at once cannot both take the last."""
+    now = time.time()
+    day = datetime.fromtimestamp(now, UTC).strftime("%Y-%m-%d")
+    try:
+        social_table.update_item(
+            Key={"PK": f"USER#{user_id}", "SK": f"PUSHED#{day}"},
+            UpdateExpression=(
+                "ADD #count :one, #sent :this "
+                "SET expiresAt = if_not_exists(expiresAt, :until)"
+            ),
+            ConditionExpression=(
+                "(attribute_not_exists(#count) OR #count < :cap) "
+                "AND (attribute_not_exists(#sent) OR NOT contains(#sent, :key))"
+            ),
+            ExpressionAttributeNames={"#count": "count", "#sent": "sent"},
+            ExpressionAttributeValues={
+                ":one": 1,
+                ":this": {key},
+                ":key": key,
+                ":cap": PUSH_DAILY_CAP,
+                ":until": int(now) + PUSH_COUNT_KEPT_S,
+            },
+        )
+        return True
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        return False
+
+
+def notify(user_id, what, key, name=None, opens=None):
+    """Tell one person's phones one thing. `what` is one of PUSH_WORDS,
+    `key` names this very notification (so it is sent once), `name` is the
+    shown name of whoever it is about, `opens` what a tap goes to.
+
+    Nothing is sent with push off, to someone who turned notifications off
+    or is not active, to someone with no phone registered, twice, or past
+    the day's cap. It never raises: the change that caused it has been made
+    and must not be retried for the sake of a notification."""
+    if not PUSH or not user_id:
+        return False
+    try:
+        profile = _get(f"USER#{user_id}", "PROFILE") or {}
+        if profile.get("status") != "active" or profile.get("notifications") is False:
+            return False
+        devices = _query_all(f"USER#{user_id}", "DEVICE#")
+        if not devices or not _take_push(user_id, key):
+            return False
+        strings = words(profile.get("language"))
+        payload = {
+            "aps": {
+                "alert": {
+                    "title": strings["app.name"],
+                    "body": strings[PUSH_WORDS[what]].replace("{name}", name or ""),
+                },
+                "sound": "default",
+                "thread-id": what,
+            },
+            "what": what,
+        }
+        if opens and opens.get("id"):
+            payload["opens"] = opens
+        results = Counter()
+        for device in devices:
+            result = _deliver(device, payload, key)
+            results[result] += 1
+            if result == "gone":
+                # Apple will never deliver to it: forgotten, unless the
+                # phone registered a new token meanwhile.
+                try:
+                    social_table.delete_item(
+                        Key={"PK": device["PK"], "SK": device["SK"]},
+                        ConditionExpression="apnsToken = :token",
+                        ExpressionAttributeValues={":token": device["apnsToken"]},
+                    )
+                except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+                    pass
+        logger.info("push %s: %s", what, dict(sorted(results.items())))
+        return results["sent"] > 0
+    except Exception:
+        logger.exception("push %s failed", what)
+        return False
+
+
+def tell_friends(post, author):
+    """A post went out: its author's friends are told, by the author's
+    shown name and nothing the author wrote."""
+    if not PUSH:
+        return
+    friends = _query_all(f"USER#{post['authorId']}", "FRIEND#")[:PUSH_FRIENDS_MAX]
+    for friend in friends:
+        notify(
+            friend["friendId"],
+            "friendPosted",
+            f"post:{post['postId']}",
+            name=_shown_name(author),
+            opens={"kind": "post", "id": post["postId"]},
+        )
+
+
+def befriended(record):
+    """Someone joined by a person's invite link: the person whose link it
+    was is told. A friendship is two items written together; only the
+    inviter's copy says so (`by` is the one who accepted)."""
+    edge = _image(record)
+    if record.get("eventName") != "INSERT" or not edge:
+        return
+    joined = edge.get("by")
+    if not joined or joined == edge.get("userId"):
+        return
+    them = _get(f"USER#{joined}", "PROFILE") or {}
+    notify(
+        edge["userId"],
+        "friendJoined",
+        f"friend:{joined}",
+        name=_shown_name(them),
+        opens={"kind": "person", "id": joined},
+    )
+
+
+HANDLERS["friend"] = befriended
 
 
 def _keys(record):

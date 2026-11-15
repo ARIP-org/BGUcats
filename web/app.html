@@ -33,10 +33,91 @@
         <button class="glass-button" type="button" id="starting-again">Try again</button>
         <button class="link-button" type="button" id="starting-reset">Reset the app on this phone</button>
         <p class="starting-note">Resetting fetches the app again. You stay signed in, and photos still waiting to upload are kept.</p>
+        <button class="link-button quiet" type="button" id="starting-info">Copy app info</button>
+        <textarea class="starting-info" id="starting-info-text" readonly hidden aria-label="App info"></textarea>
       </div>
     </main>
     <script>
       (function () {
+        // What the app was doing, kept on this phone: the last eighty
+        // lines, in localStorage. The start's steps, the capture flow, the
+        // model, anything that failed, and every time the screen stopped
+        // answering. A freeze cannot be seen from anywhere else: three
+        // fixes were written blind before this existed (2026-11-14). It is
+        // here, in the page, so it works when none of the app's files
+        // arrive. No name, no address, no token, no photo; it leaves the
+        // phone only when its owner copies it ("App info", Profile).
+        var TRAIL = "bgucats.trail";
+        var kept = function (key) { try { return localStorage.getItem(key); } catch (e) { return null; } };
+        var lines = function () {
+          try { var list = JSON.parse(kept(TRAIL)); return Array.isArray(list) ? list : []; } catch (e) { return []; }
+        };
+        var mark = window.bgucatsMark = function (what) {
+          try {
+            var list = lines();
+            list.push([Date.now(), String(what).slice(0, 200)]);
+            localStorage.setItem(TRAIL, JSON.stringify(list.slice(-80)));
+          } catch (e) { /* no storage: nothing is kept */ }
+        };
+        var kind = function () {
+          try {
+            if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return "iPhone app";
+            if (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches) return "home-screen app";
+          } catch (e) { /* a browser tab, then */ }
+          return "browser tab";
+        };
+        var two = function (n) { return (n < 10 ? "0" : "") + n; };
+        var when = function (ms) {
+          var d = new Date(ms), milli = ("00" + d.getMilliseconds()).slice(-3);
+          return two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds()) + "." + milli;
+        };
+        window.bgucatsInfo = function () {
+          var flow = "none";
+          try { var scan = JSON.parse(kept("bgucats.scan")); if (scan) flow = scan.step + ", " + (scan.shots || []).length + " photos"; } catch (e) { flow = "unreadable"; }
+          var worker = !navigator.serviceWorker ? "not supported" : navigator.serviceWorker.controller ? "in control" : "none in control";
+          return [
+            "BGU Cats, app info, " + new Date().toISOString(),
+            "kind: " + kind(),
+            "page: " + location.pathname + ", start: " + (document.documentElement.getAttribute("data-boot") || "not begun"),
+            "service worker: " + worker,
+            "signed in: " + (kept("bgucats.tokens") ? "yes" : "no"),
+            "language: " + (kept("bgucats.language") || "en") + ", online: " + navigator.onLine,
+            "being asked: " + (kept("bgucats.asking") || "nothing") + ", no longer asked by itself: " + (kept("bgucats.notAsking") || "nothing"),
+            "capture flow kept: " + flow,
+            "screen: " + screen.width + "x" + screen.height + " @" + (window.devicePixelRatio || 1),
+            navigator.userAgent,
+            "",
+          ].concat(lines().map(function (line) { return when(line[0]) + "  " + line[1]; })).join("\n");
+        };
+        // Copied where the phone allows it; shown to be copied by hand
+        // where it does not. `done(copied)` says which.
+        window.bgucatsCopyInfo = function (done, shown) {
+          var text = shown || window.bgucatsInfo();
+          var said = function (ok) { return function () { if (done) done(ok, text); }; };
+          try { navigator.clipboard.writeText(text).then(said(true), said(false)); } catch (e) { said(false)(); }
+        };
+
+        mark("opened " + location.pathname + " (" + kind() + ")");
+        window.addEventListener("error", function (e) {
+          var from = e.target && e.target !== window && (e.target.src || e.target.href);
+          if (from) mark("could not load " + String(from).split("/").slice(3).join("/"));
+          else mark("error: " + e.message + " @ " + String(e.filename || "").split("/").slice(3).join("/") + ":" + e.lineno);
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) {
+          mark("failed: " + ((e.reason && e.reason.message) || e.reason));
+        });
+        // The screen stopped answering: a timer that should run twice a
+        // second ran late by more than a second and a half, with the app
+        // in front the whole time.
+        var clock = function () { return window.performance && performance.now ? performance.now() : Date.now(); };
+        var last = clock();
+        document.addEventListener("visibilitychange", function () { mark(document.visibilityState); last = clock(); });
+        setInterval(function () {
+          var now = clock(), late = now - last - 500;
+          last = now;
+          if (late > 1500 && document.visibilityState === "visible") mark("the screen did not answer for " + (late / 1000).toFixed(1) + " s");
+        }, 500);
+
         // The app's files as the service worker keeps them, and the worker
         // itself: both are fetched again. Sign-in and the upload queue live
         // elsewhere and are not touched; nor is the recognition model.
@@ -65,12 +146,24 @@
           var help = document.getElementById("starting-help");
           if (window.bgucatsStarted || !help) return;
           var step = steps[document.documentElement.getAttribute("data-boot")];
+          mark("still loading " + (step || "the app's files"));
           document.getElementById("starting-line").textContent =
             "Still loading " + (step || "the app's files") + ". This is taking longer than it should.";
           help.hidden = false;
         }, window.bgucatsStartWaitMs || 12000);
-        document.getElementById("starting-again").onclick = function () { location.reload(); };
-        document.getElementById("starting-reset").onclick = window.bgucatsReset;
+        document.getElementById("starting-again").onclick = function () { mark("tapped Try again"); location.reload(); };
+        document.getElementById("starting-reset").onclick = function () { mark("tapped Reset"); window.bgucatsReset(); };
+        document.getElementById("starting-info").onclick = function () {
+          var button = this;
+          window.bgucatsCopyInfo(function (copied, text) {
+            if (copied) { button.textContent = "Copied"; return; }
+            var box = document.getElementById("starting-info-text");
+            if (!box) return;
+            box.value = text;
+            box.hidden = false;
+            box.select();
+          });
+        };
       })();
     </script>
   </body>

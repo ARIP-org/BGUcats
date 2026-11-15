@@ -180,9 +180,9 @@ blocked on someone else.
   `infra/scripts/set-secret.sh`. Claude may apply the first two in the
   owner's session when asked. A secret's value is typed by the owner only.
   All are in `docs/deploy.md` and `infra/README.md`.
-- **No secret value in Terraform.** The bot's secrets (SSM) and the Google
-  OAuth client (Cognito) are set with `set-secret.sh`; Terraform only names
-  them. Anything it manages lands in the state, which every PR's CI run can
+- **No secret value in Terraform.** The bot's secrets (SSM), Apple's push
+  key (SSM, since B9) and the Google OAuth client (Cognito) are set with
+  `set-secret.sh`; Terraform only names them. Anything it manages lands in the state, which every PR's CI run can
   read. Never add a secret `variable`, `aws_ssm_parameter` value or
   `aws_cognito_identity_provider` back.
 - **Rollback is `git revert`** of the merge commit, merged like any change.
@@ -307,7 +307,18 @@ product). Its old sessions and photos stay in the table with
   service worker and its kept files only: sign-in, the upload queue and
   the model stay). Each step of the start has a time limit and a failure
   says where. The site's root sends an installed app to its front door
-  before fetching anything else of the desk.
+  before fetching anything else of the desk. With no signal the app opens
+  with the account it last read on this phone (the same sign-in only)
+  and reads it again when the signal is back; a phone that has never
+  read it says it cannot start.
+- **The phone keeps what the app was doing** (since 2026-11-14;
+  `app.html`, `web/social/trail.js`, `tests/web/test_member_appinfo.py`):
+  the last eighty lines, in localStorage. The start's steps, the capture
+  flow, what it asked the phone for, the model's stages, failures nobody
+  caught, and every time the screen stopped answering. Profile has "App
+  info" to read and copy it. A line says what happened, never who: no
+  name, no address, no token, nothing anyone wrote. A bug on someone's
+  phone is asked for with "copy App info", not guessed at.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`
   in cognito.tf). Sign-out only forgets the app's tokens and stays in the
@@ -317,6 +328,10 @@ product). Its old sessions and photos stay in the table with
   `/api/`, photos or other origins — the distribution's no-caching rule still
   means a deploy reaches everyone on their next load. The one exception is
   the content-addressed `/model/{version}/`, cached first (see 1c below).
+  A page (never a script) waits four seconds for the network and then
+  opens from the kept copy, each page under its own name; both pages
+  register the worker (`tests/web/test_service_worker.py`, the only tests
+  that run it).
 - **Uploads keep going after the app is left, where the browser allows
   it.** Chrome on Android has Background Sync: the outbox registers it with
   every photo and when the app is hidden, and the service worker runs the
@@ -571,7 +586,9 @@ actual product question.
 - Single DynamoDB table, three GSIs: photos-in-session, labeling queue by
   status, photos-of-a-cat for export. Every key it holds:
   `docs/data-model.md`, kept true by a test; a pull request that adds a
-  key adds it there.
+  key adds it there, and says in `scripts/privacy_table.py` what it holds
+  about a person (`docs/privacy-data.md` is that script's output: the
+  App Store's privacy answers, held to the code by a test).
 
 ## Processing rules
 
@@ -609,7 +626,8 @@ actual product question.
 
 ## Stack
 
-**Collection:** Python 3.12 (Pillow, imagehash) · Terraform · Lambda, no VPC ·
+**Collection:** Python 3.12 (Pillow, imagehash; httpx with h2 and PyJWT in
+the events Lambda alone, for Apple's push) · Terraform · Lambda, no VPC ·
 API Gateway HTTP API · S3 + DynamoDB on-demand · secrets in SSM Parameter Store
 (SecureString).
 

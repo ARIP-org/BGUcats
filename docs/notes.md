@@ -196,6 +196,31 @@ an hour that a sentence would have saved.
   it replaces. Now a start that fails in the worker means no guesses
   that time, and the mark is removed from any phone that kept it. The
   desk still runs the model on the page, as it has since October.
+- **`--platform` means that tag and no older one.** The Lambda builds
+  install with `--platform manylinux_2_28_x86_64`, and pip then takes
+  only wheels carrying exactly that tag. cffi's releases carry the older
+  `manylinux2014` one, so for the events Lambda (B9) pip quietly chose a
+  beta of cffi that happened to have the newer tag. `build-events` names
+  both platforms; every package is pinned, the indirect ones too, so a
+  new release cannot change the zip.
+- **Ask the phone, do not guess.** Three fixes for the owner's phone
+  went out on 2026-11-14 without anyone having seen the fault: the model
+  in a worker (#94), the visible start (#95), the fallback removed
+  (#96). Each fixed something real and none was known to be the cause;
+  the owner then said the home-screen app was still broken and the
+  TestFlight app was not. Nothing on the phone had been written down, so
+  every round cost hours and a guess. Since that evening the page keeps
+  its own account ("App info": `app.html`, `web/social/trail.js`),
+  including a line each time the screen stops answering. The first
+  question about a bug on a phone is now "copy App info after it
+  happens".
+- **The service worker had never been run by a test.** Every screen test
+  blocks it, so two faults sat in `sw.js` unseen: both pages were kept
+  under `/index.html` (with no signal the app opened as whichever was
+  fetched last), and a page the network neither answered nor refused was
+  waited on without limit. `tests/web/test_service_worker.py` runs the
+  real worker; Playwright routes the worker's own requests through
+  `context.route`, so a request can be made to hang there.
 - **A start with nothing on screen cannot be diagnosed from anywhere.**
   The same morning the owner's installed app showed a gray screen, then
   a black one, for three minutes, and I could not say why: staging

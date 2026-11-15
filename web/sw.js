@@ -26,7 +26,7 @@
 // ULIDs, so a photo the app and the worker both send lands once. Safari has
 // no Background Sync: on an iPhone, uploads move only while the app is open.
 
-const CACHE = "bgucats-shell-v18";
+const CACHE = "bgucats-shell-v19";
 const MODEL_CACHE = "bgucats-model";
 const MODEL_PATH = /^\/model\/([^/]+)\/[^/]+$/;
 const SHELL = [
@@ -57,6 +57,8 @@ const SHELL = [
   "/social/gallery.js",
   "/social/friends.js",
   "/social/achievements.js",
+  "/social/appinfo.js",
+  "/social/trail.js",
   "/social/map.js",
   "/social/report.js",
   "/social/poll.js",
@@ -116,22 +118,56 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // The sign-in callback arrives as /?code=…; it is the same page.
-  const key = event.request.mode === "navigate" ? "/index.html" : url.pathname;
-  if (event.request.mode !== "navigate" && !SHELL.includes(key)) return;
+  // A page: the desk (the sign-in callback arrives as /?code=…; it is the
+  // same page) or the member app, each kept under its own name. Until
+  // 2026-11-14 both were kept as /index.html, so with no signal the app
+  // opened as whichever page had been fetched last.
+  if (event.request.mode === "navigate") {
+    const key = url.pathname === "/app.html" ? "/app.html" : "/index.html";
+    const { answer, refreshed } = page(event.request, key);
+    event.respondWith(answer);
+    event.waitUntil(refreshed);
+    return;
+  }
 
+  const key = url.pathname;
+  if (!SHELL.includes(key)) return;
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(key, copy));
-        }
-        return response;
-      })
-      .catch(() => caches.match(key).then((hit) => hit || Response.error())),
+    fresh(event.request, key).catch(() => keptCopy(key).then((hit) => hit || Response.error())),
   );
 });
+
+// From the network, and the copy kept for a time with no signal refreshed.
+function fresh(request, key) {
+  return fetch(request).then((response) => {
+    if (response.ok) {
+      const copy = response.clone();
+      caches.open(CACHE).then((cache) => cache.put(key, copy));
+    }
+    return response;
+  });
+}
+
+const keptCopy = (key) => caches.open(CACHE).then((cache) => cache.match(key));
+
+// How long a page may wait for the network before the kept copy opens
+// instead. A connection that neither answers nor fails (a lift, the edge of
+// the campus Wi-Fi) is not "no signal" to the browser: without a limit the
+// app opened on an empty screen for as long as the request hung. The page
+// that opens can say what it is waiting for (app.html); nothing can.
+const PAGE_WAIT_MS = 4000;
+
+// A page, network first: the network's answer if it comes in time or there
+// is nothing kept; the kept copy if the network fails or is late. A late
+// answer still refreshes the copy (`refreshed`).
+function page(request, key) {
+  const network = fresh(request, key);
+  const orKept = network.catch(() => keptCopy(key).then((hit) => hit || Response.error()));
+  const late = new Promise((resolve) => setTimeout(resolve, PAGE_WAIT_MS))
+    .then(() => keptCopy(key))
+    .then((hit) => hit || orKept);
+  return { answer: Promise.race([orKept, late]), refreshed: network.then(() => {}, () => {}) };
+}
 
 async function modelFile(request, path, version) {
   const cache = await caches.open(MODEL_CACHE);

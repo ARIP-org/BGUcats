@@ -415,6 +415,13 @@ export function Profile() {
         <${Icon} name="chevron" size=${16} width=${2.2} />
       </button>
       <div class="divider" aria-hidden="true"></div>
+      <button type="button" class="row" data-row="app-info" onClick=${() => push("appInfo", { title: t("appInfo.title") })}>
+        <span class="row-icon neutral" aria-hidden="true"><${Icon} name="info" /></span>
+        <span class="row-label">${t("appInfo.title")}</span>
+        <span class="row-value"></span>
+        <${Icon} name="chevron" size=${16} width=${2.2} />
+      </button>
+      <div class="divider" aria-hidden="true"></div>
       <a class="row" href="/?desk" data-row="desk">
         <span class="row-icon neutral" aria-hidden="true"><${Icon} name="camera" /></span>
         <span class="row-label">${t("profile.desk")}</span>

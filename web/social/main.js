@@ -8,7 +8,7 @@
 // never from a CDN: the page holds sign-in tokens and the iPhone app must
 // open with no signal.
 
-import { isInstalled } from "../install.js";
+import { isInstalled, isNative } from "../install.js";
 import { api, onSignedOut } from "../lib/api.js";
 import {
   LOGIN_NOTE_KEY,
@@ -23,6 +23,7 @@ import {
 } from "../lib/auth.js";
 import { html, render } from "../vendor/preact-htm.js";
 import { AchievementsSheet } from "./achievements.js";
+import { AppInfo, CopyInfo } from "./appinfo.js";
 import { CatPage } from "./cat.js";
 import { Feed } from "./feed.js";
 import { Blocked, Friends, PersonPage, keepInvite, takeInvite } from "./friends.js";
@@ -36,6 +37,7 @@ import { TabBar, watchScroll } from "./tabbar.js";
 import { adoptTheme, applyTheme, savedTheme } from "./theme.js";
 import { ReportSheet } from "./report.js";
 import { Scan, openScan, startOutbox } from "./scan.js";
+import { mark } from "./trail.js";
 import { Overlays, toast } from "./ui.js";
 import { unanswered } from "./asking.js";
 import { FeedingSheet } from "./feeding.js";
@@ -51,12 +53,15 @@ const show = (view) => {
 
 // How long one step of the start may take before the app says it failed.
 const STEP_MS = 15000;
+// The service worker is registered this long after the first screen.
+const WORKER_AFTER_MS = 4000;
 
 // One step of the start, named on the page (app.html reads it when the
 // start is slow) and given a time limit: a request that never answers used
 // to leave a black screen for as long as anyone cared to wait.
 async function step(name, work) {
   document.documentElement.dataset.boot = name;
+  mark(`start: ${name}`);
   let timer;
   const late = new Promise((_, refuse) => {
     timer = setTimeout(() => refuse(new Error(t("start.tooLong"))), window.bgucatsStepMs || STEP_MS);
@@ -82,9 +87,54 @@ function StartFailed({ at, message, signedIn }) {
       <button class="glass-button" type="button" onClick=${() => location.reload()}>${t("ui.tryAgain")}</button>
       <button class="link-button" type="button" onClick=${() => window.bgucatsReset?.()}>${t("start.reset")}</button>
       <p class="starting-note">${t("start.resetNote")}</p>
+      <${CopyInfo} quiet=${true} />
       ${signedIn && html`<button class="link-button quiet" type="button" onClick=${() => logout(HOME)}>${t("signOut.button")}</button>`}
     </main>
   `;
+}
+
+// The account as the server last gave it, kept for a start with no signal.
+// One person's, on their own phone, like the feed's first page (feed.js).
+const ME_KEY = "bgucats.me";
+
+function keepMe(who, me) {
+  try {
+    localStorage.setItem(ME_KEY, JSON.stringify({ who, me }));
+  } catch {
+    /* the next start with no signal says it cannot start */
+  }
+}
+
+function keptMe(who) {
+  try {
+    const kept = JSON.parse(localStorage.getItem(ME_KEY));
+    return kept?.who === who ? kept.me : null;
+  } catch {
+    return null;
+  }
+}
+
+// Started from memory: the account is read again when the phone says it is
+// back, and once a minute until then (a phone on bad Wi-Fi never says).
+// An answer that refuses this person starts the app again, to be told so
+// by the start itself.
+function readAccountWhenBack(who) {
+  let timer = 0;
+  const again = async () => {
+    try {
+      const me = await api("/v1/me");
+      keepMe(who, me);
+      set({ me });
+      mark("the account read again");
+    } catch (err) {
+      if (err.status) location.reload();
+      return;
+    }
+    removeEventListener("online", again);
+    clearInterval(timer);
+  };
+  addEventListener("online", again);
+  timer = setInterval(again, 60000);
 }
 
 function takeNote() {
@@ -138,7 +188,16 @@ function Banned() {
 // The frame (E1): the tabs' pages, the pages pushed over them, the tab
 // bar, and the overlays (menu, dialog, toast). The screens fill in from E2.
 const TAB_PAGES = { feed: Feed, home: Home };
-const PAGES = { profile: Profile, cat: CatPage, gallery: Gallery, friends: Friends, person: PersonPage, map: MapPage, blocked: Blocked };
+const PAGES = {
+  profile: Profile,
+  cat: CatPage,
+  gallery: Gallery,
+  friends: Friends,
+  person: PersonPage,
+  map: MapPage,
+  blocked: Blocked,
+  appInfo: AppInfo,
+};
 const onScroll = watchScroll();
 
 function Frame() {
@@ -189,14 +248,19 @@ async function boot() {
 
   const token = await step("sign-in", () => idToken());
   if (!token) {
+    mark("start: not signed in");
     show(html`<${SignIn} note=${takeNote()} />`);
     return;
   }
   saveTokens(readTokens()); // the service worker's copy, as the desk keeps it
 
+  // Whose account: the kept copy below is used only for the same sign-in.
+  const who = claims(token).sub;
   let me;
+  let fromMemory = false;
   try {
     me = await step("account", () => api("/v1/me"));
+    keepMe(who, me);
   } catch (err) {
     if (err.status === 404) {
       show(html`<${NotOpen} />`);
@@ -213,7 +277,16 @@ async function boot() {
       show(html`<${SignIn} note=${takeNote()} />`);
       return;
     }
-    throw err;
+    // The sign-in ended (the API refused the token): the sign-in screen is
+    // up already (onSignedOut), and that is all there is to say.
+    if (!readTokens()) return;
+    // No answer at all: no signal, or too slow. The app opens with the
+    // account as this phone last read it, because the thing it is for
+    // works with no signal: photos taken now upload later (outbox.js).
+    me = !err.status && keptMe(who);
+    if (!me) throw err;
+    fromMemory = true;
+    mark("start: the account as last read (no answer)");
   }
   set({ me });
   adoptTheme(me.theme);
@@ -228,17 +301,28 @@ async function boot() {
   // uploading, and an unfinished capture flow comes back where it was.
   startOutbox();
   document.documentElement.dataset.boot = "ready";
+  mark("start: ready");
   show(html`<${Frame} />`);
+  if (fromMemory) readAccountWhenBack(who);
   // The app was last closed while the phone was being asked for something
   // (asking.js): it no longer asks for that by itself, and says so once.
   const left = unanswered();
   if (left.includes("location")) toast(t("scan.locationHeld"), 7000);
   else if (left.includes("camera")) toast(t("scan.cameraHeldToast"), 7000);
   takeInvite();
+  // Opens with no signal, and uploads with the app closed where the
+  // browser can (sw.js). The desk registers it too; since the installed
+  // app comes straight here (index.html) and "Reset" removes the worker,
+  // this page must. Later, so it competes with nothing at the start. The
+  // iPhone app needs none: its files are already on the phone.
+  if ("serviceWorker" in navigator && !isNative()) {
+    setTimeout(() => navigator.serviceWorker.register("/sw.js").catch(() => {}), WORKER_AFTER_MS);
+  }
 }
 
 // A start that fails says so, and where. It used to show the sign-in
 // screen with a note, to someone who was signed in.
-boot().catch((err) =>
-  show(html`<${StartFailed} at=${err.step || "files"} message=${err.message} signedIn=${!!readTokens()} />`),
-);
+boot().catch((err) => {
+  mark(`start failed at ${err.step || "files"}: ${err.message}`);
+  show(html`<${StartFailed} at=${err.step || "files"} message=${err.message} signedIn=${!!readTokens()} />`);
+});
