@@ -945,6 +945,11 @@ English file.
   any of the app has arrived, names the step when it is slow, bounds
   every step, and offers "Try again" and "Reset the app on this phone"
   (`web/app.html`, `boot` in `main.js`).
+- **The freeze on "Scan a cat" and "+", found 2026-11-15:** the phone
+  had kept a piece of a capture flow, written by a tap after a flow had
+  closed, and every later tap opened it and failed (`docs/notes.md`,
+  "Testing"). A kept flow is now checked, a change with no flow changes
+  nothing, and a page that cannot be drawn closes the flow and says so.
 - **What the phone can say, 2026-11-14 (mine: no design):** the page
   keeps the last eighty things the app did, with a line for every time
   the screen stopped answering, and Profile has "App info" to read and

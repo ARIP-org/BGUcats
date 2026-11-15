@@ -15,7 +15,7 @@ import { getConfig } from "../lib/auth.js";
 import { isNative } from "../install.js";
 import { createOutbox, ulid } from "../outbox.js";
 import { createRecognition } from "../recognition.js";
-import { html, useEffect, useRef, useState } from "../vendor/preact-htm.js";
+import { html, useEffect, useErrorBoundary, useRef, useState } from "../vendor/preact-htm.js";
 import { askAgain, asking, painted, quiet } from "./asking.js";
 import { cats as loadCats, names as loadNames, places as loadPlaces } from "./data.js";
 import { t, tRich } from "./i18n.js";
@@ -63,12 +63,47 @@ export function startOutbox() {
   return outbox;
 }
 
+// A kept flow the pages can draw: its own session, a list of photos, a
+// page that exists. Anything else is a piece of a flow, or one from a
+// version that kept it differently.
+const STEPS = ["camera", "which", "met", "new", "post", "tag"];
+// The pages that show the photo that was taken.
+const NEEDS_A_PHOTO = ["which", "met", "new"];
+
+const whole = (scan) =>
+  Boolean(scan) &&
+  typeof scan.sessionId === "string" &&
+  (scan.entry === "scan" || scan.entry === "post") &&
+  STEPS.includes(scan.step) &&
+  Array.isArray(scan.shots) &&
+  scan.shots.every((shot) => shot && typeof shot.photoId === "string") &&
+  typeof scan.proposal === "object" &&
+  scan.proposal !== null &&
+  Array.isArray(scan.proposal.traits);
+
+// The flow as the phone kept it, or nothing. On 2026-11-15 the owner's
+// phone held `{ step: "which", changing: true }` and nothing else: a second
+// tap after a flow had closed had written a piece of one (update, below),
+// and from then on "Scan a cat" and "+" opened it, the first line that
+// read its photos failed, and the screen under it took no touches. A flow
+// that is not whole is dropped, and says so in App info.
 function load() {
+  let kept;
   try {
-    return JSON.parse(localStorage.getItem(KEY));
+    kept = JSON.parse(localStorage.getItem(KEY));
   } catch {
+    kept = null;
+  }
+  if (kept === null) return null;
+  if (!whole(kept)) {
+    mark(`a kept capture flow was not whole and was dropped (${Object.keys(Object(kept)).join(", ").slice(0, 120)})`);
+    save(null);
     return null;
   }
+  if (!kept.shots.length && NEEDS_A_PHOTO.includes(kept.step)) {
+    kept.step = kept.entry === "scan" ? "camera" : "post";
+  }
+  return kept;
 }
 
 function save(scan) {
@@ -80,8 +115,15 @@ function save(scan) {
   }
 }
 
-function update(patch) {
-  const scan = { ...get().scan, ...patch };
+// A change to the flow that is open. `sessionId`: only if it is still that
+// flow (for what answers later: the GPS, a photo being kept, the model).
+// With no flow there is nothing to change: a second tap on a page that is
+// closing, or an answer that comes after "Post", used to make a new "flow"
+// out of the change alone, and keep it.
+function update(patch, sessionId) {
+  const now = get().scan;
+  if (!now || (sessionId && now.sessionId !== sessionId)) return;
+  const scan = { ...now, ...patch };
   save(scan);
   set({ scan });
 }
@@ -113,7 +155,7 @@ function findPlace({ again = false } = {}) {
   located = scan.sessionId;
   asking("location", locate).then((fix) => {
     if (!fix || get().scan?.sessionId !== scan.sessionId) return;
-    update({ fix });
+    update({ fix }, scan.sessionId);
     // The first photo may have been faster than the GPS: its encounter
     // gets the place now, so the post says what this page says. Nothing
     // happens if there is no encounter yet, or it has a place.
@@ -188,24 +230,26 @@ async function keep(blob) {
   // One press, one photo, and on: from the camera to "Which cat?", or back
   // to the page that asked for another photo.
   const next = scan.returnTo || (scan.entry === "scan" ? "which" : "post");
-  update({ shots, step: next, returnTo: null });
+  update({ shots, step: next, returnTo: null }, scan.sessionId);
   mark(`photo ${shots.length} kept`);
   // The GPS may have answered while this photo was being kept, after the
   // encounter was written without a place and before there was a photo to
   // show for it.
   const fix = get().scan?.fix;
   if (fix && !scan.fix) place(scan.sessionId, fix);
-  guess(shots);
+  guess(shots, scan.sessionId);
 }
 
-async function guess(shots) {
+async function guess(shots, sessionId) {
   if (!recognition) return;
   try {
     if (!(await recognition.prepareForCapture())) return;
     const result = await recognition.guessShots(
       shots.filter((s) => blobs.has(s.photoId)).map((s) => ({ photoId: s.photoId, blob: blobs.get(s.photoId) })),
     );
-    if (result?.ranked?.length) update({ ranked: result.ranked, modelVersion: recognition.state.version || NO_MODEL });
+    if (result?.ranked?.length) {
+      update({ ranked: result.ranked, modelVersion: recognition.state.version || NO_MODEL }, sessionId);
+    }
   } catch {
     /* no guess: the grid of every cat is the answer */
   }
@@ -715,7 +759,26 @@ export function pageBefore(scan) {
   return null;
 }
 
+// The flow, and what happens if one of its pages cannot be drawn: it is
+// closed and says so. A page that fails used to leave the flow "open" with
+// nothing on screen, and the app under it took no touches until it was
+// closed from outside. Photos already taken stay with their cat's records.
 export function Scan() {
+  const [failed, forget] = useErrorBoundary((err) => {
+    const scan = get().scan;
+    mark(`the capture flow could not be drawn and was closed: ${err?.message || err}`);
+    if (typeof scan?.sessionId === "string") outbox?.closeEncounter(scan.sessionId).catch(() => {});
+    save(null);
+    set({ scan: null, scanOpen: false });
+    toast(t("scan.broke"), 7000);
+  });
+  useEffect(() => {
+    if (failed) forget();
+  }, [failed]);
+  return failed ? null : html`<${Pages} />`;
+}
+
+function Pages() {
   const scan = useStore((s) => s.scan);
   const open = useStore((s) => s.scanOpen);
   const [cats, setCats] = useState([]);
