@@ -203,6 +203,23 @@ an hour that a sentence would have saved.
   beta of cffi that happened to have the newer tag. `build-events` names
   both platforms; every package is pinned, the indirect ones too, so a
   new release cannot change the zip.
+- **The freeze was a piece of a flow, kept by the phone** (found
+  2026-11-15, from the first App info the owner pasted; it took one
+  message). The capture flow is kept in localStorage so a reload lands
+  where it was. `update()` merged a change into "the flow" without
+  asking whether there was one, so a tap that landed after a flow had
+  closed wrote the change alone, `{ step: "which", changing: true }`,
+  and that was kept. From then on "Scan a cat" and "+" opened the kept
+  piece, the first line that read its photos threw, and the flow stayed
+  "open" with nothing drawn and the app under it out of reach, at every
+  launch. The iPhone app has its own storage and never held the piece,
+  which is why it "had no bug". Three things, each enough alone: a
+  change with no flow changes nothing; a kept flow that is not whole is
+  dropped at the start; a page that cannot be drawn closes the flow and
+  says so (`web/social/scan.js`, `tests/web/test_member_flow_kept.py`).
+  The model on the page's thread (#94) was real and was not this.
+  Anything kept between launches is input from an older self: check it
+  as if a stranger sent it.
 - **Ask the phone, do not guess.** Three fixes for the owner's phone
   went out on 2026-11-14 without anyone having seen the fault: the model
   in a worker (#94), the visible start (#95), the fallback removed

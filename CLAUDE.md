@@ -319,6 +319,12 @@ product). Its old sessions and photos stay in the table with
   info" to read and copy it. A line says what happened, never who: no
   name, no address, no token, nothing anyone wrote. A bug on someone's
   phone is asked for with "copy App info", not guessed at.
+- **What the phone kept is checked before it is used.** The capture flow
+  is kept between launches; a kept flow that is not whole is dropped, a
+  change with no flow open changes nothing, and a page that cannot be
+  drawn closes the flow and says so instead of leaving the app out of
+  reach (`tests/web/test_member_flow_kept.py`). A piece of a flow kept
+  by a late tap froze the owner's home-screen app until 2026-11-15.
 - **Sign-in always shows Google's account chooser** (`prompt=select_account`,
   which Cognito forwards only with managed login — `managed_login_version = 2`
   in cognito.tf). Sign-out only forgets the app's tokens and stays in the
