@@ -106,7 +106,13 @@ blocked on someone else.
 - **Work on a short-lived branch**, one change per branch, and open a pull
   request to `main`. CI runs lint, tests and `terraform plan` for both
   accounts on it (staging: what the merge deploys; production: what the
-  next promote would). The owner reads the plans and merges.
+  next promote would). The owner reads the plans and merges. Decided
+  2026-11-22 and **not built yet**: low-risk pull requests will merge to
+  staging by themselves once the reviewer's check
+  (`.github/workflows/claude-review.yml`, written, never run) is required
+  by the `main` ruleset, which only the owner can change
+  (`docs/agents.md`, "The reviewer, and the two lanes"). Until this
+  sentence changes, every pull request needs the owner's approval.
 - **Merging deploys staging; a tag promotes.** A push to `main` runs
   `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
   the staging account under a GitHub OIDC role and marks the commit
@@ -185,6 +191,12 @@ blocked on someone else.
   `set-secret.sh`; Terraform only names them. Anything it manages lands in the state, which every PR's CI run can
   read. Never add a secret `variable`, `aws_ssm_parameter` value or
   `aws_cognito_identity_provider` back.
+- **The repository is going public** (the owner, 2026-11-22: its
+  runners are then free). Write everything as if it already were: no
+  real person's name, address or photo, and nothing private, in a file,
+  a commit message, an issue, a pull request or a log. Agents take work
+  only from people who can push (`docs/agents.md`, "When the repository
+  is public").
 - **Rollback is `git revert`** of the merge commit, merged like any change.
 - **Update the docs in the same PR** as the change: `docs/deploy.md` when the
   deploy changes, `docs/app-backlog.md`, `research/FINDINGS.md`, and this
@@ -278,9 +290,15 @@ product). Its old sessions and photos stay in the table with
   Russian, Arabic) instead of the app. It is a front door, not security: the
   API still checks every call. `?browser` opens the app in a tab anyway, for
   when the installed app cannot sign in on some phone.
-- **The iPhone app is the same `web/`, packed** (`native/`, Capacitor,
-  since 2026-11-11; `docs/ROADMAP.md`, 2e). One codebase, never a platform
-  branch: `web/` keeps no build step, and the only thing it knows is
+- **The iPhone app is being rewritten in Swift** (the owner, 2026-11-22;
+  `docs/ROADMAP.md`, 2g). "One codebase, never a platform branch" is
+  lifted for the member app: the Swift app is its own code against the
+  same member API, the web member app (`web/social/`) is frozen to fixes
+  and retires when the Swift app has its screens, and the desk and
+  Capture stay web. Until the Swift app's first build, TestFlight has
+  the packed app described next, and its rules hold for it.
+- **Today's iPhone app is `web/`, packed** (`native/`, Capacitor,
+  since 2026-11-11; `docs/ROADMAP.md`, 2e). One codebase for it: `web/` keeps no build step, and the only thing it knows is
   `isNative()` (install.js). The app carries a copy of `web/` made at build
   time (`scripts/native_bundle.py`), so a merge reaches it only with a new
   build, and its API is at `config.apiBase`, not at the page's own address.

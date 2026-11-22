@@ -15,3 +15,32 @@
 /infra/scripts/                          @sasha720709
 /infra/main/allowed-resource-types.txt   @sasha720709
 /scripts/check_plan.py                   @sasha720709
+
+# Since 2026-11-22 (docs/ROADMAP.md, 2g) a pull request that touches none
+# of this file's paths and passes CI and the agent's review may merge to
+# staging with no person involved. So this list is now also "what an agent
+# may not change by itself", and it is wider:
+
+# Everything Terraform describes: what exists in AWS and what it may do.
+/infra/                                  @sasha720709
+# The scripts CI's plan and the reviewer's verdict run through.
+/scripts/ci_plan.sh                      @sasha720709
+/scripts/review_verdict.py               @sasha720709
+# A new dependency is a decision: what the Lambdas, the tests and the
+# pages are built from.
+/requirements.txt                        @sasha720709
+/requirements-dev.txt                    @sasha720709
+/src/*/requirements.txt                  @sasha720709
+/web/vendor/                             @sasha720709
+/native/package.json                     @sasha720709
+/native/package-lock.json                @sasha720709
+# Who may sign in.
+/src/common/admission.py                 @sasha720709
+/src/admin/presignup.py                  @sasha720709
+# What the iPhone app is allowed to do and how it is signed.
+/native/ios/App/App/Info.plist           @sasha720709
+/native/ios/App/App.xcodeproj/           @sasha720709
+# The plan and its decisions.
+/docs/ROADMAP.md                         @sasha720709
+/docs/agents.md                          @sasha720709
+/docs/app-plan/DECISIONS.md              @sasha720709

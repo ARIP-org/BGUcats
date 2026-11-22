@@ -31,9 +31,127 @@ Fix runs on Opus, Triage on Sonnet. The token in the `claude` environment
 decides whose Claude plan pays, not which model runs, and neither depends
 on the model of the session the token was made in.
 
-Planned, not built: a **reviewer** on every pull request (comments only), a
-**verifier** that runs a smoke test against staging after each deploy and
-posts screenshots, and **in-app feedback** that becomes issues.
+**Decided 2026-11-22** (`docs/ROADMAP.md`, 2g, "The factory"): a chain
+of five roles, and low-risk pull requests that merge to staging without
+the owner. Built so far: the reviewer, below. Planned: a **planner** and
+a daily **digest** (scheduled cloud sessions), an **iPhone verifier**
+(a macOS job), a **verifier** that runs a smoke test against staging
+after each deploy and posts screenshots, and **in-app feedback** that
+becomes issues.
+
+## The reviewer, and the two lanes
+
+| Agent | Starts when | Acts as | Can | Cannot |
+|---|---|---|---|---|
+| **Review** (`claude-review.yml`) | CI passes on a pull request | GitHub's job token for reading and for its one comment and status; Claude's App only to ask for auto-merge | read the change, the tree and CI's screenshots; write one comment and the `review` status | run the pull request's code, write a file, run a command, approve, merge past `main`'s rules, reach AWS |
+
+It runs `main`'s copy of itself (`workflow_run`), so a pull request
+cannot change the reviewer that reviews it. Claude gets `Read`, `Grep`
+and `Glob` and nothing else. Its verdict is the last JSON object in its
+final message, read by `scripts/review_verdict.py`: `pass`, `changes` or
+`owner`, and anything that is not exactly one of them is `owner`. The
+steps after it are fixed commands: one comment (kept current, not
+repeated), a status named `review` on the pull request's head commit,
+and for a `pass`, a request to GitHub to merge when `main`'s rules are
+met.
+
+**The two lanes** are those rules, not anything an agent decides:
+
+- A pull request that touches no path in `.github/CODEOWNERS`, with CI
+  and `review` green, merges by itself.
+- One that touches an owner path waits for the owner's approval, whatever
+  the reviewer said. One the reviewer did not pass stays red.
+
+**They are not on yet.** Until the owner changes the `main` ruleset,
+every pull request still needs one approval, and the reviewer only adds
+its comment, its status, and auto-merge (so the owner's approval is also
+the merge). What the owner sets, once, after this workflow is on `main`
+and has reviewed one pull request:
+
+1. *Settings → General → Pull Requests:* "Allow auto-merge".
+2. *Settings → Rules → Rulesets → the `main` ruleset:* "Required
+   approvals" to 0; "Require review from Code Owners" on; under "Require
+   status checks to pass", add `review` beside `python` and `terraform`,
+   **with GitHub Actions as its source**. The source matters: anyone who
+   can push can post a status by that name, and only this workflow posts
+   it as GitHub Actions.
+3. *The same ruleset, "Bypass list":* repository admins, for pull
+   requests. That is how the owner merges something the reviewer sent
+   back or sent up and the owner has decided is right.
+
+**Stopping all of it:** *Settings → Secrets and variables → Actions →
+Variables*, a repository variable `AGENTS` with the value `off`. Triage
+and Fix stop at their first step, and the reviewer marks every pull
+request "the owner reviews", so nothing merges by itself. Delete the
+variable to start them again.
+
+**At most three agent pull requests are open at once.** Fix counts open
+pull requests from `claude/` branches before it starts; at three it takes
+the `approved` label back off the issue and says so there.
+
+## When the repository is public
+
+Decided 2026-11-22 (`docs/ROADMAP.md`, 2g): the repository goes public,
+because GitHub's standard runners, macOS too, are free there, and a
+factory that pays by the minute costs more than the owner will spend. The
+owner changes the visibility. What that changes for the agents, and is
+already in the workflows:
+
+- **Triage reads only issues from people who can push here.** Anyone can
+  open an issue on a public repository, and each reading is paid for from
+  the owner's Claude plan. A stranger's issue gets a notice in the run
+  and waits for the owner.
+- **Fix never sees a stranger's comment.** It reads the issue from a file
+  made before it starts: the issue's text and the comments of people who
+  can push, nothing else. Only an admin's `approved` starts it, as before.
+- **Review looks only at branches of this repository.** A pull request
+  from a fork is reviewed by nobody and merged by nobody but the owner.
+- **Nothing private goes into the repository, an issue, a pull request
+  or a run's log**: all of them are public, and stay public in copies
+  after anything is deleted.
+
+What stays private: every secret and variable (the App Store Connect key,
+the Claude token, the App's key), the environments' rules, and AWS. A
+fork's pull request gets no secret and no AWS role from GitHub, whatever
+its workflow says. The App Store and TestFlight are not affected: the
+build signs with a key that only the `testflight` environment holds, and
+only a run started from `main` by someone who can push reaches it.
+
+**What the owner sets on the day,** all in this repository's settings
+(nothing changes for the organization). The names are GitHub's own, as
+its pages gave them on 2026-11-22:
+
+1. *Settings → Actions → General → "Approval for running fork pull
+   request workflows from contributors":* choose "Require approval for
+   all external contributors", then Save. A stranger's pull request then
+   runs nothing until the owner says so. (The default asks only for
+   first-time contributors.)
+2. *Settings → Danger Zone → "Change repository visibility" → "Change
+   visibility",* choose public, confirm the repository's name, "I have
+   read and understand these effects", "Make this repository public".
+3. *Settings → Advanced Security* (under "Security and quality"):
+   "Enable" beside "Secret Protection" and beside "Push protection", if
+   the switch did not turn them on: a key pushed by mistake is refused.
+4. *Settings → Rules → Rulesets:* look that the `main` ruleset and the
+   `v*` tag ruleset are still active. GitHub's page says the change
+   disables "push rulesets"; these two are not that kind, and it costs a
+   minute to see.
+5. Afterwards, optional: the organization's paid plan was bought for
+   environments and rulesets on a private repository, which a public one
+   has for free. To check before changing it.
+
+What GitHub's page says the change does, beyond showing the code: anyone
+can fork it; "Actions history and logs will be visible to everyone",
+old runs included; stars and watchers are erased.
+
+Checked on 2026-11-22: no key, token or private key in any of the 314
+commits. The owner's own email address is in the repository and stays
+(the owner's choice). No photo and no dataset is.
+
+**What nobody has seen yet:** this workflow has never run. A workflow
+that starts from `workflow_run` runs only from `main`, so its first run
+is on the first pull request after it merges. If it fails, the status is
+`error` and nothing merges by itself: it fails closed.
 
 ## Seeing a change before it is merged
 

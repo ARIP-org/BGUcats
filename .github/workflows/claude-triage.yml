@@ -10,6 +10,9 @@ name: Claude triage
 #   - a label applied with that token starts no workflow (GitHub does not
 #     trigger runs from the job token), so it cannot approve its own work.
 #   - no AWS: the job asks for no OIDC token, so it can assume no role.
+#   - only an issue opened by someone who can push here is read at all. On
+#     a public repository anyone can open one, and every reading is paid
+#     for from the owner's Claude plan.
 # docs/agents.md has the whole picture.
 on:
   issues:
@@ -32,11 +35,34 @@ jobs:
     # so a workflow changed on a branch cannot read it.
     environment: claude
     steps:
+      # The switch (docs/agents.md): the repository variable AGENTS, set to
+      # "off", stops every agent at its first step.
+      - name: Agents are off
+        if: vars.AGENTS == 'off'
+        run: |
+          echo "::error::Agents are off (the repository variable AGENTS). Nothing was started."
+          exit 1
+
+      - name: Only for people who work on this repository
+        id: who
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+        run: |
+          permission=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission 2>/dev/null || echo none)
+          case "$permission" in
+            admin | maintain | write) echo "ours=1" >>"$GITHUB_OUTPUT" ;;
+            *) echo "::notice::Opened by $AUTHOR ($permission), who cannot push here: not triaged. The owner reads it." ;;
+          esac
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.who.outputs.ours
         with:
           persist-credentials: false
 
       - uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1.0.271
+        if: steps.who.outputs.ours
         env:
           GH_TOKEN: ${{ github.token }}
         with:
