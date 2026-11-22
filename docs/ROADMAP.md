@@ -39,6 +39,7 @@ it instead.
 | 2026-11-22 | **Low-risk pull requests merge to staging without the owner** (2g). Pull request #98 passed CI in twenty minutes and waited six days for an approval. What is low-risk is decided by paths GitHub enforces, not by an agent; production still moves only on the owner's tag. |
 | 2026-11-22 | **The iPhone app is rewritten in Swift, now; the web member app is frozen and will be retired** (2g). Supersedes "one codebase, never platform branches" (2026-10-31, below) and "the iPhone app carries `web/` inside it" (2026-11-11) for the member app. The owner wants native features and an app that feels native. The labeling desk stays a web app. |
 | 2026-11-22 | **A chain of agents, with no server of the owner's** (2g): planner, builder, reviewer, an iPhone verifier, a daily digest. How Mac time is paid for is open: 2g, "What Mac time costs". |
+| 2026-11-22 | **The repository goes public** (2g, "What Mac time costs", way B), when the owner changes its visibility. Paying by the minute for a factory was $80 to $390 a month and the owner will not spend $30; a public repository's standard runners are free, macOS too. Supersedes "private repos ... not public repos" (2026-10-31). What it takes first: `docs/agents.md`, "When the repository is public". |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -640,10 +641,13 @@ To check: Xcode Cloud includes 25 hours a month, but its first workflow
 can only be made in Xcode on a Mac (decided against on 2026-11-11 for
 that reason).
 
-**Recommended:** start with A and a $30 budget for the first two weeks,
-to measure what a Swift pull request really takes; then B if the owner
-is willing to make the repository public, else C once Swift work passes
-45 macOS minutes a day. Whichever is chosen, two savings are free: do
+**Chosen 2026-11-22: B.** The owner will not pay by the minute at any of
+these paces and does not want a machine to keep. The repository goes
+public when the owner changes its visibility; what the workflows needed
+first is done (`docs/agents.md`, "When the repository is public"). Until
+that day the Swift work does not start, because each of its builds
+would be paid for. (The recommendation had been A for two weeks to
+measure, then B or C.) Whichever is chosen, two savings are free: do
 not run the whole suite a second time on `main` when the branch was up
 to date, and skip the browser suite for a change that touches no code.
 

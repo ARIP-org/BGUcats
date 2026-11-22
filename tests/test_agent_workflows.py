@@ -78,6 +78,40 @@ def test_the_token_lives_in_the_environment_only_main_can_read():
             assert job["environment"] == "claude", path.name
 
 
+# ------------------------------------------------- on a public repository
+
+
+def test_a_strangers_issue_is_never_read_by_an_agent():
+    # Anyone can open an issue on a public repository, and every reading
+    # is paid for from the owner's Claude plan.
+    triage = steps(load(WORKFLOWS / "claude-triage.yml"))
+    gate = next(s for s in triage if s.get("id") == "who")
+    assert "collaborators/$AUTHOR/permission" in gate["run"]
+    assert "admin | maintain | write" in gate["run"]
+    after = triage[triage.index(gate) + 1 :]
+    for step in after:
+        if "uses" in step:
+            assert step["if"] == "steps.who.outputs.ours", step["uses"]
+
+
+def test_the_builder_reads_the_issue_without_strangers_comments():
+    fix = load(WORKFLOWS / "claude-fix.yml")
+    names = [s.get("name") for s in steps(fix)]
+    # Made before Claude starts, by a step that is not Claude's.
+    assert names.index("The issue, without strangers' comments") < steps(fix).index(claude(fix))
+    prompt = claude(fix)["with"]["prompt"]
+    assert "${{ runner.temp }}/issue.md" in prompt
+    assert "gh issue view" not in prompt
+    assert "do not fetch the issue yourself" in prompt
+
+
+def test_the_reviewer_reviews_only_branches_of_this_repository():
+    # A fork's pull request is found by nobody: the lookup names the
+    # organization's own branch, at the commit CI ran on.
+    find = steps(reviewer())[0]["run"]
+    assert "head=${REPO%%/*}:$BRANCH" in find and ".head.sha ==" in find
+
+
 # ------------------------------------------------------------ the reviewer
 
 

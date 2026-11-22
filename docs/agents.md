@@ -89,6 +89,65 @@ variable to start them again.
 pull requests from `claude/` branches before it starts; at three it takes
 the `approved` label back off the issue and says so there.
 
+## When the repository is public
+
+Decided 2026-11-22 (`docs/ROADMAP.md`, 2g): the repository goes public,
+because GitHub's standard runners, macOS too, are free there, and a
+factory that pays by the minute costs more than the owner will spend. The
+owner changes the visibility. What that changes for the agents, and is
+already in the workflows:
+
+- **Triage reads only issues from people who can push here.** Anyone can
+  open an issue on a public repository, and each reading is paid for from
+  the owner's Claude plan. A stranger's issue gets a notice in the run
+  and waits for the owner.
+- **Fix never sees a stranger's comment.** It reads the issue from a file
+  made before it starts: the issue's text and the comments of people who
+  can push, nothing else. Only an admin's `approved` starts it, as before.
+- **Review looks only at branches of this repository.** A pull request
+  from a fork is reviewed by nobody and merged by nobody but the owner.
+- **Nothing private goes into the repository, an issue, a pull request
+  or a run's log**: all of them are public, and stay public in copies
+  after anything is deleted.
+
+What stays private: every secret and variable (the App Store Connect key,
+the Claude token, the App's key), the environments' rules, and AWS. A
+fork's pull request gets no secret and no AWS role from GitHub, whatever
+its workflow says. The App Store and TestFlight are not affected: the
+build signs with a key that only the `testflight` environment holds, and
+only a run started from `main` by someone who can push reaches it.
+
+**What the owner sets on the day,** all in this repository's settings
+(nothing changes for the organization). The names are GitHub's own, as
+its pages gave them on 2026-11-22:
+
+1. *Settings → Actions → General → "Approval for running fork pull
+   request workflows from contributors":* choose "Require approval for
+   all external contributors", then Save. A stranger's pull request then
+   runs nothing until the owner says so. (The default asks only for
+   first-time contributors.)
+2. *Settings → Danger Zone → "Change repository visibility" → "Change
+   visibility",* choose public, confirm the repository's name, "I have
+   read and understand these effects", "Make this repository public".
+3. *Settings → Advanced Security* (under "Security and quality"):
+   "Enable" beside "Secret Protection" and beside "Push protection", if
+   the switch did not turn them on: a key pushed by mistake is refused.
+4. *Settings → Rules → Rulesets:* look that the `main` ruleset and the
+   `v*` tag ruleset are still active. GitHub's page says the change
+   disables "push rulesets"; these two are not that kind, and it costs a
+   minute to see.
+5. Afterwards, optional: the organization's paid plan was bought for
+   environments and rulesets on a private repository, which a public one
+   has for free. To check before changing it.
+
+What GitHub's page says the change does, beyond showing the code: anyone
+can fork it; "Actions history and logs will be visible to everyone",
+old runs included; stars and watchers are erased.
+
+Checked on 2026-11-22: no key, token or private key in any of the 314
+commits. The owner's own email address is in the repository and stays
+(the owner's choice). No photo and no dataset is.
+
 **What nobody has seen yet:** this workflow has never run. A workflow
 that starts from `workflow_run` runs only from `main`, so its first run
 is on the first pull request after it merges. If it fails, the status is
