@@ -64,7 +64,14 @@ secret, **from who put the label on, never from what an issue says:**
   someone who can push. That is the planner's lane: its issues are
   written by the bot from the owner's words.
 - A label put on by a workflow's token or by an App counts for nothing,
-  so no agent hands itself, or another agent, work.
+  so the builder and the triage, which act as those, cannot hand
+  themselves or each other work.
+- **The bot account's `ready` does count,** and that is the design: it
+  is a user who can push, the planner acts as it, and cutting `ready`
+  issues is the planner's job. So does the `ready` of any cloud session,
+  since every one acts as the bot. One agent can hand the builder work;
+  what it cannot do is get that work past CI, the reviewer, the owner
+  paths and the owner's tag.
 - A label that does not count is taken off, with a comment saying why.
 
 **At most three pieces of agent work are open at once:** this

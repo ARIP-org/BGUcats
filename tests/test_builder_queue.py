@@ -82,8 +82,10 @@ def test_ready_from_someone_who_cannot_push_starts_nothing():
 
 @pytest.mark.parametrize("label", ["approved", "ready"])
 def test_a_label_from_a_workflow_or_an_app_counts_for_nothing(label):
-    # An agent cannot hand itself, or another agent, work: the job token
-    # and Claude's App are "Bot" to GitHub whatever they may write.
+    # The builder and the triage cannot hand themselves, or each other,
+    # work: the job token and Claude's App are "Bot" to GitHub whatever
+    # they may write. (The bot account is a user, and its `ready` counts:
+    # that is the planner's job.)
     for who in (("github-actions[bot]", "Bot"), ("owner", "Bot"), None, (None, "User")):
         plan = decide([issue(5, label, author="owner")], by={(5, label): who})
         assert plan["take"] == [], who

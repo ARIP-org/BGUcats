@@ -14,7 +14,10 @@ What holds:
 - `approved` counts only from a repository admin. `ready` counts only from
   someone who can push, on an issue opened by someone who can push.
 - A label put on by a workflow's own token or by an App counts for nothing,
-  so an agent cannot hand itself or another agent work.
+  so the builder and the triage, which act as those, cannot hand
+  themselves or each other work. The bot account can: it is a user who can
+  push, the planner acts as it, and cutting `ready` issues is the
+  planner's job. That is the design, not a gap in it.
 - At most `LIMIT` pieces of agent work at once: this repository's open
   pull requests from `claude/` branches, plus issues being built that have
   no pull request yet. The rest wait in the queue; nothing is dropped.
