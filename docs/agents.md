@@ -92,9 +92,13 @@ the `approved` label back off the issue and says so there.
 ## The planner and the digest
 
 Two more roles of the chain (`docs/ROADMAP.md`, 2g), and neither is a
-workflow: each is a **scheduled cloud session** on the owner's Claude
-account, started fresh every day, acting on GitHub as `arip-dev-bot` like
-any cloud session. They use no Actions minutes. Each takes input only
+workflow: each is a **cloud session of its own** on the owner's Claude
+account, woken once a day by a schedule, acting on GitHub as
+`arip-dev-bot` like any cloud session. (A schedule that starts a fresh
+session each day was tried first, 2026-11-22: made from another session,
+such a session gets no GitHub tools, so it could read the code and no
+issue. One long-lived session per role has them. Each day it starts again
+from its file, not from what it remembers.) They use no Actions minutes. Each takes input only
 from the two accounts that can push here, the owner and the bot, named
 in its file; the workflows above check the same thing by permission.
 
@@ -103,8 +107,8 @@ in its file; the workflows above check the same thing by permission.
 | **Planner** | once a day, early morning in Israel | turns the owner's feedback, failures and the plan's next milestone into at most three small issues labeled `ready` | `docs/agents/planner.md` |
 | **Digest** | once a day, in the morning | one comment on the "Daily digest" issue: what needs the owner, what is broken, what merged, what is next | `docs/agents/digest.md` |
 
-A scheduled session is told one thing: read its file on `main` and do
-what it says. So changing what an agent does is a pull request to that
+Each is told one thing, every day: update to `main`, read its file
+again, and do what it says. So changing what an agent does is a pull request to that
 file, which is an owner path, and never an edit to a schedule.
 
 **What holds them:** they are the bot, so they have what the bot has and
@@ -125,7 +129,8 @@ issues is the next step, and waits for the repository to be public:
 until then every CI run it caused would be paid for by the minute.
 
 **Stopping them:** claude.ai → Claude Code → Scheduled tasks, pause or
-delete "BGU Cats planner" and "BGU Cats digest". (`AGENTS=off` stops the
+delete "BGU Cats planner" and "BGU Cats digest". Their two sessions,
+with the same names, are in the session list and show each day's run. (`AGENTS=off` stops the
 workflows; a cloud session cannot read that variable.)
 
 ## When the repository is public

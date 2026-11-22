@@ -518,11 +518,11 @@ its token can do, not by what its prompt says.
 
 | Role | Starts when | Does | Cannot | Runs as |
 |---|---|---|---|---|
-| **Planner** | once a day; when the owner leaves feedback | turns the plan, the owner's notes, failures and reports into small issues, each with a "done when" | write code, label an issue `approved` for work nobody asked for | a scheduled cloud session |
+| **Planner** | once a day; when the owner leaves feedback | turns the plan, the owner's notes, failures and reports into small issues, each with a "done when" | write code, label an issue `approved` for work nobody asked for | a cloud session of its own, woken daily |
 | **Builder** | an issue is ready | one issue, one pull request, with tests and screenshots | merge, reach AWS, change the rules | the Fix workflow (2d), or a cloud session for larger work |
 | **Reviewer** | a pull request opens or changes | reads the change and its screenshots with nothing of the builder's context; passes it, sends it back, or sends it to the owner | change code, approve as a person | a workflow on `main`'s copy of itself, whose result is a required check |
 | **iPhone verifier** | a pull request touches the iPhone app | builds it, runs its UI tests in a simulator, keeps screenshots for the reviewer | upload to TestFlight | a macOS job |
-| **Digest** | once a day | tells the owner what merged, what waits on them, what needs a decision | anything else | a scheduled cloud session |
+| **Digest** | once a day | tells the owner what merged, what waits on them, what needs a decision | anything else | a cloud session of its own, woken daily |
 
 #### Two lanes
 
@@ -677,8 +677,8 @@ App, and any AWS access.
    touches `infra/` waits.
 2. The planner and the digest, as scheduled cloud sessions. **Written
    2026-11-22** (`docs/agents/planner.md`, `docs/agents/digest.md`;
-   `docs/agents.md`, "The planner and the digest"); scheduled once this
-   is on `main`. A builder that takes the planner's issues by itself
+   `docs/agents.md`, "The planner and the digest"); scheduled the same
+   day, each in a session of its own. A builder that takes the planner's issues by itself
    waits for the repository to be public.
 3. The Swift app's skeleton and its verifier, on a pull request, with
    the first screenshot from a simulator.
