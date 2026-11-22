@@ -36,6 +36,9 @@ it instead.
 | 2026-11-11 | **The iPhone app carries `web/` inside it; it never loads it from the server.** Capacitor documents the remote mode for development only, Apple's review can refuse "a website in a wrapper", and Capture must open with no signal. The cost: a merged change reaches the iPhone app only with a new build. Live update (the app downloads a newer copy of `web/` from our own server) comes once the app works. |
 | 2026-11-11 | **iPhone builds on GitHub Actions, not Xcode Cloud.** Xcode Cloud is free up to 25 hours a month and signs by itself, but its first workflow can only be created in Xcode on a Mac, it needs Apple's GitHub app on the private repo, and its settings live in App Store Connect where no pull request reviews them. A build on Actions costs about $1. |
 | 2026-11-12 | **Build the app the prototype shows, for TestFlight** (Phase 4 of `CLAUDE.md`, no longer deferred): feed, posts, name polls, friends, profile, achievements, map, the capture flow, with moderation and re-ranking on Google's Decision 1. New AWS resources are allowed for it. The plan, the owner's open decisions and the owner's manual steps are `docs/app-plan/`. The row of 2026-11-07 about the fear of "we need a relational database" still stands: the plan recommends against one, and the owner decides (`DECISIONS.md`, A1). |
+| 2026-11-22 | **Low-risk pull requests merge to staging without the owner** (2g). Pull request #98 passed CI in twenty minutes and waited six days for an approval. What is low-risk is decided by paths GitHub enforces, not by an agent; production still moves only on the owner's tag. |
+| 2026-11-22 | **The iPhone app is rewritten in Swift, now; the web member app is frozen and will be retired** (2g). Supersedes "one codebase, never platform branches" (2026-10-31, below) and "the iPhone app carries `web/` inside it" (2026-11-11) for the member app. The owner wants native features and an app that feels native. The labeling desk stays a web app. |
+| 2026-11-22 | **A chain of agents, with no server of the owner's** (2g): planner, builder, reviewer, an iPhone verifier, a daily digest. How Mac time is paid for is open: 2g, "What Mac time costs". |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
 ---
@@ -407,6 +410,10 @@ codespace.
 
 Decided 2026-11-10: as early as possible, not Phase 4 of `CLAUDE.md`.
 
+**Superseded for the iPhone's member app on 2026-11-22** (2g): it is
+being rewritten in Swift. What follows is how today's TestFlight app is
+built, and stays true until the Swift app's first build replaces it.
+
 - **One codebase:** `web/` wrapped with Capacitor. The PWA stays (the
   labeling desk on a computer, and the fallback).
 - **Built in CI, no Mac to own:** Android on the Linux runners; iOS on
@@ -490,6 +497,182 @@ deploy role. Free at this size.
 
 **Done when:** a Lambda made to fail on staging sends an email within
 minutes.
+
+### 2g. The factory: shipping without the owner in every loop (decided 2026-11-22)
+
+**Why.** The owner approves every pull request, and that is now the
+slowest step by far: #98 was green twenty minutes after it opened and
+merged six days later; #97 waited nine hours. More agents do not change
+that. Who merges what does.
+
+**What the owner decided** (2026-11-22): low-risk pull requests merge to
+staging by themselves; the iPhone app is rewritten in Swift and the web
+member app retires; the work is done by a chain of agents with no server
+of the owner's. Open: how Mac time is paid for (below).
+
+#### The chain
+
+2d built the first two (`docs/agents.md`). Each role is separated by what
+its token can do, not by what its prompt says.
+
+| Role | Starts when | Does | Cannot | Runs as |
+|---|---|---|---|---|
+| **Planner** | once a day; when the owner leaves feedback | turns the plan, the owner's notes, failures and reports into small issues, each with a "done when" | write code, label an issue `approved` for work nobody asked for | a scheduled cloud session |
+| **Builder** | an issue is ready | one issue, one pull request, with tests and screenshots | merge, reach AWS, change the rules | the Fix workflow (2d), or a cloud session for larger work |
+| **Reviewer** | a pull request opens or changes | reads the change and its screenshots with nothing of the builder's context; passes it, sends it back, or sends it to the owner | change code, approve as a person | a workflow on `main`'s copy of itself, whose result is a required check |
+| **iPhone verifier** | a pull request touches the iPhone app | builds it, runs its UI tests in a simulator, keeps screenshots for the reviewer | upload to TestFlight | a macOS job |
+| **Digest** | once a day | tells the owner what merged, what waits on them, what needs a decision | anything else | a scheduled cloud session |
+
+#### Two lanes
+
+- **Green lane: merges by itself.** CI passes, the reviewer's check
+  passes, and the pull request touches no owner path. GitHub's own
+  auto-merge does it; no agent decides to merge. (Claude's own safety
+  check refuses to merge a pull request no person approved, and the
+  design agrees with it.)
+- **Owner lane: waits for the owner.** Anything that touches an owner
+  path, and anything the reviewer sends up.
+
+**Owner paths** (`.github/CODEOWNERS`, with "Require review from Code
+Owners" on the `main` ruleset): what is there today (`.github/`,
+`.claude/`, `CLAUDE.md`, `infra/bootstrap/`, `infra/org/`,
+`infra/scripts/`, the resource allowlist, the plan check), widened to
+all of `infra/`, every `requirements*.txt` and `web/vendor/` (a new
+dependency is a decision), `src/common/admission.py` and the sign-up
+trigger (who may sign in), the iPhone app's signing and entitlements, and
+this file's decisions.
+
+**What stays exactly as it is:** production moves only on the owner's
+`v*` tag; no agent has AWS; the service allowlist, the budgets that act
+and the plan check; staging holds no real contributor's photo.
+
+**What is new and must hold:**
+
+- The reviewer's result is a **check from a workflow**, not an approval
+  and not a label. A builder can add a label; it cannot run `main`'s
+  workflow with a different answer.
+- The reviewer never runs the pull request's code. It reads the diff, the
+  CI result and the screenshots.
+- At most three agent pull requests are open at once, and one repository
+  variable (`AGENTS`, set to `off`) stops every agent workflow at its
+  first step.
+- The digest is how the owner stays in the loop without being the loop.
+
+**Said plainly:** the reviewer is the same kind of model as the builder
+and shares its blind spots. What covers that is tests, screenshots,
+staging before production, and the owner's tag.
+
+#### Where the work comes from
+
+1. `docs/app-plan/08-milestones.md`: what is not built.
+2. The prototype against the built screens, screenshot by screenshot.
+3. Failures: a red check, an alarm, an "App info" someone pasted.
+4. The owner's feedback, whenever it comes: an issue, a comment, a note
+   in a session. The planner picks it up; nothing waits for it.
+
+Agents carry out a direction and find defects. An idea for a feature
+nobody asked for goes into an issue labeled `proposal` for the owner, not
+into code.
+
+#### The iPhone app, in Swift
+
+- **`native/` becomes a SwiftUI app.** It talks to the same member API
+  (`/api/v1/`, `docs/app-plan/04-api.md`), signs in through the same
+  sheet, and keeps the write order and the ULIDs made on the phone. The
+  recognition model runs through Core ML or ONNX Runtime's iOS build: to
+  be measured against the browser's numbers before it replaces them.
+- **The web member app is frozen:** fixes only, no new screens. It
+  retires when the Swift app has every screen the plan's L1 gate lists.
+- **The labeling desk and Capture stay a web app** for admins and
+  collaborators; `web/` loses nothing of theirs.
+- **No screen without a picture.** Swift cannot be compiled on Linux, so
+  an agent writing it is blind until a Mac builds it. The verifier comes
+  first: a UI test target that opens each screen in a simulator against a
+  stand-in for the API and saves a screenshot, as `tests/web` does today.
+  Screens follow in the plan's order (the frame, the feed, capture, cats,
+  profile), each compared with the prototype.
+- **What a simulator cannot show:** the camera (photos are injected), a
+  real notification's delivery, and how the app behaves on a real phone
+  under real memory. That stays the owner's on TestFlight, and "App
+  info" moves into the Swift app with the first screen.
+
+#### What Mac time costs
+
+Prices as GitHub's pages gave them on 2026-11-22; times measured in this
+repository in November 2026.
+
+| Run | Time | Price |
+|---|---|---|
+| CI on a pull request, or on `main` (Linux, two jobs) | 18 to 20 minutes | $0.12 |
+| A deploy (Linux) | 5 to 6 minutes | $0.03 |
+| The simulator check of today's packed app (macOS) | under 3 minutes | $0.19 |
+| A TestFlight build (macOS, two jobs) | about 5 minutes | $0.30 |
+
+A Linux minute is $0.006 and a macOS minute $0.062. The organization's
+plan (GitHub Team) includes **$18 a month**, charged to the organization:
+the owner's personal Pro plan does not count here. That is 3,000 Linux
+minutes or 290 macOS minutes. November 2026 had used about $15 of it by
+the 22nd with no factory (an estimate from run counts: about 190 CI
+runs, 50 deploys, 10 iPhone runs; the organization's billing page has
+the real figure).
+
+A merged pull request costs about $0.30 on Linux today (CI on the pull
+request, CI again on `main`, the deploy). A pull request to the Swift app
+adds a build and its UI tests, estimated at 8 to 12 minutes ($0.50 to
+$0.75) and two to four times per pull request, because the Mac is the
+compiler: **$1 to $3**. To be measured on the first build.
+
+| Pace | Linux | Swift pull requests | A month |
+|---|---|---|---|
+| 2 a day, half of them Swift | $18 | 30 at $2 = $60 | about $80 |
+| 10 a day, half of them Swift | $90 | 150 at $2 = $300 | about $390 |
+
+**Three ways to pay,** and one to check:
+
+| | A. By the minute, capped | B. A public repository | C. A rented Mac as the repository's own runner |
+|---|---|---|---|
+| Cost | as the table above, up to a budget set in GitHub | $0: standard runners are free on public repositories, macOS too | a flat rent: Scaleway listed an M1 at €75 and an M4 at €149 a month (to confirm on the day) |
+| Good | nothing to set up | the whole problem goes away | every job is free, Linux ones too; the only way an agent could drive the simulator by hand |
+| Bad | the factory's pace is the bill | the code and its history are public: needs a check of the history first, and a decision that this is a portfolio project in public | a machine to keep alive, patch and secure; the server the owner did not want |
+| Break-even | | | about 1,300 macOS minutes a month, 45 a day |
+
+To check: Xcode Cloud includes 25 hours a month, but its first workflow
+can only be made in Xcode on a Mac (decided against on 2026-11-11 for
+that reason).
+
+**Recommended:** start with A and a $30 budget for the first two weeks,
+to measure what a Swift pull request really takes; then B if the owner
+is willing to make the repository public, else C once Swift work passes
+45 macOS minutes a day. Whichever is chosen, two savings are free: do
+not run the whole suite a second time on `main` when the branch was up
+to date, and skip the browser suite for a change that touches no code.
+
+#### What only the owner can do, once
+
+1. *Settings → General:* allow auto-merge.
+2. *The `main` ruleset:* required approvals from one to none, "Require
+   review from Code Owners" on, and the reviewer's check added to the
+   required checks, **after** the reviewer's workflow is on `main` (a
+   required check that never runs blocks every pull request).
+3. *The organization's billing:* a payment method and a budget for
+   Actions, or the decision to go public.
+4. *Optional:* let a merge to `main` that touches the iPhone app start a
+   TestFlight build by itself (today only the owner starts one).
+
+Not asked for, on purpose: admin for the bot account (it could then
+change the rules it works under), the `workflows` permission for the Fix
+App, and any AWS access.
+
+#### Order, and done when
+
+1. The reviewer's workflow, the wider owner paths, the `AGENTS` switch;
+   then the owner's two settings. **Done when** a pull request that
+   touches only `web/` merges with no person involved, and one that
+   touches `infra/` waits.
+2. The planner and the digest, as scheduled cloud sessions.
+3. The Swift app's skeleton and its verifier, on a pull request, with
+   the first screenshot from a simulator.
+4. Screens, in the plan's order; "App info" first.
 
 ## Review against industry practice (2026-11-10)
 

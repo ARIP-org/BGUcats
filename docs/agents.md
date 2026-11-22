@@ -31,6 +31,11 @@ Fix runs on Opus, Triage on Sonnet. The token in the `claude` environment
 decides whose Claude plan pays, not which model runs, and neither depends
 on the model of the session the token was made in.
 
+**Decided 2026-11-22** (`docs/ROADMAP.md`, 2g, "The factory"): a chain
+of five roles, and low-risk pull requests that merge to staging without
+the owner. The reviewer there is more than the one planned below: its
+result is a required check.
+
 Planned, not built: a **reviewer** on every pull request (comments only), a
 **verifier** that runs a smoke test against staging after each deploy and
 posts screenshots, and **in-app feedback** that becomes issues.
