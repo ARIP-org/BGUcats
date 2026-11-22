@@ -43,4 +43,6 @@
 # The plan and its decisions.
 /docs/ROADMAP.md                         @sasha720709
 /docs/agents.md                          @sasha720709
+# What each scheduled agent is told to do.
+/docs/agents/                            @sasha720709
 /docs/app-plan/DECISIONS.md              @sasha720709

@@ -244,8 +244,24 @@ def test_what_an_agent_may_not_change_by_itself_is_the_owners():
         "/src/common/admission.py",
         "/src/admin/presignup.py",
         "/docs/ROADMAP.md",
+        "/docs/agents/",
     ):
         assert path in owned, path
     # Every owned path exists: a rule for a file that moved protects nothing.
     for path in owned:
         assert list(REPO.glob(path.strip("/"))), path
+
+
+def test_each_scheduled_agent_has_its_job_in_a_file_and_may_only_write_issues():
+    # A scheduled session is told to read its file on main and do what it
+    # says, so the file is the agent. Each says what it may do, that
+    # nothing else is allowed, and whose words count.
+    for name in ("planner", "digest"):
+        job = (REPO / "docs" / "agents" / f"{name}.md").read_text()
+        assert "## What you may do" in job, name
+        for never in ("no pull request", "no merge", "no AWS"):
+            assert never in job, f"{name}: {never}"
+        assert "arip-dev-bot" in job or "the bot wrote" in job, name
+    planner = (REPO / "docs" / "agents" / "planner.md").read_text()
+    assert "Do not\nlabel anything `approved`" in planner
+    assert "never label it `ready`" in planner

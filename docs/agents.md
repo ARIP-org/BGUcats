@@ -89,6 +89,43 @@ variable to start them again.
 pull requests from `claude/` branches before it starts; at three it takes
 the `approved` label back off the issue and says so there.
 
+## The planner and the digest
+
+Two more roles of the chain (`docs/ROADMAP.md`, 2g), and neither is a
+workflow: each is a **scheduled cloud session** on the owner's Claude
+account, started fresh every day, acting on GitHub as `arip-dev-bot` like
+any cloud session. They use no Actions minutes.
+
+| Agent | Runs | Does | Its whole job is in |
+|---|---|---|---|
+| **Planner** | once a day, early morning in Israel | turns the owner's feedback, failures and the plan's next milestone into at most three small issues labeled `ready` | `docs/agents/planner.md` |
+| **Digest** | once a day, in the morning | one comment on the "Daily digest" issue: what needs the owner, what is broken, what merged, what is next | `docs/agents/digest.md` |
+
+A scheduled session is told one thing: read its file on `main` and do
+what it says. So changing what an agent does is a pull request to that
+file, which is an owner path, and never an edit to a schedule.
+
+**What holds them:** they are the bot, so they have what the bot has and
+no more: no approval, no merge past `main`'s rules, no tag, no AWS. What
+is new is that they are told to write only issues and comments; that is
+an instruction, not a wall. The walls behind it are the ones every bot
+session has, and the reviewer and the owner paths in front of anything
+that would reach `main`.
+
+**Labels:** `ready` (cut and ready to build), `needs-owner` (waits on a
+decision or a step that is the owner's), `proposal` (an agent's own
+idea; never built without the owner), `digest`. `approved` stays the
+owner's: it is what starts the Fix workflow.
+
+**Nothing builds a `ready` issue by itself yet.** The Fix workflow
+starts only on the owner's `approved`. A builder that takes `ready`
+issues is the next step, and waits for the repository to be public:
+until then every CI run it caused would be paid for by the minute.
+
+**Stopping them:** claude.ai → Claude Code → Scheduled tasks, pause or
+delete "BGU Cats planner" and "BGU Cats digest". (`AGENTS=off` stops the
+workflows; a cloud session cannot read that variable.)
+
 ## When the repository is public
 
 Decided 2026-11-22 (`docs/ROADMAP.md`, 2g): the repository goes public,

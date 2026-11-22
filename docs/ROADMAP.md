@@ -675,7 +675,11 @@ App, and any AWS access.
    starts after CI runs only from `main`. **Done when** a pull request
    that touches only `web/` merges with no person involved, and one that
    touches `infra/` waits.
-2. The planner and the digest, as scheduled cloud sessions.
+2. The planner and the digest, as scheduled cloud sessions. **Written
+   2026-11-22** (`docs/agents/planner.md`, `docs/agents/digest.md`;
+   `docs/agents.md`, "The planner and the digest"); scheduled once this
+   is on `main`. A builder that takes the planner's issues by itself
+   waits for the repository to be public.
 3. The Swift app's skeleton and its verifier, on a pull request, with
    the first screenshot from a simulator.
 4. Screens, in the plan's order; "App info" first.
