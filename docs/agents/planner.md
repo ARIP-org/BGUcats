@@ -61,18 +61,27 @@ One issue is one pull request. It says, in plain words:
 Label it `ready`, plus `bug`, `enhancement` or `documentation`. Do not
 label anything `approved`: that label is the owner's.
 
+**`ready` starts a build.** The builder takes a `ready` issue by itself,
+with no person reading it first, and builds exactly what it says. So an
+issue is `ready` only when it could be built from its own text. And the
+builder cannot change `.github/`, `.claude/`, `infra/bootstrap/` or
+`infra/org/`: work that needs one of them is not `ready`. Label it
+`needs-owner` and say that a session has to do it. Never put `ready` on
+an issue you did not write, and never touch `building`: that label is
+the builder's.
+
 ## Limits
 
 - Look first: an open issue or pull request that already covers the work
   means you write nothing new.
 - At most three new `ready` issues a run, and never more than five open
-  at once. A queue nobody reads is not speed.
-- While the repository is private, every run of CI is paid for by the
-  minute. Prefer few, well-cut issues to many.
+  at once, counting those `building`. A queue nobody reads is not speed.
+- Every build is paid for from the owner's Claude plan. Prefer few,
+  well-cut issues to many.
 - The web member app (`web/social/`) is frozen to fixes; new screens are
   the Swift app's (`docs/ROADMAP.md`, 2g).
 - Nothing private in an issue: no real person's name, address or photo,
-  no secret, no token. The repository is going public.
+  no secret, no token. The repository is public.
 
 ## When you finish
 

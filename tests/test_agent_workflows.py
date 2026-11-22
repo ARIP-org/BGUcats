@@ -70,12 +70,20 @@ def test_every_agent_stops_at_the_switch():
     for name in ("claude-fix.yml", "claude-triage.yml"):
         first = steps(load(WORKFLOWS / name))[0]
         assert first["if"] == "vars.AGENTS == 'off'" and "exit 1" in first["run"], name
+    # The builder's look at the queue on a merge or by the clock does not
+    # even start: a red run every two hours would tell nobody anything.
+    assert "github.event_name != 'issues' && vars.AGENTS != 'off'" in builder()["jobs"]["pick"]["if"]
 
 
 def test_the_token_lives_in_the_environment_only_main_can_read():
     for path in AGENTS:
-        for job in load(path)["jobs"].values():
-            assert job["environment"] == "claude", path.name
+        for name, job in load(path)["jobs"].items():
+            if "secrets." in yaml.safe_dump(job):
+                assert job["environment"] == "claude", f"{path.name}: {name}"
+    # Every job that runs Claude is one of those.
+    for path in AGENTS:
+        (job,) = [j for j in load(path)["jobs"].values() if "claude-code-action" in yaml.safe_dump(j)]
+        assert job["environment"] == "claude", path.name
 
 
 # ------------------------------------------------- on a public repository
@@ -92,6 +100,70 @@ def test_a_strangers_issue_is_never_read_by_an_agent():
     for step in after:
         if "uses" in step:
             assert step["if"] == "steps.who.outputs.ours", step["uses"]
+
+
+def test_triage_leaves_the_planners_and_the_digests_issues_alone():
+    condition = load(WORKFLOWS / "claude-triage.yml")["jobs"]["triage"]["if"]
+    for label in ("ready", "digest"):
+        assert f"!contains(github.event.issue.labels.*.name, '{label}')" in condition
+
+
+# -------------------------------------------------------------- the builder
+
+
+def builder():
+    return load(WORKFLOWS / "claude-fix.yml")
+
+
+def test_the_builder_looks_at_the_queue_on_a_label_a_merge_and_the_clock():
+    on = builder()["on"]
+    assert on["issues"] == {"types": ["labeled"]}
+    assert on["push"] == {"branches": ["main"]}
+    assert len(on["schedule"]) == 1
+    # Never on a pull request's own events: those run the pull request's
+    # copy of this file.
+    assert not any(event.startswith("pull_request") for event in on)
+
+
+def test_a_script_decides_what_starts_before_any_claude_runs():
+    jobs = builder()["jobs"]
+    pick, fix = jobs["pick"], jobs["fix"]
+    # The pick: a script from main with the job's own token, and nothing
+    # of Claude's. It holds no secret and is in no environment.
+    text = yaml.safe_dump(pick)
+    assert "secrets." not in text and "claude-code-action" not in text and "environment" not in pick
+    assert any(step.get("run") == "python3 scripts/builder_queue.py" for step in pick["steps"])
+    assert pick["permissions"] == {"contents": "read", "issues": "write", "pull-requests": "read"}
+    # One at a time, and never cancelled halfway through moving labels.
+    assert pick["concurrency"] == {"group": "claude-fix-pick", "cancel-in-progress": False}
+    # The build: only what the pick handed over, one job an issue.
+    assert fix["needs"] == "pick"
+    assert fix["strategy"]["matrix"]["issue"] == "${{ fromJSON(needs.pick.outputs.issues) }}"
+    assert fix["env"]["ISSUE"] == "${{ matrix.issue }}"
+    # Nothing in the build comes from the event: a label names no issue.
+    assert "github.event." not in yaml.safe_dump(fix)
+
+
+def test_the_builder_as_claude_cannot_push_workflows_or_reach_the_queue_script():
+    fix = builder()["jobs"]["fix"]
+    app = next(s for s in fix["steps"] if s.get("id") == "app")
+    assert {k for k in app["with"] if k.startswith("permission-")} == {
+        "permission-contents",
+        "permission-pull-requests",
+        "permission-issues",
+    }
+    prompt = claude(builder())["with"]["prompt"]
+    assert "Never touch .github/" in prompt
+    assert "/scripts/builder_queue.py" in (REPO / ".github" / "CODEOWNERS").read_text()
+
+
+def test_a_build_with_no_pull_request_goes_to_the_owner():
+    fix = builder()["jobs"]["fix"]
+    last = next(s for s in fix["steps"] if s.get("name") == "No pull request came of it")
+    assert last["if"] == "always()"
+    assert "labels[]=needs-owner" in last["run"] and "labels/building" in last["run"]
+    # Claude's step ends before the job does, so that step runs.
+    assert claude(builder())["timeout-minutes"] < fix["timeout-minutes"]
 
 
 def test_the_builder_reads_the_issue_without_strangers_comments():
@@ -238,6 +310,7 @@ def test_what_an_agent_may_not_change_by_itself_is_the_owners():
         "/scripts/check_plan.py",
         "/scripts/ci_plan.sh",
         "/scripts/review_verdict.py",
+        "/scripts/builder_queue.py",
         "/requirements.txt",
         "/src/*/requirements.txt",
         "/web/vendor/",
