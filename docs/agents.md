@@ -47,10 +47,14 @@ digest was moved off Fable that way on its first day).
 **Decided 2026-11-22** (`docs/ROADMAP.md`, 2g, "The factory"): a chain
 of five roles, and low-risk pull requests that merge to staging without
 the owner. Built so far: the reviewer, the planner, the digest and the
-builder's queue, all below. Planned: an **iPhone verifier** (a macOS
-job), a **verifier** that runs a smoke test against staging after each
-deploy and posts screenshots, and **in-app feedback** that becomes
-issues.
+builder's queue, all below, and the **iPhone verifier**: the `swift` job
+of `ios.yml`, which builds the Swift app on a Mac and keeps a picture of
+every screen (`native/swift/README.md`). The builder cannot see those
+pictures while it works (it runs on Linux): it learns from the job's
+result on its pull request, like anyone. The reviewer does not read them
+yet either; it reads CI's. Planned: a **verifier** that runs a smoke
+test against staging after each deploy and posts screenshots, and
+**in-app feedback** that becomes issues.
 
 ## The builder's queue
 

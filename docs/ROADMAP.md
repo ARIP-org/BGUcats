@@ -684,7 +684,9 @@ App, and any AWS access.
    itself (`docs/agents.md`, "The builder's queue"). **Not built:** an
    answer to the reviewer's "sent back".
 3. The Swift app's skeleton and its verifier, on a pull request, with
-   the first screenshot from a simulator.
+   the first screenshot from a simulator. **Written 2026-11-23**
+   (`native/swift/`, the `swift` job of `ios.yml`): four tabs of system
+   controls and "App info", each pictured in light and dark.
 4. Screens, in the plan's order; "App info" first.
 
 ## Review against industry practice (2026-11-10)
