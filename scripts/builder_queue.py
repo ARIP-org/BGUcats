@@ -23,6 +23,8 @@ What holds:
   no pull request yet. The rest wait in the queue; nothing is dropped.
 - An issue marked `building` with no open pull request and nothing moving
   for `STALE_HOURS` goes to the owner (`needs-owner`) and frees its place.
+- An issue whose pull request is already open is never built a second
+  time, whatever label it carries: its queue label becomes `building`.
 
     REPO=owner/name GH_TOKEN=... python scripts/builder_queue.py
 
@@ -64,7 +66,8 @@ def decide(issues, branches, labeled, permission, now, limit=LIMIT):
     permission(login): "admin", "write", "read", "none"...
 
     Returns {take: [numbers], refuse: [{number, label, why}],
-    stale: [numbers], wait: [numbers]}.
+    stale: [numbers], wait: [numbers], built: [numbers]}. `built`: in the
+    queue although its pull request is open; to be marked, not built.
     """
     ours = [name for name in branches if name.startswith("claude/")]
     stale, busy = [], len(ours)
@@ -76,13 +79,19 @@ def decide(issues, branches, labeled, permission, now, limit=LIMIT):
         else:
             busy += 1  # being built: its pull request is not open yet
 
-    take, refuse, wait = [], [], []
+    take, refuse, wait, built = [], [], [], []
     for label in QUEUE:
         for issue in sorted(issues, key=lambda i: i["number"]):
             number, labels = issue["number"], issue["labels"]
-            if label not in labels or BUILDING in labels or number in take:
+            if label not in labels or BUILDING in labels or number in take or number in built:
                 continue
             if any(held in labels for held in HELD):
+                continue
+            if branch(number) in ours:
+                # Its pull request is open already (the label was put on
+                # again, or is left from before there was a queue). A
+                # second build would push to the same branch.
+                built.append(number)
                 continue
             who = labeled(number, label)
             by = (who or {}).get("by") or "nobody we can name"
@@ -124,7 +133,7 @@ def decide(issues, branches, labeled, permission, now, limit=LIMIT):
                 busy += 1
             else:
                 wait.append(number)
-    return {"take": take, "refuse": refuse, "stale": stale, "wait": wait}
+    return {"take": take, "refuse": refuse, "stale": stale, "wait": wait, "built": built}
 
 
 # ------------------------------------------------------------- GitHub
@@ -222,6 +231,12 @@ def main():
             "`ready` or `approved` on again to start it once more.",
         )
         print(f"::warning::#{number}: marked building, with no pull request and nothing moving. Sent to the owner.")
+    for number in plan["built"]:
+        add(repo, number, BUILDING)
+        for label in QUEUE:
+            if label in labels[number]:
+                remove(repo, number, label)
+        print(f"::notice::#{number}: its pull request is open already. Marked building, not built again.")
     for number in plan["take"]:
         add(repo, number, BUILDING)
         for label in QUEUE:

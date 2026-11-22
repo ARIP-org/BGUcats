@@ -73,6 +73,8 @@ secret, **from who put the label on, never from what an issue says:**
   what it cannot do is get that work past CI, the reviewer, the owner
   paths and the owner's tag.
 - A label that does not count is taken off, with a comment saying why.
+- An issue whose pull request is already open is never built a second
+  time, whoever labels it again: its label becomes `building`.
 
 **At most three pieces of agent work are open at once:** this
 repository's open pull requests from `claude/` branches (a session's

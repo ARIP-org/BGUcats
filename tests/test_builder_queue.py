@@ -99,7 +99,7 @@ def test_an_issue_opened_by_an_app_is_not_ready_work():
 
 def test_what_waits_on_the_owner_is_never_taken():
     plan = decide([issue(1, "ready", "needs-owner"), issue(2, "approved", "proposal")], by={(2, "approved"): "owner"})
-    assert plan == {"take": [], "refuse": [], "stale": [], "wait": []}
+    assert plan == {"take": [], "refuse": [], "stale": [], "wait": [], "built": []}
 
 
 # ------------------------------------------------------------- how many
@@ -139,6 +139,20 @@ def test_a_build_that_came_to_nothing_goes_to_the_owner_and_frees_its_place():
 def test_an_issue_being_built_is_not_taken_again():
     plan = decide([issue(1, "building", "ready")])
     assert plan["take"] == []
+
+
+def test_an_issue_whose_pull_request_is_open_is_never_built_again():
+    # The reviewer's finding on this change: before there was a queue,
+    # `approved` stayed on an issue after its build started, and anyone
+    # can put a label on again. A second build would push to the same
+    # branch. It is marked as what it is, and takes one place, not two.
+    issues = [issue(7, "approved"), issue(8, "ready"), issue(9, "ready"), issue(10, "ready")]
+    plan = decide(issues, branches=["claude/issue-7", "claude/issue-8"], by={(7, "approved"): "owner"})
+    assert plan["built"] == [7, 8]
+    assert plan["take"] == [9] and plan["wait"] == [10]
+    # Whoever put the label on: nothing starts, so nothing is refused.
+    plan = decide([issue(7, "approved")], branches=["claude/issue-7"], by={(7, "approved"): "stranger"})
+    assert (plan["built"], plan["take"], plan["refuse"]) == ([7], [], [])
 
 
 def test_nothing_is_taken_twice():
@@ -247,9 +261,11 @@ def test_the_queue_is_read_from_github_and_the_labels_move(github, capsys):
                 # The issues API lists pull requests too: not an issue.
                 api_issue(103, ["ready"], pull=True),
                 api_issue(90, ["building"], updated="2026-11-01T00:00:00Z"),
+                # Approved long ago, and its pull request is still open.
+                api_issue(80, ["approved"]),
             ],
             "pulls": [
-                {"head": {"ref": "claude/busy", "repo": {"full_name": "ARIP-org/BGUcats"}}},
+                {"head": {"ref": "claude/issue-80", "repo": {"full_name": "ARIP-org/BGUcats"}}},
                 # A fork may name its branch anything; a deleted fork has no repo.
                 {"head": {"ref": "claude/theirs", "repo": {"full_name": "stranger/BGUcats"}}},
                 {"head": {"ref": "claude/gone", "repo": None}},
@@ -268,6 +284,8 @@ def test_the_queue_is_read_from_github_and_the_labels_move(github, capsys):
         ("DELETE", f"{base}/105/labels/ready", []),
         ("POST", f"{base}/90/labels", ["labels[]=needs-owner"]),
         ("DELETE", f"{base}/90/labels/building", []),
+        ("POST", f"{base}/80/labels", ["labels[]=building"]),
+        ("DELETE", f"{base}/80/labels/approved", []),
         ("POST", f"{base}/106/labels", ["labels[]=building"]),
         ("DELETE", f"{base}/106/labels/approved", []),
         ("POST", f"{base}/104/labels", ["labels[]=building"]),
