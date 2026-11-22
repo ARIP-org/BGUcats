@@ -45,7 +45,11 @@ def test_a_like_counts_at_once_and_stays(open_member_app, app):
     page = feed(open_member_app, COLLABORATOR)
     like = page.locator("article.post").first.locator("button.like")
     assert like.get_attribute("aria-pressed") == "false"
-    like.click()
+    # The count on screen changes before the request is sent: "at once".
+    # So the screen saying 2 says nothing about the API yet, and asking it
+    # then was a race (lost once in CI, 2026-11-22). The answer is waited for.
+    with page.expect_response(lambda r: r.url.endswith("/like") and r.request.method == "PUT"):
+        like.click()
     page.wait_for_function(
         "document.querySelector('article.post button.like').innerText.trim() === '2'"
     )
