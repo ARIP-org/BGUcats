@@ -94,7 +94,9 @@ the `approved` label back off the issue and says so there.
 Two more roles of the chain (`docs/ROADMAP.md`, 2g), and neither is a
 workflow: each is a **scheduled cloud session** on the owner's Claude
 account, started fresh every day, acting on GitHub as `arip-dev-bot` like
-any cloud session. They use no Actions minutes.
+any cloud session. They use no Actions minutes. Each takes input only
+from the two accounts that can push here, the owner and the bot, named
+in its file; the workflows above check the same thing by permission.
 
 | Agent | Runs | Does | Its whole job is in |
 |---|---|---|---|
