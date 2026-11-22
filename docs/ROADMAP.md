@@ -666,8 +666,10 @@ App, and any AWS access.
 #### Order, and done when
 
 1. The reviewer's workflow, the wider owner paths, the `AGENTS` switch;
-   then the owner's two settings. **Done when** a pull request that
-   touches only `web/` merges with no person involved, and one that
+   then the owner's settings. **Written 2026-11-22, never run**
+   (`docs/agents.md`, "The reviewer, and the two lanes"): a workflow that
+   starts after CI runs only from `main`. **Done when** a pull request
+   that touches only `web/` merges with no person involved, and one that
    touches `infra/` waits.
 2. The planner and the digest, as scheduled cloud sessions.
 3. The Swift app's skeleton and its verifier, on a pull request, with

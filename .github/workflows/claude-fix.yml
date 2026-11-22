@@ -18,6 +18,8 @@ on:
 
 permissions:
   contents: read
+  issues: write # to say why it did not start, and take the label back
+  pull-requests: read # how many of its pull requests are open
 
 concurrency:
   group: claude-fix-${{ github.event.issue.number }}
@@ -32,6 +34,14 @@ jobs:
     # allows only main, so a workflow changed on a branch cannot read them.
     environment: claude
     steps:
+      # The switch (docs/agents.md): the repository variable AGENTS, set to
+      # "off", stops every agent at its first step.
+      - name: Agents are off
+        if: vars.AGENTS == 'off'
+        run: |
+          echo "::error::Agents are off (the repository variable AGENTS). Nothing was started."
+          exit 1
+
       - name: Only the owner approves
         env:
           GH_TOKEN: ${{ github.token }}
@@ -41,6 +51,24 @@ jobs:
           permission=$(gh api "repos/$REPO/collaborators/$SENDER/permission" --jq .permission)
           if [ "$permission" != admin ]; then
             echo "::error::\"approved\" was added by $SENDER ($permission). Only a repository admin's approval starts work."
+            exit 1
+          fi
+
+      # No more than three agent pull requests open at once (docs/ROADMAP.md,
+      # 2g): a queue nobody reads is not speed. The label comes off, so
+      # adding it again later starts the work.
+      - name: Room for one more
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          open=$(gh pr list --repo "$REPO" --state open --limit 100 --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("claude/"))] | length')
+          if [ "$open" -ge 3 ]; then
+            gh issue edit "$ISSUE" --repo "$REPO" --remove-label approved
+            gh issue comment "$ISSUE" --repo "$REPO" --body "Not started: $open agent pull requests are open already, and the limit is three. Add \`approved\` again when one of them has merged or closed."
+            echo "::error::$open agent pull requests are open; the limit is three."
             exit 1
           fi
 

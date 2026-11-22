@@ -108,9 +108,11 @@ blocked on someone else.
   accounts on it (staging: what the merge deploys; production: what the
   next promote would). The owner reads the plans and merges. Decided
   2026-11-22 and **not built yet**: low-risk pull requests will merge to
-  staging by themselves once a reviewer's check and the ruleset for it
-  exist (`docs/ROADMAP.md`, 2g). Until this sentence changes, every pull
-  request needs the owner's approval.
+  staging by themselves once the reviewer's check
+  (`.github/workflows/claude-review.yml`, written, never run) is required
+  by the `main` ruleset, which only the owner can change
+  (`docs/agents.md`, "The reviewer, and the two lanes"). Until this
+  sentence changes, every pull request needs the owner's approval.
 - **Merging deploys staging; a tag promotes.** A push to `main` runs
   `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
   the staging account under a GitHub OIDC role and marks the commit
