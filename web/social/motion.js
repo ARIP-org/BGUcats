@@ -2,6 +2,8 @@
 // Feed.dc.html). Movement that follows a finger is written straight to the
 // element with the Web Animations API, never through a redraw.
 
+import { useRef } from "../vendor/preact-htm.js";
+
 export const reducedMotion = () =>
   matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -28,6 +30,17 @@ export function makeSpring(zeta, response) {
 }
 
 export const spring = makeSpring(0.62, 0.42);
+
+// The class of a bar that folds while the page scrolls (app.css, "the bars
+// that fold"): "collapsed" while folded, and "unfolded" once it has opened
+// again, which fades its rim back in. A bar drawn open has neither, so its
+// rim is there from the first frame.
+export function useFold(base, collapsed) {
+  const folded = useRef(false);
+  if (collapsed) folded.current = true;
+  if (collapsed) return `${base} collapsed`;
+  return folded.current ? `${base} unfolded` : base;
+}
 
 // The glass button's press: it swells under the finger, more if held, with a
 // highlight where it was touched (--gx, --gy, --gs in app.css), and springs

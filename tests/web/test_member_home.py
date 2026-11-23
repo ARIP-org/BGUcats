@@ -94,6 +94,9 @@ def test_the_bar_stays_at_the_top_and_folds_while_scrolling(open_member_app, sho
     page.wait_for_function(
         "document.querySelector('.friends-button').getBoundingClientRect().width > 120"
     )
+    # The sizes change at once and the glass follows (issue 104): the
+    # picture is of the fold once it has landed.
+    page.wait_for_timeout(600)
     shot(page, "member-home-scrolled")
 
 
