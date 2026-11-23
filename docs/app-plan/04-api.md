@@ -64,7 +64,7 @@ its owner's alone.
 | `GET /me/posts` | The caller's posts, pending and hidden ones included, each with its state |
 | `GET /me/invite` | `{code}`. The link is built on the phone, from the address the app was opened at (the custom domain arrives with N4). `GET /me` carries the same code. Since B5a |
 | `GET /achievements` | Since B7a. `{points, level: {level, from, next}, counters: {catsMet, encounters, posts}, badges: [{id, earned, at}], rules: [{id, points}]}`. `next` is null at the top level. The badges are every one in `web/achievements.json`, in its order. Names and the rules' text are the app's strings, by id |
-| `DELETE /me` | Body `{"confirm": "delete"}`. Starts deletion and signs the caller out (`03-data-model.md`) |
+| `DELETE /me` | Body `{"confirm": "delete"}` (`confirm` otherwise). Marks the account `deleting`, removes the profile photo's objects, and answers `{"deleting": true}`; the events Lambda deletes the rest (`03-data-model.md`). From then on every call by the person, a second `DELETE /me` too, is 403 `gone`. Since B10a. **Not yet:** signing the caller out and deleting the Cognito user (B10b); until then, once the job has finished, the same sign-in makes a new, empty account |
 | `PUT /me/phone`, `DELETE /me/phone` | D5 only |
 
 ### People

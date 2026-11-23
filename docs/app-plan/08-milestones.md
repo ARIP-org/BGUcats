@@ -29,7 +29,7 @@ A session ticks its row in the pull request that finishes it.
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script merged 2026-11-14 |
 | B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
 | B9 | Push | built 2026-11-14, in review: the device routes, the four notifications, the cap, the sender. Sends nothing until a phone registers (N2) and Apple's key is set (O7) |
-| B10 | Deleting an account | |
+| B10 | Deleting an account | B10a (`DELETE /me` and the job on the tables) built 2026-11-23, in review; the email in the dataset is the owner's decision (`docs/app-backlog.md`); B10b (signing out, the Cognito user) needs an `infra/` change |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
 | C2 | Moderation in the desk, and measured | |
 | C3 | The blocklist, the gold set, enforce | |
@@ -604,6 +604,16 @@ was built.
   counters it touched are what a recount gives, and its photos are where
   D14 says; running the job twice, or stopping it half-way and running it
   again, ends the same.
+- **Built in B10a (2026-11-23):** the route and steps 2 to 7
+  (`03-data-model.md`), with `tests/app/test_delete_account.py` for each
+  part of "done when": no user id left in the social table, a clean
+  recount, every step run twice and the whole job again ending the same,
+  `gone` for every later call. **Not done:** a scan of the dataset still
+  finds the email (photos, encounters, picks, the allowlist), which the
+  test pins; neither of the app's Lambdas may write the dataset, and how
+  it is cleared is the owner's to decide. **B10b:** step 1, signing out
+  and deleting the Cognito user, which needs `cognito-idp` on a role
+  (`infra/`, the owner's lane).
 
 ---
 

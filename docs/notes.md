@@ -49,6 +49,16 @@ an hour that a sentence would have saved.
   ("document path invalid"), and making the map first is a second write
   that can race. One plain attribute a month (`pop2026-11`) needs
   neither (B7b, 2026-11-13).
+- **A person's things are not all under their key.** Deleting an
+  account (B10a) found likes kept only under the post
+  (`POST#…/LIKE#{userId}`), votes, names and feedings under the cat, and
+  report rows under the thing reported, with no index by person, and no
+  role allowed to Scan. The job finds them by walking every listed
+  person's posts and every cat, and it deletes the likes on a deleted
+  person's posts so that no like is left on a post nobody can list. A new
+  item that names a person somewhere other than `USER#{id}` must be
+  findable from that person, and `delete_account` must learn it: the
+  test that scans for the id after a deletion is what notices.
 - **Mocks are always consistent.** moto answers every read with the latest
   write, so none of the above can fail in a unit test. They were found by
   running real calls against a real table.
