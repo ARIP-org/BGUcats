@@ -671,18 +671,20 @@ App, and any AWS access.
 #### Order, and done when
 
 1. The reviewer's workflow, the wider owner paths, the `AGENTS` switch;
-   then the owner's settings. **Written 2026-11-22, never run**
-   (`docs/agents.md`, "The reviewer, and the two lanes"): a workflow that
-   starts after CI runs only from `main`. **Done when** a pull request
+   then the owner's settings. **Running since 2026-11-23**
+   (`docs/agents.md`, "The reviewer, and the two lanes"); the owner
+   changed the `main` ruleset the same day. **Done when** a pull request
    that touches only `web/` merges with no person involved, and one that
-   touches `infra/` waits.
+   touches `infra/` waits: the first three builder pull requests (#115
+   to #117) each still had the owner's approval, so this is yet to be
+   seen.
 2. The planner and the digest, as scheduled cloud sessions. **Written
    2026-11-22** (`docs/agents/planner.md`, `docs/agents/digest.md`;
    `docs/agents.md`, "The planner and the digest"); scheduled the same
    day, each in a session of its own. The repository went public the
    same day, and the builder takes the planner's `ready` issues by
-   itself (`docs/agents.md`, "The builder's queue"). **Not built:** an
-   answer to the reviewer's "sent back".
+   itself (`docs/agents.md`, "The builder's queue"), and since
+   2026-11-23 answers a review that was sent back, twice at most.
 3. The Swift app's skeleton and its verifier, on a pull request, with
    the first screenshot from a simulator. **Written 2026-11-23**
    (`native/swift/`, the `swift` job of `ios.yml`): four tabs of system

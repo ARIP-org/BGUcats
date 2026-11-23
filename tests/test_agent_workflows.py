@@ -36,13 +36,20 @@ def steps(workflow):
     return [step for job in workflow["jobs"].values() for step in job["steps"]]
 
 
-def claude(workflow):
-    (step,) = [s for s in steps(workflow) if "claude-code-action" in s.get("uses", "")]
+def claude(workflow, job=None):
+    """The step that runs Claude: the workflow's one, or that of a job."""
+    (step,) = [
+        s
+        for name, j in workflow["jobs"].items()
+        if job in (None, name)
+        for s in j["steps"]
+        if "claude-code-action" in s.get("uses", "")
+    ]
     return step
 
 
-def tools(workflow):
-    args = claude(workflow)["with"]["claude_args"]
+def tools(workflow, job=None):
+    args = claude(workflow, job)["with"]["claude_args"]
     return re.search(r'--allowedTools "([^"]+)"', args).group(1).split(",")
 
 
@@ -82,8 +89,10 @@ def test_the_token_lives_in_the_environment_only_main_can_read():
                 assert job["environment"] == "claude", f"{path.name}: {name}"
     # Every job that runs Claude is one of those.
     for path in AGENTS:
-        (job,) = [j for j in load(path)["jobs"].values() if "claude-code-action" in yaml.safe_dump(j)]
-        assert job["environment"] == "claude", path.name
+        running = [j for j in load(path)["jobs"].values() if "claude-code-action" in yaml.safe_dump(j)]
+        assert running, path.name
+        for job in running:
+            assert job["environment"] == "claude", path.name
 
 
 # ------------------------------------------------- on a public repository
@@ -118,7 +127,9 @@ def builder():
 def test_the_builder_looks_at_the_queue_on_a_label_a_deploy_and_the_clock():
     on = builder()["on"]
     assert on["issues"] == {"types": ["labeled"]}
-    assert on["workflow_run"] == {"workflows": ["Deploy"], "types": ["completed"]}
+    # After a deploy (a place may be free) and after a review (a pull
+    # request may have been sent back).
+    assert on["workflow_run"] == {"workflows": ["Deploy", "Claude review"], "types": ["completed"]}
     assert len(on["schedule"]) == 1
 
 
@@ -155,7 +166,14 @@ def test_a_script_decides_what_starts_before_any_claude_runs():
     text = yaml.safe_dump(pick)
     assert "secrets." not in text and "claude-code-action" not in text and "environment" not in pick
     assert any(step.get("run") == "python3 scripts/builder_queue.py" for step in pick["steps"])
-    assert pick["permissions"] == {"contents": "read", "issues": "write", "pull-requests": "read"}
+    # It may mark a pull request (a label, a comment) and read the
+    # reviewer's status. It cannot push, merge or write a status.
+    assert pick["permissions"] == {
+        "contents": "read",
+        "issues": "write",
+        "pull-requests": "write",
+        "statuses": "read",
+    }
     # One at a time, and never cancelled halfway through moving labels.
     assert pick["concurrency"] == {"group": "claude-fix-pick", "cancel-in-progress": False}
     # The build: only what the pick handed over, one job an issue.
@@ -174,7 +192,7 @@ def test_the_builder_as_claude_cannot_push_workflows_or_reach_the_queue_script()
         "permission-pull-requests",
         "permission-issues",
     }
-    prompt = claude(builder())["with"]["prompt"]
+    prompt = claude(builder(), "fix")["with"]["prompt"]
     assert "Never touch .github/" in prompt
     assert "/scripts/builder_queue.py" in (REPO / ".github" / "CODEOWNERS").read_text()
 
@@ -195,14 +213,14 @@ def test_a_build_with_no_pull_request_goes_to_the_owner_with_claudes_last_words(
     assert "--body-file" in last["run"] and "head -c 3000" in last["run"]
     assert "$(cat" not in last["run"]
     # Claude's step ends before the job does, so those steps run.
-    assert claude(builder())["timeout-minutes"] < fix["timeout-minutes"]
+    assert claude(builder(), "fix")["timeout-minutes"] < fix["timeout-minutes"]
 
 
 def test_the_builder_cannot_end_its_turn_waiting_for_a_command():
     # A run ends when Claude ends its turn. Three builds put the test suite
     # in the background, said they would wait for it, and were over with
     # nothing pushed (2026-11-23).
-    step = claude(builder())
+    step = claude(builder(), "fix")
     env = json.loads(step["with"]["settings"])["env"]
     assert env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     # One command may run as long as the whole suite does, and the step
@@ -217,13 +235,59 @@ def test_the_builder_cannot_end_its_turn_waiting_for_a_command():
     assert "`make test`" not in prompt
 
 
+def test_a_sent_back_pull_request_is_answered_by_the_builder_on_its_own_branch():
+    jobs = builder()["jobs"]
+    rework, fix = jobs["rework"], jobs["fix"]
+    # Only what the pick handed over, one job a pull request, and never
+    # while the same issue is being built.
+    assert rework["needs"] == "pick"
+    assert rework["strategy"]["matrix"]["item"] == "${{ fromJSON(needs.pick.outputs.rework) }}"
+    assert rework["concurrency"]["group"] == "claude-fix-${{ matrix.item.issue }}"
+    assert fix["concurrency"]["group"] == "claude-fix-${{ matrix.issue }}"
+    assert "github.event." not in yaml.safe_dump(rework)
+    names = [s.get("name") for s in rework["steps"]]
+    step = claude(builder(), "rework")
+    at = rework["steps"].index(step)
+    # The reviewer's comment is found by who wrote it: on a public
+    # repository anyone can write one that starts like it. The reviewer
+    # keeps its own comment current by the same test.
+    found = rework["steps"][names.index("What the reviewer found")]
+    assert names.index("What the reviewer found") < at
+    assert '.user.login == "github-actions[bot]"' in found["run"]
+    assert '.user.login == "github-actions[bot]"' in (WORKFLOWS / "claude-review.yml").read_text()
+    # The pull request's own branch, with the App's token.
+    checkout = next(s for s in rework["steps"] if "actions/checkout" in s.get("uses", ""))
+    assert checkout["with"]["ref"] == "claude/issue-${{ matrix.item.issue }}"
+    assert checkout["with"]["token"] == "${{ steps.app.outputs.token }}"
+    # The same Claude with the same walls as the build.
+    build = claude(builder(), "fix")
+    for same in ("claude_args", "settings", "allowed_bots", "github_token"):
+        assert step["with"][same] == build["with"][same], same
+    assert step["timeout-minutes"] < rework["timeout-minutes"]
+    prompt = step["with"]["prompt"]
+    for said in (
+        "${{ runner.temp }}/review.md",
+        "Open no new pull request",
+        "never\n" + "force-push",
+        "Never touch .github/",
+        "Never stop to wait for something",
+    ):
+        assert said in prompt.replace("\n            ", "\n"), said
+    # An answer that pushed nothing goes to the owner, with why; the mark
+    # comes off either way.
+    last = rework["steps"][names.index("Nothing was pushed")]
+    assert last["if"] == "always()" and names.index("What Claude said last") < names.index("Nothing was pushed")
+    assert "labels/reworking" in last["run"] and "labels[]=needs-owner" in last["run"]
+    assert '"$now" != "$SHA"' in last["run"] and "--body-file" in last["run"]
+
+
 def test_the_apps_own_work_is_reviewed_and_starts_the_queue():
     # Claude's action refuses a run started by a bot it was not told of.
     # The builder's pull requests are the App's, so unnamed, the reviewer
     # reviewed none of them (2026-11-23). Named, and only it: "*" would
     # let any App on a public repository start an agent.
-    for name in ("claude-review.yml", "claude-fix.yml"):
-        assert claude(load(WORKFLOWS / name))["with"]["allowed_bots"] == "arip-claude", name
+    for name, job in (("claude-review.yml", None), ("claude-fix.yml", "fix"), ("claude-fix.yml", "rework")):
+        assert claude(load(WORKFLOWS / name), job)["with"]["allowed_bots"] == "arip-claude", (name, job)
     assert "allowed_bots" not in claude(load(WORKFLOWS / "claude-triage.yml"))["with"]
 
 
@@ -231,8 +295,8 @@ def test_the_builder_reads_the_issue_without_strangers_comments():
     fix = load(WORKFLOWS / "claude-fix.yml")
     names = [s.get("name") for s in steps(fix)]
     # Made before Claude starts, by a step that is not Claude's.
-    assert names.index("The issue, without strangers' comments") < steps(fix).index(claude(fix))
-    prompt = claude(fix)["with"]["prompt"]
+    assert names.index("The issue, without strangers' comments") < steps(fix).index(claude(fix, "fix"))
+    prompt = claude(fix, "fix")["with"]["prompt"]
     assert "${{ runner.temp }}/issue.md" in prompt
     assert "gh issue view" not in prompt
     assert "do not fetch the issue yourself" in prompt

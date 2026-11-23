@@ -216,7 +216,7 @@ jobs:
         run: |
           # One comment, kept current: the one that carries the marker.
           mine=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-            --jq '[.[] | select(.body | startswith("<!-- claude-review -->"))][-1].id // empty')
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- claude-review -->")))][-1].id // empty')
           if [ -n "$mine" ]; then
             gh api -X PATCH "repos/$REPO/issues/comments/$mine" -F body=@"$RUNNER_TEMP/verdict/comment.md" --jq .html_url
           else

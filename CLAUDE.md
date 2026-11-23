@@ -106,13 +106,14 @@ blocked on someone else.
 - **Work on a short-lived branch**, one change per branch, and open a pull
   request to `main`. CI runs lint, tests and `terraform plan` for both
   accounts on it (staging: what the merge deploys; production: what the
-  next promote would). The owner reads the plans and merges. Decided
-  2026-11-22 and **not built yet**: low-risk pull requests will merge to
-  staging by themselves once the reviewer's check
-  (`.github/workflows/claude-review.yml`, written, never run) is required
-  by the `main` ruleset, which only the owner can change
-  (`docs/agents.md`, "The reviewer, and the two lanes"). Until this
-  sentence changes, every pull request needs the owner's approval.
+  next promote would). **Two lanes** (the owner changed the `main`
+  ruleset on 2026-11-23): a pull request that touches no owner path
+  (`.github/CODEOWNERS`) merges to staging by itself once CI and the
+  reviewer's check (`review`, `.github/workflows/claude-review.yml`)
+  pass; one that touches an owner path, or that the reviewer sends up,
+  waits for the owner, who reads its plans and merges. The reviewer
+  sends up only a short list (`docs/agents.md`, "The reviewer, and the
+  two lanes"). Neither lane reaches production: that is the owner's tag.
 - **Merging deploys staging; a tag promotes.** A push to `main` runs
   `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
   the staging account under a GitHub OIDC role and marks the commit

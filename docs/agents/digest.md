@@ -25,9 +25,10 @@ heading out when it has nothing under it:
 
 1. **Needs you.** Pull requests waiting for the owner's approval, with
    one line each on what they change and why they are in the owner's
-   lane. Issues labeled `needs-owner` or `proposal`. Anything the
-   reviewer sent up or sent back: nothing answers a "sent back" by
-   itself yet.
+   lane. Issues and pull requests labeled `needs-owner`, and issues
+   labeled `proposal`. Anything the reviewer sent up. A pull request
+   the reviewer sent back is the builder's to answer (twice at most):
+   it is "In progress" until it carries `needs-owner`.
 2. **Broken.** A red CI or Deploy on `main`, and whether anything is
    fixing it.
 3. **Merged.** What reached staging: one plain line each, grouped when
