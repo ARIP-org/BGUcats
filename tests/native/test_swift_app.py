@@ -301,6 +301,28 @@ def test_signing_in_is_the_web_apps_in_the_systems_own_sheet():
     assert not re.search(r"defaults\.set\([^)]*[Tt]oken", code)
 
 
+def test_a_sign_in_that_ends_puts_the_sign_in_screen_up():
+    # Found in review: the server refused the token, the tokens were
+    # dropped, and the tabs stayed up over calls that could only fail.
+    code = sources()
+    backend = code["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'auth.ended("the API answered 401")' in backend and "auth.signOut()" not in backend
+    assert "world.gate.onEnded = { [weak self] in" in code["Session.swift"]
+    assert 'phase = .signedOut(note: "Your sign-in ended. Sign in again.")' in code["Session.swift"]
+    # Only Cognito refusing the grant itself ends a sign-in. A 429 or a 5xx
+    # from it, or no connection, keeps the sign-in and sends no stale token.
+    auth = code["Auth.swift"]
+    assert "status == 400 || status == 401" in auth
+    renew = auth.split("func pass() async -> Pass")[1].split("private func exchange")[0]
+    assert renew.count("return .notNow") == 2 and renew.count("ended(") == 2
+    assert "tokens.idToken)" in renew and renew.count("tokens.idToken") == 1  # only while it is still good
+    # The feed leaves it to the session to say: no alert over the sign-in screen.
+    assert code["FeedView.swift"].count("if FeedModel.signInEnded(error) { return }") == 2
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    assert 'ending.launchArguments = ["-uiTesting", "-look", look, "-signInEnds"]' in tests
+    assert 'keep(ending, "sign-in-ended-\\(look)")' in tests
+
+
 def test_a_ui_test_reads_no_network_and_keeps_nothing():
     code = sources()
     stand_in = code["BGUCatsApp.swift"].split("static func standIn")[1]

@@ -125,6 +125,9 @@ final class FeedModel: ObservableObject {
             phase = .loaded
             world.trail.mark("feed: \(page.posts.count) posts")
         } catch {
+            // A sign-in that ended is the session's to say: the sign-in
+            // screen is on its way up.
+            if FeedModel.signInEnded(error) { return }
             let why = (error as? ApiError)?.message ?? "Try again."
             if posts.isEmpty {
                 phase = .failed(why)
@@ -170,9 +173,14 @@ final class FeedModel: ObservableObject {
                 posts[now].liked = before.liked
                 posts[now].likes = before.likes
             }
-            note = (error as? ApiError)?.message ?? "Try again."
             world.trail.mark("feed: a like failed")
+            if FeedModel.signInEnded(error) { return }
+            note = (error as? ApiError)?.message ?? "Try again."
         }
+    }
+
+    private static func signInEnded(_ error: Error) -> Bool {
+        (error as? ApiError)?.status == 401
     }
 }
 

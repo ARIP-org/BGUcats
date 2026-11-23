@@ -76,11 +76,31 @@ struct SignInRefused: Error {
 /// The token endpoint answered, and not with tokens.
 struct TokenRefused: Error {
     let status: Int
+
+    /// Cognito said no to the grant itself (400 `invalid_grant`, 401): the
+    /// sign-in is over. Anything else (429, a 5xx) is Cognito having a bad
+    /// moment, and is no reason to sign anyone out.
+    var isFinal: Bool {
+        status == 400 || status == 401
+    }
+}
+
+/// What a call to the API may carry.
+enum Pass {
+    case token(String)
+    /// Nobody is signed in, or the sign-in has just ended.
+    case signedOut
+    /// Signed in, but the token ran out and could not be renewed right
+    /// now: no connection, or Cognito not answering.
+    case notNow
 }
 
 /// Signing in and out, as the screens see it.
 protocol Gate: AnyObject {
     var signedIn: Bool { get }
+    /// Called when a sign-in ends without the person asking: the server
+    /// refused the token, or would not renew it. The screens follow.
+    var onEnded: (() -> Void)? { get set }
     func begin() async throws -> SignInStart
     func finish(callback: URL, start: SignInStart) async throws
     func signOut()
@@ -94,6 +114,7 @@ final class Auth: Gate {
     private let now: () -> Date
     private let defaults: UserDefaults
     private var known: SiteConfig?
+    var onEnded: (() -> Void)?
 
     init(vault: Vault, trail: Trail, now: @escaping () -> Date = Date.init, defaults: UserDefaults = .standard) {
         self.vault = vault
@@ -112,6 +133,15 @@ final class Auth: Gate {
     func signOut() {
         vault.drop()
         trail.mark("signin: signed out")
+    }
+
+    /// The sign-in is over, and not by the person's choice: the tokens go,
+    /// and whoever shows the screens is told, so the sign-in screen comes
+    /// up instead of a feed whose every call fails.
+    func ended(_ why: String) {
+        vault.drop()
+        trail.mark("signin: ended (\(why))")
+        onEnded?()
     }
 
     /// The site's config.json, read once a launch. With no signal, the one
@@ -205,25 +235,31 @@ final class Auth: Gate {
         trail.mark("signin: tokens kept")
     }
 
-    /// The token every API call carries, renewed when it has run out. Nil:
-    /// signed out.
-    func idToken() async -> String? {
-        guard let tokens = vault.read() else { return nil }
+    /// The token every API call carries, renewed when it has run out.
+    func pass() async -> Pass {
+        guard let tokens = vault.read() else { return .signedOut }
         if now() < tokens.expiresAt {
-            return tokens.idToken
+            return .token(tokens.idToken)
         }
-        guard let refresh = tokens.refreshToken else { return nil }
+        guard let refresh = tokens.refreshToken else {
+            ended("no way to renew")
+            return .signedOut
+        }
         do {
-            return try await exchange(["grant_type": "refresh_token", "refresh_token": refresh]).idToken
+            return .token(try await exchange(["grant_type": "refresh_token", "refresh_token": refresh]).idToken)
+        } catch let refused as TokenRefused where refused.isFinal {
+            ended("renewal refused \(refused.status)")
+            return .signedOut
         } catch let refused as TokenRefused {
-            trail.mark("signin: renewal refused (\(refused.status))")
-            vault.drop()
-            return nil
+            // Cognito is not answering properly: the sign-in stays.
+            trail.mark("signin: renewal not answered (\(refused.status))")
+            return .notNow
         } catch {
             // No connection is not a refused sign-in: keep it for when the
-            // phone is back. The stale token fails its call, which says so.
+            // phone is back. The stale token is not sent: the API would
+            // answer 401, which reads as a sign-in that ended.
             trail.mark("signin: renewal not reached (\(Auth.kind(error)))")
-            return tokens.idToken
+            return .notNow
         }
     }
 
@@ -300,9 +336,16 @@ final class Auth: Gate {
 /// For UI tests: signed in or not as the test asks, and no network.
 final class StandInGate: Gate {
     private(set) var signedIn: Bool
+    var onEnded: (() -> Void)?
 
     init(signedIn: Bool) {
         self.signedIn = signedIn
+    }
+
+    /// As when the server refuses the token in the middle of a session.
+    func ended() {
+        signedIn = false
+        onEnded?()
     }
 
     func begin() async throws -> SignInStart {

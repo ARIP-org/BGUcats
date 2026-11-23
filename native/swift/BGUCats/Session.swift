@@ -22,6 +22,14 @@ final class Session: ObservableObject {
 
     init(world: World) {
         self.world = world
+        // A sign-in that ends in the middle (the server refuses the token,
+        // or will not renew it) puts the sign-in screen up, whatever
+        // screen was showing.
+        world.gate.onEnded = { [weak self] in
+            Task { @MainActor in
+                self?.phase = .signedOut(note: "Your sign-in ended. Sign in again.")
+            }
+        }
     }
 
     /// Reads the account. The app's start, "Try again", and what follows a
@@ -42,7 +50,6 @@ final class Session: ObservableObject {
             phase = .signedIn(me)
         } catch let error as ApiError {
             if error.status == 401 {
-                world.gate.signOut()
                 phase = .signedOut(note: "Your sign-in ended. Sign in again.")
             } else if error.status == 403 && error.code == "not_admitted" {
                 // This address is not let in: nobody is stuck retrying it.

@@ -91,6 +91,17 @@ defined, one iOS version, nothing that signs.
   `org.arip.bgucats://signin`. Never in a web view: Google refuses that.
   The tokens are in the keychain, on this phone only. Signing out forgets
   them and stays in the app.
+- **A sign-in that ends puts the sign-in screen up.** When the API
+  answers 401, or Cognito refuses to renew (400, 401), the tokens go and
+  the session is told (`Gate.onEnded`), so nobody is left on a feed whose
+  every tap fails. A 429 or a 5xx from Cognito, or no connection, ends
+  nothing: the call says the server could not be reached, and no stale
+  token is sent, because the API's 401 to it would read as a sign-in
+  that ended.
+- **An identifier goes on the element itself, never on a stack around
+  others.** On a container SwiftUI hands the identifier to everything
+  inside, over their own: a post card's stack named `post.p1` left no
+  `like.p1` to find (2026-11-23).
 - **It belongs to staging** (`Site.swift`), as every build so far. The
   site's public `config.json` says which Cognito; it is read at launch
   and the last one read is kept for a launch with no signal.

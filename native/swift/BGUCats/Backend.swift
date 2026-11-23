@@ -48,8 +48,14 @@ final class LiveBackend: Backend {
     /// One call. `name` is what the trail calls it: the kind of call, never
     /// its address, which can carry an id.
     private func call(_ method: String, _ path: String, cursor: String? = nil, as name: String) async throws -> [String: Any] {
-        guard let token = await auth.idToken() else {
+        let token: String
+        switch await auth.pass() {
+        case .token(let fresh):
+            token = fresh
+        case .signedOut:
             throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
+        case .notNow:
+            throw ApiError(status: 0, code: nil, message: "The server could not be reached. Check the connection and try again.")
         }
         var address = Site.origin.absoluteString + "/api/v1" + path
         if let cursor {
@@ -79,7 +85,9 @@ final class LiveBackend: Backend {
 
         let body = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
         if status == 401 {
-            auth.signOut()
+            // The server no longer takes this token. The tabs must not
+            // stay up over calls that can only fail: the session is told.
+            auth.ended("the API answered 401")
             throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
         }
         guard (200..<300).contains(status) else {
@@ -97,10 +105,15 @@ final class LiveBackend: Backend {
 /// time. No network.
 final class StandInBackend: Backend {
     private let start: Date
+    private let gate: StandInGate
+    /// The test asked for a sign-in that ends at the first like.
+    private let ends: Bool
     private var liked: Set<String> = []
 
-    init(start: Date) {
+    init(start: Date, gate: StandInGate, ends: Bool = false) {
         self.start = start
+        self.gate = gate
+        self.ends = ends
     }
 
     func me() async throws -> Me {
@@ -166,6 +179,11 @@ final class StandInBackend: Backend {
     }
 
     func like(postId: String, on: Bool) async throws -> Int {
+        if ends {
+            // What LiveBackend does with a 401.
+            gate.ended()
+            throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
+        }
         if on {
             liked.insert(postId)
         } else {

@@ -37,6 +37,21 @@ final class ScreensUITests: XCTestCase {
         keep(signedOut, "sign-in-\(look)")
         signedOut.terminate()
 
+        // A sign-in that ends while the app is open (the server refuses
+        // the token): the sign-in screen comes up and says why, instead of
+        // a feed whose every tap fails.
+        let ending = XCUIApplication()
+        ending.launchArguments = ["-uiTesting", "-look", look, "-signInEnds"]
+        ending.launch()
+        let heart = ending.descendants(matching: .any)["like.p1"].firstMatch
+        XCTAssertTrue(heart.waitForExistence(timeout: 30), "The feed did not show its first post. \(onScreen(ending))")
+        heart.tap()
+        let again = ending.descendants(matching: .any)["sign-in.google"].firstMatch
+        XCTAssertTrue(again.waitForExistence(timeout: 15), "The sign-in ended and the sign-in screen did not come up. \(onScreen(ending))")
+        XCTAssertTrue(ending.staticTexts["Your sign-in ended. Sign in again."].exists, "The sign-in screen does not say why it is there. \(onScreen(ending))")
+        keep(ending, "sign-in-ended-\(look)")
+        ending.terminate()
+
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-look", look]
         app.launch()
