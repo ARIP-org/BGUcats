@@ -124,7 +124,8 @@ blocked on someone else.
   does. Runbook, promoting, post-deploy checks and rollback: `docs/deploy.md`.
 - **The iPhone app is built on request, not by a merge**
   (`.github/workflows/ios.yml`, since 2026-11-11). The owner starts it from
-  `main` (*Actions* → *iOS* → *Run workflow*); Claude never does. A macOS
+  `main` (*Actions* → *iOS* → *Run workflow*); Claude never does. What it
+  uploads is the Swift app (since 2026-11-23). A macOS
   runner costs ten times a Linux one, so a pull request gets the simulator
   check only when it touches `native/`. The App Store Connect key lives in
   the `testflight` environment, which admits `main` alone.
@@ -304,10 +305,20 @@ product). Its old sessions and photos stay in the table with
   lifted for the member app: the Swift app is its own code against the
   same member API, the web member app (`web/social/`) is frozen to fixes
   and retires when the Swift app has its screens, and the desk and
-  Capture stay web. Until the Swift app's first build, TestFlight has
-  the packed app described next, and its rules hold for it.
-- **Today's iPhone app is `web/`, packed** (`native/`, Capacitor,
-  since 2026-11-11; `docs/ROADMAP.md`, 2e). One codebase for it: `web/` keeps no build step, and the only thing it knows is
+  Capture stay web.
+- **TestFlight gets the Swift app, unfinished** (the owner, 2026-11-23:
+  ship it as soon as possible, in the same app and not a second one, so
+  its flaws and the system's glass are seen and fixed on the phone). A
+  tab whose screen is not built says so, and the home-screen app has that
+  screen meanwhile. Every pull request to it archives it exactly as the
+  upload does (`scripts/ios_archive.py`, the `swift` job); a screen comes
+  with its picture from the simulator. `native/swift/README.md` has its
+  rules.
+- **The app it replaced is `web/`, packed** (`native/`, Capacitor,
+  TestFlight's from 2026-11-11 to 2026-11-23; `docs/ROADMAP.md`, 2e).
+  Nothing uploads it now; its code and its pull-request check stay until
+  the Swift app has been on the owner's phone, and what follows is how it
+  works. One codebase for it: `web/` keeps no build step, and the only thing it knows is
   `isNative()` (install.js). The app carries a copy of `web/` made at build
   time (`scripts/native_bundle.py`), so a merge reaches it only with a new
   build, and its API is at `config.apiBase`, not at the page's own address.
@@ -671,8 +682,10 @@ environment can get. No long-lived AWS keys anywhere (`infra/README.md`).
 **Research:** Python 3.12 · PyTorch · timm · wildlife-datasets · kornia. Local
 only; no AWS.
 
-**iPhone app:** Capacitor 8 around `web/` (`native/`), Swift packages, built
-and signed on GitHub's macOS runners. No Mac, no stored certificate.
+**iPhone app:** SwiftUI (`native/swift/`), iOS 26 only, the system's own
+controls; built and signed on GitHub's macOS runners. No Mac, no stored
+certificate. Beside it until it is removed: Capacitor 8 around `web/`
+(`native/`).
 
 **In the browser:** MegaDescriptor-T-224, int8 ONNX, on ONNX Runtime Web 1.17.3
 (WebAssembly, one thread; in the member app, inside the runtime's worker) —

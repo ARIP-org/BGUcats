@@ -6,8 +6,10 @@ second copy of the app here, only the shell around it. How it is built
 and how it reaches a phone: `docs/deploy.md`, "The iPhone app".
 
 **The app is being rewritten in Swift** (`docs/ROADMAP.md`, 2g): that is
-`swift/`, with a README of its own. Everything below is the packed app,
-which TestFlight has until the Swift app has its screens.
+`swift/`, with a README of its own, and since 2026-11-23 it is what
+TestFlight gets. Everything below is the packed app, which nothing
+uploads any more: it stays, with its check on pull requests, until the
+Swift app has been on the owner's phone, and is then removed.
 
 | | |
 |---|---|

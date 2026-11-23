@@ -1,9 +1,10 @@
 # native/swift/: the iPhone app, in Swift
 
-The member app rewritten for iPhone (`docs/ROADMAP.md`, 2g). It sits
-**beside** today's packed app (`native/ios/`), which stays what TestFlight
-gets until this one has its screens. Built so far: the frame (four tabs
-of the system's own controls, so the glass is iOS's) and "App info".
+The member app rewritten for iPhone (`docs/ROADMAP.md`, 2g). **It is what
+TestFlight gets** (the owner, 2026-11-23): unfinished, in the same app as
+the packed one it replaces (`native/ios/`), so every screen is seen on
+the phone as it lands. Built so far: the frame (four tabs of the system's
+own controls, so the glass is iOS's) and "App info".
 
 | | |
 |---|---|
@@ -20,6 +21,12 @@ tests in an iPhone simulator, and keeps the pictures as the run's
 artifact `ios-swift` (`home-light.png`, `app-info-dark.png`, ...). A
 compile error or a screen that does not open fails the job, and its log
 says where.
+
+The same job then **archives the app as the upload will**
+(`scripts/ios_archive.py`): a Release build for a real iPhone, unsigned,
+and a look at what came out (bundle id, build number, iOS version, icon,
+privacy manifest). The `testflight` job runs the same script, so what a
+pull request archived is what the owner's build uploads.
 
 **A new Swift file needs no edit to the project:** both folders are read
 whole (Xcode's "file system synchronized" groups). `tests/native` holds
@@ -46,11 +53,21 @@ defined, one iOS version, nothing that signs.
 - **The trail** (`Trail.swift`) is the web app's, with its limits: the
   last eighty lines, what happened and never who. "App info" shows it.
 - **The same app to Apple:** the bundle id is the packed app's,
-  `org.arip.bgucats`. Nothing in the project signs it; a simulator build
-  is signed "to run locally" by Xcode, with no team and no certificate.
+  `org.arip.bgucats`, and the version is above it, so a build is an
+  update. Nothing in the project signs it; a simulator build is signed
+  "to run locally" by Xcode, with no team and no certificate, and the
+  upload signs at export.
+- **A screen not built says so** (`NotBuiltYet`), and never looks
+  broken: the owner is using this app while it is being written.
+- **The privacy manifest** (`BGUCats/PrivacyInfo.xcprivacy`) says what
+  the app reads and collects. Today: the trail in UserDefaults, and
+  nothing collected. The first screen that calls a server changes it in
+  the same pull request (`docs/privacy-data.md` has the answers); a test
+  fails otherwise.
 
 ## Not here yet
 
 Signing in, any call to the API, the feed, capture, cats, the rest of
-profile, the recognition model, a string catalog for the four languages,
-and TestFlight. Each is its own issue, in the plan's order.
+profile, the recognition model, and a string catalog for the four
+languages. Each is its own issue, in the plan's order: signing in and the
+feed first.

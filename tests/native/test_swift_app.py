@@ -3,16 +3,19 @@
 Nothing here compiles Swift: the `swift` job of .github/workflows/ios.yml
 does, on a Mac, and walks the app through its screens. These hold the
 things that job cannot see or that a text edit breaks quietly: the project
-file's references, the one iOS version, that nothing is signed, and that
-the pictures come out under the names the tests gave them.
+file's references, the one iOS version, that nothing is signed, that the
+pictures come out under the names the tests gave them, and that the upload
+to TestFlight is this app, archived the way every pull request archived it.
 """
 
+import plistlib
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
 
+import ios_archive
 import ios_screenshots
 
 REPO = Path(__file__).resolve().parents[2]
@@ -65,10 +68,16 @@ def test_one_ios_version_exactly_and_iphone_only():
 
 
 def test_it_is_the_same_app_to_apple_and_nothing_in_the_project_signs_it():
-    # The same bundle id as the packed app: when the Swift app replaces it
-    # on TestFlight, it is an update, and Cognito still answers at
-    # org.arip.bgucats://signin.
+    # The same bundle id as the packed app: on TestFlight the Swift app is
+    # an update of it (the owner, 2026-11-23: the same app, not a second
+    # one), and Cognito still answers at org.arip.bgucats://signin.
     assert settings("PRODUCT_BUNDLE_IDENTIFIER") == {"org.arip.bgucats", "org.arip.bgucats.uitests"}
+    assert ios_archive.BUNDLE_ID == "org.arip.bgucats"
+    # A version above the packed app's, so TestFlight offers it as newer.
+    packed = (REPO / "native" / "ios" / "App" / "App.xcodeproj" / "project.pbxproj").read_text()
+    newest_packed = max(tuple(map(int, v.split("."))) for v in re.findall(r"MARKETING_VERSION = ([\d.]+);", packed))
+    (ours,) = {v for v in settings("MARKETING_VERSION") if v.count(".") == 2}
+    assert tuple(map(int, ours.split("."))) > newest_packed
     for never in ("DEVELOPMENT_TEAM", "PROVISIONING_PROFILE", "CODE_SIGN_IDENTITY", "CODE_SIGN_ENTITLEMENTS"):
         assert never not in PROJECT, never
     # App Store Connect asks about encryption on every build without it.
@@ -106,12 +115,111 @@ def test_the_swift_job_builds_and_looks_with_no_secret():
     assert kept["if"] == "always()" and kept["with"]["name"] == "ios-swift"
 
 
-def test_the_upload_to_testflight_is_still_the_packed_app_alone():
+def test_the_upload_to_testflight_is_the_swift_app():
+    # The owner, 2026-11-23: the native app ships now, in the same
+    # TestFlight app, and its screens arrive one by one.
     jobs = workflow()["jobs"]
-    assert jobs["testflight"]["needs"] == "simulator"
-    assert jobs["testflight"]["environment"] == "testflight"
-    assert "native/swift" not in yaml.safe_dump(jobs["testflight"])
+    upload = jobs["testflight"]
+    assert upload["needs"] == "swift" and upload["environment"] == "testflight"
+    assert upload["if"] == "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'"
+    text = yaml.safe_dump(upload)
+    # Nothing of the packed app: no web/ copied in, no Capacitor.
+    for packed in ("native_bundle", "cap sync", "npm ", "setup-node", "$PROJECT"):
+        assert packed not in text, packed
+    archive = next(step for step in upload["steps"] if step.get("name") == "archive")
+    assert "scripts/ios_archive.py" in archive["run"]
+    assert '--build "$GITHUB_RUN_NUMBER"' in archive["run"] and '--team "$TEAM_ID"' in archive["run"]
+    assert "BGUCats.xcarchive" in archive["run"]
+    export = next(step for step in upload["steps"] if "-exportArchive" in step.get("run", ""))
+    assert '-archivePath "$RUNNER_TEMP/BGUCats.xcarchive"' in export["run"]
+
+
+def test_every_pull_request_archives_the_app_as_the_upload_will():
+    jobs = workflow()["jobs"]
+    # Before an upload too: the upload needs this job, so it has no `if`.
+    assert "if" not in jobs["swift"]
+    check = next(step for step in jobs["swift"]["steps"] if step.get("name") == "archive it as the upload will")
+    assert "scripts/ios_archive.py" in check["run"] and "if" not in check
+    assert "scripts/ios_archive.py" in workflow()[True]["pull_request"]["paths"]
+    # The packed app is checked on a pull request and uploaded by nothing.
+    assert jobs["simulator"]["if"] == "github.event_name == 'pull_request'"
     assert "native/swift" not in yaml.safe_dump(jobs["simulator"])
+
+
+# ------------------------------------------------------------ the archive
+
+
+def test_both_jobs_run_one_archive_line_unsigned_for_a_real_iphone():
+    line = ios_archive.command("out.xcarchive", 41)
+    assert line[:2] == ["xcodebuild", "archive"]
+    assert line[line.index("-project") + 1] == "native/swift/BGUCats.xcodeproj"
+    assert line[line.index("-scheme") + 1] == "BGUCats"
+    assert line[line.index("-configuration") + 1] == "Release"
+    assert line[line.index("-destination") + 1] == "generic/platform=iOS"
+    assert "CURRENT_PROJECT_VERSION=41" in line and "CODE_SIGNING_ALLOWED=NO" in line
+    assert not any(part.startswith("DEVELOPMENT_TEAM") for part in line)
+    assert ios_archive.command("out.xcarchive", 41, team="ABCDE12345")[-1] == "DEVELOPMENT_TEAM=ABCDE12345"
+    assert (REPO / ios_archive.PROJECT).is_dir()
+
+
+def built_app(tmp_path, **changes):
+    """An app folder as Xcode leaves one, from this repository's own files."""
+    app = tmp_path / "BGUCats.app"
+    app.mkdir(parents=True)
+    info = {
+        "CFBundleIdentifier": "org.arip.bgucats",
+        "CFBundleVersion": "41",
+        "CFBundleShortVersionString": "0.2.0",
+        "MinimumOSVersion": "26.0",
+        "ITSAppUsesNonExemptEncryption": False,
+        "CFBundleIcons": {"CFBundlePrimaryIcon": {"CFBundleIconName": "AppIcon"}},
+    }
+    info.update(changes)
+    (app / "Info.plist").write_bytes(plistlib.dumps({k: v for k, v in info.items() if v is not None}))
+    (app / "Assets.car").write_bytes(b"car")
+    (app / "PrivacyInfo.xcprivacy").write_bytes((SWIFT / "BGUCats" / "PrivacyInfo.xcprivacy").read_bytes())
+    return app
+
+
+def test_a_whole_app_passes_the_look_inside_the_archive(tmp_path):
+    assert ios_archive.faults(built_app(tmp_path), 41) == []
+
+
+def test_the_look_inside_the_archive_names_what_is_wrong(tmp_path):
+    def said(**changes):
+        folder = tmp_path / str(len(list(tmp_path.iterdir())))
+        folder.mkdir()
+        return " ".join(ios_archive.faults(built_app(folder, **changes), 41))
+
+    assert "CFBundleIdentifier is 'org.example.other'" in said(CFBundleIdentifier="org.example.other")
+    assert "CFBundleVersion is '1', not '41'" in said(CFBundleVersion="1")
+    assert "MinimumOSVersion" in said(MinimumOSVersion="18.0")
+    assert "ITSAppUsesNonExemptEncryption" in said(ITSAppUsesNonExemptEncryption=None)
+    assert "names no icon" in said(CFBundleIcons=None)
+
+    app = built_app(tmp_path / "bare")
+    (app / "PrivacyInfo.xcprivacy").unlink()
+    (app / "Assets.car").unlink()
+    wrong = " ".join(ios_archive.faults(app, 41))
+    assert "No PrivacyInfo.xcprivacy" in wrong and "No Assets.car" in wrong
+    assert "holds no app" in ios_archive.faults(tmp_path / "nothing.app", 41)[0]
+
+
+def test_the_privacy_manifest_gives_a_reason_for_what_the_app_reads():
+    # The trail is kept in UserDefaults, which Apple wants a reason for.
+    assert "UserDefaults.standard" in (SWIFT / "BGUCats" / "Trail.swift").read_text()
+    privacy = plistlib.loads((SWIFT / "BGUCats" / "PrivacyInfo.xcprivacy").read_bytes())
+    assert privacy["NSPrivacyTracking"] is False and privacy["NSPrivacyTrackingDomains"] == []
+    reasons = {api["NSPrivacyAccessedAPIType"]: api["NSPrivacyAccessedAPITypeReasons"] for api in privacy["NSPrivacyAccessedAPITypes"]}
+    assert reasons == {ios_archive.USER_DEFAULTS: ["CA92.1"]}
+    # Nothing is collected while the app calls no server. The first screen
+    # that signs in or reads the API changes this file with it
+    # (docs/privacy-data.md has the answers).
+    sources = "".join(path.read_text() for path in (SWIFT / "BGUCats").glob("*.swift"))
+    if "URLSession" not in sources:
+        assert privacy["NSPrivacyCollectedDataTypes"] == []
+    else:
+        assert privacy["NSPrivacyCollectedDataTypes"], "the app calls a server: say what it collects"
 
 
 # ----------------------------------------------------------- the pictures

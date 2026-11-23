@@ -1,20 +1,22 @@
 name: iOS
 
-# The iPhone app: web/ packed with Capacitor (native/), and beside it the
-# app being rewritten in Swift (native/swift/, docs/ROADMAP.md 2g). GitHub's
-# macOS runners stand in for the Mac nobody here owns.
+# The iPhone app. What TestFlight gets is the app written in Swift
+# (native/swift/, docs/ROADMAP.md 2g), since 2026-11-23: screens arrive in
+# it one by one. Beside it, the app it replaces: web/ packed with Capacitor
+# (native/), still checked here until it is removed. GitHub's macOS runners
+# stand in for the Mac nobody here owns.
 #
+# - swift: builds the Swift app, walks its UI tests through every screen in
+#   a simulator, in light and dark, keeping a picture of each, and archives
+#   it as the upload will. Swift cannot be compiled on Linux, so this is
+#   where anyone sees a screen before it is merged. No secrets, no signing,
+#   nothing uploaded. Runs on a pull request, and before every upload.
 # - simulator: builds the packed app unsigned and starts it in an iPhone
-#   simulator. No secrets. Runs on a pull request that touches the native
-#   shell, and before every upload.
-# - swift: builds the Swift app and walks its UI tests through every screen
-#   in a simulator, in light and dark, keeping a picture of each. Swift
-#   cannot be compiled on Linux, so this is where anyone sees a screen
-#   before it is merged. No secrets, no signing, nothing uploaded.
-# - testflight: archives, signs and uploads to TestFlight. Only from main and
-#   only when started by hand (Actions → iOS → Run workflow): the
-#   `testflight` environment holds the App Store Connect key and accepts
-#   `main` alone.
+#   simulator. No secrets. On a pull request only.
+# - testflight: archives the Swift app, signs it and uploads to TestFlight.
+#   Only from main and only when started by hand (Actions → iOS → Run
+#   workflow): the `testflight` environment holds the App Store Connect key
+#   and accepts `main` alone.
 #
 # Nothing here runs on every merge: a build is for a change to the iPhone
 # app, or for an upload. docs/deploy.md, "The iPhone app".
@@ -25,6 +27,7 @@ on:
       - "native/**"
       - "scripts/native_bundle.py"
       - "scripts/ios_screenshots.py"
+      - "scripts/ios_archive.py"
       - ".github/workflows/ios.yml"
   workflow_dispatch:
 
@@ -45,6 +48,8 @@ env:
 
 jobs:
   simulator:
+    # The packed app is no longer uploaded: its check is for a pull request.
+    if: github.event_name == 'pull_request'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -143,7 +148,6 @@ jobs:
   # The Swift app. One job builds it, runs it and looks at it: the Mac is
   # the compiler, so a pull request learns here whether it even builds.
   swift:
-    if: github.event_name == 'pull_request'
     runs-on: macos-26
     timeout-minutes: 30
     env:
@@ -211,6 +215,12 @@ jobs:
           echo "xcodebuild ended with $status"
           exit "$status"
 
+      # The upload's own archive: a Release build for a real iPhone,
+      # unsigned, and a look at what is in it. A simulator build can pass
+      # while this fails; without it, the owner's upload would find out.
+      - name: archive it as the upload will
+        run: python3 scripts/ios_archive.py "$RUNNER_TEMP/check.xcarchive" --build 1
+
       - name: the pictures
         if: always()
         run: |
@@ -227,7 +237,7 @@ jobs:
           retention-days: 14
 
   testflight:
-    needs: simulator
+    needs: swift
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: macos-26
     timeout-minutes: 45
@@ -239,11 +249,8 @@ jobs:
       ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: native/package-lock.json
+          persist-credentials: false
 
       - name: what this job needs from the testflight environment
         env:
@@ -266,29 +273,15 @@ jobs:
           need "$PRIVATE_KEY" "secret APP_STORE_CONNECT_PRIVATE_KEY"
           exit "$missing"
 
-      - name: pack web/ into the Xcode project
-        run: |
-          python3 scripts/native_bundle.py --site "$SITE"
-          cd native
-          npm ci
-          npx cap sync ios
-
-      # Unsigned on purpose. Signing an archive by itself needs a development
-      # certificate and a registered device; the export below signs it for
-      # distribution with a certificate Apple keeps, so no certificate or
-      # profile is ever stored here. The build number is this run's number:
-      # App Store Connect wants a new one every time, and it says which run
-      # made a build.
+      # The Swift app, by the same script the `swift` job ran a moment ago.
+      # Unsigned: the export below signs it for distribution with a
+      # certificate Apple keeps, so no certificate or profile is ever stored
+      # here. The build number is this run's number: App Store Connect wants
+      # a new one every time, and it says which run made a build.
       - name: archive
         run: |
-          xcodebuild -version
-          xcodebuild archive -quiet \
-            -project "$PROJECT" -scheme App -configuration Release \
-            -destination "generic/platform=iOS" \
-            -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGNING_ALLOWED=NO
+          python3 scripts/ios_archive.py "$RUNNER_TEMP/BGUCats.xcarchive" \
+            --build "$GITHUB_RUN_NUMBER" --team "$TEAM_ID"
 
       - name: sign and upload to TestFlight
         env:
@@ -317,7 +310,7 @@ jobs:
           </plist>
           EOF
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -archivePath "$RUNNER_TEMP/BGUCats.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \
@@ -327,7 +320,7 @@ jobs:
           {
             echo "### Uploaded to App Store Connect"
             echo
-            echo "Build **$GITHUB_RUN_NUMBER** of commit \`${GITHUB_SHA::7}\`, talking to $SITE."
+            echo "Build **$GITHUB_RUN_NUMBER** of commit \`${GITHUB_SHA::7}\`: the app written in Swift (native/swift/)."
             echo "Apple processes a build for some minutes before TestFlight offers it."
           } >> "$GITHUB_STEP_SUMMARY"
 
