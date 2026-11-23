@@ -47,10 +47,14 @@ digest was moved off Fable that way on its first day).
 **Decided 2026-11-22** (`docs/ROADMAP.md`, 2g, "The factory"): a chain
 of five roles, and low-risk pull requests that merge to staging without
 the owner. Built so far: the reviewer, the planner, the digest and the
-builder's queue, all below. Planned: an **iPhone verifier** (a macOS
-job), a **verifier** that runs a smoke test against staging after each
-deploy and posts screenshots, and **in-app feedback** that becomes
-issues.
+builder's queue, all below, and the **iPhone verifier**: the `swift` job
+of `ios.yml`, which builds the Swift app on a Mac and keeps a picture of
+every screen (`native/swift/README.md`). The builder cannot see those
+pictures while it works (it runs on Linux): it learns from the job's
+result on its pull request, like anyone. The reviewer does not read them
+yet either; it reads CI's. Planned: a **verifier** that runs a smoke
+test against staging after each deploy and posts screenshots, and
+**in-app feedback** that becomes issues.
 
 ## The builder's queue
 
@@ -80,8 +84,10 @@ secret, **from who put the label on, never from what an issue says:**
 repository's open pull requests from `claude/` branches (a session's
 too), plus issues being built that have no pull request yet. The rest
 wait in the queue, the owner's `approved` first, then the oldest. The
-queue is looked at when a label is added, on every merge to `main`, and
-every two hours.
+queue is looked at when a label is added, after every deploy (so after
+every merge), and every two hours. Not on the push itself: Claude's
+action refuses a `push` event, which is how the queue's first three
+builds ended before Claude started (2026-11-23).
 
 **What an issue's labels say:** `ready` or `approved`, waiting; then
 `building`, from the moment a run takes it until its pull request merges

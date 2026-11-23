@@ -336,10 +336,11 @@ web/ ──scripts/native_bundle.py──> native/www ──npx cap sync ios─�
 The app carries that deployment's public `config.json` and the address of
 its API; nothing secret is packed into it.
 
-`ios.yml` has two jobs:
+`ios.yml` has three jobs:
 
 | Job | Runs | Needs | Does |
 |---|---|---|---|
+| `swift` | on the same pull requests as `simulator` | nothing | the app being rewritten in Swift (`native/swift/`, `docs/ROADMAP.md` 2g): builds it and walks its UI tests through every screen in a simulator, in light and dark. Keeps a picture of each: *Artifacts* → `ios-swift`. It is not what TestFlight gets yet |
 | `simulator` | on a pull request that changes `native/`, the bundle script or the workflow; and before every upload | nothing | builds the app unsigned, starts it in an iPhone simulator, fails if it crashes, if the page does not load or if it throws an error. Keeps a screenshot and the app's log: the run's page → *Artifacts* → `ios-simulator` |
 | `testflight` | only when started by hand, from `main` | the `testflight` environment | archives, signs and uploads. The build number is the run's number |
 

@@ -1,9 +1,13 @@
 # native/: the iPhone app
 
 `web/` packed with [Capacitor](https://capacitorjs.com) so it can be
-installed from TestFlight. One codebase: there is no second copy of the
-app here, only the shell around it. How it is built, what a build costs and
-how it reaches a phone: `docs/deploy.md`, "The iPhone app".
+installed from TestFlight. For the packed app there is one codebase: no
+second copy of the app here, only the shell around it. How it is built
+and how it reaches a phone: `docs/deploy.md`, "The iPhone app".
+
+**The app is being rewritten in Swift** (`docs/ROADMAP.md`, 2g): that is
+`swift/`, with a README of its own. Everything below is the packed app,
+which TestFlight has until the Swift app has its screens.
 
 | | |
 |---|---|

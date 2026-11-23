@@ -41,6 +41,7 @@
 # What the iPhone app is allowed to do and how it is signed.
 /native/ios/App/App/Info.plist           @sasha720709
 /native/ios/App/App.xcodeproj/           @sasha720709
+/native/swift/BGUCats.xcodeproj/         @sasha720709
 # The plan and its decisions.
 /docs/ROADMAP.md                         @sasha720709
 /docs/agents.md                          @sasha720709

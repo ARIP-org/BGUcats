@@ -70,7 +70,7 @@ def test_every_agent_stops_at_the_switch():
     for name in ("claude-fix.yml", "claude-triage.yml"):
         first = steps(load(WORKFLOWS / name))[0]
         assert first["if"] == "vars.AGENTS == 'off'" and "exit 1" in first["run"], name
-    # The builder's look at the queue on a merge or by the clock does not
+    # The builder's look at the queue after a deploy or by the clock does not
     # even start: a red run every two hours would tell nobody anything.
     assert "github.event_name != 'issues' && vars.AGENTS != 'off'" in builder()["jobs"]["pick"]["if"]
 
@@ -115,11 +115,33 @@ def builder():
     return load(WORKFLOWS / "claude-fix.yml")
 
 
-def test_the_builder_looks_at_the_queue_on_a_label_a_merge_and_the_clock():
+def test_the_builder_looks_at_the_queue_on_a_label_a_deploy_and_the_clock():
     on = builder()["on"]
     assert on["issues"] == {"types": ["labeled"]}
-    assert on["push"] == {"branches": ["main"]}
+    assert on["workflow_run"] == {"workflows": ["Deploy"], "types": ["completed"]}
     assert len(on["schedule"]) == 1
+
+
+# What anthropics/claude-code-action runs on. It stops at anything else
+# with "Unsupported event type", before Claude starts: the builder's first
+# three builds were started by a push and all ended there (2026-11-23).
+ACTION_TAKES = {
+    "issues",
+    "issue_comment",
+    "pull_request",
+    "pull_request_review",
+    "pull_request_review_comment",
+    "workflow_dispatch",
+    "repository_dispatch",
+    "schedule",
+    "workflow_run",
+}
+
+
+def test_no_agent_starts_on_an_event_claudes_action_refuses():
+    for path in AGENTS:
+        assert set(load(path)["on"]) <= ACTION_TAKES, path.name
+    on = builder()["on"]
     # Never on a pull request's own events: those run the pull request's
     # copy of this file.
     assert not any(event.startswith("pull_request") for event in on)
