@@ -440,3 +440,110 @@ def test_a_place_that_arrives_after_the_first_photo_is_taken_once(app):
     assert [str(v) for v in place()] == ["31.262", "34.803", "app-gps"]
     # And nobody places someone else's encounter.
     assert _encounter({"lat": 31.3, "lon": 34.9}, email=ADMIN)[0] == 403
+
+
+# ---- a photo from the phone's gallery (#108) ------------------------------
+
+
+def _jpeg_taken_at(lat_dms, lon_dms, when=b"2025:06:01 10:20:30"):
+    """A real JPEG whose EXIF holds a capture time and a position."""
+    import io
+
+    import piexif
+    from PIL import Image
+
+    exif = piexif.dump(
+        {
+            "0th": {},
+            "Exif": {piexif.ExifIFD.DateTimeOriginal: when},
+            "GPS": {
+                piexif.GPSIFD.GPSLatitudeRef: b"N",
+                piexif.GPSIFD.GPSLatitude: lat_dms,
+                piexif.GPSIFD.GPSLongitudeRef: b"E",
+                piexif.GPSIFD.GPSLongitude: lon_dms,
+            },
+            "1st": {},
+            "thumbnail": None,
+        }
+    )
+    buffer = io.BytesIO()
+    Image.new("RGB", (320, 240), (120, 90, 60)).save(buffer, "JPEG", exif=exif)
+    return buffer.getvalue()
+
+
+# Tel Aviv, nowhere near campus: where an old gallery photo was taken.
+ELSEWHERE = (((32, 1), (5, 1), (0, 1)), ((34, 1), (46, 1), (0, 1)))
+
+
+def _process(app, monkeypatch, key):
+    """The real process Lambda, on the object the phone uploaded."""
+    from process import handler as process_handler
+
+    monkeypatch.setattr(process_handler, "table", app["table"])
+    monkeypatch.setattr(process_handler, "s3", app["s3"])
+    monkeypatch.setattr(process_handler, "MEDIA_BUCKET", BUCKET)
+    process_handler.handler({"Records": [{"s3": {"object": {"key": key}}}]}, None)
+
+
+def _send_photo(app, monkeypatch, **extra):
+    _encounter()  # no place yet: only a photo could give it one
+    status, _ = _start_upload(**GPS, **extra)
+    assert status == 200
+    key = f"raw/{ENCOUNTER}/{PHOTO}.jpg"
+    _phone_uploads(app, key, _jpeg_taken_at(*ELSEWHERE))
+    # Either order happens in AWS; here processing runs before the
+    # confirmation, so a place it wrote would be there for the encounter.
+    _process(app, monkeypatch, key)
+    assert _call("POST", f"/api/photos/{PHOTO}/complete", email=HELPER)[0] == 200
+    return _item(app, f"PHOTO#{PHOTO}"), _item(app, f"SESSION#{ENCOUNTER}")
+
+
+def test_a_gallery_photo_keeps_no_place_and_gives_its_encounter_none(
+    app, monkeypatch
+):
+    photo, session = _send_photo(app, monkeypatch, origin="gallery")
+    assert photo["origin"] == "gallery"
+    assert photo.get("coarseLat") is None and photo.get("coarseLon") is None
+    assert "locationSource" not in photo and "locationAccuracyM" not in photo
+    assert session.get("coarseLat") is None and session.get("coarseLon") is None
+    # The capture time is kept: the owner spoke of the place only.
+    assert photo["capturedAt"].startswith("2025-06-01T10:20:30")
+    assert photo["status"] == "unlabeled" and photo.get("width") == 320
+
+
+def test_a_camera_photo_still_gets_its_place(app, monkeypatch):
+    photo, session = _send_photo(app, monkeypatch)
+    assert "origin" not in photo
+    assert photo.get("coarseLat") is not None
+    assert float(session["coarseLat"]) == float(photo["coarseLat"])
+
+
+def test_saying_camera_is_the_same_as_saying_nothing(app):
+    _encounter()
+    assert _start_upload(**GPS, origin="camera")[0] == 200
+    assert _start_upload(**GPS, origin=None)[0] == 200  # null is the default
+    photo = _item(app, f"PHOTO#{PHOTO}")
+    assert "origin" not in photo and float(photo["coarseLat"]) == 31.262
+
+
+def test_an_unknown_origin_is_refused(app):
+    _encounter()
+    assert _start_upload(origin="screenshot")[0] == 400
+    assert _start_upload(origin=True)[0] == 400
+    assert _item(app, f"PHOTO#{PHOTO}") is None
+
+
+def test_a_gallery_photo_sent_twice_lands_on_the_same_item(app):
+    _encounter()
+    assert _start_upload(**GPS, origin="gallery")[0] == 200
+    status, data = _start_upload(**GPS, origin="gallery")
+    assert status == 200 and data["done"] is False
+    photo = _item(app, f"PHOTO#{PHOTO}")
+    assert photo["origin"] == "gallery" and photo.get("coarseLat") is None
+
+
+def test_a_retry_cannot_change_where_the_photo_came_from(app):
+    _encounter()
+    _start_upload(**GPS, origin="gallery")
+    assert _start_upload(**GPS)[0] == 409
+    assert _item(app, f"PHOTO#{PHOTO}")["origin"] == "gallery"

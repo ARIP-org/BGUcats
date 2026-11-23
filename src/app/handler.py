@@ -673,6 +673,10 @@ def require_terms(user):
 ISRAEL = ZoneInfo("Asia/Jerusalem")
 BATCH_GET_LIMIT = 100
 CAT_PAGE_PHOTOS = 12
+# Where a photo was made (#108), as every photo in an answer says: the
+# camera on the spot, or the phone's gallery. Bots' photos say "camera".
+ORIGIN_CAMERA = "camera"
+ORIGIN_GALLERY = "gallery"
 # A cat of the day is one seen this recently, when there is any.
 CAT_OF_THE_DAY_DAYS = 30
 
@@ -836,6 +840,7 @@ def _get_cat(user, cat_id, **_):
                 {
                     "photoId": p["photoId"],
                     **media.photo_urls(s3, MEDIA_BUCKET, p["photoId"]),
+                    "origin": p.get("origin") or ORIGIN_CAMERA,
                 }
                 for p in photos
             ],
@@ -1799,12 +1804,15 @@ def _batch_get(table, keys):
 def _post_photos_ok(session_id, photo_ids, email):
     """The encounter is the caller's, and every photo is in it and has
     finished uploading. 425, "not yet", while one is still on its way: the
-    phone's outbox tries again (docs/app-plan/04-api.md, "Conventions")."""
+    phone's outbox tries again (docs/app-plan/04-api.md, "Conventions").
+    Answers the encounter, and which of the photos came from the phone's
+    gallery (#108)."""
     session = tables.get_one(data_table, f"SESSION#{session_id}")
     if session is None or session.get("channel") != "app":
         raise ApiError(404, "no such encounter", code="gone")
     if session.get("startedBy") != email:
         raise ApiError(403, "this encounter is someone else's", code="not_yours")
+    gallery = []
     for photo_id in photo_ids:
         photo = tables.get_one(data_table, f"PHOTO#{photo_id}")
         if photo is None or photo.get("status") == "pending":
@@ -1816,7 +1824,9 @@ def _post_photos_ok(session_id, photo_ids, email):
             or photo.get("mediaType") == "video"
         ):
             raise ApiError(400, "this photo cannot be posted")
-    return session
+        if photo.get("origin") == ORIGIN_GALLERY:
+            gallery.append(photo_id)
+    return session, gallery
 
 
 def _create_post(user, body, **_):
@@ -1853,7 +1863,7 @@ def _create_post(user, body, **_):
             raise ApiError(409, "that post id is taken")
         return {"post": _cards([existing], user)[0]}  # the same request, sent again
 
-    session = _post_photos_ok(session_id, photo_ids, user["email"])
+    session, gallery = _post_photos_ok(session_id, photo_ids, user["email"])
     place = encounters.place_fields(session)
     region = place["regionId"] if body.get("shareRegion") else None
     enc = tables.get_one(social_table, user["PK"], f"ENC#{session_id}") or {}
@@ -1873,6 +1883,9 @@ def _create_post(user, body, **_):
         "authorId": user["userId"],
         "sessionId": session_id,
         "photoIds": photo_ids,
+        # Copied from the photos, which never change it, so the feed need
+        # not read every photo to mark one "not made on the spot".
+        "galleryPhotoIds": gallery,
         "claimedCatId": cat_id,
         "catId": cat_id,
         # A post for a new cat waits for an admin's decision (D7): the
@@ -2267,7 +2280,13 @@ def _cards(posts, user, friends=None):
             if p.get("catId")
             else None,
             "photos": [
-                {"photoId": photo_id, **media.photo_urls(s3, MEDIA_BUCKET, photo_id)}
+                {
+                    "photoId": photo_id,
+                    **media.photo_urls(s3, MEDIA_BUCKET, photo_id),
+                    "origin": ORIGIN_GALLERY
+                    if photo_id in (p.get("galleryPhotoIds") or ())
+                    else ORIGIN_CAMERA,
+                }
                 for photo_id in p["photoIds"]
             ],
             "text": p.get("text") or "",

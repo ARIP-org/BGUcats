@@ -285,7 +285,11 @@ product). Its old sessions and photos stay in the table with
   3 decimals like everything else. GPS takes seconds and the first photo
   does not wait for it: an encounter with no place takes the one the
   phone sends a moment later (the outbox's `placeEncounter`, since
-  2026-11-13), and one that has a place never changes it.
+  2026-11-13), and one that has a place never changes it. A photo the
+  client marks `origin = "gallery"` (picked from the phone's gallery,
+  #108) keeps no place at all: not the one sent with it, not its EXIF's,
+  and it never places its encounter; the member API shows it as not
+  made on the spot.
 - **Installed app only.** A browser tab gets the install page (web/install.js:
   what the app is for, how to use it, how to install it — Hebrew, English,
   Russian, Arabic) instead of the app. It is a front door, not security: the

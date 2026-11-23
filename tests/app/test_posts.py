@@ -117,6 +117,23 @@ def test_a_post_waits_then_appears_in_the_feed(campus):
     assert "state" not in card and card["mine"] is False
 
 
+def test_the_feed_marks_a_photo_from_the_gallery(campus):
+    """#108: a photo picked from the phone's gallery was not made on the
+    spot, and the feed says so for each photo of a post."""
+    campus["data"].update_item(
+        Key={"PK": f"PHOTO#{PHOTOS[1]}", "SK": "META"},
+        UpdateExpression="SET origin = :g",
+        ExpressionAttributeValues={":g": "gallery"},
+    )
+    make_post()
+    published(campus["social"], POST)
+    card = call("GET", "/api/v1/feed", email=ADMIN)[1]["cards"][0]
+    assert [p["origin"] for p in card["photos"]] == ["camera", "gallery"]
+    assert [
+        p["origin"] for p in call("GET", f"/api/v1/posts/{POST}")[1]["post"]["photos"]
+    ] == ["camera", "gallery"]
+
+
 def test_publishing_twice_counts_once(campus):
     make_post()
     published(campus["social"], POST)

@@ -141,6 +141,21 @@ def test_a_cats_page_has_its_description_and_newest_photos(campus):
     assert "vet" not in str(body)
 
 
+def test_a_cats_page_marks_a_photo_from_the_gallery(campus):
+    """#108: a photo picked from the phone's gallery says so, and was
+    not made on the spot; every other photo says "camera"."""
+    campus["data"].update_item(
+        Key={"PK": "PHOTO#P1", "SK": "META"},
+        UpdateExpression="SET origin = :g",
+        ExpressionAttributeValues={":g": "gallery"},
+    )
+    photos = call("GET", "/api/v1/cats/CAT01")[1]["cat"]["photos"]
+    assert {p["photoId"]: p["origin"] for p in photos} == {
+        "P2": "camera",
+        "P1": "gallery",
+    }
+
+
 def test_an_unknown_cat_is_404(campus):
     assert call("GET", "/api/v1/cats/NOPE")[0] == 404
 

@@ -68,15 +68,20 @@ def _process_object(key):
     # (one was, from a diagnostic upload on 2026-08-28) and claim its hash.
     # Read strongly consistent: the record was written moments before the
     # object landed, and a stale "not there" would skip a real photo for good.
-    if "Item" not in table.get_item(
+    record = table.get_item(
         Key={"PK": f"PHOTO#{photo_id}", "SK": "META"},
-        ProjectionExpression="PK",
+        ProjectionExpression="PK, #origin",
+        ExpressionAttributeNames={"#origin": "origin"},
         ConsistentRead=True,
-    ):
+    ).get("Item")
+    if record is None:
         logger.warning("no photo record for %s, skipping", key)
         return
     if ext.lower() in IMAGE_EXTENSIONS:
-        _process_image(key, session_id, photo_id)
+        # A photo picked from the phone's gallery keeps no place (#108):
+        # its EXIF position is wherever it was taken, maybe long ago.
+        located = record.get("origin") != "gallery"
+        _process_image(key, session_id, photo_id, located=located)
     else:
         _process_video(key, session_id, photo_id)
 
@@ -90,7 +95,7 @@ def _process_video(key, session_id, photo_id):
     _record_video_results(photo_id=photo_id, sha256=sha256, duplicate_of=duplicate_of)
 
 
-def _process_image(key, session_id, photo_id):
+def _process_image(key, session_id, photo_id, located=True):
     logger.info("processing photo=%s session=%s", photo_id, session_id)
 
     raw = s3.get_object(Bucket=MEDIA_BUCKET, Key=key)["Body"].read()
@@ -98,6 +103,8 @@ def _process_image(key, session_id, photo_id):
 
     image = Image.open(io.BytesIO(raw))
     captured_at, coarse_lat, coarse_lon = _extract_exif(image)
+    if not located:
+        coarse_lat = coarse_lon = None
 
     # Bake orientation into the pixels before stripping EXIF, or every
     # portrait phone photo renders sideways once the metadata is gone.

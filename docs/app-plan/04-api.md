@@ -33,7 +33,11 @@ fields and records them here.
   Opaque.
 - **Photos:** every photo in a response is
   `{"thumb": url, "medium": url}`, signed, with the long cache header the
-  app already relies on (`stablePhotoUrl` in `web/app.js`).
+  app already relies on (`stablePhotoUrl` in `web/app.js`). A photo of
+  a post (the feed, a post, a cat's posts) and of a cat's page also
+  carries `origin` (since #108): `"gallery"` for one picked from the
+  phone's gallery, which was not made on the spot, and `"camera"` for
+  every other, the bots' included.
 - **Never sent to a member:** anyone else's email or phone; a cat's
   `adminNotes`; another person's pending items; moderation scores.
 - **Reads that decide "exists or not" are strongly consistent,** as
@@ -139,7 +143,7 @@ post". Steps 1–4 exist today and keep their write order.
 | # | Request | Lambda | Notes |
 |---|---|---|---|
 | 1 | `POST /api/encounters` | admin | the encounter, with its first photo, as today |
-| 2 | `POST /api/encounters/{id}/media` | admin | the photo's record as `pending`; a presigned upload |
+| 2 | `POST /api/encounters/{id}/media` | admin | the photo's record as `pending`; a presigned upload. `origin` (since #108): `"camera"` (the default; null or absent is the same) or `"gallery"` for a photo picked from the phone's gallery; anything else is 400. A gallery photo keeps no place at all: the `lat`/`lon`/`accuracyM` sent with it are ignored, the process Lambda writes none from the file's EXIF (its capture time is kept), and it never places its encounter. Stored on the photo as it is written and never changed: a retry with another `origin` is 409 |
 | 3 | upload to S3 | | then the process Lambda, on the S3 event |
 | 4 | `POST /api/photos/{id}/complete` | admin | flips to `unlabeled`, conditional on `pending` |
 | 5 | `POST /api/encounters/{id}/rerank` | admin | only if `rerank_mode` is not off; the phone never waits on it (`07-rerank.md`) |
