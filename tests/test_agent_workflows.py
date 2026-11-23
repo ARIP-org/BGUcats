@@ -179,13 +179,33 @@ def test_the_builder_as_claude_cannot_push_workflows_or_reach_the_queue_script()
     assert "/scripts/builder_queue.py" in (REPO / ".github" / "CODEOWNERS").read_text()
 
 
-def test_a_build_with_no_pull_request_goes_to_the_owner():
+def test_a_build_with_no_pull_request_goes_to_the_owner_with_claudes_last_words():
     fix = builder()["jobs"]["fix"]
+    names = [s.get("name") for s in fix["steps"]]
     last = next(s for s in fix["steps"] if s.get("name") == "No pull request came of it")
     assert last["if"] == "always()"
     assert "labels[]=needs-owner" in last["run"] and "labels/building" in last["run"]
-    # Claude's step ends before the job does, so that step runs.
+    # Two of the first builds ended green with no pull request and not a
+    # word (2026-11-23). What Claude said last is printed every time, not
+    # only on failure, and goes on the issue with the hand-over.
+    said = next(s for s in fix["steps"] if s.get("name") == "What Claude said last")
+    assert said["if"] == "always()" and "said.txt" in said["run"]
+    assert names.index("What Claude said last") < names.index("No pull request came of it")
+    # As a file, quoted and cut short: never put into a command.
+    assert "--body-file" in last["run"] and "head -c 3000" in last["run"]
+    assert "$(cat" not in last["run"]
+    # Claude's step ends before the job does, so those steps run.
     assert claude(builder())["timeout-minutes"] < fix["timeout-minutes"]
+
+
+def test_the_apps_own_work_is_reviewed_and_starts_the_queue():
+    # Claude's action refuses a run started by a bot it was not told of.
+    # The builder's pull requests are the App's, so unnamed, the reviewer
+    # reviewed none of them (2026-11-23). Named, and only it: "*" would
+    # let any App on a public repository start an agent.
+    for name in ("claude-review.yml", "claude-fix.yml"):
+        assert claude(load(WORKFLOWS / name))["with"]["allowed_bots"] == "arip-claude", name
+    assert "allowed_bots" not in claude(load(WORKFLOWS / "claude-triage.yml"))["with"]
 
 
 def test_the_builder_reads_the_issue_without_strangers_comments():
