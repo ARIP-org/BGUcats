@@ -682,10 +682,13 @@ App, and any AWS access.
    then the owner's settings. **Running since 2026-11-23**
    (`docs/agents.md`, "The reviewer, and the two lanes"); the owner
    changed the `main` ruleset the same day. **Done when** a pull request
-   that touches only `web/` merges with no person involved, and one that
-   touches `infra/` waits: the first three builder pull requests (#115
-   to #117) each still had the owner's approval, so this is yet to be
-   seen.
+   that touches no owner path merges with no person involved, and one
+   that touches one waits. **Seen 2026-11-23:** #120 (the Swift app's
+   sign-in and feed) was sent back by the reviewer once, fixed, passed,
+   and merged by auto-merge with nobody's approval; #118 and #119, which
+   touched workflows and `CLAUDE.md`, waited for the owner. The first
+   three builder pull requests (#115 to #117) had still each had the
+   owner's approval.
 2. The planner and the digest, as scheduled cloud sessions. **Written
    2026-11-22** (`docs/agents/planner.md`, `docs/agents/digest.md`;
    `docs/agents.md`, "The planner and the digest"); scheduled the same
@@ -704,6 +707,10 @@ App, and any AWS access.
    `simulator` job) is removed.
 5. Screens, in the plan's order: signing in and the feed first, then
    capture, cats, profile. Each lands in the next build the owner starts.
+   **Signing in, the feed and the profile's first rows: merged
+   2026-11-23** (#120), pictured in a simulator from a made-up member.
+   Not tried on a phone yet: the real sign-in sheet, the keychain, the
+   feed against staging.
 
 ## Review against industry practice (2026-11-10)
 

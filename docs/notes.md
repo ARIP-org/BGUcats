@@ -408,6 +408,15 @@ an hour that a sentence would have saved.
   runs `tests/web` a second time with `BGUCATS_NO_BROWSER=1`, as the
   deploy sees it. After a merge, "CI is green on `main`" is not "it is
   deployed": the Deploy run's own job is what says so.
+- **A check that waits a fixed time fails on the day the machine is
+  slow.** The packed app's simulator check started the app in the
+  background, slept thirty seconds and asked whether it was running. On
+  one runner the simulator's own first start took 98 seconds and the
+  app's first log line came ten seconds after the look: "it crashed or
+  never started", on a pull request that touched none of it (#120,
+  2026-11-23); the next run passed. It now waits for the line that says
+  the page loaded, up to a limit. Read the times in a log before calling
+  a failure a crash, and before calling it a flake.
 - **A queue that reads two stores in two steps reads two moments.** The
   outbox's pass read the encounters, then the photos. The place arriving
   a moment before the first photo started a pass; the encounter and the

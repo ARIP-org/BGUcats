@@ -110,7 +110,16 @@ jobs:
           xcrun simctl install "$UDID" "$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/App.app"
           xcrun simctl launch --console-pty "$UDID" "$BUNDLE_ID" > build/ios/app.log 2>&1 &
           console=$!
-          sleep 30
+          # Wait for the page, not for a clock. This waited a fixed thirty
+          # seconds; on a slow runner the app's first line came ten seconds
+          # after the look, and a start that was only late was called a
+          # crash (2026-11-23). Up to three minutes for the page to load,
+          # then a little for its own start to be logged.
+          for _ in $(seq 1 90); do
+            if grep -q "WebView loaded" build/ios/app.log; then break; fi
+            sleep 2
+          done
+          sleep 15
           xcrun simctl io "$UDID" screenshot build/ios/launch.png
           running=$(xcrun simctl spawn "$UDID" launchctl list | grep -F "$BUNDLE_ID" || true)
           kill "$console" 2>/dev/null || true
@@ -118,7 +127,7 @@ jobs:
           cat build/ios/app.log
           echo "---"
           if [ -z "$running" ]; then
-            echo "::error::The app was not running 30 seconds after launch: it crashed or never started."
+            echo "::error::The app was not running after its start: it crashed or never started."
             exit 1
           fi
           if ! grep -q "WebView loaded" build/ios/app.log; then
