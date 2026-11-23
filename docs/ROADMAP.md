@@ -39,6 +39,7 @@ it instead.
 | 2026-11-22 | **Low-risk pull requests merge to staging without the owner** (2g). Pull request #98 passed CI in twenty minutes and waited six days for an approval. What is low-risk is decided by paths GitHub enforces, not by an agent; production still moves only on the owner's tag. |
 | 2026-11-22 | **The iPhone app is rewritten in Swift, now; the web member app is frozen and will be retired** (2g). Supersedes "one codebase, never platform branches" (2026-10-31, below) and "the iPhone app carries `web/` inside it" (2026-11-11) for the member app. The owner wants native features and an app that feels native. The labeling desk stays a web app. |
 | 2026-11-22 | **A chain of agents, with no server of the owner's** (2g): planner, builder, reviewer, an iPhone verifier, a daily digest. How Mac time is paid for is open: 2g, "What Mac time costs". |
+| 2026-11-22 | **Each role has a model of its own** (the owner): the planner on Fable, because it decides what is built; the builder and the reviewer on Opus; triage and the digest on Sonnet. A builder on Fable costs more than it returns. `docs/agents.md`, "Which model". |
 | 2026-11-22 | **The repository goes public** (2g, "What Mac time costs", way B), when the owner changes its visibility. Paying by the minute for a factory was $80 to $390 a month and the owner will not spend $30; a public repository's standard runners are free, macOS too. Supersedes "private repos ... not public repos" (2026-10-31). What it takes first: `docs/agents.md`, "When the repository is public". |
 | 2026-10-31 | iOS and Android: one codebase, never platform branches. Today that is the PWA; if the stores are needed (Phase 4 of `CLAUDE.md`), wrap `web/` with Capacitor. Decided then, not now. |
 
@@ -518,11 +519,11 @@ its token can do, not by what its prompt says.
 
 | Role | Starts when | Does | Cannot | Runs as |
 |---|---|---|---|---|
-| **Planner** | once a day; when the owner leaves feedback | turns the plan, the owner's notes, failures and reports into small issues, each with a "done when" | write code, label an issue `approved` for work nobody asked for | a scheduled cloud session |
-| **Builder** | an issue is ready | one issue, one pull request, with tests and screenshots | merge, reach AWS, change the rules | the Fix workflow (2d), or a cloud session for larger work |
+| **Planner** | once a day; when the owner leaves feedback | turns the plan, the owner's notes, failures and reports into small issues, each with a "done when" | write code, label an issue `approved` for work nobody asked for | a cloud session of its own, woken daily |
+| **Builder** | an issue is in the queue (`approved` by the owner, or `ready`) and fewer than three pieces of agent work are open | one issue, one pull request, with tests and screenshots | merge, reach AWS, change the rules, start on a label an agent put on | the Fix workflow (2d), or a cloud session for what it cannot touch |
 | **Reviewer** | a pull request opens or changes | reads the change and its screenshots with nothing of the builder's context; passes it, sends it back, or sends it to the owner | change code, approve as a person | a workflow on `main`'s copy of itself, whose result is a required check |
 | **iPhone verifier** | a pull request touches the iPhone app | builds it, runs its UI tests in a simulator, keeps screenshots for the reviewer | upload to TestFlight | a macOS job |
-| **Digest** | once a day | tells the owner what merged, what waits on them, what needs a decision | anything else | a scheduled cloud session |
+| **Digest** | once a day | tells the owner what merged, what waits on them, what needs a decision | anything else | a cloud session of its own, woken daily |
 
 #### Two lanes
 
@@ -677,9 +678,11 @@ App, and any AWS access.
    touches `infra/` waits.
 2. The planner and the digest, as scheduled cloud sessions. **Written
    2026-11-22** (`docs/agents/planner.md`, `docs/agents/digest.md`;
-   `docs/agents.md`, "The planner and the digest"); scheduled once this
-   is on `main`. A builder that takes the planner's issues by itself
-   waits for the repository to be public.
+   `docs/agents.md`, "The planner and the digest"); scheduled the same
+   day, each in a session of its own. The repository went public the
+   same day, and the builder takes the planner's `ready` issues by
+   itself (`docs/agents.md`, "The builder's queue"). **Not built:** an
+   answer to the reviewer's "sent back".
 3. The Swift app's skeleton and its verifier, on a pull request, with
    the first screenshot from a simulator.
 4. Screens, in the plan's order; "App info" first.

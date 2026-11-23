@@ -1,19 +1,21 @@
 # Agents: how Claude works on this repo without a codespace
 
-Phase 2d of `docs/ROADMAP.md`. The owner directs through GitHub issues;
-Claude reads them, and, once the owner approves one, writes the change and
-opens a pull request. The owner approves and merges. Nothing else changes:
-CI runs on that pull request like on any other, a merge deploys staging,
-and a `v*` tag promotes (`docs/deploy.md`).
+Phases 2d and 2g of `docs/ROADMAP.md`. Work arrives as GitHub issues: the
+owner's, or the planner's, cut from the owner's words, a failure or the
+plan. An issue in the queue becomes a pull request; CI and a reviewer
+read it; `main`'s rules decide whether it waits for the owner. Nothing
+else changes: a merge deploys staging, and a `v*` tag promotes
+(`docs/deploy.md`).
 
 ```
-issue opened ──> Claude triage ──> one comment + labels
-                                        │
-                     the owner reads it, adds the label "approved"
-                                        │
-                                   Claude fix ──> branch claude/issue-N ──> pull request
-                                                                               │
-                                              CI ──> the owner approves and merges ──> staging
+the owner's issue ──> triage: one comment ──> the owner adds "approved" ──┐
+the planner's issue, labeled "ready" ─────────────────────────────────────┤
+                                                                          │
+              the queue (scripts/builder_queue.py): who labeled it, is there room
+                                                                          │
+                       the builder ──> branch claude/issue-N ──> pull request
+                                                                          │
+                     CI ──> the reviewer ──> main's rules ──> staging
 ```
 
 ## The agents
@@ -24,20 +26,77 @@ not what their prompt says.
 | Agent | Starts when | Acts as | Can | Cannot |
 |---|---|---|---|---|
 | **Triage** (`claude-triage.yml`) | an issue is opened | GitHub's job token | read the code, comment on and label issues | push, open or merge a pull request, start another workflow, reach AWS |
-| **Fix** (`claude-fix.yml`) | a repository admin adds `approved` | Claude's own GitHub App | push a branch, open a pull request, comment | change `.github/workflows/` (the App has no `workflows` permission), approve or merge its own pull request, reach AWS |
+| **Fix**, the builder (`claude-fix.yml`) | an issue is in the queue and there is room (below) | Claude's own GitHub App | push a branch, open a pull request, comment | change `.github/workflows/` (the App has no `workflows` permission), approve or merge its own pull request, reach AWS |
 
-**Which model:** each workflow names its own in `claude_args` (`--model`):
-Fix runs on Opus, Triage on Sonnet. The token in the `claude` environment
-decides whose Claude plan pays, not which model runs, and neither depends
-on the model of the session the token was made in.
+**Which model** (the owner, 2026-11-22: the one that decides gets the
+strongest, and nothing else pays for it):
+
+| Role | Model | Where that is set |
+|---|---|---|
+| Planner | Fable | its cloud session, made with that model |
+| Builder | Opus | `--model` in `claude-fix.yml` |
+| Reviewer | Opus | `--model` in `claude-review.yml` |
+| Triage | Sonnet | `--model` in `claude-triage.yml` |
+| Digest | Sonnet | its cloud session, made with that model |
+
+The token in the `claude` environment decides whose Claude plan pays, not
+which model runs. A cloud session keeps the model it was made with:
+changing one means a new session and pointing its schedule there (the
+digest was moved off Fable that way on its first day).
 
 **Decided 2026-11-22** (`docs/ROADMAP.md`, 2g, "The factory"): a chain
 of five roles, and low-risk pull requests that merge to staging without
-the owner. Built so far: the reviewer, below. Planned: a **planner** and
-a daily **digest** (scheduled cloud sessions), an **iPhone verifier**
-(a macOS job), a **verifier** that runs a smoke test against staging
-after each deploy and posts screenshots, and **in-app feedback** that
-becomes issues.
+the owner. Built so far: the reviewer, the planner, the digest and the
+builder's queue, all below. Planned: an **iPhone verifier** (a macOS
+job), a **verifier** that runs a smoke test against staging after each
+deploy and posts screenshots, and **in-app feedback** that becomes
+issues.
+
+## The builder's queue
+
+The queue is the open issues labeled `approved` or `ready`. What starts
+is decided by `scripts/builder_queue.py`, in a job with no Claude and no
+secret, **from who put the label on, never from what an issue says:**
+
+- `approved` counts only from a repository admin: the owner read the
+  issue, whoever opened it.
+- `ready` counts only from someone who can push, on an issue opened by
+  someone who can push. That is the planner's lane: its issues are
+  written by the bot from the owner's words.
+- A label put on by a workflow's token or by an App counts for nothing,
+  so the builder and the triage, which act as those, cannot hand
+  themselves or each other work.
+- **The bot account's `ready` does count,** and that is the design: it
+  is a user who can push, the planner acts as it, and cutting `ready`
+  issues is the planner's job. So does the `ready` of any cloud session,
+  since every one acts as the bot. One agent can hand the builder work;
+  what it cannot do is get that work past CI, the reviewer, the owner
+  paths and the owner's tag.
+- A label that does not count is taken off, with a comment saying why.
+- An issue whose pull request is already open is never built a second
+  time, whoever labels it again: its label becomes `building`.
+
+**At most three pieces of agent work are open at once:** this
+repository's open pull requests from `claude/` branches (a session's
+too), plus issues being built that have no pull request yet. The rest
+wait in the queue, the owner's `approved` first, then the oldest. The
+queue is looked at when a label is added, on every merge to `main`, and
+every two hours.
+
+**What an issue's labels say:** `ready` or `approved`, waiting; then
+`building`, from the moment a run takes it until its pull request merges
+(which closes the issue). A run that ends with no pull request, or a
+`building` issue with no open pull request and nothing moving for three
+hours, goes to `needs-owner` with a comment. To start it again: take
+`needs-owner` off and put `ready` or `approved` on.
+
+**The builder cannot change `.github/`, `.claude/`, `infra/bootstrap/` or
+`infra/org/`.** Work that needs one of them is not `ready`: it is for a
+session (below), and the planner labels it `needs-owner` and says so.
+
+**Not built yet:** nothing answers a reviewer's "sent back". The pull
+request stays open and red, keeps its place of the three, and the digest
+lists it under "Needs you".
 
 ## The reviewer, and the two lanes
 
@@ -85,24 +144,30 @@ and Fix stop at their first step, and the reviewer marks every pull
 request "the owner reviews", so nothing merges by itself. Delete the
 variable to start them again.
 
-**At most three agent pull requests are open at once.** Fix counts open
-pull requests from `claude/` branches before it starts; at three it takes
-the `approved` label back off the issue and says so there.
+**At most three pieces of agent work are open at once**, counted by the
+builder's queue (above). At three, an issue waits in the queue with its
+label; nothing is dropped and nothing has to be labeled again.
 
 ## The planner and the digest
 
 Two more roles of the chain (`docs/ROADMAP.md`, 2g), and neither is a
-workflow: each is a **scheduled cloud session** on the owner's Claude
-account, started fresh every day, acting on GitHub as `arip-dev-bot` like
-any cloud session. They use no Actions minutes.
+workflow: each is a **cloud session of its own** on the owner's Claude
+account, woken once a day by a schedule, acting on GitHub as
+`arip-dev-bot` like any cloud session. (A schedule that starts a fresh
+session each day was tried first, 2026-11-22: made from another session,
+such a session gets no GitHub tools, so it could read the code and no
+issue. One long-lived session per role has them. Each day it starts again
+from its file, not from what it remembers.) They use no Actions minutes. Each takes input only
+from the two accounts that can push here, the owner and the bot, named
+in its file; the workflows above check the same thing by permission.
 
 | Agent | Runs | Does | Its whole job is in |
 |---|---|---|---|
 | **Planner** | once a day, early morning in Israel | turns the owner's feedback, failures and the plan's next milestone into at most three small issues labeled `ready` | `docs/agents/planner.md` |
 | **Digest** | once a day, in the morning | one comment on the "Daily digest" issue: what needs the owner, what is broken, what merged, what is next | `docs/agents/digest.md` |
 
-A scheduled session is told one thing: read its file on `main` and do
-what it says. So changing what an agent does is a pull request to that
+Each is told one thing, every day: update to `main`, read its file
+again, and do what it says. So changing what an agent does is a pull request to that
 file, which is an owner path, and never an edit to a schedule.
 
 **What holds them:** they are the bot, so they have what the bot has and
@@ -112,18 +177,22 @@ an instruction, not a wall. The walls behind it are the ones every bot
 session has, and the reviewer and the owner paths in front of anything
 that would reach `main`.
 
-**Labels:** `ready` (cut and ready to build), `needs-owner` (waits on a
-decision or a step that is the owner's), `proposal` (an agent's own
-idea; never built without the owner), `digest`. `approved` stays the
-owner's: it is what starts the Fix workflow.
+**Labels:** `ready` (cut and ready to build: the builder takes it by
+itself), `building` (a run is on it, or its pull request is open),
+`needs-owner` (waits on a decision or a step that is the owner's),
+`proposal` (an agent's own idea; never built without the owner),
+`digest`. `approved` stays the owner's: it puts any issue in the queue,
+ahead of the `ready` ones.
 
-**Nothing builds a `ready` issue by itself yet.** The Fix workflow
-starts only on the owner's `approved`. A builder that takes `ready`
-issues is the next step, and waits for the repository to be public:
-until then every CI run it caused would be paid for by the minute.
+**A `ready` issue is built with no person involved** (since the
+repository is public and its runners free; "The builder's queue",
+above). What the owner still decides: every pull request, until the two
+lanes are on; then every one that touches an owner path or that the
+reviewer sends up.
 
 **Stopping them:** claude.ai → Claude Code → Scheduled tasks, pause or
-delete "BGU Cats planner" and "BGU Cats digest". (`AGENTS=off` stops the
+delete "BGU Cats planner" and "BGU Cats digest". Their two sessions,
+with the same names, are in the session list and show each day's run. (`AGENTS=off` stops the
 workflows; a cloud session cannot read that variable.)
 
 ## When the repository is public
@@ -140,7 +209,8 @@ already in the workflows:
   and waits for the owner.
 - **Fix never sees a stranger's comment.** It reads the issue from a file
   made before it starts: the issue's text and the comments of people who
-  can push, nothing else. Only an admin's `approved` starts it, as before.
+  can push, nothing else. A stranger's issue starts only on an admin's
+  `approved`; `ready` on it is taken off (the builder's queue).
 - **Review looks only at branches of this repository.** A pull request
   from a fork is reviewed by nobody and merged by nobody but the owner.
 - **Nothing private goes into the repository, an issue, a pull request
@@ -214,8 +284,11 @@ The design assumes it will, and relies on GitHub and AWS, not on the model:
 - **Triage cannot escalate.** Its token cannot write code. A label it adds
   starts nothing, because GitHub does not trigger workflows from the job
   token, so it cannot approve its own work.
-- **Only an admin's `approved` starts a fix.** The fix job's first step
-  checks who added the label.
+- **A script decides what starts a fix, from who added the label.**
+  `approved` from an admin, or `ready` from someone who can push on an
+  issue opened by someone who can push; never a label from a workflow or
+  an App ("The builder's queue"). The script and the workflow are owner
+  paths.
 - **A fix cannot land itself.** The `main` ruleset requires one approval,
   and the author of a pull request cannot approve it. The App is the
   author; the owner is the approver.
@@ -236,6 +309,10 @@ the App's token and the Claude token in its environment. An issue that got
 past the owner's reading could make it misuse those within what they can
 do: push branches, open pull requests, write comments, spend Claude usage.
 It cannot merge. Read an issue's comments too before adding `approved`.
+A `ready` issue has no such reading by a person: its text is the
+planner's, and what stands behind it is that the planner takes its input
+only from the owner and the bot, which is an instruction, and then CI,
+the reviewer, the owner paths and the owner's tag, which are not.
 
 ## Setup (once, by the owner)
 
@@ -274,8 +351,9 @@ fingerprint, and a new one can be generated at any time.
 ## Stopping it
 
 - One run: *Actions* → the run → *Cancel*.
-- All of it: *Actions → Claude fix → ⋯ → Disable workflow* (and the same
-  for triage), or delete the secret `CLAUDE_CODE_OAUTH_TOKEN`.
+- All of it: the `AGENTS` variable set to `off` ("The reviewer, and the
+  two lanes"); or *Actions → Claude fix → ⋯ → Disable workflow* (and the
+  same for triage), or delete the secret `CLAUDE_CODE_OAUTH_TOKEN`.
 - For good: *Settings → GitHub Apps → arip-claude → Uninstall*.
 
 ## Hands-on sessions in the cloud

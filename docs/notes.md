@@ -358,6 +358,11 @@ an hour that a sentence would have saved.
   machine the app had already started and the button was gone
   (2026-11-14). A request that should answer later gets a handler that
   decides, not an unroute.
+- **A screen that changes before its request is sent proves nothing
+  about the API.** A like counts on screen at once; the feed's test saw
+  the 2, asked the API, and once in CI got 1, on a pull request that
+  changed only docs (2026-11-22). A test that then asks the API waits for
+  the request's answer first (`page.expect_response`).
 
 ## Agents and sessions
 

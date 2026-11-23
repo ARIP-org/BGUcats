@@ -26,6 +26,7 @@
 # The scripts CI's plan and the reviewer's verdict run through.
 /scripts/ci_plan.sh                      @sasha720709
 /scripts/review_verdict.py               @sasha720709
+/scripts/builder_queue.py                @sasha720709
 # A new dependency is a decision: what the Lambdas, the tests and the
 # pages are built from.
 /requirements.txt                        @sasha720709

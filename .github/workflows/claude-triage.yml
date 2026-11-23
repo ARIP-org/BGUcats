@@ -28,7 +28,13 @@ concurrency:
 
 jobs:
   triage:
-    if: github.event.issue.user.type != 'Bot'
+    # Not the planner's issues (opened as `ready`: already cut, with its
+    # "done when") and not the digest's own: a reading there tells nobody
+    # anything, and each one is paid for from the owner's Claude plan.
+    if: >-
+      github.event.issue.user.type != 'Bot' &&
+      !contains(github.event.issue.labels.*.name, 'ready') &&
+      !contains(github.event.issue.labels.*.name, 'digest')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Holds the Claude subscription token. The environment allows only main,
