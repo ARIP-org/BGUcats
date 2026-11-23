@@ -106,6 +106,15 @@ the comment that hands the issue to the owner. On the queue's first day
 two builds ended green with no pull request and not a word (2026-11-23),
 and the action shows nothing of what Claude did.
 
+**A build never waits for anything.** A run ends when Claude ends its
+turn, and nothing wakes it afterwards. Three builds started the test
+suite in the background, said "I'll wait for the notification that the
+tests have finished", and were over (2026-11-23, known only once the
+last message was printed). The builder now has no background commands
+(`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`), may run one command for
+twenty-five minutes, and is told to run the tests in pieces and to end
+its turn only with a pull request or a reason.
+
 **The App's own work is let in by name.** Claude's action refuses a run
 that a bot started unless the bot is named (`allowed_bots`). The
 builder's pull requests are opened by the App, so the reviewer names it,

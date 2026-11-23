@@ -198,6 +198,25 @@ def test_a_build_with_no_pull_request_goes_to_the_owner_with_claudes_last_words(
     assert claude(builder())["timeout-minutes"] < fix["timeout-minutes"]
 
 
+def test_the_builder_cannot_end_its_turn_waiting_for_a_command():
+    # A run ends when Claude ends its turn. Three builds put the test suite
+    # in the background, said they would wait for it, and were over with
+    # nothing pushed (2026-11-23).
+    step = claude(builder())
+    env = json.loads(step["with"]["settings"])["env"]
+    assert env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
+    # One command may run as long as the whole suite does, and the step
+    # outlasts two of them.
+    ceiling_min = int(env["BASH_MAX_TIMEOUT_MS"]) / 60000
+    assert env["BASH_DEFAULT_TIMEOUT_MS"] == env["BASH_MAX_TIMEOUT_MS"]
+    assert 20 <= ceiling_min and 2 * ceiling_min <= step["timeout-minutes"]
+    prompt = step["with"]["prompt"]
+    assert "Never stop to wait for something" in prompt
+    assert "pytest -q --ignore=tests/web" in prompt
+    # Not the whole suite by reflex: that is what took eighteen minutes.
+    assert "`make test`" not in prompt
+
+
 def test_the_apps_own_work_is_reviewed_and_starts_the_queue():
     # Claude's action refuses a run started by a bot it was not told of.
     # The builder's pull requests are the App's, so unnamed, the reviewer
