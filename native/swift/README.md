@@ -4,7 +4,22 @@ The member app rewritten for iPhone (`docs/ROADMAP.md`, 2g). **It is what
 TestFlight gets** (the owner, 2026-11-23): unfinished, in the same app as
 the packed one it replaces (`native/ios/`), so every screen is seen on
 the phone as it lands. Built so far: the frame (four tabs of the system's
-own controls, so the glass is iOS's) and "App info".
+own controls, so the glass is iOS's), signing in, Home with the feed
+(posts, their photos, a like), the profile's first rows, and "App info".
+Cats and Scan a cat say "Not built yet".
+
+| File | |
+|---|---|
+| `BGUCatsApp.swift` | the start, and `World`: everything a screen reads from outside itself |
+| `Site.swift` | which deployment the app belongs to (staging), and where Cognito answers |
+| `Auth.swift` | signing in: PKCE, the tokens in the keychain, renewing them |
+| `Backend.swift` | the member API, and the made-up one UI tests get |
+| `Models.swift` | what the API answers with, read field by field |
+| `Session.swift` | who is signed in, and whether the app has started |
+| `RootView.swift` | the first screen by state, the tabs, the profile |
+| `SignInView.swift`, `FeedView.swift`, `AppInfoView.swift` | those screens |
+| `Photos.swift` | loading a picture, and the drawn ones UI tests get |
+| `Trail.swift` | the app's own account of what it did |
 
 | | |
 |---|---|
@@ -45,9 +60,13 @@ defined, one iOS version, nothing that signs.
   `ScreensUITests`, which keeps its picture in both looks.
 - **A UI test reads no network and keeps nothing.** The app started with
   `-uiTesting` gets a made-up world (`World.standIn()`): a clock that
-  stands still and a trail kept in memory, so two pictures of one screen
-  are the same picture. A screen that reads the API gets its canned
-  answers the same way. The look is asked of the app (`-look dark`), and
+  stands still, a trail kept in memory, a made-up member with three
+  made-up posts (`StandInBackend`), and pictures that are drawn
+  (`DrawnPhotos`), so two pictures of one screen are the same picture.
+  `-signedOut` starts it with nobody signed in. A new screen that reads
+  the API adds its canned answers to `StandInBackend`. The network is
+  reached from three files only (`Auth`, `Backend`, `Photos`), each
+  behind a protocol; a test holds that. The look is asked of the app (`-look dark`), and
   the test checks each picture's brightness: asking the simulator for
   dark did nothing on the first run, and ten light pictures passed.
 - **The trail** (`Trail.swift`) is the web app's, with its limits: the
@@ -60,14 +79,34 @@ defined, one iOS version, nothing that signs.
 - **A screen not built says so** (`NotBuiltYet`), and never looks
   broken: the owner is using this app while it is being written.
 - **The privacy manifest** (`BGUCats/PrivacyInfo.xcprivacy`) says what
-  the app reads and collects. Today: the trail in UserDefaults, and
-  nothing collected. The first screen that calls a server changes it in
-  the same pull request (`docs/privacy-data.md` has the answers); a test
-  fails otherwise.
+  the app reads and sends. Today: the trail in UserDefaults; and, since
+  it signs in, the account (email, name, user id), what a person does (a
+  like), and the servers' counters and logs. Photos, location, friends
+  and the phone's notification address join it with the screen that
+  first sends them: a test fails a pull request that adds one without
+  the other (`docs/privacy-data.md` has the answers).
+- **Signing in is the web app's, in iOS's own sheet** (`Auth.swift`,
+  `web/lib/auth.js`): Cognito's page, authorization code with PKCE,
+  straight to Google with its account chooser, answered at
+  `org.arip.bgucats://signin`. Never in a web view: Google refuses that.
+  The tokens are in the keychain, on this phone only. Signing out forgets
+  them and stays in the app.
+- **It belongs to staging** (`Site.swift`), as every build so far. The
+  site's public `config.json` says which Cognito; it is read at launch
+  and the last one read is kept for a launch with no signal.
+- **Every state of the start says what it is** (`RootView`): loading,
+  the sign-in screen with the reason the last sign-in ended, the tabs,
+  or "The app could not start" with Try again, App info and Sign out.
+  Every call gives up after twenty seconds.
+- **The trail never says who.** A call is marked by its kind and its
+  status ("api: feed 200 in 240 ms"), never by its address; a failure by
+  its kind and number. A test reads every `trail.mark`.
 
 ## Not here yet
 
-Signing in, any call to the API, the feed, capture, cats, the rest of
-profile, the recognition model, and a string catalog for the four
-languages. Each is its own issue, in the plan's order: signing in and the
-feed first.
+In the feed: friends' votes on a name (the API sends those cards; this
+app skips them for now), a post's menu (delete, report), the area, and
+accepting the terms (a like before that is refused, and the app shows the
+server's words). Then capture, cats, the rest of profile, the
+recognition model, and a string catalog for the four languages. Each is
+its own issue, in the plan's order.

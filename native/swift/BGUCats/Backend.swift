@@ -1,0 +1,176 @@
+import Foundation
+
+/// The member API (`/api/v1`, docs/app-plan/04-api.md), as far as this app
+/// uses it yet.
+protocol Backend {
+    /// The caller's account. The app asks this first, always.
+    func me() async throws -> Me
+    func feed(cursor: String?) async throws -> FeedPage
+    /// Likes or unlikes; answers with the post's new count.
+    func like(postId: String, on: Bool) async throws -> Int
+}
+
+/// What a call failed with. `status` 0: the server was not reached.
+struct ApiError: Error, Equatable {
+    let status: Int
+    /// The API's machine word (`not_admitted`, `terms_required`, ...).
+    let code: String?
+    /// Words for a person.
+    let message: String
+}
+
+final class LiveBackend: Backend {
+    private let auth: Auth
+    private let trail: Trail
+
+    init(auth: Auth, trail: Trail) {
+        self.auth = auth
+        self.trail = trail
+    }
+
+    func me() async throws -> Me {
+        let json = try await call("GET", "/me", as: "me")
+        guard let me = Read.me(json) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        return me
+    }
+
+    func feed(cursor: String?) async throws -> FeedPage {
+        Read.page(try await call("GET", "/feed", cursor: cursor, as: "feed"))
+    }
+
+    func like(postId: String, on: Bool) async throws -> Int {
+        let json = try await call(on ? "PUT" : "DELETE", "/posts/\(Auth.encode(postId))/like", as: on ? "like" : "unlike")
+        return Read.int(json["likes"])
+    }
+
+    /// One call. `name` is what the trail calls it: the kind of call, never
+    /// its address, which can carry an id.
+    private func call(_ method: String, _ path: String, cursor: String? = nil, as name: String) async throws -> [String: Any] {
+        guard let token = await auth.idToken() else {
+            throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
+        }
+        var address = Site.origin.absoluteString + "/api/v1" + path
+        if let cursor {
+            address += "?cursor=" + Auth.encode(cursor)
+        }
+        guard let url = URL(string: address) else {
+            throw ApiError(status: 0, code: nil, message: "The request could not be made.")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        // A request that hangs on a weak signal must not hold a screen for
+        // ever. API Gateway gives up at thirty seconds anyway.
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+
+        let began = Date()
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            trail.mark("api: \(name) not reached (\(Auth.kind(error)))")
+            throw ApiError(status: 0, code: nil, message: "The server could not be reached. Check the connection and try again.")
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        trail.mark("api: \(name) \(status) in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
+
+        let body = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
+        if status == 401 {
+            auth.signOut()
+            throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
+        }
+        guard (200..<300).contains(status) else {
+            throw ApiError(
+                status: status,
+                code: body["code"] as? String,
+                message: (body["error"] as? String) ?? "The request failed (\(status))."
+            )
+        }
+        return body
+    }
+}
+
+/// For UI tests: a made-up member and three made-up posts, the same every
+/// time. No network.
+final class StandInBackend: Backend {
+    private let start: Date
+    private var liked: Set<String> = []
+
+    init(start: Date) {
+        self.start = start
+    }
+
+    func me() async throws -> Me {
+        Me(
+            userId: "u-test",
+            username: "test.member",
+            displayName: "Test Member",
+            avatar: nil,
+            role: "user",
+            catsMet: 7,
+            encounters: 12,
+            termsRequired: false
+        )
+    }
+
+    func feed(cursor: String?) async throws -> FeedPage {
+        func photo(_ name: String) -> Photo {
+            let url = URL(string: "standin://photo/\(name)")
+            return Photo(id: name, thumb: url, medium: url)
+        }
+        func person(_ id: String, _ name: String, _ username: String) -> Person {
+            Person(userId: id, username: username, displayName: name, avatar: nil)
+        }
+        let posts = [
+            Post(
+                id: "p1",
+                author: person("u-a", "First Tester", "first.tester"),
+                catName: "Mitzi",
+                photos: [photo("a1"), photo("a2")],
+                text: "By the library steps again, asleep in the sun.",
+                likes: 3,
+                liked: liked.contains("p1"),
+                createdAt: start.addingTimeInterval(-2 * 3600),
+                mine: false,
+                state: nil
+            ),
+            Post(
+                id: "p2",
+                author: person("u-test", "Test Member", "test.member"),
+                catName: nil,
+                photos: [photo("b1")],
+                text: "",
+                likes: 0,
+                liked: liked.contains("p2"),
+                createdAt: start.addingTimeInterval(-26 * 3600),
+                mine: true,
+                state: "pending"
+            ),
+            Post(
+                id: "p3",
+                author: person("u-b", "Second Tester", "second.tester"),
+                catName: "Shachor",
+                photos: [photo("c1")],
+                text: "Let me close enough for one photo.",
+                likes: 11,
+                liked: true,
+                createdAt: start.addingTimeInterval(-3 * 86400),
+                mine: false,
+                state: nil
+            ),
+        ]
+        return FeedPage(posts: posts, cursor: nil)
+    }
+
+    func like(postId: String, on: Bool) async throws -> Int {
+        if on {
+            liked.insert(postId)
+        } else {
+            liked.remove(postId)
+        }
+        return postId == "p1" ? (on ? 4 : 3) : (on ? 1 : 0)
+    }
+}

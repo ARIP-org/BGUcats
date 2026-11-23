@@ -360,8 +360,9 @@ app's Profile shows the version and the build number, which is the run's.
 
 **The packed app's builds talked to staging** (`SITE` in
 `.github/workflows/ios.yml`), carrying that deployment's public
-`config.json`. The Swift app calls no server yet; when it signs in, it is
-against staging too.
+`config.json`. The Swift app belongs to staging too
+(`native/swift/BGUCats/Site.swift`, held to `SITE` by a test): it reads
+that site's `config.json` at launch and calls its API.
 
 **Cost.** A macOS runner is $0.062 a minute against $0.006 for Linux
 (2026-11), taken from the $18 of Actions usage GitHub Team includes each
@@ -392,8 +393,11 @@ exist in App Store Connect, or the build number was used before.
 The first upload, build 3, went through on 2026-11-11: an unsigned
 archive, signed at export with the certificate Apple keeps.
 
-**Signing in, in the packed app** (the Swift app does not sign in yet;
-it will use the same sheet and the same three settings). Google refuses
+**Signing in.** The Swift app signs in the same way, through the same
+sheet (`native/swift/BGUCats/Auth.swift`), and needs only the first of
+the settings below; the others were for the packed pages (a web view
+calling another origin), which a native app's calls are not. What
+follows is the packed app's. Google refuses
 to sign anyone in inside an app's web view, so the app opens iOS's own
 sign-in sheet
 (`native/plugins/web-auth`, `ASWebAuthenticationSession`). iOS asks first

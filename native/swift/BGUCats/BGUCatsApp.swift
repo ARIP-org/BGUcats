@@ -1,35 +1,45 @@
 import SwiftUI
 
-/// The iPhone app, in Swift (docs/ROADMAP.md, 2g). This is the frame: four
-/// tabs of system controls, and "App info". Screens follow one by one.
+/// The iPhone app, in Swift (docs/ROADMAP.md, 2g): what TestFlight gets.
+/// Built so far: signing in, the feed, the profile's first rows and "App
+/// info". The other tabs say they are not built yet.
 @main
 struct BGUCatsApp: App {
-    private let world = World.current()
+    private let world: World
+    @StateObject private var session: Session
 
     init() {
+        let world = World.current()
+        self.world = world
+        _session = StateObject(wrappedValue: Session(world: world))
         world.trail.mark("start: launched")
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(world: world)
+            RootView(world: world, session: session)
         }
     }
 }
 
 /// Everything a screen reads from outside itself, so that a UI test can
-/// hand the app a made-up one: a fixed clock and a trail kept in memory.
+/// hand the app a made-up one: a fixed clock, a trail kept in memory, a
+/// made-up member with made-up posts, and pictures that are drawn.
 struct World {
     let trail: Trail
     let now: () -> Date
     let version: String
     /// Light or dark, when a UI test asks for one; nil follows the phone.
     var look: ColorScheme?
+    let gate: Gate
+    let backend: Backend
+    let photos: Photos
 
     /// The real one, or the stand-in when a UI test started the app.
     static func current(arguments: [String] = ProcessInfo.processInfo.arguments) -> World {
         if arguments.contains("-uiTesting") {
-            var world = World.standIn()
+            // "-signedOut": the test wants the sign-in screen.
+            var world = World.standIn(signedIn: !arguments.contains("-signedOut"))
             // "-look dark": the test names the look it is about to
             // picture. Asking the simulator to change its appearance did
             // nothing on the first run: every "dark" picture was light.
@@ -40,18 +50,36 @@ struct World {
         }
         let info = Bundle.main.infoDictionary ?? [:]
         let version = "\(info["CFBundleShortVersionString"] ?? "?") (\(info["CFBundleVersion"] ?? "?"))"
-        return World(trail: Trail(), now: Date.init, version: version, look: nil)
+        let trail = Trail()
+        let auth = Auth(vault: KeychainVault(), trail: trail)
+        return World(
+            trail: trail,
+            now: Date.init,
+            version: version,
+            look: nil,
+            gate: auth,
+            backend: LiveBackend(auth: auth, trail: trail),
+            photos: NetPhotos()
+        )
     }
 
     /// What every UI test sees: the same lines at the same time, so two
-    /// pictures of one screen are the same picture.
-    static func standIn() -> World {
+    /// pictures of one screen are the same picture. No network at all.
+    static func standIn(signedIn: Bool = true) -> World {
         let start = Date(timeIntervalSince1970: 1_795_000_000)
         var tick = 0.0
         let clock: () -> Date = {
             tick += 1.5
             return start.addingTimeInterval(tick)
         }
-        return World(trail: Trail(store: MemoryStore(), now: clock), now: { start }, version: "0.2.0 (test)", look: nil)
+        return World(
+            trail: Trail(store: MemoryStore(), now: clock),
+            now: { start },
+            version: "0.2.0 (test)",
+            look: nil,
+            gate: StandInGate(signedIn: signedIn),
+            backend: StandInBackend(start: start),
+            photos: DrawnPhotos()
+        )
     }
 }
