@@ -385,6 +385,19 @@ an hour that a sentence would have saved.
   `repository_dispatch`, `schedule` and `workflow_run`; a test holds
   every agent workflow's triggers to that list. A workflow cannot run
   before it is on `main`, so an event it was never run on is a guess.
+- **The reviewer did not review the builder.** Claude's action stops a
+  run that a bot started ("Workflow initiated by non-human actor"), and
+  the builder's pull requests are opened by the App. Every review until
+  then had been of a pull request a person or the bot account opened, so
+  the first pull request the factory made by itself got "The review did
+  not finish" (2026-11-23). It failed closed: nothing merged. Each agent
+  workflow now names the App in `allowed_bots`. Two halves that each work
+  were never run together until the day they had to.
+- **A green run can have done nothing.** Two builds ended "success" with
+  no branch, no pull request and no comment, at a dollar and three
+  dollars of the plan. The action hides Claude's output, and the step
+  that printed its last message ran only on failure. It now runs every
+  time and its text goes on the issue.
 - **The token does not choose the model.** It decides whose Claude plan
   pays. The workflows ran on the action's default, Sonnet, until each one
   named its model (`claude_args`, `--model`).

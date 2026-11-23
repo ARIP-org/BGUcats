@@ -117,6 +117,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # The builder's pull requests are opened by Claude's App, and the
+          # action refuses a run a bot started unless the bot is named. Not
+          # named, the reviewer never read a single pull request of the
+          # builder's: the first one got "The review did not finish"
+          # (2026-11-23). Only this App, never "*".
+          allowed_bots: arip-claude
           # The model is named here, as in the other agent workflows. Reading
           # and nothing else: no Bash, no Edit, no Write.
           claude_args: >-
