@@ -364,11 +364,24 @@ def test_the_reviewer_never_runs_the_pull_requests_code():
         for line in run.splitlines():
             if ".review/" not in line:
                 continue
+            if step.get("id") == "verdict":
+                # The one other reader: main's own script is handed the
+                # diff, and jq the pull request's facts, to be read as text.
+                assert " ".join(line.split()) == (
+                    'python3 scripts/review_verdict.py "${LOG:-$RUNNER_TEMP/claude-execution-output.json}" '
+                    '"$RUNNER_TEMP/verdict" .review/pr.diff .github/CODEOWNERS '
+                    '"$(jq -r .changedFiles .review/pr.json)"'
+                ), line
+                continue
             # Fetched, unpacked, removed: never executed, sourced or installed.
             assert re.match(r"\s*(mkdir|gh |tar |rm |echo )", line), line
         # The pull request's head is never checked out as the workspace.
         if "actions/checkout" in step.get("uses", ""):
             assert "ref" not in step.get("with", {})
+    # The script that reads the diff runs nothing and imports nothing of it.
+    script = (REPO / "scripts" / "review_verdict.py").read_text()
+    for runs in ("subprocess", "os.system", "exec(", "eval(", "importlib", "__import__"):
+        assert runs not in script, runs
 
 
 def test_the_app_token_is_made_after_claude_and_only_for_a_pass():
@@ -439,6 +452,82 @@ def test_the_status_and_the_comment_follow_the_verdict(tmp_path):
 
 
 # --------------------------------------------------------------- owner paths
+
+
+def a_diff(*files, renames=()):
+    lines = []
+    for path in files:
+        lines += [f"diff --git a/{path} b/{path}", "index 111..222 100644", f"--- a/{path}", f"+++ b/{path}", "@@ -1 +1 @@", "-a", "+b"]
+    for old, new in renames:
+        lines += [f"diff --git a/{old} b/{new}", "similarity index 100%", f"rename from {old}", f"rename to {new}"]
+    return "\n".join(lines) + "\n"
+
+
+OWNERS = (REPO / ".github" / "CODEOWNERS").read_text()
+PASSED = {"verdict": "pass", "summary": "Fine.", "findings": []}
+
+
+def test_a_change_to_an_owner_path_never_passes_whatever_the_reviewer_said():
+    # 2026-11-23: #121 changed a workflow and the roadmap, the reviewer
+    # passed it, and it merged eight seconds later with nobody's approval.
+    # The ruleset was meant to hold it and did not.
+    held = verdicts.hold_for_owner(PASSED, a_diff(".github/workflows/ios.yml", "docs/ROADMAP.md", "docs/notes.md"), OWNERS)
+    assert held["verdict"] == "owner"
+    assert "`.github/workflows/ios.yml`" in held["summary"] and "`docs/ROADMAP.md`" in held["summary"]
+    assert "`docs/notes.md`" not in held["summary"] and "The review itself passed it: Fine." in held["summary"]
+    for path in (
+        "CLAUDE.md",
+        "infra/main/web.tf",
+        "src/app/requirements.txt",
+        "src/common/admission.py",
+        "scripts/review_verdict.py",
+        "web/vendor/preact-htm.js",
+        "native/swift/BGUCats.xcodeproj/project.pbxproj",
+        ".github/CODEOWNERS",
+    ):
+        assert verdicts.hold_for_owner(PASSED, a_diff(path, "web/app.js"), OWNERS)["verdict"] == "owner", path
+    # What #120 changed: none of it the owner's, and it still passes.
+    free = a_diff("native/swift/BGUCats/Auth.swift", "tests/native/test_swift_app.py", "docs/deploy.md", "scripts/ios_screenshots.py")
+    assert verdicts.hold_for_owner(PASSED, free, OWNERS) == PASSED
+    # A file moved out of an owner path is the owner's too, and one moved in.
+    assert verdicts.hold_for_owner(PASSED, a_diff(renames=[("infra/main/web.tf", "old/web.tf")]), OWNERS)["verdict"] == "owner"
+    assert verdicts.hold_for_owner(PASSED, a_diff(renames=[("notes.txt", "CLAUDE.md")]), OWNERS)["verdict"] == "owner"
+
+
+def test_what_cannot_be_read_waits_for_the_owner_and_nothing_is_made_better():
+    # No diff, no CODEOWNERS, or fewer paths than GitHub counted: closed.
+    assert verdicts.hold_for_owner(PASSED, "", OWNERS)["verdict"] == "owner"
+    assert verdicts.hold_for_owner(PASSED, a_diff("web/app.js"), "")["verdict"] == "owner"
+    assert verdicts.hold_for_owner(PASSED, a_diff("web/app.js"), OWNERS, changed_files=2)["verdict"] == "owner"
+    assert verdicts.hold_for_owner(PASSED, a_diff("web/app.js"), OWNERS, changed_files=1) == PASSED
+    # It only ever turns a pass into "owner": a sent-back review stays one.
+    back = {"verdict": "changes", "summary": "Fix it.", "findings": []}
+    assert verdicts.hold_for_owner(back, a_diff("CLAUDE.md"), OWNERS) == back
+
+
+def test_the_workflow_hands_the_verdict_the_diff_and_mains_owner_paths(tmp_path):
+    job = load(WORKFLOWS / "claude-review.yml")["jobs"]["review"]
+    step = next(s for s in job["steps"] if s.get("id") == "verdict")
+    assert '.review/pr.diff .github/CODEOWNERS "$(jq -r .changedFiles .review/pr.json)"' in step["run"]
+    # And the whole script, as the workflow runs it.
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps([{"type": "result", "result": json.dumps(PASSED)}]))
+    diff = tmp_path / "pr.diff"
+    owners = REPO / ".github" / "CODEOWNERS"
+    diff.write_text(a_diff(".github/workflows/ios.yml"))
+    verdicts.main(["", str(log), str(tmp_path / "out"), str(diff), str(owners), "1"])
+    said = json.loads((tmp_path / "out" / "verdict.json").read_text())
+    assert said == {"verdict": "owner", "state": "failure", "description": "Reviewed: the owner should look at this"}
+    assert "touches an owner path" in (tmp_path / "out" / "comment.md").read_text()
+    diff.write_text(a_diff("web/app.js"))
+    verdicts.main(["", str(log), str(tmp_path / "out"), str(diff), str(owners), "1"])
+    assert json.loads((tmp_path / "out" / "verdict.json").read_text())["verdict"] == "pass"
+    # A diff that is not there: nothing passes.
+    verdicts.main(["", str(log), str(tmp_path / "out"), str(tmp_path / "none.diff"), str(owners), "1"])
+    assert json.loads((tmp_path / "out" / "verdict.json").read_text())["verdict"] == "owner"
+    # Auto-merge is asked for on "pass" alone.
+    merge = next(s for s in job["steps"] if s.get("name") == "Merge when the rules are met")
+    assert merge["if"] == "steps.verdict.outputs.verdict == 'pass'"
 
 
 def test_what_an_agent_may_not_change_by_itself_is_the_owners():

@@ -11,12 +11,24 @@ the three, or no message at all is "owner": the pull request waits for a
 person, and the comment says why. Nothing here trusts the message beyond
 its shape, and nothing in it is ever run.
 
-    python scripts/review_verdict.py <execution-log.json> <out-dir>
+**A pull request that touches an owner path never passes here**, whatever
+the reviewer said: given the pull request's diff and the CODEOWNERS file,
+a "pass" on such a change becomes "owner". The paths are read from the
+diff by this script, not judged by a model. The `main` ruleset is meant to
+hold the same line ("Require review from Code Owners"); on 2026-11-23 it
+did not, and #121, which changed a workflow, merged eight seconds after
+the reviewer passed it, with nobody's approval. A rule kept in a setting
+nobody here can read is checked here as well.
+
+    python scripts/review_verdict.py <execution-log.json> <out-dir> \
+        [<pr.diff> <CODEOWNERS> [<changed-file-count>]]
 
 writes `verdict.json` (`verdict`, `state`, `description`) and `comment.md`.
 """
 
+import fnmatch
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -110,6 +122,91 @@ def read(message):
     }
 
 
+# ---------------------------------------------------------- owner paths
+
+
+def owner_patterns(codeowners):
+    """The paths a CODEOWNERS file names."""
+    return [
+        line.split()[0]
+        for line in codeowners.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def owned(path, patterns):
+    """The pattern that puts this path in the owner's lane, or None.
+
+    CODEOWNERS' rules for the shapes this repository's file uses: a path
+    from the root (`/CLAUDE.md`), a directory and all in it (`/infra/`),
+    and `*` within one name (`/src/*/requirements.txt`). A pattern is
+    taken as a prefix, so a mistake here sends more to the owner, never
+    less.
+    """
+    names = path.strip("/").split("/")
+    for pattern in patterns:
+        parts = pattern.strip("/").split("/")
+        starts = [0] if pattern.startswith("/") else range(len(names))
+        for start in starts:
+            window = names[start : start + len(parts)]
+            if len(window) == len(parts) and all(
+                fnmatch.fnmatchcase(name, part) for name, part in zip(window, parts, strict=True)
+            ):
+                return pattern
+    return None
+
+
+def changed_paths(diff):
+    """Every path a diff names: the old and the new of each file, so a
+    file moved out of an owner path is seen as well as one moved in."""
+    paths = set()
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            rest = line[len("diff --git ") :]
+            # "a/P b/P" for a file that kept its name; a rename says so
+            # in the lines that follow.
+            half = (len(rest) - 5) // 2
+            name = rest[2 : 2 + half]
+            if rest == f"a/{name} b/{name}":
+                paths.add(name)
+        else:
+            moved = re.match(r"(?:rename|copy) (?:from|to) (.+)$", line)
+            named = re.match(r"(?:---|\+\+\+) [ab]/(.+)$", line)
+            if moved:
+                paths.add(moved[1])
+            elif named:
+                paths.add(named[1].split("\t")[0])
+    return {path.strip('"') for path in paths}
+
+
+def hold_for_owner(review, diff, codeowners, changed_files=None):
+    """The review, with a pass turned into "owner" when the change touches
+    an owner path, or when its paths cannot all be seen."""
+    if review["verdict"] != "pass":
+        return review
+    paths = changed_paths(diff)
+    patterns = owner_patterns(codeowners)
+    if not paths or not patterns or (changed_files is not None and len(paths) < changed_files):
+        why = (
+            "This pull request's changed files could not all be read, so it waits for the "
+            "owner whatever the review found."
+        )
+    else:
+        touched = sorted(path for path in paths if owned(path, patterns))
+        if not touched:
+            return review
+        shown = ", ".join(f"`{path}`" for path in touched[:5]) + (" and more" if len(touched) > 5 else "")
+        why = (
+            f"This pull request touches an owner path ({shown}), so it waits for the owner "
+            "whatever the review found."
+        )
+    return {
+        "verdict": "owner",
+        "summary": f"{why} The review itself passed it: {review['summary']}",
+        "findings": review["findings"],
+    }
+
+
 def comment(review):
     lines = [MARKER, f"**{HEADINGS[review['verdict']]}**", "", review["summary"]]
     if review["findings"]:
@@ -134,6 +231,13 @@ def main(argv):
     except (OSError, ValueError):
         message = ""
     review = read(message)
+    if len(argv) > 4:
+        try:
+            diff, codeowners = Path(argv[3]).read_text(), Path(argv[4]).read_text()
+        except OSError:
+            diff, codeowners = "", ""  # nothing to read: nothing passes
+        count = int(argv[5]) if len(argv) > 5 and argv[5].isdigit() else None
+        review = hold_for_owner(review, diff, codeowners, count)
     state, description = VERDICTS[review["verdict"]]
     out.mkdir(parents=True, exist_ok=True)
     (out / "verdict.json").write_text(

@@ -408,6 +408,16 @@ an hour that a sentence would have saved.
   runs `tests/web` a second time with `BGUCATS_NO_BROWSER=1`, as the
   deploy sees it. After a merge, "CI is green on `main`" is not "it is
   deployed": the Deploy run's own job is what says so.
+- **A rule kept in a setting nobody here can read is not known to hold
+  until it has refused something.** The owner's lane was "Require review
+  from Code Owners" on the `main` ruleset. The docs said it was on, the
+  owner had changed the ruleset that day, and two owner-path pull
+  requests had duly waited, because the reviewer had sent them up. The
+  third, which the reviewer passed, merged in eight seconds with nobody's
+  approval (#121, 2026-11-23): the setting was not on, and nothing an
+  agent can read would have said so. "It waited" proves a gate only when
+  the gate was the one thing holding it. The reviewer's script now holds
+  owner paths itself, from the diff, and that hold has a test.
 - **A check that waits a fixed time fails on the day the machine is
   slow.** The packed app's simulator check started the app in the
   background, slept thirty seconds and asked whether it was running. On

@@ -113,7 +113,10 @@ blocked on someone else.
   pass; one that touches an owner path, or that the reviewer sends up,
   waits for the owner, who reads its plans and merges. The reviewer
   sends up only a short list (`docs/agents.md`, "The reviewer, and the
-  two lanes"). Neither lane reaches production: that is the owner's tag.
+  two lanes"), and its script, not its judgment, sends up every change
+  to an owner path (since 2026-11-23, when one merged by itself: the
+  ruleset alone had not held it). Neither lane reaches production: that
+  is the owner's tag.
 - **Merging deploys staging; a tag promotes.** A push to `main` runs
   `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
   the staging account under a GitHub OIDC role and marks the commit

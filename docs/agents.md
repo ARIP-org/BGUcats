@@ -166,8 +166,30 @@ the digest, and production still moves only on the owner's tag.
 
 - A pull request that touches no path in `.github/CODEOWNERS`, with CI
   and `review` green, merges by itself.
-- One that touches an owner path waits for the owner's approval, whatever
-  the reviewer said. One the reviewer did not pass stays red.
+- One that touches an owner path waits for the owner, whatever the
+  reviewer said. One the reviewer did not pass stays red.
+
+**The owner's lane is held twice,** because on 2026-11-23 the first hold
+was not there. #121 changed a workflow and the roadmap, the reviewer
+passed it (rightly: it was a small fix), and it merged eight seconds
+later with nobody's approval. GitHub had asked the owner for a review and
+did not wait for it: the ruleset was not requiring one.
+
+1. **The ruleset:** "Require review from Code Owners" on the `main`
+   ruleset (below). Nobody but an admin can see or change it, and no
+   agent can read it: whether it is on is known only by what it refuses.
+2. **The reviewer's own script** (`scripts/review_verdict.py`, since
+   2026-11-23): it reads the pull request's diff and `main`'s
+   `CODEOWNERS`, and a "pass" on a change that touches an owner path
+   becomes "for the owner". No model judges the paths, a file moved out
+   of an owner path counts as well as one moved in, and a diff that
+   cannot be read whole passes nothing. Auto-merge is asked for on a
+   pass alone, so it is never asked for such a change: the owner merges
+   it (the bypass list, below).
+
+With both on, an owner-path pull request shows `review` red with "the
+owner should look at this" and the reviewer's findings under it, as #118
+and #119 did.
 
 **They are on since 2026-11-23**, when the owner changed the `main`
 ruleset. Before that every pull request needed one approval, and the

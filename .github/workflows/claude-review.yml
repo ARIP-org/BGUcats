@@ -200,7 +200,11 @@ jobs:
         env:
           LOG: ${{ steps.claude.outputs.execution_file }}
         run: |
-          python3 scripts/review_verdict.py "${LOG:-$RUNNER_TEMP/claude-execution-output.json}" "$RUNNER_TEMP/verdict"
+          # With the diff and main's CODEOWNERS: a change to an owner path
+          # is never "pass", whatever Claude said. The script reads the
+          # paths; no model judges them.
+          python3 scripts/review_verdict.py "${LOG:-$RUNNER_TEMP/claude-execution-output.json}" "$RUNNER_TEMP/verdict" \
+            .review/pr.diff .github/CODEOWNERS "$(jq -r .changedFiles .review/pr.json)"
           {
             echo "verdict=$(jq -r .verdict "$RUNNER_TEMP/verdict/verdict.json")"
             echo "state=$(jq -r .state "$RUNNER_TEMP/verdict/verdict.json")"
@@ -226,9 +230,11 @@ jobs:
             -f description="$DESCRIPTION" -f target_url="$RUN_URL"
 
       # A passed pull request merges when main's rules are met, with nobody
-      # having to press the button: for one that touches an owner path, that
-      # is when the owner approves. Asked for as the App, so that the merge
-      # starts the deploy (a merge made with the job's token would not).
+      # having to press the button. One that touches an owner path is never
+      # "pass" (the verdict step), so this is never asked for it: it waits
+      # for the owner, who merges it. Asked for as the App, so that the
+      # merge starts the deploy (a merge made with the job's token would
+      # not).
       - name: A token for the App
         id: app
         if: steps.verdict.outputs.verdict == 'pass'
