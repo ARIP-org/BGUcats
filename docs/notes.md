@@ -366,6 +366,15 @@ an hour that a sentence would have saved.
 
 ## Agents and sessions
 
+- **Claude's action runs on some events and stops at the rest.** The
+  builder's queue was read "on: push" to `main`; the pick worked, three
+  builds started, and each ended in two seconds with "Unsupported event
+  type: push", before Claude did (2026-11-23). The safety net caught it:
+  each issue went to `needs-owner` with a comment. The action takes
+  issues, comments, pull requests, `workflow_dispatch`,
+  `repository_dispatch`, `schedule` and `workflow_run`; a test holds
+  every agent workflow's triggers to that list. A workflow cannot run
+  before it is on `main`, so an event it was never run on is a guess.
 - **The token does not choose the model.** It decides whose Claude plan
   pays. The workflows ran on the action's default, Sonnet, until each one
   named its model (`claude_args`, `--model`).

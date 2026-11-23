@@ -23,9 +23,14 @@ on:
   issues:
     types: [labeled]
   # A merge frees a place, and so does time (a pull request closed, a build
-  # that came to nothing): the queue is looked at again.
-  push:
-    branches: [main]
+  # that came to nothing): the queue is looked at again after every deploy
+  # and by the clock. Not "on: push": Claude's action refuses that event
+  # ("Unsupported event type: push"), and on the day this queue first ran
+  # all three builds it started from a push stopped there, before Claude
+  # did (2026-11-23). It takes issues, schedule and workflow_run.
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
   schedule:
     - cron: "17 */2 * * *"
 

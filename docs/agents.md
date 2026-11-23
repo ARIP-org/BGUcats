@@ -84,8 +84,10 @@ secret, **from who put the label on, never from what an issue says:**
 repository's open pull requests from `claude/` branches (a session's
 too), plus issues being built that have no pull request yet. The rest
 wait in the queue, the owner's `approved` first, then the oldest. The
-queue is looked at when a label is added, on every merge to `main`, and
-every two hours.
+queue is looked at when a label is added, after every deploy (so after
+every merge), and every two hours. Not on the push itself: Claude's
+action refuses a `push` event, which is how the queue's first three
+builds ended before Claude started (2026-11-23).
 
 **What an issue's labels say:** `ready` or `approved`, waiting; then
 `building`, from the moment a run takes it until its pull request merges
