@@ -218,6 +218,35 @@ body:has(.frame) {
 
 /* ------------------------------------------------------------ the tab bar */
 
+/* The bars that fold while the page scrolls (the tab bar, the feed's search
+   pill, Home's profile pill and Friends button) are glass, and a fold that
+   animates a size relayouts and reblurs on every frame: on the iPhone it
+   stuttered (issue 104). So their glass is two layers: ::before is the blur,
+   which changes shape by clip-path, and ::after is the rim and the shadow,
+   which a clip would cut off: it takes the new shape at once, hidden, and
+   fades in as the fold lands (rim-fold, rim-open). What is inside moves by
+   translate and transform. A size changes, if at all, once, at the start.
+   tests/web/test_member_fold.py holds it. */
+
+@keyframes rim-fold {
+  from,
+  55% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes rim-open {
+  from,
+  55% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .tabbar {
   --w: calc((100% - 12px) / 3);
   position: fixed;
@@ -226,43 +255,60 @@ body:has(.frame) {
   inset-block-end: var(--bar-gap);
   inline-size: min(370px, calc(100% - 32px));
   block-size: 68px;
-  border-radius: 36px;
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-  backdrop-filter: blur(18px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--bar-shadow);
+  /* The rim is ::after's; this keeps the inside where it was. */
+  border: 1px solid transparent;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  transition:
-    inline-size var(--dur-spring) var(--ease-spring),
-    block-size var(--dur-spring) var(--ease-spring),
-    inset-block-end var(--dur-spring) var(--ease-spring);
+}
+.tabbar::before,
+.tabbar::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -1px;
+  pointer-events: none;
+}
+.tabbar::before {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  clip-path: inset(0 round 36px);
+  transition: clip-path var(--dur-spring) var(--ease-spring);
+}
+.tabbar::after {
+  border-radius: 36px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--bar-shadow);
+}
+.tabbar.unfolded::after {
+  animation: rim-open var(--dur-spring) linear;
 }
 
 .tabbar .lens {
   position: absolute;
   inset-block-start: 6px;
-  inset-inline-start: calc(6px + var(--active) * var(--w));
+  inset-inline-start: 0;
   inline-size: var(--w);
   block-size: 56px;
-  border-radius: 28px;
   background: var(--lens);
   pointer-events: none;
+  /* 100% is the lens, a third of the bar. */
+  translate: calc(var(--dir) * (6px + var(--active) * 100%)) 0;
+  clip-path: inset(0 round 28px);
   transition:
-    inset-inline-start var(--dur-spring) var(--ease-spring),
-    inset-block-start var(--dur-spring) var(--ease-spring),
-    inline-size var(--dur-spring) var(--ease-spring),
-    block-size var(--dur-spring) var(--ease-spring),
-    border-radius var(--dur-spring) var(--ease-spring),
+    translate var(--dur-spring) var(--ease-spring),
+    clip-path var(--dur-spring) var(--ease-spring),
+    transform var(--dur-spring) var(--ease-spring),
     scale 0.35s var(--ease-lens-press),
     background 0.25s ease,
     box-shadow 0.25s ease;
 }
 
 .tabbar[data-dragging] .lens {
-  inset-inline-start: calc(6px + clamp(0, var(--drag) * 3 - 0.5, 2) * var(--w));
+  translate: calc(var(--dir) * (6px + clamp(0, var(--drag) * 3 - 0.5, 2) * 100%)) 0;
+  clip-path: none;
+  border-radius: 28px;
   background: var(--lens-drag);
   box-shadow: var(--lens-drag-shadow);
   -webkit-backdrop-filter: blur(2px) saturate(200%);
@@ -277,6 +323,7 @@ body:has(.frame) {
 .tabbar button {
   position: absolute;
   inset-block-start: 6px;
+  inset-inline-start: 0;
   inline-size: var(--w);
   block-size: 56px;
   padding: 6px 0 0;
@@ -289,9 +336,9 @@ body:has(.frame) {
   font: inherit;
   color: var(--ink);
   cursor: pointer;
+  translate: calc(var(--dir) * (6px + var(--i) * 100%)) 0;
   transition:
-    inset-inline-start var(--dur-spring) var(--ease-spring),
-    inset-block-start var(--dur-spring) var(--ease-spring),
+    translate var(--dur-spring) var(--ease-spring),
     opacity 0.3s ease,
     color 0.2s ease;
 }
@@ -303,9 +350,6 @@ body:has(.frame) {
 }
 .tabbar button:nth-of-type(3) {
   --i: 2;
-}
-.tabbar button {
-  inset-inline-start: calc(6px + var(--i) * var(--w));
 }
 /* The open tab is in the accent; while the lens is dragged, the tab under
    it is instead. */
@@ -326,24 +370,42 @@ body:has(.frame) {
   transition: opacity 0.2s ease;
 }
 
-/* Shrunk while scrolling: a round button with the open tab's icon. */
+/* Shrunk while scrolling: a round button with the open tab's icon, 60 px
+   at the bar's start, 4 px in from its top and bottom. The bar keeps its
+   size, so nothing is laid out again; only the circle takes touches, and
+   a touch beside it reaches the page. */
 .tabbar.collapsed {
-  inline-size: 60px;
-  block-size: 60px;
-  inset-block-end: calc(var(--bar-gap) + 4px);
+  --fold-end: calc(100% - 60px);
+  pointer-events: none;
   cursor: pointer;
 }
-.tabbar.collapsed .lens {
-  inset-block-start: 0;
-  inset-inline-start: 0;
-  inline-size: 58px;
-  block-size: 58px;
-  border-radius: 29px;
+.tabbar.collapsed::before {
+  clip-path: inset(4px var(--fold-end) 4px 0 round 30px);
+  pointer-events: auto;
 }
+:root[dir="rtl"] .tabbar.collapsed::before {
+  clip-path: inset(4px 0 4px var(--fold-end) round 30px);
+}
+.tabbar.collapsed::after {
+  inset-block: 3px;
+  inset-inline-end: calc(100% - 59px);
+  border-radius: 30px;
+  animation: rim-fold var(--dur-spring) linear;
+}
+/* The lens: a 56 px circle at its start, grown to fill the button
+   (58 px, 1 px in), moved there from wherever the open tab was. */
+.tabbar.collapsed .lens {
+  translate: 0 0;
+  clip-path: inset(0 calc(100% - 56px) 0 0 round 28px);
+  transform: translate(calc(var(--dir) * 100% / 56), -1px) scale(1.0357);
+}
+:root[dir="rtl"] .tabbar.collapsed .lens {
+  clip-path: inset(0 0 0 calc(100% - 56px) round 28px);
+}
+/* The open tab's icon in the middle of the circle, the others beside it,
+   out of sight. */
 .tabbar.collapsed button {
-  inline-size: 116px;
-  inset-block-start: 10px;
-  inset-inline-start: calc(-29px + (var(--i) - var(--active)) * 120px);
+  translate: calc(var(--dir) * (29px - 50% + (var(--i) - var(--active)) * 120px)) 8px;
   opacity: 0;
   pointer-events: none;
 }
@@ -727,7 +789,15 @@ body:has(.frame) {
 .top-buttons > * {
   pointer-events: auto;
 }
+/* Round, never squeezed: on a 390 px phone the open search pill squeezed
+   them to 46 px ovals, and the fold, as it shrank the pill, grew them back
+   frame by frame (issue 104). The pill gives way instead. */
+.top-buttons > .glass-icon {
+  flex: none;
+}
 .search {
+  position: relative;
+  isolation: isolate;
   flex: 0 1 250px;
   min-inline-size: 48px;
   block-size: 48px;
@@ -737,18 +807,37 @@ body:has(.frame) {
   display: flex;
   align-items: center;
   gap: 10px;
-  overflow: hidden;
   color: var(--ink);
   font: inherit;
   cursor: pointer;
+  background: none;
+  /* The rim is ::after's (the bars that fold, above the tab bar). */
+  border: 1px solid transparent;
+}
+.search::before,
+.search::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -1px;
+  pointer-events: none;
+}
+.search::before {
   -webkit-backdrop-filter: blur(18px) saturate(180%);
   backdrop-filter: blur(18px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
   background:
     radial-gradient(70% 90% at var(--gx, 30%) var(--gy, 0%), color-mix(in srgb, var(--knob) calc(var(--gs, 0) * 100%), transparent), transparent 70%),
     var(--glass-bg);
-  transition: flex-basis var(--dur-spring) var(--ease-spring);
+  clip-path: inset(0 round 24px);
+  transition: clip-path var(--dur-spring) var(--ease-spring);
+}
+.search::after {
+  border-radius: 24px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+.top-buttons.unfolded .search::after {
+  animation: rim-open var(--dur-spring) linear;
 }
 .search .icon,
 .search svg {
@@ -758,13 +847,29 @@ body:has(.frame) {
   margin-inline-end: auto;
 }
 .search-words {
+  min-inline-size: 0;
+  overflow: hidden;
   font-size: 15px;
   color: var(--muted);
   white-space: nowrap;
   transition: opacity 0.25s ease;
 }
+/* Folded, the pill is 104 px at its start. It keeps its size, so nothing
+   is laid out again; only what is seen takes touches. */
 .top-buttons.collapsed .search {
-  flex-basis: 104px;
+  --fold-end: calc(100% - 104px);
+  pointer-events: none;
+}
+.top-buttons.collapsed .search::before {
+  clip-path: inset(0 var(--fold-end) 0 0 round 24px);
+  pointer-events: auto;
+}
+:root[dir="rtl"] .top-buttons.collapsed .search::before {
+  clip-path: inset(0 0 0 var(--fold-end) round 24px);
+}
+.top-buttons.collapsed .search::after {
+  inset-inline-end: calc(100% - 103px);
+  animation: rim-fold var(--dur-spring) linear;
 }
 .top-buttons.collapsed .search-words {
   opacity: 0;
@@ -2482,36 +2587,74 @@ body:has(.frame) {
 
 .home-top {
   block-size: 64px;
+  /* The pill's open width, for its glass while it is folded. */
+  container-type: inline-size;
+  --pill-w: min(306px, calc(100cqi - 68px));
 }
 .home-top > * {
   pointer-events: auto;
 }
+/* Both buttons are glass that folds (the bars that fold, above the tab
+   bar): their size changes once, at the start of the fold, and the glass
+   follows by clip-path from a layer as big as either state, anchored where
+   the button does not move: the pill at its start, Friends at its end. */
 .me-pill,
 .friends-button {
   position: relative;
+  isolation: isolate;
   flex: none;
   padding: 0;
-  overflow: hidden;
   font: inherit;
   color: var(--ink);
   cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+}
+.me-pill::before,
+.me-pill::after,
+.friends-button::before,
+.friends-button::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+.me-pill::before,
+.friends-button::before {
+  inset-block-start: -1px;
   -webkit-backdrop-filter: blur(18px) saturate(180%);
   backdrop-filter: blur(18px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
   background:
     radial-gradient(70% 90% at var(--gx, 30%) var(--gy, 0%), color-mix(in srgb, var(--knob) calc(var(--gs, 0) * 100%), transparent), transparent 70%),
     var(--glass-bg);
-  transition:
-    inline-size var(--dur-spring) var(--ease-spring),
-    block-size var(--dur-spring) var(--ease-spring),
-    border-radius var(--dur-spring) var(--ease-spring);
+  transition: clip-path var(--dur-spring) var(--ease-spring);
+}
+.me-pill::after,
+.friends-button::after {
+  inset: -1px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: inherit;
+}
+.home-top.collapsed .me-pill::after,
+.home-top.collapsed .friends-button::after {
+  animation: rim-fold var(--dur-spring) linear;
+}
+.home-top.unfolded .me-pill::after,
+.home-top.unfolded .friends-button::after {
+  animation: rim-open var(--dur-spring) linear;
 }
 .me-pill {
-  inline-size: min(306px, calc(100% - 68px));
+  inline-size: var(--pill-w);
   block-size: 64px;
   border-radius: 32px;
   text-align: start;
+}
+.me-pill::before {
+  inset-inline-start: -1px;
+  inline-size: var(--pill-w);
+  block-size: 64px;
+  clip-path: inset(0 round 32px);
 }
 .me-avatar {
   flex: none;
@@ -2534,13 +2677,17 @@ body:has(.frame) {
 .me-pill:dir(rtl) .me-avatar {
   transform-origin: 100% 0;
 }
+/* As wide as in the open pill, whatever the pill is now: a fold does not
+   squeeze the words before they fade. Touches go to the pill. */
 .me-words {
   position: absolute;
   inset-block-start: 11px;
-  inset-inline: 67px 14px;
+  inset-inline-start: 67px;
+  inline-size: calc(var(--pill-w) - 83px);
   display: flex;
   flex-direction: column;
   gap: 2px;
+  pointer-events: none;
   transition: opacity 0.18s ease;
 }
 .me-name {
@@ -2568,19 +2715,37 @@ body:has(.frame) {
   inline-size: 56px;
   block-size: 56px;
   border-radius: 28px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-inline-start: 14px;
 }
+.friends-button::before {
+  inset-inline-end: -1px;
+  inline-size: 132px;
+  block-size: 56px;
+  --fold-start: 76px;
+  clip-path: inset(0 0 0 var(--fold-start) round 28px);
+}
+:root[dir="rtl"] .friends-button::before {
+  clip-path: inset(0 var(--fold-start) 0 0 round 28px);
+}
+/* The icon is kept from the end, where the button does not move, and
+   slides to the start when it opens. */
 .friends-button .icon {
-  flex: none;
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  transition: translate var(--dur-spring) var(--ease-spring);
 }
 .friends-words {
+  position: absolute;
+  inset-block: 0;
+  inset-inline: 50px 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
   font-size: 15px;
   font-weight: 700;
   white-space: nowrap;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.25s ease;
 }
 /* Scrolled down: the pill is the photo alone, and Friends opens up. */
@@ -2588,6 +2753,12 @@ body:has(.frame) {
   inline-size: 52px;
   block-size: 52px;
   border-radius: 26px;
+}
+.home-top.collapsed .me-pill::before {
+  clip-path: inset(0 calc(100% - 52px) 12px 0 round 26px);
+}
+:root[dir="rtl"] .home-top.collapsed .me-pill::before {
+  clip-path: inset(0 0 12px calc(100% - 52px) round 26px);
 }
 .home-top.collapsed .me-avatar {
   transform: translate(-4px, -4px) scale(0.917);
@@ -2601,6 +2772,13 @@ body:has(.frame) {
 .home-top.collapsed .friends-button {
   inline-size: 132px;
   block-size: 52px;
+  border-radius: 26px;
+}
+.home-top.collapsed .friends-button::before {
+  clip-path: inset(0 0 4px 0 round 26px);
+}
+.home-top.collapsed .friends-button .icon {
+  translate: calc(var(--dir) * -76px) -2px;
 }
 .home-top.collapsed .friends-words {
   opacity: 1;

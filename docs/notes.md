@@ -276,6 +276,19 @@ an hour that a sentence would have saved.
   shows JavaScript errors and what is under a point, which rules out the
   engine; it has no touch, no permissions and no home-screen mode, which
   is where the iPhone differed.
+- **Glass that changes size stutters.** The tab bar, the search pill,
+  Home's profile pill and Friends button folded by animating
+  `inline-size`, `block-size`, `inset-*` and `flex-basis` under a
+  `backdrop-filter`: every frame of the spring was a layout and a new
+  blur, and the owner felt it on the phone (issue 104, 2026-11-21). Their
+  glass now changes shape by `clip-path` (`::before`), their rim and shadow
+  (`::after`, which a clip would cut off) take the new shape at once and
+  fade in as the fold lands, and what is inside moves by `translate`.
+  `tests/web/test_member_fold.py` fails on any layout property in their
+  transitions. A clip also cuts what is outside it: a border or a
+  shadow on the clipped layer disappears. And CSS's own default,
+  `transition: all 0s`, names every property: only a transition that
+  takes time counts.
 
 ## GitHub
 

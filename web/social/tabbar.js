@@ -2,12 +2,13 @@
 // Home, on glass, with a lens behind the open tab. It shrinks to a round
 // button with the open tab's icon while the page scrolls down, and comes
 // back on scrolling up or a tap. The lens can be dragged to another tab.
-// Positions are in percent of the bar and logical (inset-inline-start), so
-// it flows at any width and mirrors in right-to-left.
+// Positions are in thirds of the bar, moved by translate times --dir, so
+// it flows at any width and mirrors in right-to-left; folding changes no
+// size (app.css, "the bars that fold").
 
 import { html, useRef } from "../vendor/preact-htm.js";
 import { t } from "./i18n.js";
-import { reducedMotion } from "./motion.js";
+import { reducedMotion, useFold } from "./motion.js";
 import { get, set, showTab, useStore } from "./store.js";
 import { Icon } from "./ui.js";
 
@@ -36,6 +37,7 @@ export function TabBar({ onScan }) {
   const nav = useRef(null);
   const drag = useRef(null);
   const active = TABS.findIndex((x) => x.id === tab);
+  const className = useFold("tabbar", collapsed);
 
   function choose(index, button) {
     const chosen = TABS[index];
@@ -94,7 +96,7 @@ export function TabBar({ onScan }) {
   return html`
     <nav
       ref=${nav}
-      class=${collapsed ? "tabbar collapsed" : "tabbar"}
+      class=${className}
       aria-label=${t("tab.label")}
       style=${{ "--active": active }}
       onPointerDown=${down}

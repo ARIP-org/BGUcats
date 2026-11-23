@@ -8,7 +8,7 @@ import { openGallery } from "./gallery.js";
 import { ago, t, tMarked } from "./i18n.js";
 import { openMap } from "./map.js";
 import { Empty } from "./mascot.js";
-import { glass } from "./motion.js";
+import { glass, useFold } from "./motion.js";
 import { openReport } from "./report.js";
 import { REFUSED, moved } from "./poll.js";
 import { get, push, useStore } from "./store.js";
@@ -358,8 +358,8 @@ function CatOfTheDay({ cat }) {
 // which opens the gallery with its search field ready, and new post (the
 // capture flow, E3).
 function TopButtons() {
-  const collapsed = useStore((s) => s.collapsed);
-  return html`<div class=${collapsed ? "top-buttons collapsed" : "top-buttons"}>
+  const className = useFold("top-buttons", useStore((s) => s.collapsed));
+  return html`<div class=${className}>
     <button type="button" class="glass-icon" ref=${glass} aria-label=${t("feed.gallery")} onClick=${() => openGallery()}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true">
         <rect x="4" y="4" width="6.5" height="6.5" rx="1.8" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8" />

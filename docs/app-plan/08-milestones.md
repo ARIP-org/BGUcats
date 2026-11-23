@@ -899,6 +899,12 @@ English file.
 - **Also in E6a:** the glass bar over a tab (the feed's buttons, Home's
   pill) stays at the top. It had scrolled away with the first card since
   E2, which no test looked at; one does now.
+- **The fold, smoothed (issue 104, 2026-11-23):** the tab bar, the
+  search pill, the profile pill and Friends fold by `clip-path` and
+  `translate` instead of by size (`docs/notes.md`, "Glass that changes
+  size stutters"). The feed's two round buttons stay 48 px; a 390 px
+  phone had squeezed them while the search pill was open. Not yet felt
+  on a phone.
 - **From now on** a screen's pull request carries the prototype rendered
   beside the built screen (the owner's ask, 2026-11-13): the prototype's
   `.dc.html` files open in the test browser with its runtime as

@@ -16,7 +16,7 @@ import { chooseUsername, deletePost, me as loadMe, myPosts, removeAvatar, saveAv
 import { FriendsCard, openFriends } from "./friends.js";
 import { dayMonth, keepLanguage, language, LANGUAGES, monthYear, t } from "./i18n.js";
 import { CatFace, Mascot } from "./mascot.js";
-import { glass } from "./motion.js";
+import { glass, useFold } from "./motion.js";
 import { openScan } from "./scan.js";
 import { push, set, useStore } from "./store.js";
 import { termsFirst } from "./terms.js";
@@ -139,9 +139,9 @@ function MyPosts({ posts, failed, small, onGone }) {
 // Scrolling down folds the pill to the photo alone and opens the Friends
 // button, as the tab bar folds (tabbar.js, watchScroll).
 function HomeTop({ me }) {
-  const collapsed = useStore((s) => s.collapsed);
+  const className = useFold("home-top", useStore((s) => s.collapsed));
   const met = me?.counters?.all?.catsMet || 0;
-  return html`<div class=${collapsed ? "home-top collapsed" : "home-top"}>
+  return html`<div class=${className}>
     <button
       type="button"
       class="me-pill"
