@@ -395,8 +395,23 @@ an hour that a sentence would have saved.
   retries after 2, 5 and 15 seconds, so one request that fails twice is
   already past a test's twenty. A failed member-app test now prints the
   app's own "App info" and every request that failed or was refused
-  (`tests/web/conftest.py`, held by `test_failure_report.py`). The cause
-  of that one run is not known.
+  (`tests/web/conftest.py`, held by `test_failure_report.py`). The next
+  failure, an hour later, printed `404 POST /api/encounters/{id}/media`:
+  it was the app, not the test (the next entry).
+- **A queue that reads two stores in two steps reads two moments.** The
+  outbox's pass read the encounters, then the photos. The place arriving
+  a moment before the first photo started a pass; the encounter and the
+  photo were stored between its two reads; the pass saw a photo whose
+  encounter it had not read, took it for one that needs none, and sent it
+  first. The server said "no such encounter", which the queue takes as
+  final, so the photo was given up and the post never went (2026-11-23,
+  on `main` since the place began to follow the photo, 2026-11-13; on a
+  phone it needs GPS to answer within milliseconds of the first photo).
+  The pass now reads the photos first: an encounter is stored before its
+  photo, so whatever photo the pass reads, its encounter is in the read
+  that follows. `tests/web/test_outbox_order.py` stores the first photo
+  after each of the pass's reads in turn; it fails on the old order.
+  "It passes when I run it again" was the report of a real bug here.
 
 ## Agents and sessions
 

@@ -281,6 +281,9 @@ product). Its old sessions and photos stay in the table with
   never holds up the rest, and the screen says why it is retrying. An
   encounter reaches the API with its first photo, so empty ones are never
   written. Before 2026-10-29, 48 photos stalled for an hour without a word.
+  A photo never goes before its encounter: a pass of the queue reads the
+  photos first and the encounters after (`tests/web/test_outbox_order.py`;
+  the other order lost a post now and then until 2026-11-23).
 - **Location comes from the phone's GPS at the moment of capture**, with its
   accuracy (`locationSource = "app-gps"`, `locationAccuracyM`), rounded to
   3 decimals like everything else. GPS takes seconds and the first photo
