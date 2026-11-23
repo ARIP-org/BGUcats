@@ -178,14 +178,38 @@ jobs:
 
       # Signed "to run locally", as Xcode signs any simulator build: no
       # team, no certificate, no profile.
-      - name: build it and walk through every screen
+      - name: build it
         run: |
           xcodebuild -list -project "$PROJECT"
-          xcodebuild test -quiet \
+          xcodebuild build-for-testing -quiet \
+            -project "$PROJECT" -scheme BGUCats \
+            -destination "id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/derived-swift"
+
+      # The simulator is started first and waited for, so a slow start is
+      # not counted against a test. Each test has a time limit of its own:
+      # the first run of this job sat for twenty minutes without a word.
+      # The whole of xcodebuild's output is kept with the pictures; the
+      # log here shows the lines that say what happened.
+      - name: walk through every screen
+        timeout-minutes: 15
+        run: |
+          mkdir -p build/ios-swift
+          xcrun simctl bootstatus "$UDID" -b
+          set +e
+          xcodebuild test-without-building \
             -project "$PROJECT" -scheme BGUCats \
             -destination "id=$UDID" \
             -derivedDataPath "$RUNNER_TEMP/derived-swift" \
-            -resultBundlePath "$RUNNER_TEMP/swift.xcresult"
+            -resultBundlePath "$RUNNER_TEMP/swift.xcresult" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 180 \
+            -maximum-test-execution-time-allowance 300 \
+            2>&1 | tee build/ios-swift/xcodebuild.log |
+            grep --line-buffered -E "Test (Case|Suite)|error|rror:|XCTAssert|failed|\*\* TEST|Timed out|hung|crash"
+          status=${PIPESTATUS[0]}
+          echo "xcodebuild ended with $status"
+          exit "$status"
 
       - name: the pictures
         if: always()
