@@ -142,6 +142,18 @@ repeated), a status named `review` on the pull request's head commit,
 and for a `pass`, a request to GitHub to merge when `main`'s rules are
 met.
 
+**What the reviewer sends to the owner is a short list** (the owner,
+2026-11-23: "My approvals are asked too frequently"). Until then it was
+told "when in doubt, owner", and every pull request of that day went up.
+Now `owner` is only for a change that: deletes or rewrites what people
+stored; changes who may sign in or what a role may do; adds a new kind
+of AWS resource or a cost; changes what an agent may do, a rule in
+`CLAUDE.md` or a recorded decision; or changes what is published outside
+the app. Anything else it is not sure of goes back to its author
+(`changes`), and a change that does what its description says passes,
+even when it changes what users see: the owner sees it on staging and in
+the digest, and production still moves only on the owner's tag.
+
 **The two lanes** are those rules, not anything an agent decides:
 
 - A pull request that touches no path in `.github/CODEOWNERS`, with CI

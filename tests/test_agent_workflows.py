@@ -261,6 +261,26 @@ def test_the_reviewer_runs_mains_copy_of_itself_after_ci():
     assert "workflow_run.conclusion == 'success'" in job["if"]
 
 
+def test_the_reviewer_sends_the_owner_only_what_is_the_owners():
+    # The owner, 2026-11-23: "My approvals are asked too frequently."
+    # Until then the reviewer was told "when in doubt, owner", and every
+    # pull request of the day went up. Now `owner` is a short list, doubt
+    # goes back to the author, and a plainly described change passes.
+    prompt = claude(reviewer())["with"]["prompt"]
+    assert "When in doubt, `owner`" not in prompt
+    assert "never `owner`" in prompt and "`owner`: rare." in prompt
+    for kept in (
+        "deletes or rewrites what people have stored",
+        "who may sign in",
+        "new kind of AWS resource",
+        "what an agent may do",
+        "published outside the app",
+    ):
+        assert kept in prompt, kept
+    # Fails closed all the same: no verdict, or an unknown one, is `owner`.
+    assert said("no verdict here")["verdict"] == "owner"
+
+
 def test_the_reviewer_can_read_and_nothing_else():
     assert tools(reviewer()) == ["Read", "Grep", "Glob"]
     job = reviewer()["jobs"]["review"]
