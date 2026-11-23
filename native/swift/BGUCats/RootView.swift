@@ -35,6 +35,7 @@ struct RootView: View {
         .task {
             world.trail.mark("start: ready")
         }
+        .preferredColorScheme(world.look)
     }
 }
 

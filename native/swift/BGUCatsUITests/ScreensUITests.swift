@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// Opens every screen in a simulator and keeps a picture of each, in light
@@ -7,28 +8,25 @@ import XCTest
 ///
 /// The app is started with `-uiTesting`: it reads nothing from the network
 /// and keeps nothing on the phone, and its clock stands still, so two
-/// pictures of one screen are the same picture.
+/// pictures of one screen are the same picture. `-look` names the look
+/// to draw, and every picture is checked to be that look: on this job's
+/// first run all ten came out light and nothing noticed.
 final class ScreensUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    override func tearDown() {
-        XCUIDevice.shared.appearance = .light
-    }
-
     func testEveryScreenInLight() {
-        walk(look: "light", appearance: .light)
+        walk(look: "light")
     }
 
     func testEveryScreenInDark() {
-        walk(look: "dark", appearance: .dark)
+        walk(look: "dark")
     }
 
-    private func walk(look: String, appearance: XCUIDevice.Appearance) {
-        XCUIDevice.shared.appearance = appearance
+    private func walk(look: String) {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting"]
+        app.launchArguments = ["-uiTesting", "-look", look]
         app.launch()
 
         // It opens on Home.
@@ -62,9 +60,38 @@ final class ScreensUITests: XCTestCase {
     }
 
     private func keep(_ app: XCUIApplication, _ name: String) {
-        let picture = XCTAttachment(screenshot: app.screenshot())
+        let shot = app.screenshot()
+        let picture = XCTAttachment(screenshot: shot)
         picture.name = name
         picture.lifetime = .keepAlways
         add(picture)
+        // A picture named dark is dark, and one named light is light.
+        let bright = ScreensUITests.brightness(shot.image)
+        if name.hasSuffix("-dark") {
+            XCTAssertLessThan(bright, 0.35, "\(name) is not dark: the screen's brightness is \(bright).")
+        } else {
+            XCTAssertGreaterThan(bright, 0.65, "\(name) is not light: the screen's brightness is \(bright).")
+        }
+    }
+
+    /// How bright a picture is as a whole, from 0 (black) to 1 (white):
+    /// the picture drawn into a single pixel.
+    private static func brightness(_ image: UIImage) -> Double {
+        guard let source = image.cgImage else { return -1 }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        pixel.withUnsafeMutableBytes { bytes in
+            let context = CGContext(
+                data: bytes.baseAddress,
+                width: 1,
+                height: 1,
+                bitsPerComponent: 8,
+                bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+            context?.interpolationQuality = .high
+            context?.draw(source, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return (Double(pixel[0]) + Double(pixel[1]) + Double(pixel[2])) / (3 * 255)
     }
 }

@@ -119,13 +119,14 @@ def test_the_upload_to_testflight_is_still_the_packed_app_alone():
 
 def test_every_screen_is_kept_in_light_and_in_dark():
     tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
-    assert 'walk(look: "light", appearance: .light)' in tests
-    assert 'walk(look: "dark", appearance: .dark)' in tests
+    assert 'walk(look: "light")' in tests and 'walk(look: "dark")' in tests
+    # The look is asked of the app, and each picture is checked to be it.
+    assert 'app.launchArguments = ["-uiTesting", "-look", look]' in tests
+    assert 'name.hasSuffix("-dark")' in tests and "XCTAssertLessThan(bright" in tests
     # Home, the three other tabs, and App info.
     assert 'keep(app, "home-\\(look)")' in tests and 'keep(app, "app-info-\\(look)")' in tests
     assert '[("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")]' in tests
     # The app under test reads no network and keeps nothing.
-    assert 'app.launchArguments = ["-uiTesting"]' in tests
     assert 'arguments.contains("-uiTesting")' in (SWIFT / "BGUCats" / "BGUCatsApp.swift").read_text()
 
 

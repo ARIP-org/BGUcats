@@ -23,15 +23,24 @@ struct World {
     let trail: Trail
     let now: () -> Date
     let version: String
+    /// Light or dark, when a UI test asks for one; nil follows the phone.
+    var look: ColorScheme?
 
     /// The real one, or the stand-in when a UI test started the app.
     static func current(arguments: [String] = ProcessInfo.processInfo.arguments) -> World {
         if arguments.contains("-uiTesting") {
-            return .standIn()
+            var world = World.standIn()
+            // "-look dark": the test names the look it is about to
+            // picture. Asking the simulator to change its appearance did
+            // nothing on the first run: every "dark" picture was light.
+            if let flag = arguments.firstIndex(of: "-look"), arguments.indices.contains(flag + 1) {
+                world.look = arguments[flag + 1] == "dark" ? .dark : .light
+            }
+            return world
         }
         let info = Bundle.main.infoDictionary ?? [:]
         let version = "\(info["CFBundleShortVersionString"] ?? "?") (\(info["CFBundleVersion"] ?? "?"))"
-        return World(trail: Trail(), now: Date.init, version: version)
+        return World(trail: Trail(), now: Date.init, version: version, look: nil)
     }
 
     /// What every UI test sees: the same lines at the same time, so two
@@ -43,6 +52,6 @@ struct World {
             tick += 1.5
             return start.addingTimeInterval(tick)
         }
-        return World(trail: Trail(store: MemoryStore(), now: clock), now: { start }, version: "0.2.0 (test)")
+        return World(trail: Trail(store: MemoryStore(), now: clock), now: { start }, version: "0.2.0 (test)", look: nil)
     }
 }

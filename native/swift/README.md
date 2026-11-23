@@ -40,7 +40,9 @@ defined, one iOS version, nothing that signs.
   `-uiTesting` gets a made-up world (`World.standIn()`): a clock that
   stands still and a trail kept in memory, so two pictures of one screen
   are the same picture. A screen that reads the API gets its canned
-  answers the same way.
+  answers the same way. The look is asked of the app (`-look dark`), and
+  the test checks each picture's brightness: asking the simulator for
+  dark did nothing on the first run, and ten light pictures passed.
 - **The trail** (`Trail.swift`) is the web app's, with its limits: the
   last eighty lines, what happened and never who. "App info" shows it.
 - **The same app to Apple:** the bundle id is the packed app's,
