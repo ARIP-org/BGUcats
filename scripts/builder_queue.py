@@ -25,15 +25,21 @@ What holds:
   for `STALE_HOURS` goes to the owner (`needs-owner`) and frees its place.
 - An issue whose pull request is already open is never built a second
   time, whatever label it carries: its queue label becomes `building`.
+- A pull request of the builder's that the reviewer sent back goes to the
+  builder again, `ROUNDS` times at most; after that it is the owner's.
+  Only the reviewer's own status counts (written as GitHub Actions), and
+  a pull request being reworked is marked so, so it is handed out once.
 
     REPO=owner/name GH_TOKEN=... python scripts/builder_queue.py
 
-prints what it did and writes `issues=[...]` (the numbers taken) to
-`$GITHUB_OUTPUT`.
+prints what it did and writes to `$GITHUB_OUTPUT`: `issues=[...]` (the
+numbers taken) and `rework=[{issue, pull, round, sha}, ...]` (pull requests
+to answer the reviewer on).
 """
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -44,6 +50,15 @@ QUEUE = ("approved", "ready")  # in the order they are taken
 BUILDING = "building"
 HELD = ("needs-owner", "proposal")  # never taken, whatever else they carry
 CAN_PUSH = frozenset({"admin", "maintain", "write"})
+
+# A sent-back review. The words are scripts/review_verdict.py's for the
+# verdict `changes` (a test holds the two together), and the status must be
+# the reviewer workflow's own.
+SENT_BACK = "Reviewed: sent back to its author"
+REVIEWER = "github-actions[bot]"
+REWORKING = "reworking"
+ROUNDS = 2
+ISSUE_BRANCH = re.compile(r"^claude/issue-(\d+)$")
 
 
 def branch(number):
@@ -136,6 +151,35 @@ def decide(issues, branches, labeled, permission, now, limit=LIMIT):
     return {"take": take, "refuse": refuse, "stale": stale, "wait": wait, "built": built}
 
 
+def sent_back(pulls, review, rounds=ROUNDS):
+    """Which of the builder's pull requests go back to the builder.
+
+    pulls: this repository's open pull requests, each {number, ref, sha,
+    labels}. review(sha): the newest `review` status on that commit,
+    {state, description, by}, or None.
+
+    Returns {rework: [{issue, pull, round, sha}], owner: [numbers]}:
+    `owner` are those sent back once more than the builder may answer.
+    """
+    rework, owner = [], []
+    for pull in sorted(pulls, key=lambda p: p["number"]):
+        built = ISSUE_BRANCH.match(pull["ref"])
+        labels = pull["labels"]
+        if not built or REWORKING in labels or "needs-owner" in labels:
+            continue
+        said = review(pull["sha"]) or {}
+        if (said.get("state"), said.get("description"), said.get("by")) != ("failure", SENT_BACK, REVIEWER):
+            continue
+        done = sum(f"rework-{n}" in labels for n in range(1, rounds + 1))
+        if done >= rounds:
+            owner.append(pull["number"])
+        else:
+            rework.append(
+                {"issue": int(built[1]), "pull": pull["number"], "round": done + 1, "sha": pull["sha"]}
+            )
+    return {"rework": rework, "owner": owner}
+
+
 # ------------------------------------------------------------- GitHub
 
 
@@ -163,9 +207,22 @@ def read(repo):
     # A fork's branch can be named anything: only our own count.
     pulls = lines(
         f"repos/{repo}/pulls?state=open&per_page=100",
-        f'.[] | select(.head.repo.full_name == "{repo}") | {{ref: .head.ref}}',
+        f'.[] | select(.head.repo.full_name == "{repo}") '
+        "| {number, ref: .head.ref, sha: .head.sha, labels: [.labels[].name]}",
     )
-    return list(found.values()), [pull["ref"] for pull in pulls]
+    return list(found.values()), pulls
+
+
+def review_of(repo):
+    def review(sha):
+        # Newest first; the first with our context is the one that stands.
+        found = lines(
+            f"repos/{repo}/commits/{sha}/statuses?per_page=100",
+            '.[] | select(.context == "review") | {state, description, by: .creator.login}',
+        )
+        return found[0] if found else None
+
+    return review
 
 
 def labeled_by(repo):
@@ -212,8 +269,10 @@ def say(repo, number, text):
 
 def main():
     repo = os.environ["REPO"]
-    issues, branches = read(repo)
+    issues, pulls = read(repo)
+    branches = [pull["ref"] for pull in pulls]
     plan = decide(issues, branches, labeled_by(repo), permission_in(repo), datetime.now(UTC))
+    back = sent_back(pulls, review_of(repo))
     labels = {issue["number"]: issue["labels"] for issue in issues}
 
     for item in plan["refuse"]:
@@ -245,11 +304,25 @@ def main():
         print(f"::notice::#{number}: taken.")
     for number in plan["wait"]:
         print(f"::notice::#{number} waits: {LIMIT} pieces of agent work are open already.")
-    if not any(plan.values()):
+    for item in back["rework"]:
+        add(repo, item["pull"], REWORKING)
+        add(repo, item["pull"], f"rework-{item['round']}")
+        print(f"::notice::Pull request #{item['pull']}: sent back, round {item['round']} of {ROUNDS}. To the builder.")
+    for number in back["owner"]:
+        add(repo, number, "needs-owner")
+        say(
+            repo,
+            number,
+            f"The reviewer sent this back again after {ROUNDS} answers from the builder. "
+            "It waits for the owner (`needs-owner`).",
+        )
+        print(f"::warning::Pull request #{number}: sent back {ROUNDS + 1} times. To the owner.")
+    if not any(plan.values()) and not any(back.values()):
         print("Nothing in the queue.")
 
     with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as out:
         out.write(f"issues={json.dumps(plan['take'])}\n")
+        out.write(f"rework={json.dumps(back['rework'])}\n")
 
 
 if __name__ == "__main__":

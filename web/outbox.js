@@ -256,8 +256,17 @@ export function createOutbox({ post, onChange }) {
             : null,
         );
       }
+      // The photos first, their encounters after: an encounter is stored
+      // before its first photo, so every photo read here has its encounter
+      // in what is read next. The other way round, a photo taken while this
+      // pass was between the two reads looked like one with no encounter
+      // to wait for, went to the server ahead of it, was answered "no such
+      // encounter" and was given up for good, and its post never went
+      // (2026-11-23: the place arriving a moment before the first photo
+      // starts exactly such a pass).
+      const items = await itemsWithState();
       const encounters = new Map((await all("encounters")).map((e) => [e.sessionId, e]));
-      const todo = (await itemsWithState())
+      const todo = items
         .filter(({ item, state }) => {
           if (state === "failed") return false;
           const encounter = encounters.get(item.sessionId);

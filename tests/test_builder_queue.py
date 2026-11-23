@@ -191,6 +191,8 @@ GH = textwrap.dedent(
         body = [i for i in world["issues"] if label in [l["name"] for l in i["labels"]]]
     elif parts[-1] == "pulls":
         body = world["pulls"]
+    elif parts[-1] == "statuses":
+        body = world.get("statuses", {}).get(parts[-2], [])
     elif parts[-1] == "events":
         body = world["events"].get(parts[-2], [])
     elif parts[-1] == "permission":
@@ -220,6 +222,18 @@ def api_issue(number, labels, login="arip-dev-bot", kind="User", updated="2026-1
     if pull:
         found["pull_request"] = {"url": "..."}
     return found
+
+
+def api_pull(number, ref, sha="aaa", labels=(), repo="ARIP-org/BGUcats"):
+    return {
+        "number": number,
+        "labels": [{"name": name} for name in labels],
+        "head": {"ref": ref, "sha": sha, "repo": {"full_name": repo} if repo else None},
+    }
+
+
+def api_status(state, description, login="github-actions[bot]", context="review"):
+    return {"context": context, "state": state, "description": description, "creator": {"login": login}}
 
 
 def labeled(label, login, kind="User"):
@@ -265,10 +279,10 @@ def test_the_queue_is_read_from_github_and_the_labels_move(github, capsys):
                 api_issue(80, ["approved"]),
             ],
             "pulls": [
-                {"head": {"ref": "claude/issue-80", "repo": {"full_name": "ARIP-org/BGUcats"}}},
+                api_pull(81, "claude/issue-80"),
                 # A fork may name its branch anything; a deleted fork has no repo.
-                {"head": {"ref": "claude/theirs", "repo": {"full_name": "stranger/BGUcats"}}},
-                {"head": {"ref": "claude/gone", "repo": None}},
+                api_pull(82, "claude/theirs", repo="stranger/BGUcats"),
+                api_pull(83, "claude/gone", repo=None),
             ],
             "events": {
                 "104": [labeled("ready", "arip-dev-bot")],
@@ -278,7 +292,7 @@ def test_the_queue_is_read_from_github_and_the_labels_move(github, capsys):
             },
         }
     )
-    assert output == "issues=[106, 104]"
+    assert output == "issues=[106, 104]\nrework=[]"
     changed = [(method, path, fields) for method, path, fields in calls if "comments" not in path]
     assert changed == [
         ("DELETE", f"{base}/105/labels/ready", []),
@@ -299,18 +313,118 @@ def test_the_queue_is_read_from_github_and_the_labels_move(github, capsys):
 
 def test_an_empty_queue_starts_nothing(github, capsys):
     output, calls = github({"issues": [], "pulls": [], "events": {}})
-    assert (output, calls) == ("issues=[]", [])
+    assert (output, calls) == ("issues=[]\nrework=[]", [])
     assert "Nothing in the queue." in capsys.readouterr().out
 
 
 def test_a_full_house_waits_and_changes_nothing(github, capsys):
-    ours = {"repo": {"full_name": "ARIP-org/BGUcats"}}
     output, calls = github(
         {
             "issues": [api_issue(104, ["ready"])],
-            "pulls": [{"head": {"ref": f"claude/issue-{n}", **ours}} for n in (1, 2, 3)],
+            "pulls": [api_pull(10 + n, f"claude/issue-{n}") for n in (1, 2, 3)],
             "events": {"104": [labeled("ready", "arip-dev-bot")]},
         }
     )
-    assert (output, calls) == ("issues=[]", [])
+    assert (output, calls) == ("issues=[]\nrework=[]", [])
     assert "#104 waits" in capsys.readouterr().out
+
+
+# ------------------------------------------------- sent back by the reviewer
+
+
+def pull(number, ref, *labels, sha="aaa"):
+    return {"number": number, "ref": ref, "sha": sha, "labels": list(labels)}
+
+
+def review(**by_sha):
+    return lambda sha: by_sha.get(sha)
+
+
+BACK = {"state": "failure", "description": queue.SENT_BACK, "by": queue.REVIEWER}
+
+
+def test_the_words_for_sent_back_are_the_reviewers_own():
+    # The queue knows a sent-back review by its description: the same
+    # words the reviewer's script writes for the verdict `changes`.
+    spec = importlib.util.spec_from_file_location("review_verdict", REPO / "scripts" / "review_verdict.py")
+    verdicts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verdicts)
+    assert verdicts.VERDICTS["changes"] == ("failure", queue.SENT_BACK)
+    # The other two verdicts read differently, so neither is taken for it.
+    assert queue.SENT_BACK not in (verdicts.VERDICTS["pass"][1], verdicts.VERDICTS["owner"][1])
+
+
+def test_a_sent_back_pull_request_of_the_builders_goes_to_the_builder():
+    back = queue.sent_back([pull(117, "claude/issue-104")], review(aaa=BACK))
+    assert back == {"rework": [{"issue": 104, "pull": 117, "round": 1, "sha": "aaa"}], "owner": []}
+    # The second time is the second answer.
+    back = queue.sent_back([pull(117, "claude/issue-104", "rework-1", sha="bbb")], review(bbb=BACK))
+    assert back["rework"] == [{"issue": 104, "pull": 117, "round": 2, "sha": "bbb"}]
+
+
+def test_after_two_answers_it_is_the_owners():
+    back = queue.sent_back([pull(117, "claude/issue-104", "rework-1", "rework-2")], review(aaa=BACK))
+    assert back == {"rework": [], "owner": [117]}
+    # And said once: with needs-owner on, it is left alone.
+    back = queue.sent_back([pull(117, "claude/issue-104", "rework-1", "rework-2", "needs-owner")], review(aaa=BACK))
+    assert back == {"rework": [], "owner": []}
+
+
+def test_only_the_builders_own_pull_requests_and_only_once_at_a_time():
+    pulls = [
+        pull(1, "claude/busy-babbage"),  # a session's: its author answers
+        pull(2, "feature/x"),
+        pull(3, "claude/issue-7", "reworking"),  # being answered now
+        pull(4, "claude/issue-8-extra"),
+    ]
+    assert queue.sent_back(pulls, lambda sha: BACK) == {"rework": [], "owner": []}
+
+
+def test_only_the_reviewers_own_sent_back_counts():
+    one = [pull(9, "claude/issue-5")]
+    for said in (
+        None,  # not reviewed yet
+        {"state": "pending", "description": "Being reviewed", "by": queue.REVIEWER},
+        {"state": "success", "description": "Reviewed: nothing for the owner to look at", "by": queue.REVIEWER},
+        {"state": "failure", "description": "Reviewed: the owner should look at this", "by": queue.REVIEWER},
+        {"state": "error", "description": "The review did not finish: see the run", "by": queue.REVIEWER},
+        # The right words from anyone else: a status is a thing anyone who
+        # can push may write.
+        {**BACK, "by": "arip-dev-bot"},
+    ):
+        assert queue.sent_back(one, lambda sha, said=said: said) == {"rework": [], "owner": []}, said
+
+
+def test_a_sent_back_pull_request_is_marked_and_handed_over(github, capsys):
+    base = "repos/ARIP-org/BGUcats/issues"
+    output, calls = github(
+        {
+            "issues": [api_issue(104, ["building"])],
+            "pulls": [
+                api_pull(117, "claude/issue-104", sha="abc"),
+                api_pull(118, "claude/issue-105", sha="def", labels=["rework-1", "rework-2"]),
+                api_pull(119, "claude/issue-106", sha="fff"),
+            ],
+            "events": {},
+            "statuses": {
+                # Newest first, as GitHub lists them: the last word stands.
+                "abc": [
+                    api_status("failure", queue.SENT_BACK),
+                    api_status("pending", "Being reviewed"),
+                    api_status("success", "x", context="something-else"),
+                ],
+                "def": [api_status("failure", queue.SENT_BACK)],
+                "fff": [api_status("success", "Reviewed: nothing for the owner to look at")],
+            },
+        }
+    )
+    assert output == 'issues=[]\nrework=[{"issue": 104, "pull": 117, "round": 1, "sha": "abc"}]'
+    changed = [(method, path, fields) for method, path, fields in calls if "comments" not in path]
+    assert changed == [
+        ("POST", f"{base}/117/labels", ["labels[]=reworking"]),
+        ("POST", f"{base}/117/labels", ["labels[]=rework-1"]),
+        ("POST", f"{base}/118/labels", ["labels[]=needs-owner"]),
+    ]
+    said = [fields[0] for method, path, fields in calls if path == f"{base}/118/comments"]
+    assert len(said) == 1 and "waits for the owner" in said[0]
+    assert "round 1 of 2" in capsys.readouterr().out

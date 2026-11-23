@@ -122,9 +122,17 @@ and so does the builder (a merge the App asked for starts a deploy, and
 the deploy reads the queue). Only `arip-claude`, never `*`: on a public
 repository that would let any App start an agent.
 
-**Not built yet:** nothing answers a reviewer's "sent back". The pull
-request stays open and red, keeps its place of the three, and the digest
-lists it under "Needs you".
+**A pull request the reviewer sent back goes to the builder again**
+(the job `rework`, since 2026-11-23). The queue script finds the
+builder's open pull requests (`claude/issue-N`) whose newest `review`
+status is the reviewer's "sent back", marks one `reworking`, and hands
+it over. The builder is on the pull request's own branch, reads the
+reviewer's comment (found by who wrote it, not by how it starts), fixes
+what is right, says finding by finding what it did, and pushes; CI and
+the reviewer read it again. **Twice at most:** a third "sent back", or
+an answer that pushed nothing, puts `needs-owner` on the pull request
+with a comment. A session's own pull request is not answered this way:
+its session answers it.
 
 ## The reviewer, and the two lanes
 
@@ -161,11 +169,12 @@ the digest, and production still moves only on the owner's tag.
 - One that touches an owner path waits for the owner's approval, whatever
   the reviewer said. One the reviewer did not pass stays red.
 
-**They are not on yet.** Until the owner changes the `main` ruleset,
-every pull request still needs one approval, and the reviewer only adds
-its comment, its status, and auto-merge (so the owner's approval is also
-the merge). What the owner sets, once, after this workflow is on `main`
-and has reviewed one pull request:
+**They are on since 2026-11-23**, when the owner changed the `main`
+ruleset. Before that every pull request needed one approval, and the
+reviewer only added its comment, its status and auto-merge (so the
+owner's approval was also the merge: #115, #116 and #117 merged within
+seconds of it). What the owner set, for the record and for a second
+repository:
 
 1. *Settings → General → Pull Requests:* "Allow auto-merge".
 2. *Settings → Rules → Rulesets → the `main` ruleset:* "Required
@@ -295,10 +304,12 @@ Checked on 2026-11-22: no key, token or private key in any of the 314
 commits. The owner's own email address is in the repository and stays
 (the owner's choice). No photo and no dataset is.
 
-**What nobody has seen yet:** this workflow has never run. A workflow
-that starts from `workflow_run` runs only from `main`, so its first run
-is on the first pull request after it merges. If it fails, the status is
-`error` and nothing merges by itself: it fails closed.
+**What its first days showed:** a workflow that starts from
+`workflow_run` runs only from `main`, so nothing here could be tried
+before it merged, and four joins between the parts failed on the day
+they were first needed (`docs/notes.md`, "Agents and sessions"). Each
+failed closed: a status of `error`, an issue handed to the owner,
+nothing merged by itself.
 
 ## Seeing a change before it is merged
 
