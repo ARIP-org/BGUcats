@@ -216,7 +216,7 @@ class Campus:
             {
                 "postId": post_id,
                 "sessionId": session_id,
-                "photoIds": [p["photoId"] for p in photos][:4],
+                "photoIds": [p["photoId"] for p in photos],
                 "claim": {"catId": cat_id},
                 "text": words,
                 "shareRegion": False,

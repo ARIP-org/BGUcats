@@ -6,7 +6,7 @@ from ulid import ULID
 
 from app import handler as app_handler
 
-from .localapp import ADMIN, COLLABORATOR
+from .localapp import ADMIN, COLLABORATOR, Campus
 
 
 def feed(open_member_app, email=ADMIN, **options):
@@ -32,6 +32,55 @@ def test_the_seeded_post_is_in_the_feed_with_its_photo_and_likes(open_member_app
     # Three photos in the encounter, shown one at a time.
     assert post.locator(".photo-count").inner_text() == "1/3"
     shot(page, "member-feed")
+
+
+def test_a_post_of_twelve_photos_fits_the_phone(open_member_app, app, shot):
+    # Every photo of an encounter (#105): twelve, newest post first, in the
+    # feed, and the cat's page after it, at a phone's width.
+    campus = Campus(app.api, ADMIN, COLLABORATOR)
+    mitzi = app.data["cats"]["Mitzi"]
+    session = campus.add_encounter(photos=12, seed=7)
+    campus.post(session, mitzi, "Twelve of Mitzi.", COLLABORATOR)
+    campus.label(session, mitzi)
+
+    page = open_member_app(ADMIN)
+    page.wait_for_selector("article.post")
+    post = page.locator("article.post").first
+    assert post.locator(".post-text").inner_text() == "Twelve of Mitzi."
+    # The photos far along the strip are lazy and wait until it is swiped
+    # towards them, which is right on a phone; the screenshot waits for
+    # every picture, so here they are fetched at once.
+    loaded = (
+        "[...document.querySelectorAll('img')].every(i => { i.loading = 'eager';"
+        " return i.complete && i.naturalWidth })"
+    )
+    page.wait_for_function(loaded)
+    assert post.locator(".photo-strip img").count() == 12
+    assert post.locator(".photo-count").inner_text() == "1/12"
+    width = page.evaluate("document.documentElement.clientWidth")
+    for box in (post, post.locator(".photo-count"), post.locator(".photo-strip")):
+        edges = box.bounding_box()
+        assert -1 < edges["x"] and edges["x"] + edges["width"] < width + 1
+    shot(page, "member-feed-twelve-photos")
+
+    post.locator(".cat-link").click()
+    cat = page.locator("[data-page=cat]")
+    cat.locator("h1").wait_for()
+    # The page lists posts by who and when; its strip is the cat's newest
+    # labeled photos (CAT_PAGE_PHOTOS, twelve), here all of this encounter.
+    cat.locator(".cat-post").first.wait_for()
+    assert cat.locator(".cat-post").count() == 2
+    strip = cat.locator(".cat-photos")
+    assert strip.locator(".photo-strip img").count() == 12
+    assert strip.locator(".photo-count").inner_text() == "1/12"
+    page.wait_for_function(
+        "Math.abs(document.querySelector('[data-page=cat]').getBoundingClientRect().x) < 1"
+    )
+    page.wait_for_function(loaded)
+    for box in (strip, strip.locator(".photo-count")):
+        edges = box.bounding_box()
+        assert -1 < edges["x"] and edges["x"] + edges["width"] < width + 1
+    shot(page, "member-cat-twelve-photos")
 
 
 def test_today_s_cat_is_at_the_top(open_member_app):

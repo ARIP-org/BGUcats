@@ -265,3 +265,44 @@ def _call_with_query(path, query):
     }
     answer = handler.handler(event, None)
     return answer["statusCode"], json.loads(answer["body"])
+
+
+def _photos_in_session(data, count):
+    """`count` finished photos in the helper's encounter, oldest first."""
+    photos = [f"01JD00000000000000000{n:05d}" for n in range(count)]
+    for photo in photos:
+        data.put_item(
+            Item={
+                "PK": f"PHOTO#{photo}",
+                "SK": "META",
+                "photoId": photo,
+                "sessionId": SESSION,
+                "status": "unlabeled",
+                "mediaType": "photo",
+            }
+        )
+    return photos
+
+
+def test_a_post_carries_every_photo_of_its_encounter_in_order(campus):
+    # More than the four of before #105, and not in the order they were taken.
+    photos = _photos_in_session(campus["data"], 12)
+    photos = photos[5:] + photos[:5]
+    status, body = make_post(photoIds=photos)
+    assert status == 200, body
+    published(campus["social"], POST)
+    card = call("GET", "/api/v1/feed", email=ADMIN)[1]["cards"][0]
+    assert [p["photoId"] for p in card["photos"]] == photos
+    assert all("derived/" in p["medium"] for p in card["photos"])
+
+
+def test_a_post_over_the_ceiling_is_refused_as_before(campus):
+    too_many = _photos_in_session(campus["data"], handler.POST_PHOTOS_MAX + 1)
+    status, body = make_post(photoIds=too_many)
+    # The shape a post with no photo has always had.
+    empty_status, empty = make_post(photoIds=[])
+    assert status == empty_status == 400
+    assert body == empty
+    assert str(handler.POST_PHOTOS_MAX) in body["error"]
+    at_ceiling = make_post(photoIds=too_many[:-1])
+    assert at_ceiling[0] == 200, at_ceiling[1]
