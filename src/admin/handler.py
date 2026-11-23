@@ -109,6 +109,10 @@ ADMINS = "admins"
 # the content type and a size ceiling, so the URL can write one object of
 # one kind and nothing else.
 APP_CHANNEL = "app"
+# A photo's `origin` (#108): taken with the camera just now, or picked from
+# the phone's gallery. Only "gallery" is stored; no `origin` means camera.
+ORIGIN_CAMERA = "camera"
+ORIGIN_GALLERY = "gallery"
 UPLOAD_URL_TTL_SECONDS = 3600
 # Same ceiling as the chat bots for photos (ingest.core.MAX_FILE_SIZE_BYTES).
 # The app records video at 720p, about 3 MB for ten seconds; the ceiling is
@@ -2172,6 +2176,7 @@ def _create_upload(session_id, body, email, **_):
     ext, kind = UPLOAD_TYPES[content_type]
     key = f"raw/{session_id}/{photo_id}.{ext}"
     created_at = _now_iso()
+    origin = _origin_param(body)
 
     item = {
         "PK": f"PHOTO#{photo_id}",
@@ -2201,7 +2206,13 @@ def _create_upload(session_id, body, email, **_):
         "GSI2PK": "STATUS#pending",
         "GSI2SK": created_at,
     }
-    item.update(_location_fields(body))
+    if origin == ORIGIN_GALLERY:
+        # Picked from the phone's gallery, not taken here and now (#108):
+        # no place at all, neither the one sent with it nor (process
+        # Lambda) the file's own EXIF, and it never places its encounter.
+        item["origin"] = ORIGIN_GALLERY
+    else:
+        item.update(_location_fields(body))
     duration = body.get("durationSeconds")
     if kind == "video" and isinstance(duration, (int, float)) and 0 < duration < 600:
         item["durationSeconds"] = Decimal(str(round(duration, 1)))
@@ -2214,6 +2225,10 @@ def _create_upload(session_id, body, email, **_):
             return {"photoId": photo_id, "done": True}
         if existing.get("uploadKey") != key:
             raise ApiError(409, "this photo was started with a different file type")
+        if existing.get("origin", ORIGIN_CAMERA) != origin:
+            # Never changed after the first write: a place may already be
+            # stored, or already refused.
+            raise ApiError(409, "this photo was started with a different origin")
 
     upload = s3.generate_presigned_post(
         Bucket=MEDIA_BUCKET,
@@ -2306,10 +2321,24 @@ def _bytes_match(start, kind):
     return start[4:8] == b"ftyp" or start.startswith(WEBM_SIGNATURE)
 
 
+def _origin_param(body):
+    """Where a photo comes from: the camera just now (the default) or the
+    phone's gallery. Null is the default too."""
+    origin = body.get("origin") or ORIGIN_CAMERA
+    if origin not in (ORIGIN_CAMERA, ORIGIN_GALLERY):
+        raise ApiError(400, 'origin must be "camera" or "gallery"')
+    return origin
+
+
 def _locate_session_from_photo(session, photo):
     """The first located photo pins its encounter, if nothing pinned it yet.
-    The phone often has no GPS fix yet when the encounter opens."""
-    if session.get("coarseLat") is not None or photo.get("coarseLat") is None:
+    The phone often has no GPS fix yet when the encounter opens. A photo
+    from the gallery never does: it was not taken there."""
+    if (
+        session.get("coarseLat") is not None
+        or photo.get("coarseLat") is None
+        or photo.get("origin") == ORIGIN_GALLERY
+    ):
         return
     try:
         table.update_item(
