@@ -1749,7 +1749,11 @@ def _report(user, body, **_):
 # --------------------------------------------------------------------------
 
 POST_TEXT_MAX = 280
-POST_PHOTOS_MAX = 4
+# Every photo of an encounter (#105): no client stops a person, and no real
+# encounter comes near this. It only bounds the item and the card: each
+# photo is one read when posting and two signed URLs each time a card is
+# drawn, so a feed page of 20 posts at the ceiling is 2,000 signatures.
+POST_PHOTOS_MAX = 50
 PHOTO_STATES_POSTABLE = ("unlabeled", "labeled")
 POSTS_PER_DAY = 20
 LIKES_PER_HOUR = 300
