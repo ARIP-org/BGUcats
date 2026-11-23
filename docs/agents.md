@@ -100,6 +100,19 @@ hours, goes to `needs-owner` with a comment. To start it again: take
 `infra/org/`.** Work that needs one of them is not `ready`: it is for a
 session (below), and the planner labels it `needs-owner` and says so.
 
+**A build that ends with no pull request says why.** The workflow prints
+what Claude said last in the run's log, every time, and copies it into
+the comment that hands the issue to the owner. On the queue's first day
+two builds ended green with no pull request and not a word (2026-11-23),
+and the action shows nothing of what Claude did.
+
+**The App's own work is let in by name.** Claude's action refuses a run
+that a bot started unless the bot is named (`allowed_bots`). The
+builder's pull requests are opened by the App, so the reviewer names it,
+and so does the builder (a merge the App asked for starts a deploy, and
+the deploy reads the queue). Only `arip-claude`, never `*`: on a public
+repository that would let any App start an agent.
+
 **Not built yet:** nothing answers a reviewer's "sent back". The pull
 request stays open and red, keeps its place of the three, and the digest
 lists it under "Needs you".
