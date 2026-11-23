@@ -147,6 +147,19 @@ def test_every_pull_request_archives_the_app_as_the_upload_will():
     assert "native/swift" not in yaml.safe_dump(jobs["simulator"])
 
 
+def test_the_packed_apps_check_waits_for_the_page_not_for_a_clock():
+    # It slept thirty seconds and then looked; a slow runner made a late
+    # start read as a crash (2026-11-23).
+    look = next(step for step in workflow()["jobs"]["simulator"]["steps"] if step.get("name") == "start it and look")
+    run = look["run"]
+    assert "sleep 30" not in run
+    wait = run.split("console=$!")[1].split("simctl io")[0]
+    assert 'grep -q "WebView loaded" build/ios/app.log' in wait and "for _ in $(seq 1 90)" in wait
+    # The look comes after the wait, and still fails a page that never loaded.
+    assert run.index("for _ in $(seq 1 90)") < run.index("screenshot build/ios/launch.png")
+    assert "The web view never finished loading the page." in run
+
+
 # ------------------------------------------------------------ the archive
 
 
