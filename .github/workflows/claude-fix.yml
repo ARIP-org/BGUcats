@@ -168,6 +168,16 @@ jobs:
           # The action refuses a run started by a bot unless it is named.
           # A deploy started by the App's own merge reads the queue too.
           allowed_bots: arip-claude
+          # A run here ends when Claude ends its turn: nothing wakes it
+          # afterwards. Three builds started the test suite in the
+          # background, said "I'll wait for the notification that the tests
+          # have finished", and were over (2026-11-23). So no command runs
+          # in the background, and one may run in the foreground for
+          # twenty-five minutes (the whole suite takes about eighteen).
+          settings: |
+            {"env": {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+                     "BASH_DEFAULT_TIMEOUT_MS": "1500000",
+                     "BASH_MAX_TIMEOUT_MS": "1500000"}}
           # The model is chosen here, not by the token: the token only says
           # whose Claude plan pays. Without --model the action picks its own
           # default (Sonnet when this was written). Writing code gets the
@@ -202,8 +212,18 @@ jobs:
               If the work needs one of them, or a new kind of AWS resource or
               service, stop: comment on the issue saying exactly what the
               owner has to decide, and open no pull request.
-            - Tests for what you change. Run `make lint` and `make test`, and
-              fix what they find. Do not weaken or skip a test to pass.
+            - Tests for what you change. Run `make lint`, then the tests in
+              pieces: `pytest -q --ignore=tests/web` (two minutes), and of
+              `tests/web` the files for what you changed. The whole browser
+              suite takes eighteen minutes: run it once at most, at the end,
+              and only if you changed something many screens share; CI runs
+              it on your pull request anyway. Fix what the tests find. Do not
+              weaken or skip a test to pass.
+            - This run ends the moment you end your turn, and nothing wakes
+              you afterwards. Never stop to wait for something: every command
+              runs to its end in front of you. Your turn ends only when the
+              pull request is open, or when you have said on the issue why
+              there is none.
             - If you change a screen (web/), add or update its test in
               tests/web and look at the screenshot it saves in
               build/screenshots/ before you call the work done.

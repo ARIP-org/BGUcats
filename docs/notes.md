@@ -388,6 +388,14 @@ an hour that a sentence would have saved.
   dollars of the plan. The action hides Claude's output, and the step
   that printed its last message ran only on failure. It now runs every
   time and its text goes on the issue.
+- **In a workflow, ending the turn ends the run.** A session like this
+  one is woken when a background command finishes; Claude in an action is
+  not. The builder ran `make test` (eighteen minutes, past the two-minute
+  default for a command), let it go to the background, and ended with
+  "I'll wait for the notification that the tests have finished": three
+  builds, about seven dollars of the plan, nothing pushed. Background
+  commands are off for it, the foreground limit is twenty-five minutes,
+  and its prompt says to run the tests in pieces.
 - **The token does not choose the model.** It decides whose Claude plan
   pays. The workflows ran on the action's default, Sonnet, until each one
   named its model (`claude_args`, `--model`).
