@@ -1318,7 +1318,7 @@ def _get_proposals(query, **_):
     for item in items:
         person = (
             social_table.get_item(
-                Key={"PK": f"USER#{item['proposerId']}", "SK": "PROFILE"}
+                Key={"PK": f"USER#{item.get('proposerId')}", "SK": "PROFILE"}
             ).get("Item")
             or {}
         )
@@ -1481,7 +1481,7 @@ def _report_target(target_type, target_id, known):
             "status": post["status"],
             "hiddenReason": post.get("hiddenReason"),
             "text": post.get("text") or "",
-            "author": _username(post["authorId"], known),
+            "author": _username(post.get("authorId"), known),
             "cat": cat.get("name") if cat else None,
             "createdAt": post["createdAt"],
             "photos": [
@@ -1554,7 +1554,7 @@ def _get_reports(query, **_):
                         "reportId": i["reportId"],
                         "reason": i["reason"],
                         "note": i.get("note") or "",
-                        "reporter": _username(i["reporterId"], known),
+                        "reporter": _username(i.get("reporterId"), known),
                         "createdAt": i["createdAt"],
                     }
                     for i in items

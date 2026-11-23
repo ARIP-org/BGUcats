@@ -135,28 +135,64 @@ Each of these gets a test.
 
 ## Deleting an account
 
-`DELETE /me` sets `status = deleting` and answers. The events Lambda does
-the rest, in an order that can be interrupted and resumed, because each
-step is safe to repeat:
+**Built in B10a (2026-11-23), except step 1 (B10b).** `DELETE /me` sets
+`status = deleting` and answers; it also deletes the profile photo's
+objects (step 6), because the events Lambda has no access to the bucket,
+and lists every cat's id on the profile (`deletingCats`), because the
+events Lambda cannot read the dataset where cats are listed. The events
+Lambda does the rest (`delete_account` in `src/events/handler.py`), one
+step per change: each step ends by moving `deletionStep` on, and that
+change comes back through the stream to start the next. Every step is
+safe to repeat, so a step stopped half-way is run again by the mapping's
+retry and finds its finished part done
+(`tests/app/test_delete_account.py`).
 
-1. Sign the person out everywhere and delete the Cognito user.
-2. Posts: set `removed`, which drops them from every index.
+1. Sign the person out everywhere and delete the Cognito user. **Not
+   built (B10b):** the events role has no `cognito-idp` permission. Until
+   then the same sign-in answers `gone` while the job runs, and once it
+   has finished makes a new, empty account.
+2. Posts: set `removed` (`hiddenReason = deleted`), which drops them from
+   every index, and their cat's counters are taken back; `authorId` and
+   `GSI1` go too, so the post no longer names its author. The likes
+   others gave them are deleted, each as an unlike. Proposals stay for
+   the desk, with `proposerId` and `GSI1` removed.
 3. Likes and votes: delete, with the same counter transactions as an
    unlike and a vote taken back. Names they suggested stay as options
-   with no suggester.
+   with no suggester. Their feedings are deleted, and each cat's "last
+   fed" follows (`count_feeding`). No index lists a person's likes, and
+   the Lambda's role has no Scan: every listed person's posts are looked
+   at, which is thousands of reads at most on one campus. A post whose
+   author was deleted has no likes left (step 2), so none is missed.
 4. Friends, requests and blocks: delete with their mirrors.
-5. Devices, badges, counters, `MET`, `ENC`: delete.
-6. The avatar object.
-7. `USERNAME`, `PHONE`, `INVITE`, `IDENTITY`, and last the `USER` item.
+5. Reports the person made stay, with the reporter id cleared and their
+   one-per-person `REPORTED#…/BY#` item deleted; reports about their
+   things lose `targetOwnerId`, and one about the person or their photo
+   names `deleted`.
+6. Devices, badges, counters, `MET`, `METM`, `ENC`, feedings, pushes:
+   delete, after taking what they gave each cat's popularity off it.
+7. `USERNAME`, `INVITE`, `IDENTITY` (each only while it still names this
+   person), the rate counters of the last four days, a last sweep of the
+   partition for anything written while the job ran, and last the `USER`
+   item. `PHONE` is not written by any route yet (D5): the milestone that
+   writes it adds it here.
 
-What stays, per D14's recommendation: the sessions and photos in
-`bgucats-data`. Their `submitterHash` is a salted hash, and with the
-`IDENTITY` and `ENC` items gone nothing links them to a person. If D14 is
-answered otherwise, step 2 also rejects the person's unlabeled sessions
-through the desk's existing reject, which deletes the objects and their
-versions.
+While an account is `deleting`, or once its profile is gone, the events
+Lambda counts, awards and tells it nothing (`_being_deleted`), so a late
+change cannot write a piece of it back.
 
-Reports the person made stay, with the reporter id cleared.
+What stays, per D14's answer: the sessions and photos in `bgucats-data`.
+Their `submitterHash` is a salted hash, and with the `IDENTITY` and `ENC`
+items gone nothing in the app's table links them to a person. **But the
+dataset itself still holds the email address** on each photo
+(`submittedBy`), on each app encounter (`startedBy`, and in its `GSI2SK`)
+and on a contributor's pick (`pickedBy`), and on the allowlist's
+`ADMIN#{email}`. Clearing those is a write to `bgucats-data`, which
+neither the member API nor the events Lambda may make (invariant 1,
+README rule 7): it is the owner's decision how (the desk's API, which may
+write the dataset, or a wider events role under `infra/`), and is listed
+in `docs/app-backlog.md`. If D14 is answered otherwise, step 2 also
+rejects the person's unlabeled sessions through the desk's existing
+reject, which deletes the objects and their versions.
 
 ## Seeding
 

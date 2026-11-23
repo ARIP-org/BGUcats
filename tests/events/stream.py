@@ -12,7 +12,9 @@ from boto3.dynamodb.types import TypeSerializer
 from events import handler as events
 
 _SERIALIZE = TypeSerializer()
-ROUNDS = 5
+# Deleting an account (B10a) is a chain: each of its six steps is started
+# by the change the step before wrote, and its deletions come back once more.
+ROUNDS = 12
 
 
 def _image(item):

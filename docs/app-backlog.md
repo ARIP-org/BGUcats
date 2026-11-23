@@ -113,6 +113,20 @@ Things decided to leave for later, so they are not lost. Newest first.
   and waiting states. *(2026-11-12.)*
 - **Left out of the first build on purpose:** the phone number and
   contact matching (D5), Android. *(2026-11-12.)*
+- **Deleting an account leaves the email in the dataset** (B10a,
+  `docs/app-plan/03-data-model.md`, "Deleting an account"). The photos
+  and encounters stay (D14) but still carry the address: `submittedBy`
+  on each photo, `startedBy` and `GSI2SK` on each app encounter,
+  `pickedBy` on a pick, and `ADMIN#{email}` on the allowlist. Neither of
+  the app's Lambdas may write `bgucats-data`; the owner decides whether
+  the desk's API clears them (an admin's action, or a route the job
+  calls) or the events role is widened under `infra/`. Until then D14's
+  "nothing links them to a person" is true of the app's table only.
+  Also not built: signing out and deleting the Cognito user (B10b); a
+  profile photo uploaded in the five minutes before deleting and
+  confirmed never (its signed upload outlives the call) stays under
+  `avatars/`; a like, report or proposal written in the second before
+  deletion that an index has not caught up with may be missed. *(2026-11-23.)*
 
 ## Design
 

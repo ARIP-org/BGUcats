@@ -7,7 +7,8 @@ batch, and hands it to that kind's handler in HANDLERS. Since B3a, a new
 post is published (publish_post). Since B3b, a change to an encounter
 recounts what its person met and keeps its post's cat on the label
 (count_encounter). Since B6, an admin's decision on a new cat releases or
-hides the post that waited for it (decide_proposal). Since B9, four of these changes tell someone's phone
+hides the post that waited for it (decide_proposal). Since B10a, a profile
+marked `deleting` is deleted, a step a change (delete_account). Since B9, four of these changes tell someone's phone
 (notify, and push.py for the sending). Moderation (C1) arrives the same way.
 
 The rules every handler keeps:
@@ -432,6 +433,8 @@ def decide_proposal(record):
     proposal = _image(record)
     if not proposal or proposal.get("status") == "open":
         return
+    if not proposal.get("proposerId"):
+        return  # its proposer deleted their account; their post went with it
     enc = _get(f"USER#{proposal['proposerId']}", f"ENC#{proposal['sessionId']}") or {}
     if enc.get("postId"):
         release(f"POST#{enc['postId']}")
@@ -581,7 +584,10 @@ def achievements(encs, met):
 
 
 def _award(user_pk, badge):
-    """The badge, with the moment it was first earned; once."""
+    """The badge, with the moment it was first earned; once. Never to an
+    account being deleted, which would keep a piece of it."""
+    if _being_deleted(user_pk):
+        return
     try:
         social_table.put_item(
             Item={"PK": user_pk, "SK": f"BADGE#{badge}", "badgeId": badge, "at": _now_iso()},
@@ -742,6 +748,8 @@ def count_feeding(record):
             Key={"PK": cat_pk, "SK": "PUBLIC"}, UpdateExpression="REMOVE lastFedAt"
         )
 
+    if _being_deleted(user_pk):
+        return  # their feedings went with their account: nothing to count
     points, cats, count = fed(_query_all(user_pk, "FED#"))
     social_table.update_item(
         Key={"PK": user_pk, "SK": "STATS#ALL"},
@@ -796,6 +804,8 @@ def count_encounter(record):
     (SELF_WRITTEN), and the post only when its cat is wrong.
     """
     pk = _keys(record)[0]
+    if _being_deleted(pk):
+        return  # the deletion job takes what they counted for away itself
     old, new = _image(record, "OldImage"), _image(record)
     encs = _encounters_of(pk)
     met, months, total = summarise(encs)
@@ -925,7 +935,10 @@ def publish_avatar(record):
 
 def publish_profile(record):
     """What a person changed about themselves, made public: each part by
-    itself, so a name never waits for a photo."""
+    itself, so a name never waits for a photo. An account being deleted
+    has only its deletion to do."""
+    if delete_account(record):
+        return
     publish_name(record)
     publish_avatar(record)
     follow_ban(record)
@@ -1164,6 +1177,512 @@ def count_name(record):
     if changed and changed.get("status") == "removed":
         remove_name(pk, sk)
     lead(pk)
+
+
+# ---------------------------------------------------------------------------
+# Deleting an account (B10a; docs/app-plan/03-data-model.md, "Deleting an
+# account")
+# ---------------------------------------------------------------------------
+
+# A transaction read and written again if the thing it changes moves.
+DELETE_ATTEMPTS = 4
+# The member API's rate counters (src/common/limits.py): `RATE#{userId}#
+# {action}#{windowStart}`, by window length. Held to the actions the member
+# API counts by tests/events/test_delete_account.py. A window's item lives
+# a day past its end and the table's TTL can take two more to remove it, so
+# the job deletes every window that started in the last RATE_LOOKBACK_S.
+RATE_ACTIONS = {
+    3600: ("likes", "votes"),
+    86400: (
+        "avatars",
+        "blocks",
+        "feedings",
+        "invites",
+        "names",
+        "posts",
+        "proposals",
+        "reports",
+        "suggestions",
+        "usernames",
+    ),
+}
+# Counted once per cat as well: `{userId}#suggestions#{catId}`.
+RATE_ACTIONS_PER_CAT = {86400: ("suggestions",)}
+RATE_LOOKBACK_S = 4 * 86400
+# What a report about a deleted person names instead of their id.
+DELETED = "deleted"
+REPORT_STATUSES = ("open", "actioned", "dismissed")
+
+
+def _being_deleted(user_pk):
+    """True while a person's account is being deleted, and after: nothing
+    may be counted, awarded or told to them again."""
+    profile = _get(user_pk, "PROFILE")
+    return profile is None or profile.get("status") == "deleting"
+
+
+def _gsi(index, pk_name, pk):
+    items, start = [], None
+    while True:
+        page = social_table.query(
+            IndexName=index,
+            KeyConditionExpression=Key(pk_name).eq(pk),
+            **({"ExclusiveStartKey": start} if start else {}),
+        )
+        items += page["Items"]
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def _delete_if(key, field, value):
+    """Delete one item if `field` still says `value`; absent is done."""
+    try:
+        social_table.delete_item(
+            Key=key,
+            ConditionExpression="#f = :v",
+            ExpressionAttributeNames={"#f": field},
+            ExpressionAttributeValues={":v": value},
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass
+
+
+def _transact_retrying(build, what):
+    """Run the transaction `build()` returns (None: nothing left to do),
+    reading again if something moved under it."""
+    client = social_table.meta.client
+    for _ in range(DELETE_ATTEMPTS):
+        items = build()
+        if not items:
+            return
+        try:
+            client.transact_write_items(TransactItems=items)
+            return
+        except client.exceptions.TransactionCanceledException:
+            continue
+    raise RuntimeError(f"could not {what}: it kept changing")
+
+
+def _partition(pk):
+    """Every item under one partition key, read consistently."""
+    items, start = [], None
+    while True:
+        page = social_table.query(
+            KeyConditionExpression=Key("PK").eq(pk),
+            ConsistentRead=True,
+            **({"ExclusiveStartKey": start} if start else {}),
+        )
+        items += page["Items"]
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def _encounters_with(user_pk, field):
+    return {e[field] for e in _query_all(user_pk, "ENC#") if e.get(field)}
+
+
+def _forget_post(post_pk, me):
+    """One of the person's posts: removed, out of every list, its cat's
+    counters taken back as when an author removes it, and no longer theirs
+    (`authorId` and its index keys go). Then the likes others gave it, each
+    as an unlike, so a like is always on a post whose author can be listed
+    (`_take_likes`)."""
+
+    def remove():
+        post = _get(post_pk, "META")
+        if not post or post.get("authorId") != me:
+            return None
+        was, cat_id = post.get("status"), post.get("catId")
+        names = {"#s": "status"}
+        values = {":was": was, ":me": me, ":removed": "removed", ":now": _now_iso()}
+        update = "SET #s = :removed, removedAt = if_not_exists(removedAt, :now)"
+        if was != "removed":
+            update += ", hiddenReason = :why"
+            values[":why"] = "deleted"
+        update += (
+            " REMOVE authorId, GSI1PK, GSI1SK, GSI2PK, GSI2SK, GSI3PK, GSI3SK, "
+            "modAction, modReason, modBy, modAt"
+        )
+        condition = "#s = :was AND authorId = :me"
+        if "likeCount" in post:
+            condition += " AND likeCount = :likes"
+            values[":likes"] = post["likeCount"]
+        items = [
+            {
+                "Update": {
+                    "TableName": social_table.name,
+                    "Key": {"PK": post_pk, "SK": "META"},
+                    "UpdateExpression": update,
+                    "ConditionExpression": condition,
+                    "ExpressionAttributeNames": names,
+                    "ExpressionAttributeValues": values,
+                }
+            }
+        ]
+        if was == "visible" and cat_id:
+            items.append(_cat_counts(cat_id, -1, -int(post.get("likeCount", 0))))
+        return items
+
+    _transact_retrying(remove, f"remove {post_pk}")
+    post = _get(post_pk, "META")
+    if not post or post.get("authorId"):
+        return  # not there, or not this person's after all
+    for like in _query_all(post_pk, "LIKE#"):
+        _take_like(post_pk, like["SK"].removeprefix("LIKE#"))
+
+
+def _take_like(post_pk, user_id):
+    """A like taken back, exactly as `DELETE /posts/{id}/like` does: the
+    like, the post's count, and its cat's while the post is visible."""
+
+    def unlike():
+        if not _get(post_pk, f"LIKE#{user_id}"):
+            return None
+        post = _get(post_pk, "META")
+        names, values = {}, {":less": -1}
+        condition = "attribute_exists(PK)"
+        if post:
+            names["#s"] = "status"
+            values[":status"] = post.get("status")
+            condition = f"#s = :status AND {_cat_is(post.get('catId'), values)}"
+        items = [
+            {
+                "Delete": {
+                    "TableName": social_table.name,
+                    "Key": {"PK": post_pk, "SK": f"LIKE#{user_id}"},
+                    "ConditionExpression": "attribute_exists(PK)",
+                }
+            }
+        ]
+        if post:
+            items.append(
+                {
+                    "Update": {
+                        "TableName": social_table.name,
+                        "Key": {"PK": post_pk, "SK": "META"},
+                        "UpdateExpression": "ADD likeCount :less",
+                        "ConditionExpression": condition,
+                        "ExpressionAttributeNames": names,
+                        "ExpressionAttributeValues": values,
+                    }
+                }
+            )
+            if post.get("status") == "visible" and post.get("catId"):
+                items.append(_cat_counts(post["catId"], 0, -1))
+        return items
+
+    _transact_retrying(unlike, f"take back a like on {post_pk}")
+
+
+def _take_vote(cat_pk, user_id):
+    """A vote taken back, as `DELETE /cats/{id}/vote` does (`_move_vote`
+    in src/app/handler.py): the vote, one off its option while the option
+    is live or pending, and one off the cat's total if it was live."""
+
+    def unvote():
+        vote = _get(cat_pk, f"VOTE#{user_id}")
+        if not vote:
+            return None
+        items = [
+            {
+                "Delete": {
+                    "TableName": social_table.name,
+                    "Key": {"PK": cat_pk, "SK": f"VOTE#{user_id}"},
+                    "ConditionExpression": "nameKey = :old",
+                    "ExpressionAttributeValues": {":old": vote["nameKey"]},
+                }
+            }
+        ]
+        option = _get(cat_pk, f"NAME#{vote['nameKey']}")
+        if option and option.get("status") in ("live", "pending"):
+            items.append(
+                {
+                    "Update": {
+                        "TableName": social_table.name,
+                        "Key": {"PK": cat_pk, "SK": option["SK"]},
+                        "UpdateExpression": "ADD votes :less",
+                        "ConditionExpression": "#status = :status",
+                        "ExpressionAttributeNames": {"#status": "status"},
+                        "ExpressionAttributeValues": {
+                            ":less": -1,
+                            ":status": option["status"],
+                        },
+                    }
+                }
+            )
+            if option["status"] == "live":
+                items.append(
+                    {
+                        "Update": {
+                            "TableName": social_table.name,
+                            "Key": {"PK": cat_pk, "SK": "PUBLIC"},
+                            "UpdateExpression": "ADD voteTotal :less",
+                            "ExpressionAttributeValues": {":less": -1},
+                        }
+                    }
+                )
+        return items
+
+    _transact_retrying(unvote, f"take back a vote on {cat_pk}")
+
+
+def delete_posts(profile):
+    """Step 2: the person's posts, and their new-cat proposals cut loose
+    from them. Found through the author's index and through their
+    encounters, read consistently, so a post made a moment ago that the
+    index has not caught up with is not missed."""
+    me, pk = profile["userId"], profile["PK"]
+    posts = {p["PK"] for p in _posts_of(me)}
+    posts |= {f"POST#{i}" for i in _encounters_with(pk, "postId")}
+    for post_pk in sorted(posts):
+        _forget_post(post_pk, me)
+    proposals = {p["PK"] for p in _gsi("GSI1", "GSI1PK", f"PROPOSER#{me}")}
+    proposals |= {f"PROPOSAL#{i}" for i in _encounters_with(pk, "proposalId")}
+    for proposal_pk in sorted(proposals):
+        try:
+            social_table.update_item(
+                Key={"PK": proposal_pk, "SK": "META"},
+                UpdateExpression="REMOVE proposerId, GSI1PK, GSI1SK",
+                ConditionExpression="proposerId = :me",
+                ExpressionAttributeValues={":me": me},
+            )
+        except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+            pass  # done already, or someone else's
+
+
+def delete_marks(profile):
+    """Step 3: what the person left on others' things. Likes and votes are
+    taken back with their counts; names they suggested stay in the polls
+    with no suggester; their feedings go, and each cat's "last fed" is
+    worked out again by `count_feeding`.
+
+    No index lists a person's likes, so every listed person's posts are
+    looked at: a campus has thousands at most. Posts with no author left
+    have no likes (`_forget_post`). The cats come from the member API,
+    which listed them when deletion began (`deletingCats`): this Lambda
+    cannot read the dataset."""
+    me, pk = profile["userId"], profile["PK"]
+    for person in _gsi("GSI2", "GSI2PK", "ENTITY#USER"):
+        if person.get("userId") == me:
+            continue
+        for post in _posts_of(person["userId"]):
+            if _get(post["PK"], f"LIKE#{me}"):
+                _take_like(post["PK"], me)
+
+    cats = set(profile.get("deletingCats") or [])
+    copies = _query_all(pk, "FED#")
+    cats |= {c["catId"] for c in copies}
+    for cat in sorted(cats):
+        cat_pk = f"CAT#{cat}"
+        _take_vote(cat_pk, me)
+        for option in _options(cat_pk):
+            if option.get("suggestedBy") == me:
+                try:
+                    social_table.update_item(
+                        Key={"PK": cat_pk, "SK": option["SK"]},
+                        UpdateExpression="REMOVE suggestedBy",
+                        ConditionExpression="suggestedBy = :me",
+                        ExpressionAttributeValues={":me": me},
+                    )
+                except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+                    pass
+    feedings = {(f"CAT#{c['catId']}", f"FED#{c['at']}#{me}") for c in copies}
+    for cat in sorted(cats):
+        feedings |= {
+            (f["PK"], f["SK"])
+            for f in _query_all(f"CAT#{cat}", "FED#")
+            if f.get("userId") == me
+        }
+    for cat_pk, sk in sorted(feedings):
+        social_table.delete_item(Key={"PK": cat_pk, "SK": sk})
+
+
+# The person's side of a tie -> the other person's side.
+MIRRORS = (
+    ("FRIEND#", "FRIEND#"),
+    ("FREQ#IN#", "FREQ#OUT#"),
+    ("FREQ#OUT#", "FREQ#IN#"),
+    ("BLOCKEDBY#", "BLOCK#"),  # before BLOCK#, which it also begins with
+    ("BLOCK#", "BLOCKEDBY#"),
+)
+
+
+def delete_ties(profile):
+    """Step 4: friends, friend requests and blocks, each with its mirror in
+    one transaction (invariant 5)."""
+    me, pk = profile["userId"], profile["PK"]
+    for item in _partition(pk):
+        for mine, theirs in MIRRORS:
+            if item["SK"].startswith(mine):
+                other = item["SK"].removeprefix(mine)
+                social_table.meta.client.transact_write_items(
+                    TransactItems=[
+                        {
+                            "Delete": {
+                                "TableName": social_table.name,
+                                "Key": {"PK": pk, "SK": item["SK"]},
+                            }
+                        },
+                        {
+                            "Delete": {
+                                "TableName": social_table.name,
+                                "Key": {"PK": f"USER#{other}", "SK": f"{theirs}{me}"},
+                            }
+                        },
+                    ]
+                )
+                break
+
+
+def clear_reports(profile):
+    """Reports stay, for the desk's record, with the person cut out of
+    them: the reporter cleared on theirs, the owner cleared on those about
+    their things, and a report about the person themselves (or their
+    photo) names `deleted`. The one-per-person items (`REPORTED#…/BY#`) that
+    name them go."""
+    me = profile["userId"]
+    for status in REPORT_STATUSES:
+        for report in _gsi("GSI2", "GSI2PK", f"REPORTS#{status}"):
+            key = {"PK": report["PK"], "SK": "META"}
+            if report.get("reporterId") == me:
+                social_table.delete_item(
+                    Key={
+                        "PK": f"REPORTED#{report['targetType']}#{report['targetId']}",
+                        "SK": f"BY#{me}",
+                    }
+                )
+                _clear(key, "REMOVE reporterId", "reporterId", me)
+            if report.get("targetOwnerId") == me:
+                _clear(key, "REMOVE targetOwnerId", "targetOwnerId", me)
+            if report.get("targetType") in ("user", "avatar") and report.get("targetId") == me:
+                _clear(key, "SET targetId = :deleted", "targetId", me)
+    for kind in ("user", "avatar"):
+        for item in _partition(f"REPORTED#{kind}#{me}"):
+            social_table.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
+
+
+def _clear(key, update, field, me):
+    values = {":me": me}
+    if ":deleted" in update:
+        values[":deleted"] = DELETED
+    try:
+        social_table.update_item(
+            Key=key,
+            UpdateExpression=update,
+            ConditionExpression="#f = :me",
+            ExpressionAttributeNames={"#f": field},
+            ExpressionAttributeValues=values,
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass
+
+
+def delete_own_items(profile):
+    """Step 5: everything in the person's partition but the profile:
+    devices, badges, counters, `MET`, `ENC`, feedings, pushes. What they
+    gave each cat's popularity is taken off it first (`count_popularity`
+    with no encounters), in the same transactions that delete `METM#`."""
+    pk = profile["PK"]
+    count_popularity(pk, [])
+    for item in _partition(pk):
+        if item["SK"] != "PROFILE":
+            social_table.delete_item(Key={"PK": pk, "SK": item["SK"]})
+
+
+def _rate_keys(me, cats, now):
+    """Every rate counter this person may still have."""
+    keys = []
+    for window, actions in RATE_ACTIONS.items():
+        per_cat = RATE_ACTIONS_PER_CAT.get(window, ())
+        start = int(now // window) * window
+        while start > now - RATE_LOOKBACK_S - window:
+            for action in actions:
+                keys.append(f"RATE#{me}#{action}#{start}")
+            for action in per_cat:
+                keys += [f"RATE#{me}#{action}#{cat}#{start}" for cat in cats]
+            start -= window
+    return keys
+
+
+def delete_last(profile):
+    """Steps 6 and 7 (the avatar's objects went with `DELETE /me`, the one
+    Lambda that may touch the bucket): the lookups, the rate counters, a
+    last sweep of the partition for anything written while the job ran,
+    and, last, the profile. Each lookup only while it is still this
+    person's. `PHONE#` is not written by any route yet (D5): the milestone
+    that writes it adds it here."""
+    me, pk = profile["userId"], profile["PK"]
+    if profile.get("username"):
+        _delete_if({"PK": f"USERNAME#{profile['username']}", "SK": "META"}, "userId", me)
+    if profile.get("inviteCode"):
+        _delete_if({"PK": f"INVITE#{profile['inviteCode']}", "SK": "META"}, "userId", me)
+    _delete_if({"PK": f"IDENTITY#{profile['email']}", "SK": "META"}, "userId", me)
+    for rate_pk in _rate_keys(me, profile.get("deletingCats") or [], time.time()):
+        social_table.delete_item(Key={"PK": rate_pk, "SK": "META"})
+    delete_own_items(profile)
+    try:
+        social_table.delete_item(
+            Key={"PK": pk, "SK": "PROFILE"},
+            ConditionExpression="#s = :deleting",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":deleting": "deleting"},
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass
+    logger.info("deleted user=%s", me)
+
+
+DELETION_STEPS = (
+    delete_posts,
+    delete_marks,
+    delete_ties,
+    clear_reports,
+    delete_own_items,
+    delete_last,
+)
+
+
+def delete_account(record):
+    """`DELETE /me` marked the person `deleting` (B10a). One step a change:
+    each step ends by moving `deletionStep` on, on the condition that it
+    is still the step that ran, and that change comes back through the
+    stream to start the next. So every step has the Lambda's whole minute,
+    a step that fails is retried by the mapping, and a step run twice (a
+    change delivered again, or the job started over) finds its work done.
+    The profile is read again, never taken from the change. Returns True
+    for a person being deleted: nothing else about the profile is acted on."""
+    changed = _image(record)
+    if not changed or changed.get("status") != "deleting":
+        return False
+    profile = _get(changed["PK"], "PROFILE")
+    if not profile or profile.get("status") != "deleting":
+        return True
+    step = int(profile.get("deletionStep") or 0)
+    if step >= len(DELETION_STEPS) - 1:
+        DELETION_STEPS[-1](profile)  # the profile goes last: nothing to move on
+        return True
+    DELETION_STEPS[step](profile)
+    logger.info("deleting user=%s: step %s done", profile["userId"], step)
+    try:
+        social_table.update_item(
+            Key={"PK": profile["PK"], "SK": "PROFILE"},
+            UpdateExpression="SET deletionStep = :next",
+            ConditionExpression=(
+                "#s = :deleting AND "
+                "(deletionStep = :step OR attribute_not_exists(deletionStep))"
+            ),
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":next": step + 1,
+                ":step": step,
+                ":deleting": "deleting",
+            },
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass  # another delivery moved it on
+    return True
 
 
 HANDLERS = {kind: _not_built_yet for _, _, kind in KINDS}

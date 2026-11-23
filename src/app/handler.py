@@ -548,6 +548,51 @@ def _delete_avatar_objects(user, keep):
             s3.delete_objects(Bucket=MEDIA_BUCKET, Delete={"Objects": targets})
 
 
+def _delete_me(user, body, **_):
+    """`DELETE /me`, body `{"confirm": "delete"}`: the account goes
+    (03-data-model.md, "Deleting an account"; D14). This marks it
+    `deleting`, after which every call by this person, this one again
+    included, answers `gone`; the events Lambda does the rest from that
+    change, a step at a time (`delete_account` in src/events/handler.py).
+
+    Two parts are done here, because only this Lambda may do them: the
+    profile photo's objects (the events Lambda has no access to the
+    bucket), and the list of cats whose polls and feedings the job must
+    look through (it cannot read the dataset, where the cats are listed).
+
+    Signing the person out and deleting their Cognito user is B10b: until
+    then the same sign-in still works, answers `gone` while the job runs,
+    and makes a new, empty account once it has finished."""
+    if body.get("confirm") != "delete":
+        raise ApiError(400, 'confirm is "delete"', code="confirm")
+    try:
+        social_table.update_item(
+            Key={"PK": user["PK"], "SK": "PROFILE"},
+            UpdateExpression=(
+                "SET #s = :deleting, deletingAt = :now, deletingCats = :cats, "
+                "deletionStep = :zero"
+            ),
+            # Banned a moment ago, or a second call: the ban stands, and a
+            # deletion already started is not started again.
+            ConditionExpression="#s = :active",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":active": "active",
+                ":deleting": "deleting",
+                ":now": api.now_iso(),
+                ":cats": sorted({c["catId"] for c in _cats()}),
+                ":zero": 0,
+            },
+        )
+    except social_table.meta.client.exceptions.ConditionalCheckFailedException:
+        fresh = tables.get_one(social_table, user["PK"], "PROFILE") or {}
+        _require_usable(fresh)
+        raise ApiError(403, "this account is being deleted", code="gone") from None
+    _delete_avatar_objects(user, keep=set())
+    logger.info("deleting user=%s", user["userId"])
+    return {"deleting": True}
+
+
 def _accept_terms(user, role, body, **_):
     version = body.get("version")
     if version != TERMS_VERSION:
@@ -1871,7 +1916,7 @@ def _claimed_proposal(proposal_id, user, session_id):
     proposal = tables.get_one(social_table, f"PROPOSAL#{proposal_id}")
     if (
         proposal is None
-        or proposal["proposerId"] != user["userId"]
+        or proposal.get("proposerId") != user["userId"]
         or proposal["sessionId"] != session_id
     ):
         raise ApiError(400, "no such proposal for this encounter")
@@ -1937,7 +1982,7 @@ def _create_proposal(user, body, **_):
 
     existing = tables.get_one(social_table, f"PROPOSAL#{proposal_id}")
     if existing is not None:
-        if existing["proposerId"] != user["userId"]:
+        if existing.get("proposerId") != user["userId"]:
             raise ApiError(409, "that proposal id is taken")
         return {"proposal": proposal_view(existing)}  # the same request, again
 
@@ -2397,6 +2442,7 @@ DEVICE_ID = r"[0-9A-Za-z-]{8,64}"
 ROUTES = (
     ("GET", r"^/api/v1/me$", _get_me, "user"),
     ("PATCH", r"^/api/v1/me$", _update_me, "user"),
+    ("DELETE", r"^/api/v1/me$", _delete_me, "user"),
     ("PUT", r"^/api/v1/me/username$", _choose_username, "user"),
     ("POST", r"^/api/v1/me/avatar$", _start_avatar, "user"),
     (
