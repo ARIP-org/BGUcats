@@ -683,12 +683,18 @@ App, and any AWS access.
    (`docs/agents.md`, "The reviewer, and the two lanes"); the owner
    changed the `main` ruleset the same day. **Done when** a pull request
    that touches no owner path merges with no person involved, and one
-   that touches one waits. **Seen 2026-11-23:** #120 (the Swift app's
-   sign-in and feed) was sent back by the reviewer once, fixed, passed,
-   and merged by auto-merge with nobody's approval; #118 and #119, which
-   touched workflows and `CLAUDE.md`, waited for the owner. The first
-   three builder pull requests (#115 to #117) had still each had the
-   owner's approval.
+   that touches one waits. **Half seen 2026-11-23:** #120 (the Swift
+   app's sign-in and feed) was sent back by the reviewer once, fixed,
+   passed, and merged by auto-merge with nobody's approval. **The other
+   half failed the same day:** #121 touched a workflow and this file,
+   the reviewer passed it, and it merged with nobody's approval too. The
+   ruleset was not requiring a code owner's review; #118 and #119 had
+   waited only because the reviewer sent them up. Since then the
+   reviewer's script holds every owner-path change for the owner
+   (`docs/agents.md`, "The owner's lane is held twice"), and the
+   ruleset's setting is the owner's to turn on. **Done when** a pull
+   request that touches an owner path and that the reviewer would pass
+   is seen to wait.
 2. The planner and the digest, as scheduled cloud sessions. **Written
    2026-11-22** (`docs/agents/planner.md`, `docs/agents/digest.md`;
    `docs/agents.md`, "The planner and the digest"); scheduled the same
