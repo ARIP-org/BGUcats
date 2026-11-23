@@ -386,6 +386,17 @@ an hour that a sentence would have saved.
   the 2, asked the API, and once in CI got 1, on a pull request that
   changed only docs (2026-11-22). A test that then asks the API waits for
   the request's answer first (`page.expect_response`).
+- **A screen test that fails once must leave something to read.** On
+  2026-11-23 the capture flow's post "did not arrive within the time" in
+  one CI run, on a pull request that touched no screen; it passed on
+  `main` twice and six times in a row on a session's machine. The log
+  showed the encounter arriving and no photo after it, and nothing of
+  the browser's side: which step waited could not be told. The outbox
+  retries after 2, 5 and 15 seconds, so one request that fails twice is
+  already past a test's twenty. A failed member-app test now prints the
+  app's own "App info" and every request that failed or was refused
+  (`tests/web/conftest.py`, held by `test_failure_report.py`). The cause
+  of that one run is not known.
 
 ## Agents and sessions
 
