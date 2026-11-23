@@ -7,8 +7,9 @@ import XCTest
 /// person, sees a screen before it is merged.
 ///
 /// The app is started with `-uiTesting`: it reads nothing from the network
-/// and keeps nothing on the phone, and its clock stands still, so two
-/// pictures of one screen are the same picture. `-look` names the look
+/// and keeps nothing on the phone, its member and its posts are made up,
+/// and its clock stands still, so two pictures of one screen are the same
+/// picture. `-signedOut` starts it with nobody signed in. `-look` names the look
 /// to draw, and every picture is checked to be that look: on this job's
 /// first run all ten came out light and nothing noticed.
 final class ScreensUITests: XCTestCase {
@@ -25,13 +26,49 @@ final class ScreensUITests: XCTestCase {
     }
 
     private func walk(look: String) {
+        // Nobody signed in: the sign-in screen, with its one button. The
+        // sheet behind it is Google's and is not opened here.
+        let signedOut = XCUIApplication()
+        signedOut.launchArguments = ["-uiTesting", "-look", look, "-signedOut"]
+        signedOut.launch()
+        let google = signedOut.descendants(matching: .any)["sign-in.google"].firstMatch
+        XCTAssertTrue(google.waitForExistence(timeout: 30), "With nobody signed in, the app did not show the sign-in screen.")
+        XCTAssertTrue(signedOut.buttons["App info"].exists, "The sign-in screen has no way to App info.")
+        keep(signedOut, "sign-in-\(look)")
+        signedOut.terminate()
+
+        // A sign-in that ends while the app is open (the server refuses
+        // the token): the sign-in screen comes up and says why, instead of
+        // a feed whose every tap fails.
+        let ending = XCUIApplication()
+        ending.launchArguments = ["-uiTesting", "-look", look, "-signInEnds"]
+        ending.launch()
+        let heart = ending.descendants(matching: .any)["like.p1"].firstMatch
+        XCTAssertTrue(heart.waitForExistence(timeout: 30), "The feed did not show its first post. \(onScreen(ending))")
+        heart.tap()
+        let again = ending.descendants(matching: .any)["sign-in.google"].firstMatch
+        XCTAssertTrue(again.waitForExistence(timeout: 15), "The sign-in ended and the sign-in screen did not come up. \(onScreen(ending))")
+        XCTAssertTrue(ending.staticTexts["Your sign-in ended. Sign in again."].exists, "The sign-in screen does not say why it is there. \(onScreen(ending))")
+        keep(ending, "sign-in-ended-\(look)")
+        ending.terminate()
+
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-look", look]
         app.launch()
 
-        // It opens on Home.
+        // Signed in, it opens on Home: the feed.
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 30), "The app did not open on Home.")
+        let first = app.descendants(matching: .any)["like.p1"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "The feed did not show its first post. \(onScreen(app))")
+        XCTAssertTrue(app.staticTexts["By the library steps again, asleep in the sun."].exists, "The first post's words are not on screen. \(onScreen(app))")
         keep(app, "home-\(look)")
+
+        // A like counts at once and stays.
+        XCTAssertEqual(first.value as? String, "not liked")
+        first.tap()
+        let liked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "liked"), object: first)
+        XCTAssertEqual(XCTWaiter().wait(for: [liked], timeout: 10), .completed, "Tapping the heart did not like the post.")
+        keep(app, "home-liked-\(look)")
 
         for (tab, name) in [("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")] {
             app.tabBars.buttons[tab].tap()
@@ -39,7 +76,11 @@ final class ScreensUITests: XCTestCase {
             keep(app, "\(name)-\(look)")
         }
 
-        // Profile, then "App info": the first real screen.
+        // Profile says who is signed in.
+        XCTAssertTrue(app.staticTexts["Test Member"].exists || app.descendants(matching: .any)["profile.me"].firstMatch.exists, "Profile does not say who is signed in.")
+        XCTAssertTrue(app.descendants(matching: .any)["profile.sign-out"].firstMatch.exists, "Profile has no way to sign out.")
+
+        // Profile, then "App info".
         let row = app.descendants(matching: .any)["row.app-info"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "Profile has no App info row.")
         row.tap()
@@ -50,6 +91,7 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(shown.contains("kind: iPhone app (Swift)"), "App info does not say what kind of app this is.")
         XCTAssertTrue(shown.contains("start: ready"), "App info does not show what the app was doing.")
         XCTAssertTrue(shown.contains("tab: profile"), "App info did not keep the tab that was opened.")
+        XCTAssertTrue(shown.contains("feed: 3 posts"), "App info did not keep that the feed was read.")
         keep(app, "app-info-\(look)")
 
         let copy = app.descendants(matching: .any)["app-info.copy"].firstMatch
@@ -57,6 +99,14 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: 5), "Copying did not say it copied.")
 
         app.terminate()
+    }
+
+    /// What is on screen, in one line, for a failure's message: nobody
+    /// here can open the simulator, so the job's log is all there is.
+    private func onScreen(_ app: XCUIApplication) -> String {
+        let texts = app.staticTexts.allElementsBoundByIndex.prefix(20).map { $0.label }
+        let buttons = app.buttons.allElementsBoundByIndex.prefix(20).map { "\($0.identifier)=\($0.label)" }
+        return "On screen, texts: \(texts); buttons: \(buttons)"
     }
 
     private func keep(_ app: XCUIApplication, _ name: String) {

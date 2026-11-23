@@ -17,6 +17,7 @@ import yaml
 
 import ios_archive
 import ios_screenshots
+import privacy_table
 
 REPO = Path(__file__).resolve().parents[2]
 SWIFT = REPO / "native" / "swift"
@@ -212,14 +213,157 @@ def test_the_privacy_manifest_gives_a_reason_for_what_the_app_reads():
     assert privacy["NSPrivacyTracking"] is False and privacy["NSPrivacyTrackingDomains"] == []
     reasons = {api["NSPrivacyAccessedAPIType"]: api["NSPrivacyAccessedAPITypeReasons"] for api in privacy["NSPrivacyAccessedAPITypes"]}
     assert reasons == {ios_archive.USER_DEFAULTS: ["CA92.1"]}
-    # Nothing is collected while the app calls no server. The first screen
-    # that signs in or reads the API changes this file with it
-    # (docs/privacy-data.md has the answers).
-    sources = "".join(path.read_text() for path in (SWIFT / "BGUCats").glob("*.swift"))
-    if "URLSession" not in sources:
-        assert privacy["NSPrivacyCollectedDataTypes"] == []
-    else:
-        assert privacy["NSPrivacyCollectedDataTypes"], "the app calls a server: say what it collects"
+
+
+def sources():
+    return {path.name: path.read_text() for path in (SWIFT / "BGUCats").glob("*.swift")}
+
+
+def test_the_privacy_manifest_says_what_this_app_sends_off_the_phone():
+    # Apple's names for the kinds in docs/privacy-data.md (the output of
+    # scripts/privacy_table.py). The manifest lists what this app can send
+    # today; a kind joins it with the screen that first sends it.
+    apple = {
+        privacy_table.EMAIL: "EmailAddress",
+        privacy_table.NAME: "Name",
+        privacy_table.USER_ID: "UserID",
+        privacy_table.CONTENT: "OtherUserContent",
+        privacy_table.USAGE: "OtherUsageData",
+        privacy_table.DIAGNOSTICS: "OtherDiagnosticData",
+        privacy_table.PHOTOS: "PhotosorVideos",
+        privacy_table.LOCATION: "PreciseLocation",
+        privacy_table.CONTACTS: "Contacts",
+        privacy_table.DEVICE_ID: "DeviceID",
+    }
+    assert set(apple) == set(privacy_table.KINDS)
+    privacy = plistlib.loads((SWIFT / "BGUCats" / "PrivacyInfo.xcprivacy").read_bytes())
+    declared = {}
+    for kind in privacy["NSPrivacyCollectedDataTypes"]:
+        # Every kind: tied to the account, for the app to work, never to track.
+        assert kind["NSPrivacyCollectedDataTypeLinked"] is True
+        assert kind["NSPrivacyCollectedDataTypeTracking"] is False
+        assert kind["NSPrivacyCollectedDataTypePurposes"] == ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+        declared[kind["NSPrivacyCollectedDataType"].removeprefix("NSPrivacyCollectedDataType")] = kind
+
+    code = "".join(sources().values())
+    # It signs in and reads the feed: an account, a like, and the servers'
+    # logs and counters that follow from any call.
+    expected = {"EmailAddress", "Name", "UserID", "OtherUserContent", "OtherUsageData", "OtherDiagnosticData"}
+    # What later screens bring. Each of these words in the code without its
+    # kind in the manifest fails here, in the pull request that adds it.
+    if re.search(r"CLLocation|CoreLocation", code):
+        expected.add("PreciseLocation")
+    if re.search(r"PhotosPicker|PHPicker|UIImagePickerController|AVCapture", code):
+        expected.add("PhotosorVideos")
+    if "/friends" in code or "/blocks" in code:
+        expected.add("Contacts")
+    if "registerForRemoteNotifications" in code:
+        expected.add("DeviceID")
+    assert set(declared) == expected
+    assert set(declared) <= set(apple.values())
+
+
+# ------------------------------------------------- signing in and the API
+
+
+def test_the_app_belongs_to_the_deployment_the_builds_are_for():
+    site = sources()["Site.swift"]
+    assert f'URL(string: "{workflow()["env"]["SITE"]}")!' in site
+    # Cognito answers the sign-in at the bundle id as a scheme, and the
+    # user pool's client lists exactly that address.
+    assert f'static let scheme = "{ios_archive.BUNDLE_ID}"' in site
+    redirect = re.search(r'native_app_redirect = "([^"]+)"', (REPO / "infra" / "main" / "api.tf").read_text())[1]
+    assert f'static let redirect = "{redirect}"' in site and redirect == f"{ios_archive.BUNDLE_ID}://signin"
+    assert "local.native_app_redirect" in (REPO / "infra" / "main" / "cognito.tf").read_text()
+
+
+def test_signing_in_is_the_web_apps_in_the_systems_own_sheet():
+    auth = sources()["Auth.swift"]
+    # Authorization code with PKCE, straight to Google, the account chooser
+    # every time: web/lib/auth.js, line for line.
+    web = (REPO / "web" / "lib" / "auth.js").read_text()
+    for name, value in (
+        ("response_type", "code"),
+        ("scope", "openid email profile"),
+        ("code_challenge_method", "S256"),
+        ("identity_provider", "Google"),
+        ("prompt", "select_account"),
+    ):
+        assert f'URLQueryItem(name: "{name}", value: "{value}")' in auth, name
+        assert f'{name}: "{value}"' in web, name
+    assert "/oauth2/authorize" in auth and "/oauth2/token" in auth
+    # Google refuses a sign-in inside an app's own web view.
+    code = "".join(sources().values())
+    assert "webAuthenticationSession.authenticate(using: url, callbackURLScheme: Site.scheme)" in code
+    assert "WKWebView" not in code and "SFSafariViewController" not in code
+    # The tokens are in the keychain, on this phone only; nowhere else.
+    assert "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly" in auth
+    assert not re.search(r"defaults\.set\([^)]*[Tt]oken", code)
+
+
+def test_a_sign_in_that_ends_puts_the_sign_in_screen_up():
+    # Found in review: the server refused the token, the tokens were
+    # dropped, and the tabs stayed up over calls that could only fail.
+    code = sources()
+    backend = code["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'auth.ended("the API answered 401")' in backend and "auth.signOut()" not in backend
+    assert "world.gate.onEnded = { [weak self] in" in code["Session.swift"]
+    assert 'phase = .signedOut(note: "Your sign-in ended. Sign in again.")' in code["Session.swift"]
+    # Only Cognito refusing the grant itself ends a sign-in. A 429 or a 5xx
+    # from it, or no connection, keeps the sign-in and sends no stale token.
+    auth = code["Auth.swift"]
+    assert "status == 400 || status == 401" in auth
+    renew = auth.split("func pass() async -> Pass")[1].split("private func exchange")[0]
+    assert renew.count("return .notNow") == 2 and renew.count("ended(") == 2
+    assert "tokens.idToken)" in renew and renew.count("tokens.idToken") == 1  # only while it is still good
+    # The feed leaves it to the session to say: no alert over the sign-in screen.
+    assert code["FeedView.swift"].count("if FeedModel.signInEnded(error) { return }") == 2
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    assert 'ending.launchArguments = ["-uiTesting", "-look", look, "-signInEnds"]' in tests
+    assert 'keep(ending, "sign-in-ended-\\(look)")' in tests
+
+
+def test_a_ui_test_reads_no_network_and_keeps_nothing():
+    code = sources()
+    stand_in = code["BGUCatsApp.swift"].split("static func standIn")[1]
+    for made_up in ("MemoryStore()", "StandInGate(", "StandInBackend(", "DrawnPhotos()"):
+        assert made_up in stand_in, made_up
+    for real in ("KeychainVault", "LiveBackend", "NetPhotos", "Auth("):
+        assert real not in stand_in, real
+    # The network is reached from three places, each behind a protocol the
+    # stand-in world replaces.
+    assert {name for name, text in code.items() if "URLSession" in text} == {
+        "Auth.swift",
+        "Backend.swift",
+        "Photos.swift",
+    }
+    assert 'arguments.contains("-signedOut")' in code["BGUCatsApp.swift"]
+
+
+def test_the_trail_says_what_happened_and_never_who():
+    # A line of the trail is copied by its owner to whoever is fixing the
+    # app: no name, no address, no token, nothing anyone wrote.
+    marks = re.findall(r"trail\.mark\((.*)\)\s*$", "\n".join(sources().values()), re.MULTILINE)
+    assert len(marks) > 15
+    for mark in marks:
+        # What a line takes from the running app is what it interpolates.
+        for taken in re.findall(r"\\\((.*?)\)", mark):
+            for who in ("displayName", "username", "email", "userId", "oken", "text", "url", "path", "callback", "message"):
+                assert who not in taken, mark
+    # A call is named by its kind, never by its address, which carries ids.
+    backend = sources()["Backend.swift"]
+    assert 'trail.mark("api: \\(name) \\(status) in' in backend
+
+
+def test_every_screen_says_what_it_is_from_the_first_moment():
+    root = sources()["RootView.swift"]
+    for state in ("case .starting:", "case .signedOut(let note):", "case .failed(let why):", "case .signedIn(let me):"):
+        assert state in root, state
+    # A call gives up, so "Loading" ends; and a start that failed offers
+    # the way on, App info and the way out.
+    assert "request.timeoutInterval = 20" in sources()["Backend.swift"]
+    failed = root.split("struct FailedView")[1].split("struct ")[0]
+    assert '"Try again"' in failed and "AppInfoView(world: world)" in failed and '"Sign out"' in failed
 
 
 # ----------------------------------------------------------- the pictures
@@ -231,7 +375,10 @@ def test_every_screen_is_kept_in_light_and_in_dark():
     # The look is asked of the app, and each picture is checked to be it.
     assert 'app.launchArguments = ["-uiTesting", "-look", look]' in tests
     assert 'name.hasSuffix("-dark")' in tests and "XCTAssertLessThan(bright" in tests
-    # Home, the three other tabs, and App info.
+    # The sign-in screen, Home with the feed, the three other tabs, and
+    # App info.
+    assert 'signedOut.launchArguments = ["-uiTesting", "-look", look, "-signedOut"]' in tests
+    assert 'keep(signedOut, "sign-in-\\(look)")' in tests and 'keep(app, "home-liked-\\(look)")' in tests
     assert 'keep(app, "home-\\(look)")' in tests and 'keep(app, "app-info-\\(look)")' in tests
     assert '[("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")]' in tests
     # The app under test reads no network and keeps nothing.
@@ -250,6 +397,8 @@ def test_pictures_come_out_under_the_names_their_tests_gave_them():
                 {"exportedFileName": "three.png", "suggestedHumanReadableName": f"home-light_0_{uuid}.png"},
                 # No name from Xcode: the exported one.
                 {"exportedFileName": "four.png"},
+                # What a failed test attaches: a name GitHub would refuse.
+                {"exportedFileName": "five.txt", "suggestedHumanReadableName": f'Debug description for `"like.p1" Any`_0_{uuid}.txt'},
                 {"suggestedHumanReadableName": "nothing-exported.png"},
             ],
         },
@@ -260,4 +409,8 @@ def test_pictures_come_out_under_the_names_their_tests_gave_them():
         "two.png": "app-info-light.png",
         "three.png": "home-light-2.png",
         "four.png": "four.png",
+        "five.txt": "Debug description for -like.p1- Any-.txt",
     }
+    # Nothing GitHub refuses in an artifact's file names.
+    for name in ios_screenshots.named(manifest).values():
+        assert not set(name) & set('"<>:|*?\r\n\\/`'), name

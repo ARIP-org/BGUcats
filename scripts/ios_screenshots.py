@@ -21,6 +21,12 @@ from pathlib import Path
 
 # Xcode adds "_<n>_<UUID>" to the name a test gave an attachment.
 ADDED = re.compile(r"_\d+_[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}(?=\.\w+$)")
+# What a file's name may hold and still be kept as part of a run's artifact.
+# A failed test attaches what it was looking for, under a name with quotes
+# in it ('Debug description for `"like.p1" Any`'); GitHub refuses an
+# artifact with such a file, and the whole run's pictures and log went with
+# it on the day they were needed (2026-11-23).
+UNSAFE = re.compile(r"[^A-Za-z0-9 ._()-]+")
 
 
 def named(manifest):
@@ -32,7 +38,7 @@ def named(manifest):
             if not exported:
                 continue
             given = attachment.get("suggestedHumanReadableName") or exported
-            name = ADDED.sub("", Path(given).name)
+            name = UNSAFE.sub("-", ADDED.sub("", Path(given).name))
             # Two attachments with one name: keep both, the later numbered.
             taken, n = set(found.values()), 2
             unique = name
