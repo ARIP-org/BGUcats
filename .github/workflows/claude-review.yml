@@ -159,14 +159,31 @@ jobs:
             Style is not a finding. Do not ask for things nobody needs.
 
             Then give one verdict:
-            - `pass`: you found nothing a person needs to look at.
-            - `changes`: you found something its author should fix. Say what
-              and where, precisely enough to act on.
-            - `owner`: a person should decide. Use it when the change alters
-              what users see or may do beyond what its description says;
-              deletes or rewrites stored data; touches who may sign in, what
-              anything costs or what an agent may do; or when you cannot
-              tell whether it is right. When in doubt, `owner`.
+            - `pass`: nothing a person needs to look at. This is the usual
+              verdict for a change that does what its description says and
+              has its tests. A change to what users see or may do, stated
+              plainly in its description, passes: the owner sees it on
+              staging and in the daily digest, and production moves only on
+              the owner's own tag.
+            - `changes`: something its author should fix, or a question you
+              cannot settle from what is in front of you. Say what and where,
+              precisely enough to act on. Not being sure the change is right
+              is `changes`, with the question: never `owner`. So is a change
+              that does more than its description says.
+            - `owner`: rare. Only for what is the owner's alone to decide,
+              and only these:
+              1. it deletes or rewrites what people have stored (adding a
+                 field, a key or a route is not that);
+              2. it changes who may sign in, or what a role may do;
+              3. it adds a new kind of AWS resource, or something that costs
+                 money;
+              4. it changes what an agent may do, a rule in `CLAUDE.md`, or
+                 a decision recorded as the owner's;
+              5. it changes what is published outside the app: the store's
+                 privacy answers, the terms.
+              Say which number it is. If none applies, the verdict is not
+              `owner`. The owner asked for this bar (2026-11-23): being
+              asked about every change is what the chain is there to end.
 
             End your last message with exactly one JSON object and nothing
             after it:
