@@ -21,6 +21,15 @@ jobs:
       # The browser tests/web drives through the app's screens.
       - run: playwright install --with-deps chromium
       - run: ruff check .
+      # The deploy runs the suite on a machine with no browser, where the
+      # screen tests are skipped. A test that needs one without saying so
+      # passes below and fails there, after the merge, and nothing is
+      # deployed (2026-11-23). So: the screen tests once more, as the
+      # deploy sees them.
+      - name: the screen tests with no browser, as the deploy runs them
+        env:
+          BGUCATS_NO_BROWSER: "1"
+        run: pytest tests/web -q
       - name: pytest
         env:
           # Without it the browser tests skip when no browser can start,

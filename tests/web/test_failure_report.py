@@ -4,6 +4,11 @@ The member-app fixture prints the app's own "App info" and the requests
 that failed when its test fails (conftest.py). This runs a small failing
 test in a pytest of its own and reads the report, because a diagnostic
 that is only ever seen on the day it is needed has never been tried.
+
+It needs a browser, as the test it runs does: where there is none (the
+deploy runs the suite without one) it is skipped with the rest. Written
+without that, it failed the deploy of its own pull request on 2026-11-23:
+the inner test was skipped, and "1 failed" was not there to find.
 """
 
 import subprocess
@@ -25,7 +30,7 @@ def test_that_fails_on_purpose(open_member_app):
 '''
 
 
-def test_a_failed_member_test_reports_the_apps_own_account(tmp_path):
+def test_a_failed_member_test_reports_the_apps_own_account(browser):
     inner = REPO / "tests" / "web" / "_inner_failure_test.py"
     inner.write_text(FAILING)
     try:

@@ -398,6 +398,16 @@ an hour that a sentence would have saved.
   (`tests/web/conftest.py`, held by `test_failure_report.py`). The next
   failure, an hour later, printed `404 POST /api/encounters/{id}/media`:
   it was the app, not the test (the next entry).
+- **The deploy runs the tests with no browser, and CI did not.** A test
+  that starts a pytest of its own and expects "1 failed" got "1 skipped"
+  on the deploy's machine, where no browser is installed; it had passed
+  CI, which has one. The deploy of its own pull request stopped at
+  `make test` and staging did not get that merge (2026-11-23, #118; the
+  next merge carried the fix). A test that needs a browser takes the
+  `browser` fixture, even when it only starts another pytest; and CI now
+  runs `tests/web` a second time with `BGUCATS_NO_BROWSER=1`, as the
+  deploy sees it. After a merge, "CI is green on `main`" is not "it is
+  deployed": the Deploy run's own job is what says so.
 - **A queue that reads two stores in two steps reads two moments.** The
   outbox's pass read the encounters, then the photos. The place arriving
   a moment before the first photo started a pass; the encounter and the
