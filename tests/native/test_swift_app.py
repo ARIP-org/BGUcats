@@ -375,6 +375,8 @@ def test_pictures_come_out_under_the_names_their_tests_gave_them():
                 {"exportedFileName": "three.png", "suggestedHumanReadableName": f"home-light_0_{uuid}.png"},
                 # No name from Xcode: the exported one.
                 {"exportedFileName": "four.png"},
+                # What a failed test attaches: a name GitHub would refuse.
+                {"exportedFileName": "five.txt", "suggestedHumanReadableName": f'Debug description for `"like.p1" Any`_0_{uuid}.txt'},
                 {"suggestedHumanReadableName": "nothing-exported.png"},
             ],
         },
@@ -385,4 +387,8 @@ def test_pictures_come_out_under_the_names_their_tests_gave_them():
         "two.png": "app-info-light.png",
         "three.png": "home-light-2.png",
         "four.png": "four.png",
+        "five.txt": "Debug description for -like.p1- Any-.txt",
     }
+    # Nothing GitHub refuses in an artifact's file names.
+    for name in ios_screenshots.named(manifest).values():
+        assert not set(name) & set('"<>:|*?\r\n\\/`'), name

@@ -227,7 +227,6 @@ struct PostCard: View {
                     .padding(.horizontal)
             }
         }
-        .accessibilityIdentifier("post.\(post.id)")
     }
 
     /// "@name · 2 hr. ago", with whichever of the two there is.

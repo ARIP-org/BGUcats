@@ -44,8 +44,8 @@ final class ScreensUITests: XCTestCase {
         // Signed in, it opens on Home: the feed.
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 30), "The app did not open on Home.")
         let first = app.descendants(matching: .any)["like.p1"].firstMatch
-        XCTAssertTrue(first.waitForExistence(timeout: 15), "The feed did not show its first post.")
-        XCTAssertTrue(app.staticTexts["By the library steps again, asleep in the sun."].exists, "The first post's words are not on screen.")
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "The feed did not show its first post. \(onScreen(app))")
+        XCTAssertTrue(app.staticTexts["By the library steps again, asleep in the sun."].exists, "The first post's words are not on screen. \(onScreen(app))")
         keep(app, "home-\(look)")
 
         // A like counts at once and stays.
@@ -84,6 +84,14 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: 5), "Copying did not say it copied.")
 
         app.terminate()
+    }
+
+    /// What is on screen, in one line, for a failure's message: nobody
+    /// here can open the simulator, so the job's log is all there is.
+    private func onScreen(_ app: XCUIApplication) -> String {
+        let texts = app.staticTexts.allElementsBoundByIndex.prefix(20).map { $0.label }
+        let buttons = app.buttons.allElementsBoundByIndex.prefix(20).map { "\($0.identifier)=\($0.label)" }
+        return "On screen, texts: \(texts); buttons: \(buttons)"
     }
 
     private func keep(_ app: XCUIApplication, _ name: String) {
