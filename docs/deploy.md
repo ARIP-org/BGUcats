@@ -320,34 +320,48 @@ is named after. Today that is three icons and the manifest.
 
 ## The iPhone app
 
-The iPhone app is `web/` packed with Capacitor (`native/`), built on
-GitHub's macOS runners and delivered through TestFlight. Nobody needs a
-Mac. It is **not** part of a deploy: a merge still reaches staging's PWA at
-once, and reaches the iPhone app only with the next build.
+The iPhone app is the one written in Swift (`native/swift/`,
+`docs/ROADMAP.md` 2g), built on GitHub's macOS runners and delivered
+through TestFlight. Nobody needs a Mac. It is **not** part of a deploy: a
+merge reaches the iPhone app only with the next build.
 
 ```
-web/ ──scripts/native_bundle.py──> native/www ──npx cap sync ios──> the Xcode project
-     (+ staging's config.json,                                   (native/ios, committed)
-        + apiBase)
-  → xcodebuild on a macOS runner → App Store Connect → TestFlight → the phone
+native/swift/ → xcodebuild archive on a macOS runner (scripts/ios_archive.py)
+  → signed at export → App Store Connect → TestFlight → the phone
 ```
 
-**The builds talk to staging** (`SITE` in `.github/workflows/ios.yml`).
-The app carries that deployment's public `config.json` and the address of
-its API; nothing secret is packed into it.
+**It ships unfinished, on purpose** (the owner, 2026-11-23): TestFlight
+gets it from its first screens, as an update of the same app
+(`org.arip.bgucats`), so the system's glass and the app's flaws are seen
+on the phone while they are being fixed. A tab whose screen is not built
+says so; the home-screen app (staging's PWA, the "BETA" icon) has every
+screen meanwhile. Until 2026-11-23 TestFlight had `web/` packed with
+Capacitor (`native/`, below); the last such build was 10, of 2026-11-14.
+
+**The first Swift build replaces the packed app on the phone.** What the
+packed app kept is not read by the Swift one: its sign-in, and any photo
+still waiting in its upload queue. Let the old app finish uploading before
+updating. Going back is `git revert` of the pull request that switched
+the upload, and a build.
 
 `ios.yml` has three jobs:
 
 | Job | Runs | Needs | Does |
 |---|---|---|---|
-| `swift` | on the same pull requests as `simulator` | nothing | the app being rewritten in Swift (`native/swift/`, `docs/ROADMAP.md` 2g): builds it and walks its UI tests through every screen in a simulator, in light and dark. Keeps a picture of each: *Artifacts* → `ios-swift`. It is not what TestFlight gets yet |
-| `simulator` | on a pull request that changes `native/`, the bundle script or the workflow; and before every upload | nothing | builds the app unsigned, starts it in an iPhone simulator, fails if it crashes, if the page does not load or if it throws an error. Keeps a screenshot and the app's log: the run's page → *Artifacts* → `ios-simulator` |
-| `testflight` | only when started by hand, from `main` | the `testflight` environment | archives, signs and uploads. The build number is the run's number |
+| `swift` | on a pull request that changes `native/`, the scripts or the workflow; and before every upload | nothing | builds the Swift app and walks its UI tests through every screen in a simulator, in light and dark. Keeps a picture of each: *Artifacts* → `ios-swift`. Then archives it as the upload will (a Release build for a real iPhone, unsigned) and looks inside: bundle id, build number, iOS version, icon, privacy manifest |
+| `simulator` | on the same pull requests | nothing | the packed app, until it is removed: builds it unsigned, starts it in an iPhone simulator, fails if it crashes, if the page does not load or if it throws an error. *Artifacts* → `ios-simulator` |
+| `testflight` | only when started by hand, from `main`, after `swift` | the `testflight` environment | archives the Swift app with the same script, signs and uploads. The build number is the run's number |
 
 **To put a build on the phone:** GitHub → *Actions* → *iOS* → *Run
 workflow* → branch `main`. About ten minutes later the run is green; Apple
 then processes the build for some minutes more, and TestFlight on the phone
-offers it. The owner starts it; Claude never does.
+offers it. The owner starts it; Claude never does. "App info" in the
+app's Profile shows the version and the build number, which is the run's.
+
+**The packed app's builds talked to staging** (`SITE` in
+`.github/workflows/ios.yml`), carrying that deployment's public
+`config.json`. The Swift app calls no server yet; when it signs in, it is
+against staging too.
 
 **Cost.** A macOS runner is $0.062 a minute against $0.006 for Linux
 (2026-11), taken from the $18 of Actions usage GitHub Team includes each
@@ -378,8 +392,10 @@ exist in App Store Connect, or the build number was used before.
 The first upload, build 3, went through on 2026-11-11: an unsigned
 archive, signed at export with the certificate Apple keeps.
 
-**Signing in, in the app.** Google refuses to sign anyone in inside an
-app's web view, so the app opens iOS's own sign-in sheet
+**Signing in, in the packed app** (the Swift app does not sign in yet;
+it will use the same sheet and the same three settings). Google refuses
+to sign anyone in inside an app's web view, so the app opens iOS's own
+sign-in sheet
 (`native/plugins/web-auth`, `ASWebAuthenticationSession`). iOS asks first
 whether "BGU Cats" may use "amazoncognito.com" to sign in. Cognito answers
 at `org.arip.bgucats://signin`, which the sheet hands back to the page,

@@ -32,6 +32,11 @@ def browser():
     playwright_api = pytest.importorskip(
         "playwright.sync_api", reason="pip install -r requirements-dev.txt"
     )
+    # CI's second run of these tests, as the deploy runs them: with no
+    # browser. A test that needs one and does not say so fails there
+    # instead of failing the deploy after the merge.
+    if os.environ.get("BGUCATS_NO_BROWSER"):
+        pytest.skip("no browser, on purpose (BGUCATS_NO_BROWSER)")
     with playwright_api.sync_playwright() as playwright:
         try:
             # Claude Code's cloud sessions ship a Chrome and say where it is.

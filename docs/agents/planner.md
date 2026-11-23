@@ -79,7 +79,10 @@ the builder's.
 - Every build is paid for from the owner's Claude plan. Prefer few,
   well-cut issues to many.
 - The web member app (`web/social/`) is frozen to fixes; new screens are
-  the Swift app's (`docs/ROADMAP.md`, 2g).
+  the Swift app's (`docs/ROADMAP.md`, 2g). The Swift app is what the
+  owner has on TestFlight (2026-11-23), unfinished: its next screen, and
+  a flaw the owner reports in it, come before anything else. An issue for
+  it names the screen's picture as its "done when".
 - Nothing private in an issue: no real person's name, address or photo,
   no secret, no token. The repository is public.
 

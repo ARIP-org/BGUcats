@@ -38,6 +38,7 @@ it instead.
 | 2026-11-12 | **Build the app the prototype shows, for TestFlight** (Phase 4 of `CLAUDE.md`, no longer deferred): feed, posts, name polls, friends, profile, achievements, map, the capture flow, with moderation and re-ranking on Google's Decision 1. New AWS resources are allowed for it. The plan, the owner's open decisions and the owner's manual steps are `docs/app-plan/`. The row of 2026-11-07 about the fear of "we need a relational database" still stands: the plan recommends against one, and the owner decides (`DECISIONS.md`, A1). |
 | 2026-11-22 | **Low-risk pull requests merge to staging without the owner** (2g). Pull request #98 passed CI in twenty minutes and waited six days for an approval. What is low-risk is decided by paths GitHub enforces, not by an agent; production still moves only on the owner's tag. |
 | 2026-11-22 | **The iPhone app is rewritten in Swift, now; the web member app is frozen and will be retired** (2g). Supersedes "one codebase, never platform branches" (2026-10-31, below) and "the iPhone app carries `web/` inside it" (2026-11-11) for the member app. The owner wants native features and an app that feels native. The labeling desk stays a web app. |
+| 2026-11-23 | **The Swift app ships to TestFlight now, unfinished, in the same app** (the owner). Not a second app beside the packed one, and not when it has every screen: the owner wants the system's glass, the flaws and the distance from the prototype on the phone early, and to watch them being fixed. TestFlight loses the packed app's screens until each is rebuilt; the home-screen app keeps them. Supersedes "the packed app stays what TestFlight gets until the Swift app has its screens" (2g, 2026-11-22). |
 | 2026-11-22 | **A chain of agents, with no server of the owner's** (2g): planner, builder, reviewer, an iPhone verifier, a daily digest. How Mac time is paid for is open: 2g, "What Mac time costs". |
 | 2026-11-22 | **Each role has a model of its own** (the owner): the planner on Fable, because it decides what is built; the builder and the reviewer on Opus; triage and the digest on Sonnet. A builder on Fable costs more than it returns. `docs/agents.md`, "Which model". |
 | 2026-11-22 | **The repository goes public** (2g, "What Mac time costs", way B), when the owner changes its visibility. Paying by the minute for a factory was $80 to $390 a month and the owner will not spend $30; a public repository's standard runners are free, macOS too. Supersedes "private repos ... not public repos" (2026-10-31). What it takes first: `docs/agents.md`, "When the repository is public". |
@@ -583,8 +584,15 @@ into code.
   sheet, and keeps the write order and the ULIDs made on the phone. The
   recognition model runs through Core ML or ONNX Runtime's iOS build: to
   be measured against the browser's numbers before it replaces them.
+- **It is what TestFlight gets, from its first screens** (the owner,
+  2026-11-23): the same app to Apple (`org.arip.bgucats`), so a build is
+  an update of the packed one. A tab not built yet says so. The upload
+  archives it with the script every pull request ran
+  (`scripts/ios_archive.py`).
 - **The web member app is frozen:** fixes only, no new screens. It
   retires when the Swift app has every screen the plan's L1 gate lists.
+  Until then it is where a screen the Swift app lacks is found: the
+  home-screen app.
 - **The labeling desk and Capture stay a web app** for admins and
   collaborators; `web/` loses nothing of theirs.
 - **No screen without a picture.** Swift cannot be compiled on Linux, so
@@ -689,7 +697,13 @@ App, and any AWS access.
    the first screenshot from a simulator. **Written 2026-11-23**
    (`native/swift/`, the `swift` job of `ios.yml`): four tabs of system
    controls and "App info", each pictured in light and dark.
-4. Screens, in the plan's order; "App info" first.
+4. The upload to TestFlight is the Swift app. **Written 2026-11-23**
+   (the `testflight` job of `ios.yml`). **Done when** the owner's phone
+   has the frame from TestFlight; then the packed app's code
+   (`native/ios`, `native/plugins`, `scripts/native_bundle.py`, its
+   `simulator` job) is removed.
+5. Screens, in the plan's order: signing in and the feed first, then
+   capture, cats, profile. Each lands in the next build the owner starts.
 
 ## Review against industry practice (2026-11-10)
 
