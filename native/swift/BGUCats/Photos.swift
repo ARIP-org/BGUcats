@@ -30,7 +30,13 @@ final class NetPhotos: Photos {
 /// one every time, neither light nor dark. No network.
 final class DrawnPhotos: Photos {
     func image(_ url: URL) async -> UIImage? {
-        let seed = url.lastPathComponent.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        DrawnPhotos.draw(url.lastPathComponent)
+    }
+
+    /// The picture for a word. The Scan screen's stand-in camera and
+    /// gallery hand these out too.
+    static func draw(_ word: String) -> UIImage {
+        let seed = word.unicodeScalars.reduce(0) { $0 + Int($1.value) * 5 }
         let hue = CGFloat(seed % 12) / 12
         let size = CGSize(width: 400, height: 400)
         return UIGraphicsImageRenderer(size: size).image { context in

@@ -12,7 +12,9 @@ pull request that would be found by the owner's upload.
 After the build it reads the app inside the archive and fails, naming each
 thing, if it is not what Apple and the phone expect: the bundle id the
 TestFlight app has, the build number asked for, the one iOS version, an
-icon, the answer about encryption, and the privacy manifest.
+icon, the answer about encryption, the sentences iOS shows when the app
+asks for the camera and the place (printed, so the log shows them), and the
+privacy manifest.
 """
 
 import argparse
@@ -28,6 +30,9 @@ IOS = "26.0"
 # Reading UserDefaults (the trail, Trail.swift) is one of the things Apple
 # wants a stated reason for; CA92.1 is "the app's own data".
 USER_DEFAULTS = "NSPrivacyAccessedAPICategoryUserDefaults"
+# What iOS shows when the app asks for the camera and for the place (Scan a
+# cat). Without the sentence, asking for either ends the app on the spot.
+PERMISSIONS = ("NSCameraUsageDescription", "NSLocationWhenInUseUsageDescription")
 
 
 def command(archive, build, team=None):
@@ -83,6 +88,9 @@ def faults(app, build):
     icons = info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon", {})
     if not (info.get("CFBundleIconName") or icons.get("CFBundleIconName")):
         wrong.append("Info.plist names no icon: App Store Connect refuses a build without one.")
+    for key in PERMISSIONS:
+        if not str(info.get(key) or "").strip():
+            wrong.append(f"Info.plist: no {key}: asking the phone for it would end the app.")
     if not (app / "Assets.car").is_file():
         wrong.append("No Assets.car: the icon and the colours were not compiled in.")
 
@@ -117,6 +125,8 @@ def main(argv=None):
         return 1
     info = plistlib.loads((app / "Info.plist").read_bytes())
     print(f"Archived {info['CFBundleIdentifier']} {info['CFBundleShortVersionString']} ({info['CFBundleVersion']}).")
+    for key in PERMISSIONS:
+        print(f"{key}: {info[key]}")
     return 0
 
 

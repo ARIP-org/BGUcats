@@ -60,6 +60,12 @@ enum AppInfo {
             "system: iOS \(system.majorVersion).\(system.minorVersion).\(system.patchVersion)",
             "",
         ]
-        return (header + world.trail.lines).joined(separator: "\n")
+        var lines = header + world.trail.lines
+        // A UI test reads what the made-up server was asked here: photos
+        // by number, never an id.
+        if let standIn = world.backend as? StandInBackend, !standIn.record.isEmpty {
+            lines += ["", "stand-in server:"] + standIn.record
+        }
+        return lines.joined(separator: "\n")
     }
 }

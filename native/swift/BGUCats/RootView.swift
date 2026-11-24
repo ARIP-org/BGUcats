@@ -84,7 +84,7 @@ struct TabsView: View {
                 NotBuiltYet(title: "Cats", symbol: "cat")
             }
             Tab("Scan a cat", systemImage: "camera", value: AppTab.scan) {
-                NotBuiltYet(title: "Scan a cat", symbol: "camera")
+                ScanView(world: world)
             }
             Tab("Home", systemImage: "house", value: AppTab.home) {
                 FeedView(world: world, session: session)
@@ -95,6 +95,10 @@ struct TabsView: View {
         }
         .onChange(of: tab) { _, opened in
             world.trail.mark("tab: \(opened.rawValue)")
+        }
+        // Photos left waiting by the last launch go on now, with no tap.
+        .task {
+            world.outbox.open()
         }
         // Over whichever tab asked: the terms before the first write.
         .termsDialog(session)

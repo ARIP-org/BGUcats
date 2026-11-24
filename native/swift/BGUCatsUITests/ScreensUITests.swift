@@ -199,7 +199,8 @@ final class ScreensUITests: XCTestCase {
         app.descendants(matching: .any)["report.done"].firstMatch.tap()
         XCTAssertTrue(thanks.waitForNonExistence(timeout: patience), "Done did not close the report. \(onScreen(app))")
 
-        for (tab, name) in [("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")] {
+        // Scan a cat has its own walk below.
+        for (tab, name) in [("Cats", "cats"), ("Profile", "profile")] {
             app.tabBars.buttons[tab].tap()
             XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: patience), "The tab \(tab) did not open.")
             keep(app, "\(name)-\(look)")
@@ -231,6 +232,152 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: patience), "Copying did not say it copied.")
 
         app.terminate()
+    }
+
+    func testScanInLight() {
+        scan(look: "light")
+    }
+
+    func testScanInDark() {
+        scan(look: "dark")
+    }
+
+    /// Scan a cat: six photos, two of them from the gallery, sent as one
+    /// encounter, with the second photo's upload failing once. What the
+    /// made-up server was asked is read back from App info.
+    private func scan(look: String) {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-look", look, "-uploadFailsOnce"]
+        app.launch()
+        openScan(app)
+        let take = find(app, "scan.take")
+        XCTAssertTrue(take.waitForExistence(timeout: 10), "Scan a cat has no way to take a photo. \(onScreen(app))")
+        XCTAssertTrue(find(app, "scan.gallery").exists, "Scan a cat has no way to choose from the gallery. \(onScreen(app))")
+        XCTAssertFalse(app.staticTexts["Not built yet"].exists, "Scan a cat still says it is not built.")
+        keep(app, "scan-empty-\(look)")
+
+        // Four from the (stand-in) camera, then two from the gallery.
+        for taken in 1...4 {
+            find(app, "scan.take").tap()
+            expect(app, "scan.count", taken == 1 ? "1 photo" : "\(taken) photos")
+        }
+        find(app, "scan.gallery").tap()
+        expect(app, "scan.count", "6 photos")
+        XCTAssertEqual(app.staticTexts.matching(identifier: "scan.mark.gallery").count, 2, "The two gallery photos are not marked. \(onScreen(app))")
+        keep(app, "scan-photos-\(look)")
+
+        // One can be taken out before sending.
+        find(app, "scan.take").tap()
+        expect(app, "scan.count", "7 photos")
+        find(app, "scan.remove.7").tap()
+        expect(app, "scan.count", "6 photos")
+
+        find(app, "scan.send").tap()
+        // The second photo's upload fails once: the screen says so in
+        // words, and the other five go on.
+        let retrying = find(app, "scan.retrying")
+        XCTAssertTrue(retrying.waitForExistence(timeout: 15), "A failed upload is not said on screen. \(onScreen(app))")
+        expect(app, "scan.progress", "5 of 6 sent", timeout: 7)
+        XCTAssertTrue(retrying.label.contains("took too long"), "The screen does not say why it is retrying: \(retrying.label)")
+        keep(app, "scan-retrying-\(look)")
+
+        expect(app, "scan.sent", "Sent: 6 photos", timeout: 30)
+        XCTAssertFalse(find(app, "scan.retrying").exists, "Sent, and still retrying. \(onScreen(app))")
+        keep(app, "scan-sent-\(look)")
+
+        let shown = appInfo(app)
+        let record = served(shown)
+        XCTAssertEqual(record.first, "encounter place", "The encounter was not asked for first: \(record)")
+        for photo in 1...6 {
+            let media = record.firstIndex { $0.hasPrefix("media \(photo) ") }
+            let upload = record.lastIndex(of: "upload \(photo)")
+            let complete = record.firstIndex(of: "complete \(photo)")
+            XCTAssertNotNil(media, "Photo \(photo) was never recorded: \(record)")
+            XCTAssertNotNil(upload, "Photo \(photo) was never uploaded: \(record)")
+            XCTAssertNotNil(complete, "Photo \(photo) was never confirmed: \(record)")
+            if let media, let upload, let complete {
+                XCTAssertTrue(0 < media && media < upload && upload < complete, "Photo \(photo) went out of order: \(record)")
+            }
+        }
+        XCTAssertTrue(record.contains("upload 2 timed out"), "The made-up failure did not happen: \(record)")
+        let started = record.filter { $0.hasPrefix("media ") }
+        let gallery = started.filter { $0.contains(" gallery ") }
+        XCTAssertEqual(gallery.count, 2, "Not two gallery photos: \(record)")
+        XCTAssertTrue(gallery.allSatisfy { $0.hasSuffix(" no-place") }, "A gallery photo carried a place: \(record)")
+        XCTAssertTrue(started.filter { $0.contains(" camera ") }.allSatisfy { $0.hasSuffix(" place") }, "A camera photo went without the place: \(record)")
+
+        // The trail says each step by its kind and status, never an id.
+        XCTAssertTrue(shown.contains("upload: media 200"), "The trail does not mark the uploads.")
+        XCTAssertTrue(shown.contains("upload: retry, timed out"), "The trail does not mark the retry.")
+        XCTAssertNil(shown.range(of: "[0-9A-HJKMNP-TV-Z]{26}", options: .regularExpression), "The trail holds an id.")
+        app.terminate()
+    }
+
+    /// Photos still waiting when the app is closed go at the next launch,
+    /// with no tap on Send.
+    func testPhotosLeftWaitingGoAtTheNextLaunch() {
+        let first = XCUIApplication()
+        first.launchArguments = ["-uiTesting", "-look", "light", "-offline"]
+        first.launch()
+        openScan(first)
+        find(first, "scan.take").tap()
+        expect(first, "scan.count", "1 photo")
+        find(first, "scan.gallery").tap()
+        expect(first, "scan.count", "3 photos")
+        find(first, "scan.send").tap()
+        XCTAssertTrue(find(first, "scan.retrying").waitForExistence(timeout: 15), "With no server, the screen does not say it will retry. \(onScreen(first))")
+        first.terminate()
+
+        let second = XCUIApplication()
+        second.launchArguments = ["-uiTesting", "-look", "light", "-keepQueue"]
+        second.launch()
+        // Only looked at: nothing on the Scan screen is tapped.
+        openScan(second)
+        expect(second, "scan.sent", "Sent: 3 photos", timeout: 30)
+        let shown = appInfo(second)
+        XCTAssertTrue(shown.contains("upload: 3 waiting from before"), "The second launch did not find the queue.")
+        let record = served(shown)
+        XCTAssertEqual(record.first, "encounter place", "The encounter was not asked for first: \(record)")
+        for photo in 1...3 {
+            XCTAssertTrue(record.contains("complete \(photo)"), "Photo \(photo) was not sent at the next launch: \(record)")
+        }
+        second.terminate()
+    }
+
+    private func openScan(_ app: XCUIApplication) {
+        let tab = app.tabBars.buttons["Scan a cat"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 30), "The tabs did not open. \(onScreen(app))")
+        tab.tap()
+        XCTAssertTrue(app.navigationBars["Scan a cat"].waitForExistence(timeout: 10), "Scan a cat did not open.")
+    }
+
+    private func find(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+        app.descendants(matching: .any)[id].firstMatch
+    }
+
+    /// Waits for an element to say exactly `label`.
+    private func expect(_ app: XCUIApplication, _ id: String, _ label: String, timeout: TimeInterval = 10) {
+        let element = find(app, id)
+        let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
+        XCTAssertEqual(XCTWaiter().wait(for: [said], timeout: timeout), .completed, "\(id) does not say \"\(label)\". \(onScreen(app))")
+    }
+
+    /// Profile, then App info: its whole text.
+    private func appInfo(_ app: XCUIApplication) -> String {
+        app.tabBars.buttons["Profile"].tap()
+        let row = find(app, "row.app-info")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "Profile has no App info row.")
+        row.tap()
+        let text = find(app, "app-info.text")
+        XCTAssertTrue(text.waitForExistence(timeout: 10), "App info did not open.")
+        return text.label + "\n" + (text.value as? String ?? "")
+    }
+
+    /// What the made-up server was asked, from App info, in order.
+    private func served(_ shown: String) -> [String] {
+        guard let part = shown.components(separatedBy: "stand-in server:\n").dropFirst().first else { return [] }
+        // The label and the value may both hold the text: the first copy.
+        return Array(part.components(separatedBy: "\n").prefix { !$0.isEmpty && !$0.hasPrefix("BGU Cats, app info") })
     }
 
     /// Scrolls the feed until the element can be tapped: down first, then

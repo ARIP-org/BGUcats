@@ -6,9 +6,9 @@ the packed one it replaces (`native/ios/`), so every screen is seen on
 the phone as it lands. Built so far: the frame (four tabs of the system's
 own controls, so the glass is iOS's), signing in, Home with the feed
 (posts, their photos, a like, the terms asked before the first like,
-a post's menu: Delete on one's own, Report on anyone else's), the
-profile's first rows, and "App info".
-Cats and Scan a cat say "Not built yet".
+a post's menu: Delete on one's own, Report on anyone else's), the first
+half of Scan a cat (photos taken or chosen, sent as one encounter), the
+profile's first rows, and "App info". Cats says "Not built yet".
 
 | File | |
 |---|---|
@@ -20,9 +20,11 @@ Cats and Scan a cat say "Not built yet".
 | `Session.swift` | who is signed in, whether the app has started, and the terms first |
 | `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, the tabs, the profile |
-| `SignInView.swift`, `FeedView.swift`, `AppInfoView.swift` | those screens |
+| `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
 | `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
-| `Ulid.swift` | an id made on the phone (a report's), so a retry is the same request |
+| `Outbox.swift` | the upload queue: photos kept on the phone until the server has them |
+| `Places.swift` | where the phone is when a photo is taken |
+| `Ulid.swift` | an id made on the phone (a report's, an encounter's, a photo's), so a retry is the same request |
 | `Photos.swift` | loading a picture, and the drawn ones UI tests get |
 | `Trail.swift` | the app's own account of what it did |
 
@@ -77,7 +79,14 @@ defined, one iOS version, nothing that signs.
   (`DrawnPhotos`), so two pictures of one screen are the same picture.
   `-signedOut` starts it with nobody signed in, `-termsRequired` with
   the terms not accepted, `-termsChanged` with terms that changed after
-  the account was read (the first like is refused). A new screen that reads
+  the account was read (the first like is refused). On Scan a cat the camera
+  and the gallery hand out drawn photos, the place is made up
+  (`StandInPlaces`), and the stand-in plays the four upload routes;
+  `-uploadFailsOnce` makes the second photo's upload time out once,
+  `-offline` reaches nothing. The upload queue is the one thing it keeps,
+  in the app's temporary folder, emptied at each launch unless
+  `-keepQueue` asks for what the last launch left. What the stand-in was
+  asked is at the end of App info, photos by number. A new screen that reads
   the API adds its canned answers to `StandInBackend`. The network is
   reached from three files only (`Auth`, `Backend`, `Photos`), each
   behind a protocol; a test holds that. The look is asked of the app (`-look dark`), and
@@ -95,11 +104,12 @@ defined, one iOS version, nothing that signs.
 - **The privacy manifest** (`BGUCats/PrivacyInfo.xcprivacy`) says what
   the app reads and sends. Today: the trail in UserDefaults; and, since
   it signs in, the account (email, name, user id), what a person does (a
-  like), and the servers' counters and logs. Photos, location, friends
-  and the phone's notification address join it with the screen that
-  first sends them: a test fails a pull request that adds one without
-  the other (`docs/privacy-data.md` has the answers). A report and its
-  note are content a person made, a kind already declared for the like.
+  like), and the servers' counters and logs; since Scan a cat, photos
+  and the precise place a photo was taken. Friends and the phone's
+  notification address join it with the screen that first sends them: a
+  test fails a pull request that adds one without the other
+  (`docs/privacy-data.md` has the answers). A report and its note are
+  content a person made, a kind already declared for the like.
 - **Signing in is the web app's, in iOS's own sheet** (`Auth.swift`,
   `web/lib/auth.js`): Cognito's page, authorization code with PKCE,
   straight to Google with its account chooser, answered at
@@ -148,10 +158,33 @@ defined, one iOS version, nothing that signs.
   status ("api: feed 200 in 240 ms"), never by its address; a failure by
   its kind and number. A test reads every `trail.mark`.
 
+- **What the app may ask the phone for** is in the project, one sentence
+  each, in both configurations: the camera
+  (`INFOPLIST_KEY_NSCameraUsageDescription`) and the place while the app
+  is open (`INFOPLIST_KEY_NSLocationWhenInUseUsageDescription`). Asking
+  without the sentence ends the app; the archive's look fails a build
+  without them and prints them. The gallery is the system's picker,
+  which needs no permission.
+- **Scan a cat sends what the web app's upload queue sends**
+  (`Outbox.swift`, `web/outbox.js`): ids made on the phone, the
+  encounter with its first photo, then each photo's record, its bytes
+  and the confirmation, three photos at a time. Each photo's file is
+  written once to the app's own storage, with a small index beside it,
+  and leaves only when the server has it; the queue goes on at the next
+  launch with no tap. A failure says why on screen and holds up no other
+  photo. A JPEG of 20 MB at most: a photo from the gallery is drawn again
+  as one, which also leaves its own place behind, and it is sent with
+  `origin: "gallery"` and no place. A camera photo carries the latest fix
+  (rounded to three decimals) if the person allowed it and one has come;
+  nothing waits for it. The trail says each step by kind and status
+  ("upload: media 200", "upload: retry, timed out").
+
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
 app skips them for now), the area, and a page with the full terms (the
-dialog has their short text). Then capture, cats, the rest of profile, the
+dialog has their short text). In Scan a cat: "Who did you meet?" and the
+model, choosing the cat, a new cat and the post (the second half), video,
+and uploading while the app is closed. Then cats, the rest of profile, the
 recognition model, and a string catalog for the four languages. Each is
 its own issue, in the plan's order.
