@@ -88,8 +88,8 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [undone], timeout: 10), .completed, "Taking the like back did not count. \(onScreen(asking))")
         mitzi.tap()
         XCTAssertFalse(asking.alerts.firstMatch.waitForExistence(timeout: 2), "A like after the terms were accepted asked again. \(onScreen(asking))")
-        let again = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: mitzi)
-        XCTAssertEqual(XCTWaiter().wait(for: [again], timeout: 10), .completed, "The second like was not counted. \(onScreen(asking))")
+        let recounted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: mitzi)
+        XCTAssertEqual(XCTWaiter().wait(for: [recounted], timeout: 10), .completed, "The second like was not counted. \(onScreen(asking))")
 
         // The trail says what was asked and answered, never who.
         asking.tabBars.buttons["Profile"].tap()
