@@ -24,6 +24,22 @@ protocol Backend {
     func upload(_ file: URL, to target: Presigned, progress: @escaping @Sendable (Double) -> Void) async throws -> Int
     /// `POST /api/photos/{id}/complete`: the server confirms the file.
     func complete(photoId: String) async throws -> Int
+
+    /// The author removes their own post.
+    func deletePost(postId: String) async throws
+    /// Reports a thing. `reportId` is made once on the phone, so a retry is
+    /// the same report. The server answers the same whatever it did.
+    func report(_ report: Report) async throws
+}
+
+/// A report as the API takes it (`POST /api/v1/reports`).
+struct Report: Equatable {
+    let reportId: String
+    /// `post` here; the API also takes `user`, `avatar` and `name`.
+    let targetType: String
+    let targetId: String
+    let reason: ReportReason
+    let note: String?
 }
 
 /// What `startPhoto` answered. No target: the server has the bytes already
@@ -98,6 +114,23 @@ final class LiveBackend: Backend {
     func like(postId: String, on: Bool) async throws -> Int {
         let json = try await call(on ? "PUT" : "DELETE", "/posts/\(Auth.encode(postId))/like", as: on ? "like" : "unlike")
         return Read.int(json["likes"])
+    }
+
+    func deletePost(postId: String) async throws {
+        _ = try await call("DELETE", "/posts/\(Auth.encode(postId))", as: "delete post")
+    }
+
+    func report(_ report: Report) async throws {
+        var body: [String: Any] = [
+            "reportId": report.reportId,
+            "targetType": report.targetType,
+            "targetId": report.targetId,
+            "reason": report.reason.rawValue,
+        ]
+        if let note = report.note {
+            body["note"] = note
+        }
+        _ = try await call("POST", "/reports", body: body, as: "report")
     }
 
     func createEncounter(id: String, place: Fix?) async throws -> Int {
@@ -182,8 +215,8 @@ final class LiveBackend: Backend {
     /// One call. `name` is what the trail calls it: the kind of call, never
     /// its address, which can carry an id. `quiet`: the caller marks the
     /// trail itself (the upload queue, which says "upload: media 200").
-    private func call(_ method: String, _ path: String, cursor: String? = nil, as name: String) async throws -> [String: Any] {
-        try await exchange(method, path, cursor: cursor, as: name).json
+    private func call(_ method: String, _ path: String, cursor: String? = nil, body: [String: Any]? = nil, as name: String) async throws -> [String: Any] {
+        try await exchange(method, path, cursor: cursor, body: body, as: name).json
     }
 
     /// `call`, answering the status too, on either API (`base`), with a
@@ -279,8 +312,9 @@ private final class UploadProgress: NSObject, URLSessionTaskDelegate {
 }
 
 /// For UI tests: a made-up member and three made-up posts, the same every
-/// time. No network. The capture routes are played, and what they were
-/// asked is kept in `record` for the test to read (App info shows it).
+/// time; the member wrote the second. No network. The capture routes are
+/// played, and what they were asked is kept in `record` for the test to read
+/// (App info shows it).
 final class StandInBackend: Backend {
     private let start: Date
     private let gate: StandInGate
@@ -297,6 +331,9 @@ final class StandInBackend: Backend {
     /// "photo 2", never an id.
     private var numbers: [String: Int] = [:]
     private var kept: [String] = []
+    private var deleted: Set<String> = []
+    /// What was reported, for a test that wants to know.
+    private(set) var reports: [Report] = []
 
     init(start: Date, gate: StandInGate, ends: Bool = false, failsOnce: Bool = false, offline: Bool = false) {
         self.start = start
@@ -443,7 +480,7 @@ final class StandInBackend: Backend {
                 state: nil
             ),
         ]
-        return FeedPage(posts: posts, cursor: nil)
+        return FeedPage(posts: posts.filter { !deleted.contains($0.id) }, cursor: nil)
     }
 
     func like(postId: String, on: Bool) async throws -> Int {
@@ -458,5 +495,17 @@ final class StandInBackend: Backend {
             liked.remove(postId)
         }
         return postId == "p1" ? (on ? 4 : 3) : (on ? 1 : 0)
+    }
+
+    func deletePost(postId: String) async throws {
+        // As the API: only the author may.
+        guard postId == "p2" else {
+            throw ApiError(status: 403, code: "not_yours", message: "This is not your post.")
+        }
+        deleted.insert(postId)
+    }
+
+    func report(_ report: Report) async throws {
+        reports.append(report)
     }
 }

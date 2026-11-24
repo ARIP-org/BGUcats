@@ -134,6 +134,28 @@ an answer that pushed nothing, puts `needs-owner` on the pull request
 with a comment. A session's own pull request is not answered this way:
 its session answers it.
 
+**So does one that no longer merges with `main`** (since 2026-11-24).
+The builder takes up to three issues at once, each from the same `main`;
+that night three changed the same files, the first merged, and the other
+two stood in conflict. GitHub runs no check on a pull request in
+conflict, so no review would ever have sent them anywhere. The queue
+asks each of the builder's pull requests whether it still merges, and
+the rework job is told to merge `main` in and keep both changes whole.
+The same two rounds count, whichever the reason. The planner's side of
+it: issues that change the same files are not `ready` together, and for
+the Swift app that is one at a time (`docs/agents/planner.md`).
+
+**The builder is shown what a failed check said.** When a check failed
+on the commit, the rework job reads that check's log with its own token
+and leaves the lines that say why in `failed/`, for Claude to read
+before it changes anything. Swift cannot be compiled on Linux, so the
+Mac's log is the only compiler the builder has: #127 failed on one
+redeclared name that nothing had shown it.
+
+**A commit per file** (the owner, 2026-11-24). Both of the builder's
+prompts ask for it, and `CLAUDE.md` ("Workflow") has the rule for
+everyone.
+
 ## The reviewer, and the two lanes
 
 | Agent | Starts when | Acts as | Can | Cannot |
@@ -189,7 +211,27 @@ did not wait for it: the ruleset was not requiring one.
 
 With both on, an owner-path pull request shows `review` red with "the
 owner should look at this" and the reviewer's findings under it, as #118
-and #119 did.
+and #119 did. The script's hold was first seen to work on #128
+(2026-11-24): the reviewer would have passed it, and it waited because
+it touches the Xcode project.
+
+**A red check anywhere takes a pass back** (since 2026-11-24). The
+reviewer starts when CI ends, and CI is `python` and `terraform`. The
+iPhone app's checks (`ios.yml`: `swift`, `simulator`) run beside CI on a
+pull request that touches `native/`, and nothing looked at them: #126
+merged with `swift` failed, and `main` could not be built for TestFlight
+until #129; #127 was passed with a compile error. They cannot simply be
+made required checks, because they do not run on every pull request, and
+a required check that never runs blocks the merge for ever. So the
+reviewer's workflow lists every check run on the pull request's head,
+waits while one is still running (twenty-five minutes at most), and the
+verdict script reads the list:
+
+- one **failed**: the pass becomes "sent back", naming the check and its
+  address, so the builder's answer has it to read;
+- one **not finished**, or a list that could not be read: "for the
+  owner";
+- a job run again replaces the run before it.
 
 **They are on since 2026-11-23**, when the owner changed the `main`
 ruleset. Before that every pull request needed one approval, and the

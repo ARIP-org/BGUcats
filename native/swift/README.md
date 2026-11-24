@@ -5,9 +5,10 @@ TestFlight gets** (the owner, 2026-11-23): unfinished, in the same app as
 the packed one it replaces (`native/ios/`), so every screen is seen on
 the phone as it lands. Built so far: the frame (four tabs of the system's
 own controls, so the glass is iOS's), signing in, Home with the feed
-(posts, their photos, a like), the first half of Scan a cat (photos taken
-or chosen, sent as one encounter), the profile's first rows, and "App
-info". Cats says "Not built yet".
+(posts, their photos, a like, a post's menu: Delete on one's own, Report
+on anyone else's), the first half of Scan a cat (photos taken or chosen,
+sent as one encounter), the profile's first rows, and "App info". Cats
+says "Not built yet".
 
 | File | |
 |---|---|
@@ -19,8 +20,10 @@ info". Cats says "Not built yet".
 | `Session.swift` | who is signed in, and whether the app has started |
 | `RootView.swift` | the first screen by state, the tabs, the profile |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
+| `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
 | `Outbox.swift` | the upload queue: photos kept on the phone until the server has them |
 | `Places.swift` | where the phone is when a photo is taken |
+| `Ulid.swift` | an id made on the phone (a report's, an encounter's, a photo's), so a retry is the same request |
 | `Photos.swift` | loading a picture, and the drawn ones UI tests get |
 | `Trail.swift` | the app's own account of what it did |
 
@@ -93,8 +96,10 @@ defined, one iOS version, nothing that signs.
   it signs in, the account (email, name, user id), what a person does (a
   like), and the servers' counters and logs; since Scan a cat, photos
   and the precise place a photo was taken. Friends and the phone's
-  notification address join it with the screen that first sends them: a test fails a pull request that adds one without
-  the other (`docs/privacy-data.md` has the answers).
+  notification address join it with the screen that first sends them: a
+  test fails a pull request that adds one without the other
+  (`docs/privacy-data.md` has the answers). A report and its note are
+  content a person made, a kind already declared for the like.
 - **Signing in is the web app's, in iOS's own sheet** (`Auth.swift`,
   `web/lib/auth.js`): Cognito's page, authorization code with PKCE,
   straight to Google with its account chooser, answered at
@@ -119,6 +124,16 @@ defined, one iOS version, nothing that signs.
   the sign-in screen with the reason the last sign-in ended, the tabs,
   or "The app could not start" with Try again, App info and Sign out.
   Every call gives up after twenty seconds.
+- **A post's menu is the system's** (`Menu` on an ellipsis in the
+  card's header). Delete, on the member's own post, asks with the
+  system's alert, takes the card off at once and puts it back with the
+  server's words if it refuses. Report, on anyone else's, opens a sheet
+  with the server's fixed reasons (`src/common/reports.py`) in the web
+  app's words and order, and an optional note of up to 280 characters;
+  the report's id is made when the sheet opens, and the answer is always
+  the same thank you. Neither asks for the terms: the API does not. The
+  trail says "post: deleted" and "report: sent (spam)", never which post
+  or what the note said.
 - **The trail never says who.** A call is marked by its kind and its
   status ("api: feed 200 in 240 ms"), never by its address; a failure by
   its kind and number. A test reads every `trail.mark`.
@@ -147,7 +162,7 @@ defined, one iOS version, nothing that signs.
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
-app skips them for now), a post's menu (delete, report), the area, and
+app skips them for now), the area, and
 accepting the terms (a like before that is refused, and the app shows the
 server's words). In Scan a cat: "Who did you meet?" and the model,
 choosing the cat, a new cat and the post (the second half), video, and
