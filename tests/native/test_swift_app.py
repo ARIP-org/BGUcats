@@ -8,6 +8,7 @@ pictures come out under the names the tests gave them, and that the upload
 to TestFlight is this app, archived the way every pull request archived it.
 """
 
+import json
 import plistlib
 import re
 import xml.etree.ElementTree as ET
@@ -330,7 +331,7 @@ def test_a_sign_in_that_ends_puts_the_sign_in_screen_up():
     assert renew.count("return .notNow") == 2 and renew.count("ended(") == 2
     assert "tokens.idToken)" in renew and renew.count("tokens.idToken") == 1  # only while it is still good
     # The feed leaves it to the session to say: no alert over the sign-in screen.
-    assert code["FeedView.swift"].count("if FeedModel.signInEnded(error) { return }") == 2
+    assert code["FeedView.swift"].count("if FeedModel.signInEnded(error) { return }") == 3
     tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
     assert 'ending.launchArguments = ["-uiTesting", "-look", look, "-signInEnds"]' in tests
     assert 'keep(ending, "sign-in-ended-\\(look)")' in tests
@@ -379,6 +380,56 @@ def test_every_screen_says_what_it_is_from_the_first_moment():
     assert '"Try again"' in failed and "AppInfoView(world: world)" in failed and '"Sign out"' in failed
 
 
+def test_a_posts_menu_deletes_ones_own_and_reports_anyone_elses():
+    code = sources()
+    feed = code["FeedView.swift"]
+    menu = feed.split("private var menu: some View")[1].split("/// ")[0]
+    assert "if post.mine {" in menu and '"Delete post"' in menu and '"Report"' in menu
+    assert 'accessibilityIdentifier("menu.\\(post.id)")' in menu
+    # Delete asks first, with the system's own alert.
+    assert '.alert("Delete this post?", isPresented: deleteAsked, presenting: model.toDelete)' in feed
+    # The routes of docs/app-plan/04-api.md, word for word.
+    live = code["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'call("DELETE", "/posts/\\(Auth.encode(postId))", as: "delete post")' in live
+    assert 'call("POST", "/reports", body: body, as: "report")' in live
+    for key in ("reportId", "targetType", "targetId", "reason"):
+        assert f'"{key}": report.' in live, key
+    assert 'body["note"] = note' in live
+    # Neither asks for the terms: the API needs them for neither.
+    report = code["ReportView.swift"]
+    assert "termsRequired" not in report and "termsRequired" not in feed
+    # A report's id is made once, when the sheet opens, so a retry is the
+    # same report.
+    assert "@State private var reportId = Ulid.make()" in report
+    assert report.count("Ulid.make(") == 1
+
+
+def test_the_reasons_are_the_servers_with_the_web_apps_words():
+    from common import reports
+
+    report = sources()["ReportView.swift"]
+    cases = re.findall(r"^    case (\w+)(?: = \"(\w+)\")?$", report, re.MULTILINE)
+    assert tuple(raw or name for name, raw in cases) == reports.REASONS
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    for name, raw in cases:
+        assert f'case .{name}: "{words["report.reason." + (raw or name)]}"' in report, name
+    assert f"static let noteLimit = {reports.NOTE_MAX}" in report
+    assert f'Text("{words["report.lead"]}")' in report
+    assert f'TextField("{words["report.note"]}"' in report
+    assert words["report.sent"] == "Thank you. Someone looks at every report within a day."
+    assert 'Text("Someone looks at every report within a day.")' in report
+
+
+def test_an_id_made_on_the_phone_is_a_ulid():
+    ulid = sources()["Ulid.swift"]
+    # Crockford's base 32: no I, L, O or U. Ten characters of time, first,
+    # then sixteen random ones: 26 in all.
+    assert 'Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")' in ulid
+    assert "for _ in 0..<10 {" in ulid and "for _ in 0..<16 {" in ulid
+    assert "String(head.reversed()) + tail" in ulid
+    assert "timeIntervalSince1970 * 1000" in ulid
+
+
 # ----------------------------------------------------------- the pictures
 
 
@@ -394,6 +445,10 @@ def test_every_screen_is_kept_in_light_and_in_dark():
     assert 'keep(signedOut, "sign-in-\\(look)")' in tests and 'keep(app, "home-liked-\\(look)")' in tests
     assert 'keep(app, "home-\\(look)")' in tests and 'keep(app, "app-info-\\(look)")' in tests
     assert '[("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")]' in tests
+    # A post's menu, both ways, and the report sheet.
+    for picture in ("post-menu-own", "post-menu-other", "report"):
+        assert f'keep(app, "{picture}-\\(look)")' in tests, picture
+    assert 'shown.contains("post: deleted")' in tests and 'shown.contains("report: sent (spam)")' in tests
     # The app under test reads no network and keeps nothing.
     assert 'arguments.contains("-uiTesting")' in (SWIFT / "BGUCats" / "BGUCatsApp.swift").read_text()
 
