@@ -14,6 +14,9 @@ struct Me: Equatable {
     let encounters: Int
     /// The terms are not accepted yet: every write will be refused.
     let termsRequired: Bool
+    /// The version of the terms in force (`terms.current`): what accepting
+    /// them sends.
+    let termsCurrent: String?
 }
 
 struct Person: Equatable {
@@ -86,7 +89,8 @@ enum Read {
             role: text(json["role"]) ?? "user",
             catsMet: int(counters?["catsMet"]),
             encounters: int(counters?["encounters"]),
-            termsRequired: (terms?["required"] as? Bool) ?? false
+            termsRequired: (terms?["required"] as? Bool) ?? false,
+            termsCurrent: text(terms?["current"])
         )
     }
 

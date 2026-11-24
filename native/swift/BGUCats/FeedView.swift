@@ -5,9 +5,9 @@ struct FeedView: View {
     let world: World
     @StateObject private var model: FeedModel
 
-    init(world: World) {
+    init(world: World, session: Session) {
         self.world = world
-        _model = StateObject(wrappedValue: FeedModel(world: world))
+        _model = StateObject(wrappedValue: FeedModel(world: world, session: session))
     }
 
     var body: some View {
@@ -126,12 +126,15 @@ final class FeedModel: ObservableObject {
     @Published var reporting: Post?
 
     private let world: World
+    /// Whose terms come first (`Session.termsFirst`).
+    private let session: Session
     private var cursor: String?
     private var opened = false
     private var reading = false
 
-    init(world: World) {
+    init(world: World, session: Session) {
         self.world = world
+        self.session = session
     }
 
     /// The first read. Coming back to the tab reads nothing again: pulling
@@ -185,13 +188,26 @@ final class FeedModel: ObservableObject {
     }
 
     /// Counts at once, then asks the server; a refusal puts it back and
-    /// says why.
-    func toggleLike(_ post: Post) async {
+    /// says why. A like is a write: the terms come first, and a "no" sends
+    /// nothing and counts nothing. Taking a like back writes nothing for
+    /// others, and the API asks no terms for it.
+    func toggleLike(_ post: Post, termsChanged: Bool = false) async {
         guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
         let before = posts[index]
         let on = !before.liked
-        posts[index].liked = on
-        posts[index].likes = max(0, before.likes + (on ? 1 : -1))
+        if on || termsChanged {
+            do {
+                guard try await session.termsFirst(changed: termsChanged) else { return }
+            } catch {
+                if FeedModel.signInEnded(error) { return }
+                note = (error as? ApiError)?.message ?? "Try again."
+                return
+            }
+        }
+        // The dialog may have been up a while: the post as it is now.
+        guard let at = posts.firstIndex(where: { $0.id == post.id }), posts[at].liked == before.liked else { return }
+        posts[at].liked = on
+        posts[at].likes = max(0, before.likes + (on ? 1 : -1))
         do {
             let count = try await world.backend.like(postId: post.id, on: on)
             if let now = posts.firstIndex(where: { $0.id == post.id }) {
@@ -204,6 +220,12 @@ final class FeedModel: ObservableObject {
             }
             world.trail.mark("feed: a like failed")
             if FeedModel.signInEnded(error) { return }
+            if (error as? ApiError)?.code == "terms_required" && !termsChanged {
+                // The terms changed since the account was read: ask once
+                // more instead of showing the server's word.
+                await toggleLike(before, termsChanged: true)
+                return
+            }
             note = (error as? ApiError)?.message ?? "Try again."
         }
     }
@@ -266,7 +288,8 @@ struct PostCard: View {
                 .buttonStyle(.glass)
                 .tint(post.liked ? Color.red : nil)
                 .accessibilityIdentifier("like.\(post.id)")
-                .accessibilityLabel("Like")
+                // The count is in the label, so a test (and VoiceOver) can read it.
+                .accessibilityLabel("Like, \(post.likes)")
                 .accessibilityValue(post.liked ? "liked" : "not liked")
 
                 if let cat = post.catName {

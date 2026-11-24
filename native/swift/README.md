@@ -5,8 +5,9 @@ TestFlight gets** (the owner, 2026-11-23): unfinished, in the same app as
 the packed one it replaces (`native/ios/`), so every screen is seen on
 the phone as it lands. Built so far: the frame (four tabs of the system's
 own controls, so the glass is iOS's), signing in, Home with the feed
-(posts, their photos, a like, a post's menu: Delete on one's own, Report
-on anyone else's), the profile's first rows, and "App info".
+(posts, their photos, a like, the terms asked before the first like,
+a post's menu: Delete on one's own, Report on anyone else's), the
+profile's first rows, and "App info".
 Cats and Scan a cat say "Not built yet".
 
 | File | |
@@ -16,7 +17,8 @@ Cats and Scan a cat say "Not built yet".
 | `Auth.swift` | signing in: PKCE, the tokens in the keychain, renewing them |
 | `Backend.swift` | the member API, and the made-up one UI tests get |
 | `Models.swift` | what the API answers with, read field by field |
-| `Session.swift` | who is signed in, and whether the app has started |
+| `Session.swift` | who is signed in, whether the app has started, and the terms first |
+| `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, the tabs, the profile |
 | `SignInView.swift`, `FeedView.swift`, `AppInfoView.swift` | those screens |
 | `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
@@ -66,7 +68,9 @@ defined, one iOS version, nothing that signs.
   stands still, a trail kept in memory, a made-up member with three
   made-up posts (`StandInBackend`), and pictures that are drawn
   (`DrawnPhotos`), so two pictures of one screen are the same picture.
-  `-signedOut` starts it with nobody signed in. A new screen that reads
+  `-signedOut` starts it with nobody signed in, `-termsRequired` with
+  the terms not accepted, `-termsChanged` with terms that changed after
+  the account was read (the first like is refused). A new screen that reads
   the API adds its canned answers to `StandInBackend`. The network is
   reached from three files only (`Auth`, `Backend`, `Photos`), each
   behind a protocol; a test holds that. The look is asked of the app (`-look dark`), and
@@ -113,6 +117,16 @@ defined, one iOS version, nothing that signs.
   the sign-in screen with the reason the last sign-in ended, the tabs,
   or "The app could not start" with Try again, App info and Sign out.
   Every call gives up after twenty seconds.
+- **The terms come before the first write** (`Session.termsFirst`, as
+  `web/social/terms.js`): when `GET /me` says they are required, the
+  system's dialog asks, with the web app's words; "Accept and go on"
+  sends `POST /me/terms` with `terms.current` and the write goes on,
+  "Cancel" sends nothing and counts nothing. A write refused with
+  `terms_required` all the same (the terms changed since the account was
+  read) reads the account again and asks once more, never shows the
+  code. Taking a like back writes nothing others read and asks nothing.
+  Each screen that writes asks the same way. The trail says "terms:
+  asked", "accepted" or "declined".
 - **A post's menu is the system's** (`Menu` on an ellipsis in the
   card's header). Delete, on the member's own post, asks with the
   system's alert, takes the card off at once and puts it back with the
@@ -130,8 +144,7 @@ defined, one iOS version, nothing that signs.
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
-app skips them for now), the area, and
-accepting the terms (a like before that is refused, and the app shows the
-server's words). Then capture, cats, the rest of profile, the
+app skips them for now), the area, and a page with the full terms (the
+dialog has their short text). Then capture, cats, the rest of profile, the
 recognition model, and a string catalog for the four languages. Each is
 its own issue, in the plan's order.
