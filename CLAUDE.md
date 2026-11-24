@@ -115,8 +115,21 @@ blocked on someone else.
   sends up only a short list (`docs/agents.md`, "The reviewer, and the
   two lanes"), and its script, not its judgment, sends up every change
   to an owner path (since 2026-11-23, when one merged by itself: the
-  ruleset alone had not held it). Neither lane reaches production: that
-  is the owner's tag.
+  ruleset alone had not held it). The same script takes a pass back when
+  any other check on the commit is red or still running, the iPhone
+  app's Mac check above all, which is not part of CI (since 2026-11-24,
+  when a pull request merged with that check failed and `main` could not
+  be built for TestFlight). Neither lane reaches production: that is the
+  owner's tag.
+- **One commit per file** (the owner, 2026-11-24: "I want to see more
+  commits"). A pull request's commits each change one file, and each
+  message says what changed in that file and why. They come in an order
+  that reads: the code, then its tests, then the docs. A commit in the
+  middle need not pass the tests alone; the pull request as a whole
+  does, and that is what CI checks. A file made by a script goes with
+  the file it is made from (`docs/privacy-data.md`), and a merge of
+  `main` is one commit. This holds for sessions and for the builder
+  (its prompts in `.github/workflows/claude-fix.yml`).
 - **Merging deploys staging; a tag promotes.** A push to `main` runs
   `.github/workflows/deploy.yml`, which plans and applies `infra/main` to
   the staging account under a GitHub OIDC role and marks the commit
