@@ -111,7 +111,8 @@ def test_the_swift_job_builds_and_looks_with_no_secret():
     assert "secrets." not in text and "environment" not in job
     # Signed to run locally, as any simulator build: nothing to hold.
     assert "CODE_SIGN" not in text and "DEVELOPMENT_TEAM" not in text
-    test = next(step for step in job["steps"] if "xcodebuild test" in step.get("run", ""))
+    test = next(step for step in job["steps"] if step.get("name") == "walk through every screen")
+    assert "xcodebuild test-without-building" in test["run"]
     assert "-scheme BGUCats" in test["run"] and "-resultBundlePath" in test["run"]
     kept = next(step for step in job["steps"] if step.get("name") == "keep the pictures")
     assert kept["if"] == "always()" and kept["with"]["name"] == "ios-swift"
@@ -125,7 +126,7 @@ def test_the_walks_time_limits_hold_both_walks_at_their_longest():
     # at its longest, and the job's holds the step with the build before
     # it and the archive after.
     job = workflow()["jobs"]["swift"]
-    test = next(step for step in job["steps"] if "xcodebuild test" in step.get("run", ""))
+    test = next(step for step in job["steps"] if step.get("name") == "walk through every screen")
     assert "-test-timeouts-enabled YES" in test["run"]
     default = int(re.search(r"-default-test-execution-time-allowance (\d+)", test["run"]).group(1))
     most = int(re.search(r"-maximum-test-execution-time-allowance (\d+)", test["run"]).group(1))
@@ -135,7 +136,41 @@ def test_the_walks_time_limits_hold_both_walks_at_their_longest():
     )
     assert len(walks) == 2, walks
     assert len(walks) * most <= test["timeout-minutes"] * 60
-    assert test["timeout-minutes"] + 20 <= job["timeout-minutes"]
+    wake = next(step for step in job["steps"] if step.get("name") == "wake the simulator")
+    assert test["timeout-minutes"] + wake["timeout-minutes"] + 20 <= job["timeout-minutes"]
+
+
+def test_the_simulator_is_woken_before_the_walk_and_that_is_not_counted():
+    # Whatever runs first on a simulator that has just started pays for
+    # its first minutes. The first walk failed three Mac runs in a row
+    # with the app right, each time somewhere else (a launch of 118 s, a
+    # question of 29 s, an app the simulator could not close), and the
+    # second walk passed every time (2026-11-24). So the first thing to
+    # run opens and closes the app and is no test: it asserts nothing,
+    # its step cannot fail the job, and the walk runs the walk alone.
+    job = workflow()["jobs"]["swift"]
+    names = [step.get("name") for step in job["steps"]]
+    assert names.index("build it") < names.index("wake the simulator") < names.index("walk through every screen")
+    wake = job["steps"][names.index("wake the simulator")]
+    assert wake["continue-on-error"] is True and wake["run"].rstrip().endswith("exit 0")
+    assert "-only-testing:BGUCatsUITests/WarmUpUITests" in wake["run"]
+    assert "-resultBundlePath" not in wake["run"]
+    walk = job["steps"][names.index("walk through every screen")]
+    assert "-only-testing:BGUCatsUITests/ScreensUITests" in walk["run"]
+    assert "continue-on-error" not in walk
+    warm = (SWIFT / "BGUCatsUITests" / "WarmUpUITests.swift").read_text()
+    assert "final class WarmUpUITests: XCTestCase" in warm
+    assert len(re.findall(r"^    func test\w+\(\)", warm, flags=re.MULTILINE)) == 1
+    assert "XCTAssert" not in warm.split("final class")[1] and "XCTFail" not in warm
+    # It takes the road the walk takes: the same made-up world, no network.
+    assert '["-uiTesting", "-signedOut"]' in warm and '"sign-in.google"' in warm
+    # Every class of UI tests is run by one step or the other.
+    classes = sorted(
+        name
+        for file in (SWIFT / "BGUCatsUITests").glob("*.swift")
+        for name in re.findall(r"final class (\w+): XCTestCase", file.read_text())
+    )
+    assert classes == ["ScreensUITests", "WarmUpUITests"]
 
 
 def test_the_upload_to_testflight_is_the_swift_app():
