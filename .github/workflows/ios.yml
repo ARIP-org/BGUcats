@@ -158,7 +158,7 @@ jobs:
   # the compiler, so a pull request learns here whether it even builds.
   swift:
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       PROJECT: native/swift/BGUCats.xcodeproj
     steps:
@@ -199,13 +199,48 @@ jobs:
             -destination "id=$UDID" \
             -derivedDataPath "$RUNNER_TEMP/derived-swift"
 
+      # A simulator that has just started is busy for its first minutes,
+      # and whatever runs first pays for it: on 2026-11-24 the first walk
+      # failed three runs in a row with the app right, each time somewhere
+      # else, and the second walk passed every time. So the first thing to
+      # run is not a test: WarmUpUITests opens the app and closes it, by
+      # the same road the walk takes, until that is quick. Its result is
+      # not counted, and nor is its time limit; the walk decides.
+      - name: wake the simulator
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          mkdir -p build/ios-swift
+          xcrun simctl bootstatus "$UDID" -b
+          set +e
+          xcodebuild test-without-building \
+            -project "$PROJECT" -scheme BGUCats \
+            -destination "id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/derived-swift" \
+            -only-testing:BGUCatsUITests/WarmUpUITests \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 420 \
+            -maximum-test-execution-time-allowance 420 \
+            2>&1 | tee build/ios-swift/warm-up.log |
+            grep --line-buffered -E "Test Case|warm-up:|rror:"
+          echo "The warm-up ended with ${PIPESTATUS[0]}. It is not a test of the app: the walk decides."
+          exit 0
+
       # The simulator is started first and waited for, so a slow start is
       # not counted against a test. Each test has a time limit of its own:
       # the first run of this job sat for twenty minutes without a word.
+      # The limit is for a walk that hangs, not for one that is long: a
+      # walk is one test, it grows with every screen, and the first of the
+      # two runs on a cold simulator. With five launches of the app the
+      # cold one took 281 seconds and the warm one 151 (2026-11-24); at
+      # three minutes the cold one was failed with every step passed.
+      # Each line "Test Case ... passed (N seconds)" below says how long a
+      # walk takes now. The step's own limit holds both walks at their
+      # longest (tests/native/test_swift_app.py).
       # The whole of xcodebuild's output is kept with the pictures; the
       # log here shows the lines that say what happened.
       - name: walk through every screen
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
           mkdir -p build/ios-swift
           xcrun simctl bootstatus "$UDID" -b
@@ -215,9 +250,10 @@ jobs:
             -destination "id=$UDID" \
             -derivedDataPath "$RUNNER_TEMP/derived-swift" \
             -resultBundlePath "$RUNNER_TEMP/swift.xcresult" \
+            -only-testing:BGUCatsUITests/ScreensUITests \
             -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 180 \
-            -maximum-test-execution-time-allowance 300 \
+            -default-test-execution-time-allowance 480 \
+            -maximum-test-execution-time-allowance 480 \
             2>&1 | tee build/ios-swift/xcodebuild.log |
             grep --line-buffered -E "Test (Case|Suite)|error|rror:|XCTAssert|failed|\*\* TEST|Timed out|hung|crash"
           status=${PIPESTATUS[0]}

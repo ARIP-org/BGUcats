@@ -111,10 +111,66 @@ def test_the_swift_job_builds_and_looks_with_no_secret():
     assert "secrets." not in text and "environment" not in job
     # Signed to run locally, as any simulator build: nothing to hold.
     assert "CODE_SIGN" not in text and "DEVELOPMENT_TEAM" not in text
-    test = next(step for step in job["steps"] if "xcodebuild test" in step.get("run", ""))
+    test = next(step for step in job["steps"] if step.get("name") == "walk through every screen")
+    assert "xcodebuild test-without-building" in test["run"]
     assert "-scheme BGUCats" in test["run"] and "-resultBundlePath" in test["run"]
     kept = next(step for step in job["steps"] if step.get("name") == "keep the pictures")
     assert kept["if"] == "always()" and kept["with"]["name"] == "ios-swift"
+
+
+def test_the_walks_time_limits_hold_both_walks_at_their_longest():
+    # A walk is one test and grows with every screen. At three minutes a
+    # test, the cold walk (281 s with five launches of the app) was failed
+    # with every step passed (2026-11-24). The limit is there for a hang:
+    # it is well over what a walk takes, the step's limit holds every walk
+    # at its longest, and the job's holds the step with the build before
+    # it and the archive after.
+    job = workflow()["jobs"]["swift"]
+    test = next(step for step in job["steps"] if step.get("name") == "walk through every screen")
+    assert "-test-timeouts-enabled YES" in test["run"]
+    default = int(re.search(r"-default-test-execution-time-allowance (\d+)", test["run"]).group(1))
+    most = int(re.search(r"-maximum-test-execution-time-allowance (\d+)", test["run"]).group(1))
+    assert 420 <= default <= most
+    walks = re.findall(
+        r"^    func (test\w+)\(\)", (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text(), flags=re.MULTILINE
+    )
+    assert len(walks) == 2, walks
+    assert len(walks) * most <= test["timeout-minutes"] * 60
+    wake = next(step for step in job["steps"] if step.get("name") == "wake the simulator")
+    assert test["timeout-minutes"] + wake["timeout-minutes"] + 20 <= job["timeout-minutes"]
+
+
+def test_the_simulator_is_woken_before_the_walk_and_that_is_not_counted():
+    # Whatever runs first on a simulator that has just started pays for
+    # its first minutes. The first walk failed three Mac runs in a row
+    # with the app right, each time somewhere else (a launch of 118 s, a
+    # question of 29 s, an app the simulator could not close), and the
+    # second walk passed every time (2026-11-24). So the first thing to
+    # run opens and closes the app and is no test: it asserts nothing,
+    # its step cannot fail the job, and the walk runs the walk alone.
+    job = workflow()["jobs"]["swift"]
+    names = [step.get("name") for step in job["steps"]]
+    assert names.index("build it") < names.index("wake the simulator") < names.index("walk through every screen")
+    wake = job["steps"][names.index("wake the simulator")]
+    assert wake["continue-on-error"] is True and wake["run"].rstrip().endswith("exit 0")
+    assert "-only-testing:BGUCatsUITests/WarmUpUITests" in wake["run"]
+    assert "-resultBundlePath" not in wake["run"]
+    walk = job["steps"][names.index("walk through every screen")]
+    assert "-only-testing:BGUCatsUITests/ScreensUITests" in walk["run"]
+    assert "continue-on-error" not in walk
+    warm = (SWIFT / "BGUCatsUITests" / "WarmUpUITests.swift").read_text()
+    assert "final class WarmUpUITests: XCTestCase" in warm
+    assert len(re.findall(r"^    func test\w+\(\)", warm, flags=re.MULTILINE)) == 1
+    assert "XCTAssert" not in warm.split("final class")[1] and "XCTFail" not in warm
+    # It takes the road the walk takes: the same made-up world, no network.
+    assert '["-uiTesting", "-signedOut"]' in warm and '"sign-in.google"' in warm
+    # Every class of UI tests is run by one step or the other.
+    classes = sorted(
+        name
+        for file in (SWIFT / "BGUCatsUITests").glob("*.swift")
+        for name in re.findall(r"final class (\w+): XCTestCase", file.read_text())
+    )
+    assert classes == ["ScreensUITests", "WarmUpUITests"]
 
 
 def test_the_upload_to_testflight_is_the_swift_app():
@@ -517,3 +573,56 @@ def test_the_terms_are_asked_before_the_first_like_in_the_web_apps_words():
     # The README no longer lists it as missing.
     missing = (SWIFT / "README.md").read_text().split("## Not here yet")[1]
     assert "accepting the terms" not in missing
+
+
+def test_no_name_is_declared_twice_in_one_function_of_the_ui_tests():
+    # Swift refuses it ("invalid redeclaration"), and only a Mac says so:
+    # #127 added a second `again` to the walk and main stopped compiling
+    # (2026-11-24). The walk is one long function that every screen's pull
+    # request adds to, so two of them choosing one name is the likely way
+    # for it to happen again. This reads the names declared at a function's
+    # own level; one inside a loop or a closure is its own scope.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    functions = re.split(r"^    (?:private )?func ", tests, flags=re.MULTILINE)[1:]
+    assert len(functions) >= 5
+    for body in functions:
+        name = body.split("(")[0]
+        declared = re.findall(r"^        (?:let|var) (\w+)\b", body, flags=re.MULTILINE)
+        twice = sorted({one for one in declared if declared.count(one) > 1})
+        assert not twice, f"{name} declares {twice} more than once"
+
+
+def test_a_dialogs_button_is_tapped_as_the_first_of_its_matches():
+    # iOS 26 reports each button of a system dialog twice: a button inside
+    # a button, with the same name and the same identifier. Asking whether
+    # it exists is fine with two; a tap wants exactly one and fails with
+    # "Multiple matching elements found" (2026-11-24: the terms' walk, the
+    # first time it ran on a Mac). Only a Mac says so, so this reads the
+    # walk: a button of a dialog is tapped through `.firstMatch`.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    dialogs = set(re.findall(r"let (\w+) = \w+\.alerts\[", tests))
+    assert {"terms", "asked"} <= dialogs
+    bare = re.compile(r"\.buttons\[[^\]]+\]\.tap\(\)")
+    wrong = [
+        line.strip()
+        for line in tests.splitlines()
+        if bare.search(line)
+        and (".alerts" in line or any(re.search(rf"\b{one}\.buttons\[", line) for one in dialogs))
+    ]
+    assert not wrong, f"tapped without .firstMatch: {wrong}"
+    assert 'terms.buttons["Cancel"].firstMatch.tap()' in tests
+
+
+def test_the_walk_waits_with_one_patience_for_what_it_expects():
+    # A wait is for "never", not for "slowly". The first walk runs on a
+    # simulator still busy starting up: one question to it took nine
+    # seconds, a wait of ten gave up on a post that was already deleted,
+    # and the walk failed with the app right (2026-11-24). Every wait for
+    # something expected takes the walk's one `patience`; a number of its
+    # own is only for a wait that must not be met.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    patience = int(re.search(r"private let patience: TimeInterval = (\d+)", tests).group(1))
+    assert patience >= 30
+    assert tests.count("timeout: patience)") >= 30
+    own = [line.strip() for line in tests.splitlines() if re.search(r"timeout: \d", line)]
+    assert len(own) == 1 and own[0].startswith("XCTAssertFalse("), own

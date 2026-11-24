@@ -15,6 +15,15 @@ import XCTest
 /// to draw, and every picture is checked to be that look: on this job's
 /// first run all ten came out light and nothing noticed.
 final class ScreensUITests: XCTestCase {
+    /// How long the walk waits for something it expects. It is the time
+    /// after which the answer is "never", not "slowly": a wait that is met
+    /// costs nothing, and the first walk runs on a simulator still busy
+    /// starting up. There one question to it ("is the deleted post still
+    /// there?") took nine seconds, a wait of ten gave up, and the next
+    /// look showed the post gone (2026-11-24). The one short wait left is
+    /// for something that must not come.
+    private let patience: TimeInterval = 30
+
     override func setUp() {
         continueAfterFailure = false
     }
@@ -34,7 +43,7 @@ final class ScreensUITests: XCTestCase {
         signedOut.launchArguments = ["-uiTesting", "-look", look, "-signedOut"]
         signedOut.launch()
         let google = signedOut.descendants(matching: .any)["sign-in.google"].firstMatch
-        XCTAssertTrue(google.waitForExistence(timeout: 30), "With nobody signed in, the app did not show the sign-in screen.")
+        XCTAssertTrue(google.waitForExistence(timeout: patience), "With nobody signed in, the app did not show the sign-in screen.")
         XCTAssertTrue(signedOut.buttons["App info"].exists, "The sign-in screen has no way to App info.")
         keep(signedOut, "sign-in-\(look)")
         signedOut.terminate()
@@ -46,10 +55,10 @@ final class ScreensUITests: XCTestCase {
         ending.launchArguments = ["-uiTesting", "-look", look, "-signInEnds"]
         ending.launch()
         let heart = ending.descendants(matching: .any)["like.p1"].firstMatch
-        XCTAssertTrue(heart.waitForExistence(timeout: 30), "The feed did not show its first post. \(onScreen(ending))")
+        XCTAssertTrue(heart.waitForExistence(timeout: patience), "The feed did not show its first post. \(onScreen(ending))")
         heart.tap()
         let again = ending.descendants(matching: .any)["sign-in.google"].firstMatch
-        XCTAssertTrue(again.waitForExistence(timeout: 15), "The sign-in ended and the sign-in screen did not come up. \(onScreen(ending))")
+        XCTAssertTrue(again.waitForExistence(timeout: patience), "The sign-in ended and the sign-in screen did not come up. \(onScreen(ending))")
         XCTAssertTrue(ending.staticTexts["Your sign-in ended. Sign in again."].exists, "The sign-in screen does not say why it is there. \(onScreen(ending))")
         keep(ending, "sign-in-ended-\(look)")
         ending.terminate()
@@ -60,44 +69,47 @@ final class ScreensUITests: XCTestCase {
         asking.launchArguments = ["-uiTesting", "-look", look, "-termsRequired"]
         asking.launch()
         let mitzi = asking.descendants(matching: .any)["like.p1"].firstMatch
-        XCTAssertTrue(mitzi.waitForExistence(timeout: 30), "The feed did not show its first post. \(onScreen(asking))")
+        XCTAssertTrue(mitzi.waitForExistence(timeout: patience), "The feed did not show its first post. \(onScreen(asking))")
         XCTAssertEqual(mitzi.label, "Like, 3")
         mitzi.tap()
         let terms = asking.alerts["Before you post"]
-        XCTAssertTrue(terms.waitForExistence(timeout: 10), "A like before the terms did not ask for them. \(onScreen(asking))")
+        XCTAssertTrue(terms.waitForExistence(timeout: patience), "A like before the terms did not ask for them. \(onScreen(asking))")
         XCTAssertTrue(terms.buttons["Accept and go on"].exists, "The terms' dialog has no way to accept. \(onScreen(asking))")
         keep(asking, "terms-\(look)")
 
-        // "Cancel": nothing is sent, and the like is not counted.
-        terms.buttons["Cancel"].tap()
+        // "Cancel": nothing is sent, and the like is not counted. The
+        // first match: iOS 26 reports a dialog's button twice, a button
+        // inside a button with the same name, and a tap that wants exactly
+        // one refuses both (2026-11-24, the first time this ran on a Mac).
+        terms.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(gone(terms), "The terms' dialog stayed after Cancel.")
         XCTAssertEqual(mitzi.value as? String, "not liked", "A declined like was counted.")
         XCTAssertEqual(mitzi.label, "Like, 3", "A declined like changed the count.")
 
         // Asked again at the next like; accepting lets the like through.
         mitzi.tap()
-        XCTAssertTrue(terms.waitForExistence(timeout: 10), "The next like did not ask for the terms again. \(onScreen(asking))")
-        terms.buttons["Accept and go on"].tap()
+        XCTAssertTrue(terms.waitForExistence(timeout: patience), "The next like did not ask for the terms again. \(onScreen(asking))")
+        terms.buttons["Accept and go on"].firstMatch.tap()
         let counted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: mitzi)
-        XCTAssertEqual(XCTWaiter().wait(for: [counted], timeout: 10), .completed, "After accepting the terms the like was not counted. \(onScreen(asking))")
+        XCTAssertEqual(XCTWaiter().wait(for: [counted], timeout: patience), .completed, "After accepting the terms the like was not counted. \(onScreen(asking))")
         XCTAssertEqual(mitzi.value as? String, "liked")
 
         // Accepted once: taking the like back and liking again asks nothing.
         mitzi.tap()
         let undone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 3"), object: mitzi)
-        XCTAssertEqual(XCTWaiter().wait(for: [undone], timeout: 10), .completed, "Taking the like back did not count. \(onScreen(asking))")
+        XCTAssertEqual(XCTWaiter().wait(for: [undone], timeout: patience), .completed, "Taking the like back did not count. \(onScreen(asking))")
         mitzi.tap()
         XCTAssertFalse(asking.alerts.firstMatch.waitForExistence(timeout: 2), "A like after the terms were accepted asked again. \(onScreen(asking))")
-        let again = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: mitzi)
-        XCTAssertEqual(XCTWaiter().wait(for: [again], timeout: 10), .completed, "The second like was not counted. \(onScreen(asking))")
+        let recounted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: mitzi)
+        XCTAssertEqual(XCTWaiter().wait(for: [recounted], timeout: patience), .completed, "The second like was not counted. \(onScreen(asking))")
 
         // The trail says what was asked and answered, never who.
         asking.tabBars.buttons["Profile"].tap()
         let info = asking.descendants(matching: .any)["row.app-info"].firstMatch
-        XCTAssertTrue(info.waitForExistence(timeout: 10), "Profile has no App info row.")
+        XCTAssertTrue(info.waitForExistence(timeout: patience), "Profile has no App info row.")
         info.tap()
         let told = asking.descendants(matching: .any)["app-info.text"].firstMatch
-        XCTAssertTrue(told.waitForExistence(timeout: 10), "App info did not open.")
+        XCTAssertTrue(told.waitForExistence(timeout: patience), "App info did not open.")
         let lines = told.label + "\n" + (told.value as? String ?? "")
         for line in ["terms: asked", "terms: declined", "terms: accepted"] {
             XCTAssertTrue(lines.contains(line), "App info did not keep \"\(line)\".")
@@ -110,13 +122,13 @@ final class ScreensUITests: XCTestCase {
         changed.launchArguments = ["-uiTesting", "-look", look, "-termsChanged"]
         changed.launch()
         let late = changed.descendants(matching: .any)["like.p1"].firstMatch
-        XCTAssertTrue(late.waitForExistence(timeout: 30), "The feed did not show its first post. \(onScreen(changed))")
+        XCTAssertTrue(late.waitForExistence(timeout: patience), "The feed did not show its first post. \(onScreen(changed))")
         late.tap()
         let asked = changed.alerts["Before you post"]
-        XCTAssertTrue(asked.waitForExistence(timeout: 10), "A like refused for the terms did not ask for them. \(onScreen(changed))")
-        asked.buttons["Accept and go on"].tap()
+        XCTAssertTrue(asked.waitForExistence(timeout: patience), "A like refused for the terms did not ask for them. \(onScreen(changed))")
+        asked.buttons["Accept and go on"].firstMatch.tap()
         let through = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: late)
-        XCTAssertEqual(XCTWaiter().wait(for: [through], timeout: 10), .completed, "After accepting the changed terms the like was not counted. \(onScreen(changed))")
+        XCTAssertEqual(XCTWaiter().wait(for: [through], timeout: patience), .completed, "After accepting the changed terms the like was not counted. \(onScreen(changed))")
         XCTAssertFalse(changed.alerts["That did not work"].exists, "The server's refusal was shown. \(onScreen(changed))")
         changed.terminate()
 
@@ -125,9 +137,9 @@ final class ScreensUITests: XCTestCase {
         app.launch()
 
         // Signed in, it opens on Home: the feed.
-        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 30), "The app did not open on Home.")
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: patience), "The app did not open on Home.")
         let first = app.descendants(matching: .any)["like.p1"].firstMatch
-        XCTAssertTrue(first.waitForExistence(timeout: 15), "The feed did not show its first post. \(onScreen(app))")
+        XCTAssertTrue(first.waitForExistence(timeout: patience), "The feed did not show its first post. \(onScreen(app))")
         XCTAssertTrue(app.staticTexts["By the library steps again, asleep in the sun."].exists, "The first post's words are not on screen. \(onScreen(app))")
         keep(app, "home-\(look)")
 
@@ -135,7 +147,7 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(first.value as? String, "not liked")
         first.tap()
         let liked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "liked"), object: first)
-        XCTAssertEqual(XCTWaiter().wait(for: [liked], timeout: 10), .completed, "Tapping the heart did not like the post.")
+        XCTAssertEqual(XCTWaiter().wait(for: [liked], timeout: patience), .completed, "Tapping the heart did not like the post.")
         keep(app, "home-liked-\(look)")
 
         // A post's menu. On the member's own post (the second): Delete,
@@ -144,15 +156,15 @@ final class ScreensUITests: XCTestCase {
         reveal(own, in: app)
         own.tap()
         let delete = app.buttons["Delete post"].firstMatch
-        XCTAssertTrue(delete.waitForExistence(timeout: 10), "The menu on one's own post has no Delete. \(onScreen(app))")
+        XCTAssertTrue(delete.waitForExistence(timeout: patience), "The menu on one's own post has no Delete. \(onScreen(app))")
         XCTAssertFalse(app.buttons["Report"].exists, "The menu on one's own post offers Report. \(onScreen(app))")
         keep(app, "post-menu-own-\(look)")
         delete.tap()
         let confirm = app.alerts.buttons["Delete"].firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Delete did not ask first. \(onScreen(app))")
+        XCTAssertTrue(confirm.waitForExistence(timeout: patience), "Delete did not ask first. \(onScreen(app))")
         confirm.tap()
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: own)
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "The deleted post is still in the feed. \(onScreen(app))")
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: patience), .completed, "The deleted post is still in the feed. \(onScreen(app))")
         // Two cards are left: the first and the third.
         reveal(app.descendants(matching: .any)["menu.p1"].firstMatch, in: app)
         let other = app.descendants(matching: .any)["menu.p3"].firstMatch
@@ -162,13 +174,13 @@ final class ScreensUITests: XCTestCase {
         // On anyone else's: Report, a sheet with the six reasons, and thanks.
         other.tap()
         let report = app.buttons["Report"].firstMatch
-        XCTAssertTrue(report.waitForExistence(timeout: 10), "The menu on another's post has no Report. \(onScreen(app))")
+        XCTAssertTrue(report.waitForExistence(timeout: patience), "The menu on another's post has no Report. \(onScreen(app))")
         XCTAssertFalse(app.buttons["Delete post"].exists, "The menu on another's post offers Delete. \(onScreen(app))")
         keep(app, "post-menu-other-\(look)")
         report.tap()
         for reason in ["spam", "offensive", "harassment", "privacy", "not_cat", "other"] {
             let row = app.descendants(matching: .any)["reason.\(reason)"].firstMatch
-            XCTAssertTrue(row.waitForExistence(timeout: 10), "The report sheet has no reason \(reason). \(onScreen(app))")
+            XCTAssertTrue(row.waitForExistence(timeout: patience), "The report sheet has no reason \(reason). \(onScreen(app))")
         }
         // The button itself, asked for as a button. Asked for as "any
         // element", the first to answer was something around it in the
@@ -176,20 +188,20 @@ final class ScreensUITests: XCTestCase {
         // sent with no reason, on a sheet whose button was greyed out
         // (#126 merged with that failing, 2026-11-24).
         let send = app.buttons["report.send"].firstMatch
-        XCTAssertTrue(send.waitForExistence(timeout: 10), "The report sheet has no Send. \(onScreen(app))")
+        XCTAssertTrue(send.waitForExistence(timeout: patience), "The report sheet has no Send. \(onScreen(app))")
         keep(app, "report-\(look)")
         XCTAssertFalse(send.isEnabled, "A report can be sent with no reason. \(onScreen(app))")
         app.descendants(matching: .any)["reason.spam"].firstMatch.tap()
         XCTAssertTrue(send.isEnabled, "Choosing a reason did not let the report go.")
         send.tap()
         let thanks = app.descendants(matching: .any)["report.thanks"].firstMatch
-        XCTAssertTrue(thanks.waitForExistence(timeout: 10), "Sending a report did not say thank you. \(onScreen(app))")
+        XCTAssertTrue(thanks.waitForExistence(timeout: patience), "Sending a report did not say thank you. \(onScreen(app))")
         app.descendants(matching: .any)["report.done"].firstMatch.tap()
-        XCTAssertTrue(thanks.waitForNonExistence(timeout: 10), "Done did not close the report. \(onScreen(app))")
+        XCTAssertTrue(thanks.waitForNonExistence(timeout: patience), "Done did not close the report. \(onScreen(app))")
 
         for (tab, name) in [("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")] {
             app.tabBars.buttons[tab].tap()
-            XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: 10), "The tab \(tab) did not open.")
+            XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: patience), "The tab \(tab) did not open.")
             keep(app, "\(name)-\(look)")
         }
 
@@ -199,10 +211,10 @@ final class ScreensUITests: XCTestCase {
 
         // Profile, then "App info".
         let row = app.descendants(matching: .any)["row.app-info"].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "Profile has no App info row.")
+        XCTAssertTrue(row.waitForExistence(timeout: patience), "Profile has no App info row.")
         row.tap()
         let text = app.descendants(matching: .any)["app-info.text"].firstMatch
-        XCTAssertTrue(text.waitForExistence(timeout: 10), "App info did not open.")
+        XCTAssertTrue(text.waitForExistence(timeout: patience), "App info did not open.")
         // Selectable text may be read out as a value, not a label.
         let shown = text.label + "\n" + (text.value as? String ?? "")
         XCTAssertTrue(shown.contains("kind: iPhone app (Swift)"), "App info does not say what kind of app this is.")
@@ -216,7 +228,7 @@ final class ScreensUITests: XCTestCase {
 
         let copy = app.descendants(matching: .any)["app-info.copy"].firstMatch
         copy.tap()
-        XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: 5), "Copying did not say it copied.")
+        XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: patience), "Copying did not say it copied.")
 
         app.terminate()
     }
@@ -244,7 +256,7 @@ final class ScreensUITests: XCTestCase {
     /// The element is gone within a few seconds.
     private func gone(_ element: XCUIElement) -> Bool {
         let away = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
-        return XCTWaiter().wait(for: [away], timeout: 5) == .completed
+        return XCTWaiter().wait(for: [away], timeout: patience) == .completed
     }
 
     private func keep(_ app: XCUIApplication, _ name: String) {

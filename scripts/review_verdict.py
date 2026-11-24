@@ -26,7 +26,9 @@ not in it. On 2026-11-24 #126 merged with its Mac check failed and left
 `main` unable to build for TestFlight, and #127 was passed with a compile
 error. Given the check runs on the pull request's head, a "pass" becomes
 "sent back", naming the check, when one of them failed; and "owner" when
-one had not finished or they could not be read.
+one had not finished or they could not be read. A review that sent the
+change to the owner becomes "sent back" too when a check failed: its
+author mends it before the owner is asked.
 
     python scripts/review_verdict.py <execution-log.json> <out-dir> \
         [<pr.diff> <CODEOWNERS> [<changed-file-count> [<checks.json>]]]
@@ -242,13 +244,19 @@ def hold_for_checks(review, checks):
     conclusion, url, id}; None or empty when they could not be read. CI's
     own two are always among them, so an empty list is a failed read.
     """
-    if review["verdict"] != "pass":
+    if review["verdict"] == "changes":
         return review
+    # A review that sent the change to the owner is kept as it is unless a
+    # check is red: then its author mends it first, and the owner is asked
+    # of something whose checks pass. #128 showed "for the owner" over a
+    # failed Mac check (2026-11-24).
+    for_owner = review["verdict"] == "owner"
+    said = "sent it to the owner" if for_owner else "passed it"
 
     def held(verdict, why, findings=()):
         return {
             "verdict": verdict,
-            "summary": f"{why} The review itself passed it: {review['summary']}",
+            "summary": f"{why} The review itself {said}: {review['summary']}",
             "findings": ([*findings, *review["findings"]])[:MAX_FINDINGS],
         }
 
@@ -256,6 +264,8 @@ def hold_for_checks(review, checks):
         return ", ".join(f"`{check['name']}`" for check in some)
 
     if not checks:
+        if for_owner:
+            return review
         return held("owner", "The other checks on this commit could not be read, so this waits for a person.")
     checks = latest_checks(checks)
     red = [check for check in checks if check.get("conclusion") in RED]
@@ -277,7 +287,7 @@ def hold_for_checks(review, checks):
             findings,
         )
     running = [check for check in checks if check.get("status") != "completed"]
-    if running:
+    if running and not for_owner:
         return held(
             "owner",
             f"The check {names(running)} had not finished when the review ended, so this waits for a person.",

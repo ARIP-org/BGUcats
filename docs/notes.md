@@ -408,6 +408,31 @@ an hour that a sentence would have saved.
   runs `tests/web` a second time with `BGUCATS_NO_BROWSER=1`, as the
   deploy sees it. After a merge, "CI is green on `main`" is not "it is
   deployed": the Deploy run's own job is what says so.
+- **"Merge when ready" outlives the commit it was said of.** The
+  reviewer passed #127 and asked GitHub to merge it when the rules were
+  met, naming the commit. The name guards only the asking. The pull
+  request could not merge (a conflict), the ask stayed on it, and four
+  hours later a new commit made it mergeable: GitHub merged it the moment
+  CI ended, unreviewed, with the Mac's check failed (2026-11-24). The fix
+  written an hour earlier (#130: the reviewer reads every check) never
+  ran on that commit, because nothing waited for the reviewer. Two
+  things were true and unseen: auto-merge persists across pushes, and
+  the `review` status was not a required check. A push now takes
+  auto-merge off.
+- **A doubt is tried before it is built on.** The review of #130 doubted
+  that the builder could push a merge of `main` carrying a workflow
+  change, since its App may not change workflows. It sounded right, a
+  guard was written in an hour (three commits, a test, a paragraph), and
+  it would have sent to the owner exactly what the builder then mended
+  by itself: both pushes went through (2026-11-24). The guard missed its
+  pull request by seconds, which is the only reason it was tried first.
+  What GitHub refuses is a push whose own commits change a workflow.
+- **"Not known yet" is an answer, and it has to be printed.** GitHub
+  works out whether a pull request merges when it is first asked after
+  `main` moved, and says null meanwhile. The queue asked once, read null
+  as nothing to do, and printed "Nothing in the queue" over two pull
+  requests in conflict (2026-11-24). The next look, fourteen minutes
+  later, was told. A look that does nothing says what it saw.
 - **"CI passed" was two checks, and the pull request had four.** The
   reviewer starts when the workflow called CI ends, and asks for the
   merge on a pass. The iPhone app's checks are another workflow, started
@@ -434,6 +459,57 @@ an hour that a sentence would have saved.
   sheet whose button was greyed out. Ask for the kind of element the
   question is about (`app.buttons[...]`) before asking whether it is
   enabled, and keep the picture before the judgment (#129, 2026-11-24).
+- **A system dialog's button is two elements to a UI test.** iOS 26
+  reports each button of an alert as a button inside a button, both with
+  the same name and identifier. `.exists` is content with two; `.tap()`
+  wants exactly one and fails with "Multiple matching elements found".
+  Tap `.firstMatch`. The terms' walk failed on this the first time it
+  ran on a Mac (2026-11-24): it had merged without ever compiling, so
+  nothing in it had been tried. The failed run keeps "Complete Issue
+  Description.txt" in its `ios-swift` artifact, which draws the matches
+  as a tree: read that before guessing. A Linux test now reads the walk
+  for a dialog's button tapped without `.firstMatch`.
+- **A test's time limit set for a hang fails a walk that only grew.**
+  The Swift app's walk is one test a look, and every screen's pull
+  request adds to it; #126 and #127 took it from two launches of the app
+  to five. The first walk runs on a cold simulator: 281 seconds, against
+  151 for the second, and a limit of three minutes a test. It was failed
+  with every step passed, and the log's only word was "exceeded
+  execution time allowance" (2026-11-24). The limit is now eight
+  minutes, and a Linux test holds the step's and the job's limits to it.
+  Sixty of the cold walk's seconds were one wait: after a tap on
+  Profile the app did not go idle ("App event loop idle notification
+  not received"), once, in the first walk only; the same tap took four
+  seconds in the second. Why is not known. If it shows again at the
+  same tap, it is the app's and not the simulator's. When a walk nears
+  five minutes, split it by launch into tests of their own rather than
+  raise the limit again.
+- **The first walk runs on a simulator that is still starting up, and a
+  short wait there fails an app that is right.** The third Mac run of
+  the same day: the app's first launch took 118 seconds (19 the run
+  before, 8 in the second walk), and after "Delete" one question to the
+  simulator, "is the post still there?", took nine seconds. The wait
+  was ten; it gave up, and the failure's own list of what was on screen
+  showed the post gone. Every wait in the walk for something expected
+  is now one `patience` of thirty seconds: a wait that is met costs
+  nothing, and one that is not fails once. Read a timing failure in
+  `xcodebuild.log` (the `ios-swift` artifact): each step has its second,
+  and a gap before "Checking existence" is the simulator, not the app.
+- **Longer waits were not the cure; the first thing to run on a new
+  simulator should not be a test.** The fourth Mac run, with every wait
+  at thirty seconds: the first walk's first question took 29, and then
+  the simulator could not close the app ("Failed to terminate"). Four
+  runs, three failures of the first walk at three different places, and
+  the second walk passed every time it ran. What the three had in
+  common was only being first, within two to four minutes of the
+  simulator's start. The job now runs `WarmUpUITests` before the walk:
+  it opens the app, waits for the first screen and closes it, until one
+  round takes under twenty seconds or four minutes have gone. It asserts
+  nothing, its step cannot fail the job, and its log is kept
+  (`warm-up.log`, with a line a round). This is not a retry: no test of
+  the app is run twice, and a walk that fails still fails the check.
+  If a walk fails on timing after a quick warm-up round, look at the
+  app.
 - **A rule kept in a setting nobody here can read is not known to hold
   until it has refused something.** The owner's lane was "Require review
   from Code Owners" on the `main` ruleset. The docs said it was on, the

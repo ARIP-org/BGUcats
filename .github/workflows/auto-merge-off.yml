@@ -1,0 +1,46 @@
+name: Auto-merge off
+
+# A "merge when the rules are met" is asked for one commit, and GitHub keeps
+# it on the pull request for every commit pushed after.
+#
+# #127 was passed by the reviewer at 04:20 and auto-merge was asked for. It
+# could not merge: it was in conflict. Four hours later the builder merged
+# main into it, the push made it mergeable, and the moment CI's two checks
+# ended GitHub merged it, with the Mac's check failed and before the
+# reviewer had read the new commit (2026-11-24). main stopped compiling the
+# iPhone app's tests.
+#
+# So: a push to a pull request takes auto-merge off it. Only a review that
+# passes the commit now at its head asks for it again
+# (claude-review.yml, "Merge when the rules are met", which names that
+# commit). The `main` ruleset can hold the same line by requiring the
+# `review` check; this does not depend on it.
+#
+# It runs main's copy of this file, with the right to change the pull
+# request, and never reads or runs anything of the pull request's.
+on:
+  pull_request_target:
+    types: [synchronize]
+
+permissions:
+  contents: write # GitHub asks for it to change a pull request's auto-merge
+  pull-requests: write
+
+jobs:
+  "off":
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Take auto-merge off
+        run: |
+          asked=$(gh pr view "$PR" --repo "$REPO" --json autoMergeRequest --jq '.autoMergeRequest != null')
+          if [ "$asked" != true ]; then
+            echo "Auto-merge was not on for pull request #$PR."
+            exit 0
+          fi
+          gh pr merge "$PR" --repo "$REPO" --disable-auto
+          echo "::notice::A new commit was pushed to pull request #$PR: auto-merge is off until this commit passes review."

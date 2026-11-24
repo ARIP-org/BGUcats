@@ -47,6 +47,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 
 LIMIT = 3
@@ -63,6 +64,11 @@ SENT_BACK = "Reviewed: sent back to its author"
 REVIEWER = "github-actions[bot]"
 REWORKING = "reworking"
 ROUNDS = 2
+# GitHub works out whether a pull request still merges when it is first
+# asked after main moved, and answers "not known" until it has: asked a few
+# times, a little apart.
+ASKS = 4
+ASK_AGAIN_SECONDS = 3
 ISSUE_BRANCH = re.compile(r"^claude/issue-(\d+)$")
 
 
@@ -227,12 +233,28 @@ def read(repo):
     )
     for pull in pulls:
         if ISSUE_BRANCH.match(pull["ref"]):
-            # The list does not say whether a pull request still merges;
-            # each one's own page does: true, false, or null while GitHub
-            # is still working it out (then it is asked again next time).
-            said = gh(f"repos/{repo}/pulls/{pull['number']}", "--jq", ".mergeable").strip()
-            pull["conflict"] = {"true": False, "false": True}.get(said)
+            merges = mergeable(repo, pull["number"])
+            pull["conflict"] = None if merges is None else not merges
     return list(found.values()), pulls
+
+
+def mergeable(repo, number):
+    """Whether a pull request still merges with main: True, False, or
+    None when GitHub has not said after `ASKS` asks.
+
+    The list of pull requests does not say; each one's own page does, and
+    says null while GitHub is working it out, which it starts only when
+    asked. The first look after #130 merged asked once, five minutes after
+    main had moved, was told null twice over, and printed "Nothing in the
+    queue" with two pull requests in conflict (2026-11-24).
+    """
+    for ask in range(ASKS):
+        said = gh(f"repos/{repo}/pulls/{number}", "--jq", ".mergeable").strip()
+        if said in ("true", "false"):
+            return said == "true"
+        if ask + 1 < ASKS:
+            time.sleep(ASK_AGAIN_SECONDS)
+    return None
 
 
 def review_of(repo):
@@ -296,6 +318,17 @@ def main():
     plan = decide(issues, branches, labeled_by(repo), permission_in(repo), datetime.now(UTC))
     back = sent_back(pulls, review_of(repo))
     labels = {issue["number"]: issue["labels"] for issue in issues}
+
+    # What was learned of each of the builder's pull requests, said every
+    # time: a look that found nothing to do must still show what it saw.
+    for pull in pulls:
+        if "conflict" in pull:
+            state = {
+                True: "in conflict with main",
+                False: "merges with main",
+                None: "GitHub has not said whether it merges; asked again at the next look",
+            }[pull["conflict"]]
+            print(f"Pull request #{pull['number']} ({pull['ref']}): {state}.")
 
     for item in plan["refuse"]:
         remove(repo, item["number"], item["label"])
