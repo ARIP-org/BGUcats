@@ -20,8 +20,16 @@ did not, and #121, which changed a workflow, merged eight seconds after
 the reviewer passed it, with nobody's approval. A rule kept in a setting
 nobody here can read is checked here as well.
 
+**Nor does one with another check red, or not finished.** The reviewer
+starts when CI ends, and the iPhone app's checks (`ios.yml`) run beside CI,
+not in it. On 2026-11-24 #126 merged with its Mac check failed and left
+`main` unable to build for TestFlight, and #127 was passed with a compile
+error. Given the check runs on the pull request's head, a "pass" becomes
+"sent back", naming the check, when one of them failed; and "owner" when
+one had not finished or they could not be read.
+
     python scripts/review_verdict.py <execution-log.json> <out-dir> \
-        [<pr.diff> <CODEOWNERS> [<changed-file-count>]]
+        [<pr.diff> <CODEOWNERS> [<changed-file-count> [<checks.json>]]]
 
 writes `verdict.json` (`verdict`, `state`, `description`) and `comment.md`.
 """
@@ -207,6 +215,76 @@ def hold_for_owner(review, diff, codeowners, changed_files=None):
     }
 
 
+# ----------------------------------------------- the other checks
+
+
+# How a check ends when it did not do its job.
+RED = frozenset({"failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale"})
+
+
+def latest_checks(checks):
+    """One check per name: a re-run of a job replaces the run before it."""
+    newest = {}
+    for check in checks:
+        if not isinstance(check, dict) or not check.get("name"):
+            continue
+        before = newest.get(check["name"])
+        if before is None or (check.get("id") or 0) >= (before.get("id") or 0):
+            newest[check["name"]] = check
+    return [newest[name] for name in sorted(newest)]
+
+
+def hold_for_checks(review, checks):
+    """The review, with a pass taken back when the commit's other checks
+    do not all stand green.
+
+    checks: the check runs on the pull request's head, each {name, status,
+    conclusion, url, id}; None or empty when they could not be read. CI's
+    own two are always among them, so an empty list is a failed read.
+    """
+    if review["verdict"] != "pass":
+        return review
+
+    def held(verdict, why, findings=()):
+        return {
+            "verdict": verdict,
+            "summary": f"{why} The review itself passed it: {review['summary']}",
+            "findings": ([*findings, *review["findings"]])[:MAX_FINDINGS],
+        }
+
+    def names(some):
+        return ", ".join(f"`{check['name']}`" for check in some)
+
+    if not checks:
+        return held("owner", "The other checks on this commit could not be read, so this waits for a person.")
+    checks = latest_checks(checks)
+    red = [check for check in checks if check.get("conclusion") in RED]
+    if red:
+        findings = [
+            {
+                "file": "",
+                "line": None,
+                "what": _text(
+                    f"The check `{check['name']}` ended `{check['conclusion']}`: {check.get('url') or 'no address'}"
+                ),
+            }
+            for check in red
+        ]
+        return held(
+            "changes",
+            f"The check {names(red)} did not pass on this commit, so the change does not pass, whatever "
+            "the review found: read what the check says, fix it and push.",
+            findings,
+        )
+    running = [check for check in checks if check.get("status") != "completed"]
+    if running:
+        return held(
+            "owner",
+            f"The check {names(running)} had not finished when the review ended, so this waits for a person.",
+        )
+    return review
+
+
 def comment(review):
     lines = [MARKER, f"**{HEADINGS[review['verdict']]}**", "", review["summary"]]
     if review["findings"]:
@@ -231,6 +309,14 @@ def main(argv):
     except (OSError, ValueError):
         message = ""
     review = read(message)
+    if len(argv) > 6:
+        # A red check sends it back to its author before anything is asked
+        # of the owner.
+        try:
+            checks = json.loads(Path(argv[6]).read_text())
+        except (OSError, ValueError):
+            checks = None
+        review = hold_for_checks(review, checks if isinstance(checks, list) else None)
     if len(argv) > 4:
         try:
             diff, codeowners = Path(argv[3]).read_text(), Path(argv[4]).read_text()

@@ -29,12 +29,17 @@ What holds:
   builder again, `ROUNDS` times at most; after that it is the owner's.
   Only the reviewer's own status counts (written as GitHub Actions), and
   a pull request being reworked is marked so, so it is handed out once.
+- So does one that no longer merges with main. GitHub runs no check on
+  a pull request in conflict, so nothing would ever look at it again: on
+  2026-11-24 three were built at once on the same files, the first
+  merged, and the other two stood still. The same two rounds count for
+  both reasons.
 
     REPO=owner/name GH_TOKEN=... python scripts/builder_queue.py
 
 prints what it did and writes to `$GITHUB_OUTPUT`: `issues=[...]` (the
-numbers taken) and `rework=[{issue, pull, round, sha}, ...]` (pull requests
-to answer the reviewer on).
+numbers taken) and `rework=[{issue, pull, round, sha, why}, ...]` (pull
+requests that go back to the builder; `why` is `review` or `conflict`).
 """
 
 import json
@@ -155,11 +160,14 @@ def sent_back(pulls, review, rounds=ROUNDS):
     """Which of the builder's pull requests go back to the builder.
 
     pulls: this repository's open pull requests, each {number, ref, sha,
-    labels}. review(sha): the newest `review` status on that commit,
-    {state, description, by}, or None.
+    labels} and, for the builder's, `conflict`: True when it no longer
+    merges with main, None when GitHub has not worked that out yet.
+    review(sha): the newest `review` status on that commit, {state,
+    description, by}, or None.
 
-    Returns {rework: [{issue, pull, round, sha}], owner: [numbers]}:
-    `owner` are those sent back once more than the builder may answer.
+    Returns {rework: [{issue, pull, round, sha, why}], owner: [numbers]}:
+    `why` is "conflict" or "review"; `owner` are those that need the
+    builder once more than it may answer.
     """
     rework, owner = [], []
     for pull in sorted(pulls, key=lambda p: p["number"]):
@@ -167,15 +175,22 @@ def sent_back(pulls, review, rounds=ROUNDS):
         labels = pull["labels"]
         if not built or REWORKING in labels or "needs-owner" in labels:
             continue
-        said = review(pull["sha"]) or {}
-        if (said.get("state"), said.get("description"), said.get("by")) != ("failure", SENT_BACK, REVIEWER):
-            continue
+        if pull.get("conflict") is True:
+            # First: no check runs on a pull request in conflict, so what
+            # the reviewer last said of it is about a commit that cannot
+            # merge anyway.
+            why = "conflict"
+        else:
+            said = review(pull["sha"]) or {}
+            if (said.get("state"), said.get("description"), said.get("by")) != ("failure", SENT_BACK, REVIEWER):
+                continue
+            why = "review"
         done = sum(f"rework-{n}" in labels for n in range(1, rounds + 1))
         if done >= rounds:
             owner.append(pull["number"])
         else:
             rework.append(
-                {"issue": int(built[1]), "pull": pull["number"], "round": done + 1, "sha": pull["sha"]}
+                {"issue": int(built[1]), "pull": pull["number"], "round": done + 1, "sha": pull["sha"], "why": why}
             )
     return {"rework": rework, "owner": owner}
 
@@ -210,6 +225,13 @@ def read(repo):
         f'.[] | select(.head.repo.full_name == "{repo}") '
         "| {number, ref: .head.ref, sha: .head.sha, labels: [.labels[].name]}",
     )
+    for pull in pulls:
+        if ISSUE_BRANCH.match(pull["ref"]):
+            # The list does not say whether a pull request still merges;
+            # each one's own page does: true, false, or null while GitHub
+            # is still working it out (then it is asked again next time).
+            said = gh(f"repos/{repo}/pulls/{pull['number']}", "--jq", ".mergeable").strip()
+            pull["conflict"] = {"true": False, "false": True}.get(said)
     return list(found.values()), pulls
 
 
@@ -307,16 +329,17 @@ def main():
     for item in back["rework"]:
         add(repo, item["pull"], REWORKING)
         add(repo, item["pull"], f"rework-{item['round']}")
-        print(f"::notice::Pull request #{item['pull']}: sent back, round {item['round']} of {ROUNDS}. To the builder.")
+        what = "in conflict with main" if item["why"] == "conflict" else "sent back"
+        print(f"::notice::Pull request #{item['pull']}: {what}, round {item['round']} of {ROUNDS}. To the builder.")
     for number in back["owner"]:
         add(repo, number, "needs-owner")
         say(
             repo,
             number,
-            f"The reviewer sent this back again after {ROUNDS} answers from the builder. "
-            "It waits for the owner (`needs-owner`).",
+            f"This needs the builder again after its {ROUNDS} answers: the reviewer sent it back once more, "
+            "or it is in conflict with main. It waits for the owner (`needs-owner`).",
         )
-        print(f"::warning::Pull request #{number}: sent back {ROUNDS + 1} times. To the owner.")
+        print(f"::warning::Pull request #{number}: needs the builder a third time. To the owner.")
     if not any(plan.values()) and not any(back.values()):
         print("Nothing in the queue.")
 
