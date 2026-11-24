@@ -716,7 +716,12 @@ App, and any AWS access.
    **Signing in, the feed and the profile's first rows: merged
    2026-11-23** (#120), pictured in a simulator from a made-up member.
    Not tried on a phone yet: the real sign-in sheet, the keychain, the
-   feed against staging.
+   feed against staging. **Scan a cat, first half** (#125, 2026-11-24):
+   photos taken or chosen from the gallery, sent as one encounter by the
+   web app's routes and write order, through a queue kept on the phone.
+   Not tried on a phone yet: the real camera, a real fix from GPS, a
+   large photo over a phone's connection. The second half (the cat, a
+   new cat, the post) is its own issue.
 
 ## Review against industry practice (2026-11-10)
 

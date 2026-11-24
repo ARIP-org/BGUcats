@@ -250,6 +250,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "BGU Cats";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "The camera takes the photos of a cat you meet, to send them to BGU Cats.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "A photo you take carries where you took it, to about 100 metres, so each cat can be told apart by where it lives.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -276,6 +278,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "BGU Cats";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "The camera takes the photos of a cat you meet, to send them to BGU Cats.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "A photo you take carries where you took it, to about 100 metres, so each cat can be told apart by where it lives.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;

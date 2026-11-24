@@ -187,6 +187,8 @@ def built_app(tmp_path, **changes):
         "MinimumOSVersion": "26.0",
         "ITSAppUsesNonExemptEncryption": False,
         "CFBundleIcons": {"CFBundlePrimaryIcon": {"CFBundleIconName": "AppIcon"}},
+        "NSCameraUsageDescription": "The camera takes the photos.",
+        "NSLocationWhenInUseUsageDescription": "A photo carries where it was taken.",
     }
     info.update(changes)
     (app / "Info.plist").write_bytes(plistlib.dumps({k: v for k, v in info.items() if v is not None}))
@@ -210,6 +212,8 @@ def test_the_look_inside_the_archive_names_what_is_wrong(tmp_path):
     assert "MinimumOSVersion" in said(MinimumOSVersion="18.0")
     assert "ITSAppUsesNonExemptEncryption" in said(ITSAppUsesNonExemptEncryption=None)
     assert "names no icon" in said(CFBundleIcons=None)
+    assert "no NSCameraUsageDescription" in said(NSCameraUsageDescription=None)
+    assert "no NSLocationWhenInUseUsageDescription" in said(NSLocationWhenInUseUsageDescription="  ")
 
     app = built_app(tmp_path / "bare")
     (app / "PrivacyInfo.xcprivacy").unlink()
@@ -393,7 +397,11 @@ def test_every_screen_is_kept_in_light_and_in_dark():
     assert 'signedOut.launchArguments = ["-uiTesting", "-look", look, "-signedOut"]' in tests
     assert 'keep(signedOut, "sign-in-\\(look)")' in tests and 'keep(app, "home-liked-\\(look)")' in tests
     assert 'keep(app, "home-\\(look)")' in tests and 'keep(app, "app-info-\\(look)")' in tests
-    assert '[("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")]' in tests
+    assert '[("Cats", "cats"), ("Profile", "profile")]' in tests
+    # Scan a cat, in its four states (issue 125).
+    assert 'func testScanInLight()' in tests and 'func testScanInDark()' in tests
+    for name in ("scan-empty", "scan-photos", "scan-retrying", "scan-sent"):
+        assert f'keep(app, "{name}-\\(look)")' in tests, name
     # The app under test reads no network and keeps nothing.
     assert 'arguments.contains("-uiTesting")' in (SWIFT / "BGUCats" / "BGUCatsApp.swift").read_text()
 
@@ -427,3 +435,76 @@ def test_pictures_come_out_under_the_names_their_tests_gave_them():
     # Nothing GitHub refuses in an artifact's file names.
     for name in ios_screenshots.named(manifest).values():
         assert not set(name) & set('"<>:|*?\r\n\\/`'), name
+
+
+# ------------------------------------------------------------ Scan a cat
+
+
+def test_the_app_says_why_it_asks_for_the_camera_and_the_place():
+    # Asking without the sentence ends the app; the archive's look checks
+    # the built app too (ios_archive.PERMISSIONS).
+    app_configs = [
+        block
+        for block in re.findall(r"buildSettings = \{(.*?)\n\t\t\t\};", PROJECT, re.DOTALL)
+        if "PRODUCT_BUNDLE_IDENTIFIER = org.arip.bgucats;" in block
+    ]
+    assert len(app_configs) == 2  # Debug and Release
+    for key in ios_archive.PERMISSIONS:
+        for block in app_configs:
+            sentence = re.search(rf'INFOPLIST_KEY_{key} = "([^"]+)";', block)
+            assert sentence and len(sentence[1]) > 20, key
+    code = "".join(sources().values())
+    assert "requestWhenInUseAuthorization" in code and "requestAlwaysAuthorization" not in code
+    assert "sourceType = .camera" in code and "PhotosPicker(" in code
+
+
+def test_scan_sends_by_the_web_apps_routes_in_its_write_order():
+    code = sources()
+    backend = code["Backend.swift"].split("final class StandInBackend")[0]
+    # docs/app-plan/04-api.md, "The capture flow", rows 1 to 4, on the
+    # desk's API, as web/outbox.js calls them.
+    assert '"POST", "/encounters", base: "/api"' in backend
+    assert '"/encounters/\\(Auth.encode(photo.encounterId))/media"' in backend
+    assert '"/photos/\\(Auth.encode(photoId))/complete", base: "/api"' in backend
+    assert '"contentType": "image/jpeg"' in backend and '"origin": gallery ? "gallery" : "camera"' in backend
+    # A gallery photo sends no place at all, not even an empty one.
+    start = backend.split("struct PhotoStart")[1].split("struct Presigned")[0]
+    assert "if !gallery, let place {" in start
+    # The file goes last in the presigned POST, as S3 wants.
+    form = backend.split("static func form(")[1].split("\n    }\n")[0]
+    assert form.index("for name in fields.keys.sorted()") < form.index('name=\\"file\\"')
+
+    outbox = code["Outbox.swift"]
+    # The encounter before any photo, and only an encounter with photos.
+    one_pass = outbox.split("private func pass()")[1].split("private func sendOne")[0]
+    assert one_pass.index("backend.createEncounter") < one_pass.index("withTaskGroup")
+    assert "index.encounters.filter(\\.created)" in one_pass
+    # Each photo: record, bytes, confirmation; three at a time.
+    one = outbox.split("private func sendOne")[1].split("struct Outcome")[0]
+    assert one.index("backend.startPhoto") < one.index("backend.upload") < one.index("backend.complete")
+    assert "static let parallel = 3" in outbox
+    # The bytes are on the phone before the index names them, and leave it
+    # only once the server has confirmed them.
+    send = outbox.split("func send(_ photos")[1].split("func retryFailed")[0]
+    assert send.index("photo.jpeg.write") < send.index("save()")
+    assert one.index("backend.complete") < one.index("forget(item.id)")
+    # 20 MB at most, JPEG only.
+    assert "static let limit = 20 * 1024 * 1024" in code["ScanView.swift"]
+    assert "jpegData(compressionQuality:" in code["ScanView.swift"]
+    # Ids are ULIDs made on the phone, in web/outbox.js's alphabet.
+    assert 'Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")' in outbox
+    assert '"0123456789ABCDEFGHJKMNPQRSTVWXYZ"' in (REPO / "web" / "outbox.js").read_text()
+
+
+def test_the_queue_is_kept_where_the_app_keeps_its_own_and_a_test_keeps_nothing_real():
+    code = sources()
+    app = code["BGUCatsApp.swift"]
+    live = app.split("static func current")[1].split("static func standIn")[0]
+    assert "Outbox(folder: Outbox.home" in live and "DevicePlaces()" in live
+    stand_in = app.split("static func standIn")[1]
+    assert "temporaryDirectory" in stand_in and "StandInPlaces()" in stand_in and "Outbox.home" not in stand_in
+    assert ".applicationSupportDirectory" in code["Outbox.swift"]
+    # The queue goes on at the start, signed in, with no tap.
+    assert "world.outbox.open()" in code["RootView.swift"]
+    # The queue reaches the server only through Backend: no network of its own.
+    assert "URLSession" not in code["Outbox.swift"] + code["ScanView.swift"]

@@ -34,15 +34,29 @@ struct World {
     let gate: Gate
     let backend: Backend
     let photos: Photos
+    /// The upload queue, and where the phone is when a photo is taken.
+    let outbox: Outbox
+    let places: Places
+    /// The Scan screen hands out drawn photos instead of opening the camera
+    /// or the gallery (a UI test: the simulator has neither).
+    let drawn: Bool
 
     /// The real one, or the stand-in when a UI test started the app.
+    @MainActor
     static func current(arguments: [String] = ProcessInfo.processInfo.arguments) -> World {
         if arguments.contains("-uiTesting") {
             // "-signedOut": the test wants the sign-in screen.
             // "-signInEnds": the server refuses the token at the first like.
+            // "-uploadFailsOnce": the second photo's upload times out once.
+            // "-offline": no upload reaches the server.
+            // "-keepQueue": the upload queue left by the last run is kept,
+            // as a phone keeps it between launches; otherwise it is emptied.
             var world = World.standIn(
                 signedIn: !arguments.contains("-signedOut"),
-                ends: arguments.contains("-signInEnds")
+                ends: arguments.contains("-signInEnds"),
+                failsOnce: arguments.contains("-uploadFailsOnce"),
+                offline: arguments.contains("-offline"),
+                keepQueue: arguments.contains("-keepQueue")
             )
             // "-look dark": the test names the look it is about to
             // picture. Asking the simulator to change its appearance did
@@ -56,20 +70,31 @@ struct World {
         let version = "\(info["CFBundleShortVersionString"] ?? "?") (\(info["CFBundleVersion"] ?? "?"))"
         let trail = Trail()
         let auth = Auth(vault: KeychainVault(), trail: trail)
+        let backend = LiveBackend(auth: auth, trail: trail)
         return World(
             trail: trail,
             now: Date.init,
             version: version,
             look: nil,
             gate: auth,
-            backend: LiveBackend(auth: auth, trail: trail),
-            photos: NetPhotos()
+            backend: backend,
+            photos: NetPhotos(),
+            outbox: Outbox(folder: Outbox.home, backend: backend, trail: trail),
+            places: DevicePlaces(),
+            drawn: false
         )
     }
 
     /// What every UI test sees: the same lines at the same time, so two
     /// pictures of one screen are the same picture. No network at all.
-    static func standIn(signedIn: Bool = true, ends: Bool = false) -> World {
+    @MainActor
+    static func standIn(
+        signedIn: Bool = true,
+        ends: Bool = false,
+        failsOnce: Bool = false,
+        offline: Bool = false,
+        keepQueue: Bool = false
+    ) -> World {
         let start = Date(timeIntervalSince1970: 1_795_000_000)
         var tick = 0.0
         let clock: () -> Date = {
@@ -77,14 +102,27 @@ struct World {
             return start.addingTimeInterval(tick)
         }
         let gate = StandInGate(signedIn: signedIn)
+        let trail = Trail(store: MemoryStore(), now: clock)
+        let backend = StandInBackend(start: start, gate: gate, ends: ends, failsOnce: failsOnce, offline: offline)
+        // The queue's files go to the app's temporary folder, emptied at
+        // every launch unless the test is checking what a second launch
+        // does with what the first one left.
+        let queue = FileManager.default.temporaryDirectory.appendingPathComponent("ui-testing-outbox", isDirectory: true)
+        if !keepQueue {
+            try? FileManager.default.removeItem(at: queue)
+        }
         return World(
-            trail: Trail(store: MemoryStore(), now: clock),
+            trail: trail,
             now: { start },
             version: "0.2.0 (test)",
             look: nil,
             gate: gate,
-            backend: StandInBackend(start: start, gate: gate, ends: ends),
-            photos: DrawnPhotos()
+            backend: backend,
+            photos: DrawnPhotos(),
+            // A retry waits long enough for its picture to be taken.
+            outbox: Outbox(folder: queue, backend: backend, trail: trail, waits: [12]),
+            places: StandInPlaces(),
+            drawn: true
         )
     }
 }
