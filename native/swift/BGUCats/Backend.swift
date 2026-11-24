@@ -8,6 +8,9 @@ protocol Backend {
     func feed(cursor: String?) async throws -> FeedPage
     /// Likes or unlikes; answers with the post's new count.
     func like(postId: String, on: Bool) async throws -> Int
+    /// Accepts the terms of this version (`Me.termsCurrent`); answers with
+    /// the account as it is now.
+    func acceptTerms(version: String) async throws -> Me
     /// The author removes their own post.
     func deletePost(postId: String) async throws
     /// Reports a thing. `reportId` is made once on the phone, so a retry is
@@ -58,6 +61,14 @@ final class LiveBackend: Backend {
     func like(postId: String, on: Bool) async throws -> Int {
         let json = try await call(on ? "PUT" : "DELETE", "/posts/\(Auth.encode(postId))/like", as: on ? "like" : "unlike")
         return Read.int(json["likes"])
+    }
+
+    func acceptTerms(version: String) async throws -> Me {
+        let json = try await call("POST", "/me/terms", body: ["version": version], as: "terms")
+        guard let me = Read.me(json) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        return me
     }
 
     func deletePost(postId: String) async throws {
@@ -145,14 +156,22 @@ final class StandInBackend: Backend {
     /// The test asked for a sign-in that ends at the first like.
     private let ends: Bool
     private var liked: Set<String> = []
+    /// The made-up member has accepted the terms ("-termsRequired": not).
+    private var accepted: Bool
+    /// "-termsChanged": the terms changed after the account was read, so
+    /// the first `me()` says nothing is required and the first like is
+    /// refused all the same.
+    private var stale: Bool
     private var deleted: Set<String> = []
     /// What was reported, for a test that wants to know.
     private(set) var reports: [Report] = []
 
-    init(start: Date, gate: StandInGate, ends: Bool = false) {
+    init(start: Date, gate: StandInGate, ends: Bool = false, termsRequired: Bool = false, termsChanged: Bool = false) {
         self.start = start
         self.gate = gate
         self.ends = ends
+        self.accepted = !(termsRequired || termsChanged)
+        self.stale = termsChanged
     }
 
     func me() async throws -> Me {
@@ -164,7 +183,8 @@ final class StandInBackend: Backend {
             role: "user",
             catsMet: 7,
             encounters: 12,
-            termsRequired: false
+            termsRequired: !accepted && !stale,
+            termsCurrent: "draft"
         )
     }
 
@@ -223,12 +243,26 @@ final class StandInBackend: Backend {
             gate.ended()
             throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
         }
+        if on && !accepted {
+            // What the API does (`require_terms`); the account read next
+            // says so.
+            stale = false
+            throw ApiError(status: 403, code: "terms_required", message: "accept the terms first")
+        }
         if on {
             liked.insert(postId)
         } else {
             liked.remove(postId)
         }
         return postId == "p1" ? (on ? 4 : 3) : (on ? 1 : 0)
+    }
+
+    func acceptTerms(version: String) async throws -> Me {
+        guard version == "draft" else {
+            throw ApiError(status: 409, code: "stale_terms", message: "these are not the current terms")
+        }
+        accepted = true
+        return try await me()
     }
 
     func deletePost(postId: String) async throws {
