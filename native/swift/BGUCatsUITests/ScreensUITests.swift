@@ -68,8 +68,11 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(terms.buttons["Accept and go on"].exists, "The terms' dialog has no way to accept. \(onScreen(asking))")
         keep(asking, "terms-\(look)")
 
-        // "Cancel": nothing is sent, and the like is not counted.
-        terms.buttons["Cancel"].tap()
+        // "Cancel": nothing is sent, and the like is not counted. The
+        // first match: iOS 26 reports a dialog's button twice, a button
+        // inside a button with the same name, and a tap that wants exactly
+        // one refuses both (2026-11-24, the first time this ran on a Mac).
+        terms.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(gone(terms), "The terms' dialog stayed after Cancel.")
         XCTAssertEqual(mitzi.value as? String, "not liked", "A declined like was counted.")
         XCTAssertEqual(mitzi.label, "Like, 3", "A declined like changed the count.")
@@ -77,7 +80,7 @@ final class ScreensUITests: XCTestCase {
         // Asked again at the next like; accepting lets the like through.
         mitzi.tap()
         XCTAssertTrue(terms.waitForExistence(timeout: 10), "The next like did not ask for the terms again. \(onScreen(asking))")
-        terms.buttons["Accept and go on"].tap()
+        terms.buttons["Accept and go on"].firstMatch.tap()
         let counted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: mitzi)
         XCTAssertEqual(XCTWaiter().wait(for: [counted], timeout: 10), .completed, "After accepting the terms the like was not counted. \(onScreen(asking))")
         XCTAssertEqual(mitzi.value as? String, "liked")
@@ -114,7 +117,7 @@ final class ScreensUITests: XCTestCase {
         late.tap()
         let asked = changed.alerts["Before you post"]
         XCTAssertTrue(asked.waitForExistence(timeout: 10), "A like refused for the terms did not ask for them. \(onScreen(changed))")
-        asked.buttons["Accept and go on"].tap()
+        asked.buttons["Accept and go on"].firstMatch.tap()
         let through = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: late)
         XCTAssertEqual(XCTWaiter().wait(for: [through], timeout: 10), .completed, "After accepting the changed terms the like was not counted. \(onScreen(changed))")
         XCTAssertFalse(changed.alerts["That did not work"].exists, "The server's refusal was shown. \(onScreen(changed))")
