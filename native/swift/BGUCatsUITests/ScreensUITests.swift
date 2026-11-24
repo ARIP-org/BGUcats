@@ -102,9 +102,15 @@ final class ScreensUITests: XCTestCase {
             let row = app.descendants(matching: .any)["reason.\(reason)"].firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 10), "The report sheet has no reason \(reason). \(onScreen(app))")
         }
-        let send = app.descendants(matching: .any)["report.send"].firstMatch
-        XCTAssertFalse(send.isEnabled, "A report can be sent with no reason.")
+        // The button itself, asked for as a button. Asked for as "any
+        // element", the first to answer was something around it in the
+        // bar, which is always enabled: the walk said a report could be
+        // sent with no reason, on a sheet whose button was greyed out
+        // (#126 merged with that failing, 2026-11-24).
+        let send = app.buttons["report.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "The report sheet has no Send. \(onScreen(app))")
         keep(app, "report-\(look)")
+        XCTAssertFalse(send.isEnabled, "A report can be sent with no reason. \(onScreen(app))")
         app.descendants(matching: .any)["reason.spam"].firstMatch.tap()
         XCTAssertTrue(send.isEnabled, "Choosing a reason did not let the report go.")
         send.tap()
