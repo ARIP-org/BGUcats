@@ -460,7 +460,7 @@ enum Pictures {
     static func chosen(image: UIImage, gallery: Bool, capturedAt: Date?, place: Fix?) -> Chosen? {
         guard let jpeg = jpeg(image) else { return nil }
         return Chosen(
-            id: ULID.make(),
+            id: Ulid.make(),
             jpeg: jpeg,
             thumb: Shrink.thumb(image),
             gallery: gallery,
