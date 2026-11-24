@@ -517,3 +517,20 @@ def test_the_terms_are_asked_before_the_first_like_in_the_web_apps_words():
     # The README no longer lists it as missing.
     missing = (SWIFT / "README.md").read_text().split("## Not here yet")[1]
     assert "accepting the terms" not in missing
+
+
+def test_no_name_is_declared_twice_in_one_function_of_the_ui_tests():
+    # Swift refuses it ("invalid redeclaration"), and only a Mac says so:
+    # #127 added a second `again` to the walk and main stopped compiling
+    # (2026-11-24). The walk is one long function that every screen's pull
+    # request adds to, so two of them choosing one name is the likely way
+    # for it to happen again. This reads the names declared at a function's
+    # own level; one inside a loop or a closure is its own scope.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    functions = re.split(r"^    (?:private )?func ", tests, flags=re.MULTILINE)[1:]
+    assert len(functions) >= 5
+    for body in functions:
+        name = body.split("(")[0]
+        declared = re.findall(r"^        (?:let|var) (\w+)\b", body, flags=re.MULTILINE)
+        twice = sorted({one for one in declared if declared.count(one) > 1})
+        assert not twice, f"{name} declares {twice} more than once"
