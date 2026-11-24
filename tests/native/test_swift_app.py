@@ -117,6 +117,27 @@ def test_the_swift_job_builds_and_looks_with_no_secret():
     assert kept["if"] == "always()" and kept["with"]["name"] == "ios-swift"
 
 
+def test_the_walks_time_limits_hold_both_walks_at_their_longest():
+    # A walk is one test and grows with every screen. At three minutes a
+    # test, the cold walk (281 s with five launches of the app) was failed
+    # with every step passed (2026-11-24). The limit is there for a hang:
+    # it is well over what a walk takes, the step's limit holds every walk
+    # at its longest, and the job's holds the step with the build before
+    # it and the archive after.
+    job = workflow()["jobs"]["swift"]
+    test = next(step for step in job["steps"] if "xcodebuild test" in step.get("run", ""))
+    assert "-test-timeouts-enabled YES" in test["run"]
+    default = int(re.search(r"-default-test-execution-time-allowance (\d+)", test["run"]).group(1))
+    most = int(re.search(r"-maximum-test-execution-time-allowance (\d+)", test["run"]).group(1))
+    assert 420 <= default <= most
+    walks = re.findall(
+        r"^    func (test\w+)\(\)", (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text(), flags=re.MULTILINE
+    )
+    assert len(walks) == 2, walks
+    assert len(walks) * most <= test["timeout-minutes"] * 60
+    assert test["timeout-minutes"] + 20 <= job["timeout-minutes"]
+
+
 def test_the_upload_to_testflight_is_the_swift_app():
     # The owner, 2026-11-23: the native app ships now, in the same
     # TestFlight app, and its screens arrive one by one.
