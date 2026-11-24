@@ -576,3 +576,18 @@ def test_a_dialogs_button_is_tapped_as_the_first_of_its_matches():
     ]
     assert not wrong, f"tapped without .firstMatch: {wrong}"
     assert 'terms.buttons["Cancel"].firstMatch.tap()' in tests
+
+
+def test_the_walk_waits_with_one_patience_for_what_it_expects():
+    # A wait is for "never", not for "slowly". The first walk runs on a
+    # simulator still busy starting up: one question to it took nine
+    # seconds, a wait of ten gave up on a post that was already deleted,
+    # and the walk failed with the app right (2026-11-24). Every wait for
+    # something expected takes the walk's one `patience`; a number of its
+    # own is only for a wait that must not be met.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    patience = int(re.search(r"private let patience: TimeInterval = (\d+)", tests).group(1))
+    assert patience >= 30
+    assert tests.count("timeout: patience)") >= 30
+    own = [line.strip() for line in tests.splitlines() if re.search(r"timeout: \d", line)]
+    assert len(own) == 1 and own[0].startswith("XCTAssertFalse("), own
