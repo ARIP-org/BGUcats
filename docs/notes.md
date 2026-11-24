@@ -469,6 +469,21 @@ an hour that a sentence would have saved.
   Description.txt" in its `ios-swift` artifact, which draws the matches
   as a tree: read that before guessing. A Linux test now reads the walk
   for a dialog's button tapped without `.firstMatch`.
+- **A test's time limit set for a hang fails a walk that only grew.**
+  The Swift app's walk is one test a look, and every screen's pull
+  request adds to it; #126 and #127 took it from two launches of the app
+  to five. The first walk runs on a cold simulator: 281 seconds, against
+  151 for the second, and a limit of three minutes a test. It was failed
+  with every step passed, and the log's only word was "exceeded
+  execution time allowance" (2026-11-24). The limit is now eight
+  minutes, and a Linux test holds the step's and the job's limits to it.
+  Sixty of the cold walk's seconds were one wait: after a tap on
+  Profile the app did not go idle ("App event loop idle notification
+  not received"), once, in the first walk only; the same tap took four
+  seconds in the second. Why is not known. If it shows again at the
+  same tap, it is the app's and not the simulator's. When a walk nears
+  five minutes, split it by launch into tests of their own rather than
+  raise the limit again.
 - **A rule kept in a setting nobody here can read is not known to hold
   until it has refused something.** The owner's lane was "Require review
   from Code Owners" on the `main` ruleset. The docs said it was on, the
