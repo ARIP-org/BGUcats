@@ -251,8 +251,8 @@ def test_a_sent_back_pull_request_is_answered_by_the_builder_on_its_own_branch()
     # The reviewer's comment is found by who wrote it: on a public
     # repository anyone can write one that starts like it. The reviewer
     # keeps its own comment current by the same test.
-    found = rework["steps"][names.index("What the reviewer found")]
-    assert names.index("What the reviewer found") < at
+    found = rework["steps"][names.index("Why it came back")]
+    assert names.index("Why it came back") < at
     assert '.user.login == "github-actions[bot]"' in found["run"]
     assert '.user.login == "github-actions[bot]"' in (WORKFLOWS / "claude-review.yml").read_text()
     # The pull request's own branch, with the App's token.
@@ -265,20 +265,77 @@ def test_a_sent_back_pull_request_is_answered_by_the_builder_on_its_own_branch()
         assert step["with"][same] == build["with"][same], same
     assert step["timeout-minutes"] < rework["timeout-minutes"]
     prompt = step["with"]["prompt"]
+    flat = " ".join(prompt.split())
     for said in (
         "${{ runner.temp }}/review.md",
         "Open no new pull request",
-        "never\n" + "force-push",
+        "never force-push",
         "Never touch .github/",
         "Never stop to wait for something",
     ):
-        assert said in prompt.replace("\n            ", "\n"), said
+        assert said in flat, said
     # An answer that pushed nothing goes to the owner, with why; the mark
     # comes off either way.
     last = rework["steps"][names.index("Nothing was pushed")]
     assert last["if"] == "always()" and names.index("What Claude said last") < names.index("Nothing was pushed")
     assert "labels/reworking" in last["run"] and "labels[]=needs-owner" in last["run"]
     assert '"$now" != "$SHA"' in last["run"] and "--body-file" in last["run"]
+
+
+def test_a_pull_request_in_conflict_is_told_to_merge_main_in():
+    # 2026-11-24: three built at once on the same files; the first merged
+    # and the other two stood still, with no check running on them.
+    rework = builder()["jobs"]["rework"]
+    assert rework["env"]["WHY"] == "${{ matrix.item.why }}"
+    names = [s.get("name") for s in rework["steps"]]
+    why = rework["steps"][names.index("Why it came back")]["run"]
+    assert 'if [ "$WHY" = conflict ]; then' in why
+    for said in ("git fetch origin main", "git merge origin/main", "Never rebase, and never force-push"):
+        assert said in why, said
+    # Its branch is checked out whole, so main can be merged into it.
+    checkout = next(s for s in rework["steps"] if "actions/checkout" in s.get("uses", ""))
+    assert checkout["with"]["fetch-depth"] == 0
+    prompt = " ".join(claude(builder(), "rework")["with"]["prompt"].split())
+    assert "merge main in, keep both changes whole" in prompt
+    # Nothing was pushed: the comment says which of the two it was.
+    assert "($WHY)" in rework["steps"][names.index("Nothing was pushed")]["run"]
+
+
+def test_the_builder_is_shown_what_a_failed_check_said():
+    # The Mac's log is the only compiler the iPhone app has. #127 failed
+    # on one redeclared name and nothing showed the builder that line.
+    rework = builder()["jobs"]["rework"]
+    assert rework["permissions"] == {
+        "contents": "read",
+        "issues": "write",
+        "pull-requests": "write",
+        "checks": "read",
+        "actions": "read",
+    }
+    names = [s.get("name") for s in rework["steps"]]
+    logs = rework["steps"][names.index("What the failed checks said")]
+    at = rework["steps"].index(claude(builder(), "rework"))
+    assert names.index("What the failed checks said") < at
+    # Read with the job's own token, never Claude's, and only of this commit.
+    assert logs["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    assert "commits/$SHA/check-runs" in logs["run"] and "actions/jobs/$id/logs" in logs["run"]
+    assert '"$RUNNER_TEMP/failed/$id.log"' in logs["run"]
+    # A log is long and mostly noise: the lines that say why, cut short.
+    assert "XCTAssert" in logs["run"] and "tail -n 150" in logs["run"] and "cut -c1-600" in logs["run"]
+    prompt = " ".join(claude(builder(), "rework")["with"]["prompt"].split())
+    assert "${{ runner.temp }}/failed/" in prompt and "read it before you change anything" in prompt
+
+
+def test_the_builder_commits_a_file_at_a_time():
+    # The owner, 2026-11-24: a pull request of ten files in one commit
+    # cannot be read commit by commit.
+    build = " ".join(claude(builder(), "fix")["with"]["prompt"].split())
+    assert "commit one file at a time" in build
+    assert "what changed in that file and why" in build
+    again = " ".join(claude(builder(), "rework")["with"]["prompt"].split())
+    assert "one file a commit" in again and "a merge of main is one commit of its own" in again
+    rules = " ".join((REPO / "CLAUDE.md").read_text().split())
+    assert "**One commit per file**" in rules
 
 
 def test_the_apps_own_work_is_reviewed_and_starts_the_queue():
@@ -351,6 +408,7 @@ def test_the_reviewer_can_read_and_nothing_else():
     assert job["permissions"] == {
         "contents": "read",
         "actions": "read",
+        "checks": "read",
         "pull-requests": "write",
         "statuses": "write",
     }
@@ -370,7 +428,7 @@ def test_the_reviewer_never_runs_the_pull_requests_code():
                 assert " ".join(line.split()) == (
                     'python3 scripts/review_verdict.py "${LOG:-$RUNNER_TEMP/claude-execution-output.json}" '
                     '"$RUNNER_TEMP/verdict" .review/pr.diff .github/CODEOWNERS '
-                    '"$(jq -r .changedFiles .review/pr.json)"'
+                    '"$(jq -r .changedFiles .review/pr.json)" "$RUNNER_TEMP/checks.json"'
                 ), line
                 continue
             # Fetched, unpacked, removed: never executed, sourced or installed.
@@ -505,10 +563,80 @@ def test_what_cannot_be_read_waits_for_the_owner_and_nothing_is_made_better():
     assert verdicts.hold_for_owner(back, a_diff("CLAUDE.md"), OWNERS) == back
 
 
+def check(name, conclusion="success", status="completed", number=1):
+    return {"name": name, "status": status, "conclusion": conclusion, "url": f"https://example.test/job/{number}", "id": number}
+
+
+GREEN = [check("python"), check("terraform", number=2), check("testflight", "skipped", number=3)]
+
+
+def test_a_change_with_a_red_check_goes_back_to_its_author_whatever_the_reviewer_said():
+    # 2026-11-24: #126 merged with its Mac check failed, and main could not
+    # be built for TestFlight; #127 was passed with a compile error.
+    assert verdicts.hold_for_checks(PASSED, GREEN) == PASSED
+    back = verdicts.hold_for_checks(PASSED, [*GREEN, check("swift", "failure", number=4)])
+    assert back["verdict"] == "changes"
+    assert "`swift`" in back["summary"] and "The review itself passed it: Fine." in back["summary"]
+    # The check and its address are a finding: what the builder's answer reads.
+    assert back["findings"][0]["what"] == "The check `swift` ended `failure`: https://example.test/job/4"
+    for ended in ("timed_out", "cancelled", "action_required", "startup_failure"):
+        assert verdicts.hold_for_checks(PASSED, [*GREEN, check("swift", ended, number=4)])["verdict"] == "changes", ended
+    # A job run again replaces the run before it, whichever way it went.
+    again = [*GREEN, check("swift", "failure", number=4), check("swift", "success", number=9)]
+    assert verdicts.hold_for_checks(PASSED, again) == PASSED
+    worse = [*GREEN, check("swift", "success", number=4), check("swift", "failure", number=9)]
+    assert verdicts.hold_for_checks(PASSED, worse)["verdict"] == "changes"
+
+
+def test_a_check_still_running_or_unreadable_waits_for_a_person():
+    running = verdicts.hold_for_checks(PASSED, [*GREEN, check("swift", None, "in_progress", number=4)])
+    assert running["verdict"] == "owner" and "had not finished" in running["summary"]
+    # CI's own checks are always there: none at all is a read that failed.
+    assert verdicts.hold_for_checks(PASSED, [])["verdict"] == "owner"
+    assert verdicts.hold_for_checks(PASSED, None)["verdict"] == "owner"
+    # It only ever takes a pass back.
+    back = {"verdict": "changes", "summary": "Fix it.", "findings": []}
+    assert verdicts.hold_for_checks(back, [check("swift", "failure")]) == back
+    owner = {"verdict": "owner", "summary": "Yours.", "findings": []}
+    assert verdicts.hold_for_checks(owner, None) == owner
+
+
+def test_the_reviewer_waits_for_the_other_checks_and_hands_them_to_the_verdict(tmp_path):
+    job = load(WORKFLOWS / "claude-review.yml")["jobs"]["review"]
+    names = [s.get("name") or s.get("id") for s in job["steps"]]
+    wait = job["steps"][names.index("The commit's other checks")]
+    assert names.index("The commit's other checks") < names.index("The verdict")
+    assert wait["if"] == "steps.go.outputs.yes && !cancelled()"
+    assert "commits/$SHA/check-runs" in wait["run"] and "sleep 30" in wait["run"]
+    # Its own job is not one of the checks it waits for.
+    assert '"/runs/$GITHUB_RUN_ID/"' in wait["run"]
+    # Long enough to wait: the review, then up to twenty-five minutes.
+    assert job["timeout-minutes"] >= 45
+    # The script as the workflow runs it: a red check, then an owner path.
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps([{"type": "result", "result": json.dumps(PASSED)}]))
+    diff, checks = tmp_path / "pr.diff", tmp_path / "checks.json"
+    owners = str(REPO / ".github" / "CODEOWNERS")
+
+    def verdict(files, runs):
+        diff.write_text(a_diff(*files))
+        checks.write_text(runs if isinstance(runs, str) else json.dumps(runs))
+        verdicts.main(["", str(log), str(tmp_path / "out"), str(diff), owners, str(len(files)), str(checks)])
+        return json.loads((tmp_path / "out" / "verdict.json").read_text())["verdict"]
+
+    assert verdict(["web/app.js"], GREEN) == "pass"
+    assert verdict(["web/app.js"], [*GREEN, check("swift", "failure", number=4)]) == "changes"
+    # Red and the owner's: back to its author first, before the owner is asked.
+    assert verdict(["CLAUDE.md"], [*GREEN, check("swift", "failure", number=4)]) == "changes"
+    assert verdict(["CLAUDE.md"], GREEN) == "owner"
+    assert verdict(["web/app.js"], "not json") == "owner"
+    assert "ended `failure`" not in (tmp_path / "out" / "comment.md").read_text()
+
+
 def test_the_workflow_hands_the_verdict_the_diff_and_mains_owner_paths(tmp_path):
     job = load(WORKFLOWS / "claude-review.yml")["jobs"]["review"]
     step = next(s for s in job["steps"] if s.get("id") == "verdict")
-    assert '.review/pr.diff .github/CODEOWNERS "$(jq -r .changedFiles .review/pr.json)"' in step["run"]
+    assert '.review/pr.diff .github/CODEOWNERS "$(jq -r .changedFiles .review/pr.json)" "$RUNNER_TEMP/checks.json"' in step["run"]
     # And the whole script, as the workflow runs it.
     log = tmp_path / "log.json"
     log.write_text(json.dumps([{"type": "result", "result": json.dumps(PASSED)}]))
