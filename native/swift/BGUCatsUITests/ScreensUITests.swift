@@ -251,7 +251,7 @@ final class ScreensUITests: XCTestCase {
         app.launch()
         openScan(app)
         let take = find(app, "scan.take")
-        XCTAssertTrue(take.waitForExistence(timeout: 10), "Scan a cat has no way to take a photo. \(onScreen(app))")
+        XCTAssertTrue(take.waitForExistence(timeout: patience), "Scan a cat has no way to take a photo. \(onScreen(app))")
         XCTAssertTrue(find(app, "scan.gallery").exists, "Scan a cat has no way to choose from the gallery. \(onScreen(app))")
         XCTAssertFalse(app.staticTexts["Not built yet"].exists, "Scan a cat still says it is not built.")
         keep(app, "scan-empty-\(look)")
@@ -276,12 +276,16 @@ final class ScreensUITests: XCTestCase {
         // The second photo's upload fails once: the screen says so in
         // words, and the other five go on.
         let retrying = find(app, "scan.retrying")
-        XCTAssertTrue(retrying.waitForExistence(timeout: 15), "A failed upload is not said on screen. \(onScreen(app))")
-        expect(app, "scan.progress", "5 of 6 sent", timeout: 7)
+        XCTAssertTrue(retrying.waitForExistence(timeout: patience), "A failed upload is not said on screen. \(onScreen(app))")
+        // The other five are not held up: they are sent while the second
+        // still waits for its retry. Said by the screen's own state, not
+        // by a clock: a short wait failed on a busy simulator.
+        expect(app, "scan.progress", "5 of 6 sent")
+        XCTAssertTrue(retrying.exists, "Five were sent only once the second was retried: the others were held up. \(onScreen(app))")
         XCTAssertTrue(retrying.label.contains("took too long"), "The screen does not say why it is retrying: \(retrying.label)")
         keep(app, "scan-retrying-\(look)")
 
-        expect(app, "scan.sent", "Sent: 6 photos", timeout: 30)
+        expect(app, "scan.sent", "Sent: 6 photos")
         XCTAssertFalse(find(app, "scan.retrying").exists, "Sent, and still retrying. \(onScreen(app))")
         keep(app, "scan-sent-\(look)")
 
@@ -325,7 +329,7 @@ final class ScreensUITests: XCTestCase {
         find(first, "scan.gallery").tap()
         expect(first, "scan.count", "3 photos")
         find(first, "scan.send").tap()
-        XCTAssertTrue(find(first, "scan.retrying").waitForExistence(timeout: 15), "With no server, the screen does not say it will retry. \(onScreen(first))")
+        XCTAssertTrue(find(first, "scan.retrying").waitForExistence(timeout: patience), "With no server, the screen does not say it will retry. \(onScreen(first))")
         first.terminate()
 
         let second = XCUIApplication()
@@ -333,7 +337,7 @@ final class ScreensUITests: XCTestCase {
         second.launch()
         // Only looked at: nothing on the Scan screen is tapped.
         openScan(second)
-        expect(second, "scan.sent", "Sent: 3 photos", timeout: 30)
+        expect(second, "scan.sent", "Sent: 3 photos")
         let shown = appInfo(second)
         XCTAssertTrue(shown.contains("upload: 3 waiting from before"), "The second launch did not find the queue.")
         let record = served(shown)
@@ -346,30 +350,31 @@ final class ScreensUITests: XCTestCase {
 
     private func openScan(_ app: XCUIApplication) {
         let tab = app.tabBars.buttons["Scan a cat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 30), "The tabs did not open. \(onScreen(app))")
+        XCTAssertTrue(tab.waitForExistence(timeout: patience), "The tabs did not open. \(onScreen(app))")
         tab.tap()
-        XCTAssertTrue(app.navigationBars["Scan a cat"].waitForExistence(timeout: 10), "Scan a cat did not open.")
+        XCTAssertTrue(app.navigationBars["Scan a cat"].waitForExistence(timeout: patience), "Scan a cat did not open.")
     }
 
     private func find(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any)[id].firstMatch
     }
 
-    /// Waits for an element to say exactly `label`.
-    private func expect(_ app: XCUIApplication, _ id: String, _ label: String, timeout: TimeInterval = 10) {
+    /// Waits for an element to say exactly `label`, with the walk's one
+    /// patience.
+    private func expect(_ app: XCUIApplication, _ id: String, _ label: String) {
         let element = find(app, id)
         let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
-        XCTAssertEqual(XCTWaiter().wait(for: [said], timeout: timeout), .completed, "\(id) does not say \"\(label)\". \(onScreen(app))")
+        XCTAssertEqual(XCTWaiter().wait(for: [said], timeout: patience), .completed, "\(id) does not say \"\(label)\". \(onScreen(app))")
     }
 
     /// Profile, then App info: its whole text.
     private func appInfo(_ app: XCUIApplication) -> String {
         app.tabBars.buttons["Profile"].tap()
         let row = find(app, "row.app-info")
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "Profile has no App info row.")
+        XCTAssertTrue(row.waitForExistence(timeout: patience), "Profile has no App info row.")
         row.tap()
         let text = find(app, "app-info.text")
-        XCTAssertTrue(text.waitForExistence(timeout: 10), "App info did not open.")
+        XCTAssertTrue(text.waitForExistence(timeout: patience), "App info did not open.")
         return text.label + "\n" + (text.value as? String ?? "")
     }
 
