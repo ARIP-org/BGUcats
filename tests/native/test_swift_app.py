@@ -118,13 +118,14 @@ def test_the_swift_job_builds_and_looks_with_no_secret():
     assert kept["if"] == "always()" and kept["with"]["name"] == "ios-swift"
 
 
-def test_the_walks_time_limits_hold_both_walks_at_their_longest():
+def test_the_walks_time_limits_hold_every_test_at_its_longest():
     # A walk is one test and grows with every screen. At three minutes a
     # test, the cold walk (281 s with five launches of the app) was failed
     # with every step passed (2026-11-24). The limit is there for a hang:
-    # it is well over what a walk takes, the step's limit holds every walk
-    # at its longest, and the job's holds the step with the build before
-    # it and the archive after.
+    # it is well over what a test takes, the step's limit holds every test
+    # of ScreensUITests at its longest (two walks, then Scan a cat's three
+    # tests), and the job's holds the step with the warm-up and the build
+    # before it and the archive after.
     job = workflow()["jobs"]["swift"]
     test = next(step for step in job["steps"] if step.get("name") == "walk through every screen")
     assert "-test-timeouts-enabled YES" in test["run"]
@@ -134,8 +135,8 @@ def test_the_walks_time_limits_hold_both_walks_at_their_longest():
     walks = re.findall(
         r"^    func (test\w+)\(\)", (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text(), flags=re.MULTILINE
     )
-    assert len(walks) == 2, walks
-    assert len(walks) * most <= test["timeout-minutes"] * 60
+    assert {"testEveryScreenInLight", "testEveryScreenInDark"} <= set(walks), walks
+    assert len(walks) * most <= test["timeout-minutes"] * 60, (walks, test["timeout-minutes"])
     wake = next(step for step in job["steps"] if step.get("name") == "wake the simulator")
     assert test["timeout-minutes"] + wake["timeout-minutes"] + 20 <= job["timeout-minutes"]
 
@@ -710,3 +711,6 @@ def test_the_walk_waits_with_one_patience_for_what_it_expects():
     assert tests.count("timeout: patience)") >= 30
     own = [line.strip() for line in tests.splitlines() if re.search(r"timeout: \d", line)]
     assert len(own) == 1 and own[0].startswith("XCTAssertFalse("), own
+    # Nor a helper whose default is a number of its own (Scan a cat's
+    # `expect` waited ten seconds unless told otherwise).
+    assert not re.search(r"(?i)timeout: TimeInterval = \d", tests)

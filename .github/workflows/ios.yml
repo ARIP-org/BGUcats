@@ -158,7 +158,7 @@ jobs:
   # the compiler, so a pull request learns here whether it even builds.
   swift:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       PROJECT: native/swift/BGUCats.xcodeproj
     steps:
@@ -235,12 +235,15 @@ jobs:
       # cold one took 281 seconds and the warm one 151 (2026-11-24); at
       # three minutes the cold one was failed with every step passed.
       # Each line "Test Case ... passed (N seconds)" below says how long a
-      # walk takes now. The step's own limit holds both walks at their
-      # longest (tests/native/test_swift_app.py).
+      # test takes now. The step's own limit holds every test of
+      # ScreensUITests at its longest, so a hang is reported by the test
+      # that hung and not cut off by the step: five tests since Scan a
+      # cat, eight minutes each (tests/native/test_swift_app.py). A run
+      # where nothing hangs takes a quarter of that.
       # The whole of xcodebuild's output is kept with the pictures; the
       # log here shows the lines that say what happened.
       - name: walk through every screen
-        timeout-minutes: 20
+        timeout-minutes: 40
         run: |
           mkdir -p build/ios-swift
           xcrun simctl bootstatus "$UDID" -b
