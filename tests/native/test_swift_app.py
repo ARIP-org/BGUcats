@@ -546,8 +546,11 @@ def test_scan_sends_by_the_web_apps_routes_in_its_write_order():
     # 20 MB at most, JPEG only.
     assert "static let limit = 20 * 1024 * 1024" in code["ScanView.swift"]
     assert "jpegData(compressionQuality:" in code["ScanView.swift"]
-    # Ids are ULIDs made on the phone, in web/outbox.js's alphabet.
-    assert 'Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")' in outbox
+    # Ids are ULIDs made on the phone, by the app's one maker (Ulid.swift),
+    # in web/outbox.js's alphabet.
+    assert "Encounter(id: Ulid.make()," in outbox and "id: Ulid.make()," in code["ScanView.swift"]
+    assert "enum ULID" not in outbox and "enum Ulid" not in outbox
+    assert 'Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")' in code["Ulid.swift"]
     assert '"0123456789ABCDEFGHJKMNPQRSTVWXYZ"' in (REPO / "web" / "outbox.js").read_text()
 
 
