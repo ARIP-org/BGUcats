@@ -145,6 +145,23 @@ The same two rounds count, whichever the reason. The planner's side of
 it: issues that change the same files are not `ready` together, and for
 the Swift app that is one at a time (`docs/agents/planner.md`).
 
+It was first seen to work the same morning: the builder merged `main`
+into #127 and #128 in four minutes each and pushed. Two things about it
+that are not obvious:
+
+- **The builder can push a merge of `main` that carries a workflow
+  change**, though its App has no `workflows` permission. #130 had
+  changed two workflows, both merges brought them in, and both pushes
+  went through. GitHub refuses a push whose own commits change a
+  workflow, not a merge of commits already on `main`. (The review of
+  #130 doubted this, and a guard against it was written and taken back
+  unmerged.)
+- **GitHub says whether a pull request merges only once it has been
+  asked,** and "not known" until then. The queue asks a few times, a
+  few seconds apart, and on every look prints what it learned of each of
+  the builder's pull requests. Its first look after #130 asked once,
+  was told "not known", and printed "Nothing in the queue".
+
 **The builder is shown what a failed check said.** When a check failed
 on the commit, the rework job reads that check's log with its own token
 and leaves the lines that say why in `failed/`, for Claude to read
@@ -228,10 +245,31 @@ waits while one is still running (twenty-five minutes at most), and the
 verdict script reads the list:
 
 - one **failed**: the pass becomes "sent back", naming the check and its
-  address, so the builder's answer has it to read;
+  address, so the builder's answer has it to read; and so does a review
+  that said "for the owner", so the owner is asked of something whose
+  checks pass;
 - one **not finished**, or a list that could not be read: "for the
   owner";
 - a job run again replaces the run before it.
+
+**A push takes auto-merge off** (`.github/workflows/auto-merge-off.yml`,
+since 2026-11-24). GitHub keeps "merge when ready" on a pull request for
+every commit pushed after the one it was asked for. #127 was passed at
+04:20 and could not merge for a conflict; when the builder merged `main`
+into it four hours later, GitHub merged it the moment CI's two checks
+ended, with the Mac's check failed and before the reviewer had read the
+new commit. `main` stopped compiling the iPhone app's tests a second
+time that day. Now every push to a pull request takes auto-merge off,
+and only a review that passes the commit at its head asks for it again.
+An auto-merge the owner turned on by hand goes off the same way: turn
+it on again after the last push.
+
+That merge also showed that **the `review` check is not required by the
+`main` ruleset**: nothing waited for it. With it required ("Require
+status checks to pass", `review`, source GitHub Actions; the list
+below), a new commit could not merge before it is reviewed, whatever
+auto-merge says. That setting is the owner's; the workflow above holds
+the line without it.
 
 **They are on since 2026-11-23**, when the owner changed the `main`
 ruleset. Before that every pull request needed one approval, and the

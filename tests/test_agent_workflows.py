@@ -594,11 +594,48 @@ def test_a_check_still_running_or_unreadable_waits_for_a_person():
     # CI's own checks are always there: none at all is a read that failed.
     assert verdicts.hold_for_checks(PASSED, [])["verdict"] == "owner"
     assert verdicts.hold_for_checks(PASSED, None)["verdict"] == "owner"
-    # It only ever takes a pass back.
+    # A sent-back review stays as it is.
     back = {"verdict": "changes", "summary": "Fix it.", "findings": []}
     assert verdicts.hold_for_checks(back, [check("swift", "failure")]) == back
-    owner = {"verdict": "owner", "summary": "Yours.", "findings": []}
+
+
+def test_a_red_check_goes_back_to_its_author_before_the_owner_is_asked():
+    # #128 was shown to the owner as his to look at with the Mac's check
+    # failed (2026-11-24): the script had left "for the owner" alone.
+    owner = {"verdict": "owner", "summary": "Yours: it adds a permission.", "findings": []}
+    back = verdicts.hold_for_checks(owner, [*GREEN, check("swift", "failure", number=4)])
+    assert back["verdict"] == "changes" and "`swift`" in back["summary"]
+    assert "The review itself sent it to the owner: Yours: it adds a permission." in back["summary"]
+    # With its checks green it is the owner's, as the review said.
+    assert verdicts.hold_for_checks(owner, GREEN) == owner
+    # A check still running, or none readable: it waits for a person already.
+    assert verdicts.hold_for_checks(owner, [*GREEN, check("swift", None, "in_progress", number=4)]) == owner
     assert verdicts.hold_for_checks(owner, None) == owner
+    assert verdicts.hold_for_checks(owner, []) == owner
+
+
+def test_a_push_takes_auto_merge_off_the_pull_request():
+    # #127 was passed, could not merge for a conflict, and merged four
+    # hours later the moment CI ended on a commit the reviewer had not
+    # read, with the Mac's check failed. GitHub keeps "merge when ready"
+    # on a pull request across pushes.
+    flow = load(WORKFLOWS / "auto-merge-off.yml")
+    assert flow["on"] == {"pull_request_target": {"types": ["synchronize"]}}
+    assert flow["permissions"] == {"contents": "write", "pull-requests": "write"}
+    (job,) = flow["jobs"].values()
+    # main's copy, with the right to change the pull request: so it holds
+    # no secret, uses no action, and never has the pull request's files.
+    text = yaml.safe_dump(flow)
+    assert "secrets." not in text and "environment" not in job
+    assert all("uses" not in step for step in job["steps"])
+    assert "checkout" not in text and "github.event.pull_request.head" not in text
+    assert job["env"]["PR"] == "${{ github.event.pull_request.number }}"
+    (step,) = job["steps"]
+    assert "--disable-auto" in step["run"] and ".autoMergeRequest != null" in step["run"]
+    # The only thing that asks for it again names the commit it read.
+    merge = next(s for s in reviewer()["jobs"]["review"]["steps"] if s.get("name") == "Merge when the rules are met")
+    assert '--auto --merge --match-head-commit "$SHA"' in merge["run"]
+    assert merge["if"] == "steps.verdict.outputs.verdict == 'pass'"
 
 
 def test_the_reviewer_waits_for_the_other_checks_and_hands_them_to_the_verdict(tmp_path):

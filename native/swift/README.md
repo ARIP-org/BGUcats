@@ -65,6 +65,13 @@ defined, one iOS version, nothing that signs.
   text size by themselves.
 - **No screen without a picture.** A screen comes with its step in
   `ScreensUITests`, which keeps its picture in both looks.
+- **The walk's waits are one `patience`, and the simulator is woken
+  first.** A wait for something expected takes `patience`; a number of
+  its own is only for something that must not come. A dialog's button is
+  tapped through `.firstMatch`. Before the walk the job runs
+  `WarmUpUITests`, which opens and closes the app until that is quick
+  and asserts nothing: a simulator's first minutes failed the first walk
+  three runs in a row with the app right (`docs/notes.md`).
 - **A UI test reads no network and keeps nothing.** The app started with
   `-uiTesting` gets a made-up world (`World.standIn()`): a clock that
   stands still, a trail kept in memory, a made-up member with three
