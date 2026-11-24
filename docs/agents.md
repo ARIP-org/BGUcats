@@ -245,10 +245,31 @@ waits while one is still running (twenty-five minutes at most), and the
 verdict script reads the list:
 
 - one **failed**: the pass becomes "sent back", naming the check and its
-  address, so the builder's answer has it to read;
+  address, so the builder's answer has it to read; and so does a review
+  that said "for the owner", so the owner is asked of something whose
+  checks pass;
 - one **not finished**, or a list that could not be read: "for the
   owner";
 - a job run again replaces the run before it.
+
+**A push takes auto-merge off** (`.github/workflows/auto-merge-off.yml`,
+since 2026-11-24). GitHub keeps "merge when ready" on a pull request for
+every commit pushed after the one it was asked for. #127 was passed at
+04:20 and could not merge for a conflict; when the builder merged `main`
+into it four hours later, GitHub merged it the moment CI's two checks
+ended, with the Mac's check failed and before the reviewer had read the
+new commit. `main` stopped compiling the iPhone app's tests a second
+time that day. Now every push to a pull request takes auto-merge off,
+and only a review that passes the commit at its head asks for it again.
+An auto-merge the owner turned on by hand goes off the same way: turn
+it on again after the last push.
+
+That merge also showed that **the `review` check is not required by the
+`main` ruleset**: nothing waited for it. With it required ("Require
+status checks to pass", `review`, source GitHub Actions; the list
+below), a new commit could not merge before it is reviewed, whatever
+auto-merge says. That setting is the owner's; the workflow above holds
+the line without it.
 
 **They are on since 2026-11-23**, when the owner changed the `main`
 ruleset. Before that every pull request needed one approval, and the
