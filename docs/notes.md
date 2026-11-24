@@ -484,6 +484,17 @@ an hour that a sentence would have saved.
   same tap, it is the app's and not the simulator's. When a walk nears
   five minutes, split it by launch into tests of their own rather than
   raise the limit again.
+- **The first walk runs on a simulator that is still starting up, and a
+  short wait there fails an app that is right.** The third Mac run of
+  the same day: the app's first launch took 118 seconds (19 the run
+  before, 8 in the second walk), and after "Delete" one question to the
+  simulator, "is the post still there?", took nine seconds. The wait
+  was ten; it gave up, and the failure's own list of what was on screen
+  showed the post gone. Every wait in the walk for something expected
+  is now one `patience` of thirty seconds: a wait that is met costs
+  nothing, and one that is not fails once. Read a timing failure in
+  `xcodebuild.log` (the `ios-swift` artifact): each step has its second,
+  and a gap before "Checking existence" is the simulator, not the app.
 - **A rule kept in a setting nobody here can read is not known to hold
   until it has refused something.** The owner's lane was "Require review
   from Code Owners" on the `main` ruleset. The docs said it was on, the
