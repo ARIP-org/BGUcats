@@ -432,43 +432,19 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           fetch-depth: 0
 
-      # The App may not push a change to a workflow, on purpose (the head
-      # of this file), and GitHub counts a merge of main as one when main
-      # has changed a workflow since this branch was cut: the push is
-      # refused. Such a merge is not the builder's to make. Found here,
-      # before a build is spent on it; the last step says so on the pull
-      # request and hands it to the owner.
-      - name: Can the builder merge main in
-        id: can
-        if: matrix.item.why == 'conflict'
-        run: |
-          git fetch -q origin main
-          base=$(git merge-base HEAD origin/main)
-          changed=$(git diff --name-only "$base" origin/main -- .github/workflows)
-          if [ -n "$changed" ]; then
-            echo "main has changed these since this branch was cut:"
-            echo "$changed"
-            echo "no=1" >>"$GITHUB_OUTPUT"
-          fi
-
       # So Claude can run the same checks CI will.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        if: steps.can.outputs.no != '1'
         with:
           python-version: "3.12"
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        if: steps.can.outputs.no != '1'
         with:
           terraform_version: "1.15.9"
           terraform_wrapper: false
       - run: pip install -r requirements-dev.txt
-        if: steps.can.outputs.no != '1'
       # For tests/web: Claude can open the screens it changes and look.
       - run: playwright install --with-deps chromium
-        if: steps.can.outputs.no != '1'
 
       - uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1.0.271
-        if: steps.can.outputs.no != '1'
         # Less than the job's own limit, so the steps after it always run.
         timeout-minutes: 60
         env:
@@ -554,7 +530,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          NOT_THE_BUILDERS: ${{ steps.can.outputs.no }}
         run: |
           gh api -X DELETE "repos/$REPO/issues/$PULL/labels/reworking" --silent || true
           now=$(gh api "repos/$REPO/pulls/$PULL" --jq .head.sha)
@@ -563,16 +538,6 @@ jobs:
             exit 0
           fi
           gh api -X POST "repos/$REPO/issues/$PULL/labels" -f "labels[]=needs-owner" --silent
-          if [ "$NOT_THE_BUILDERS" = 1 ]; then
-            {
-              echo "This pull request no longer merges with main, and main has changed a workflow since its branch was cut."
-              echo "The builder's App may not push a change to a workflow, on purpose, and GitHub counts such a merge as one, so the builder was not started ([the run]($RUN_URL))."
-              echo
-              echo "It waits for the owner (\`needs-owner\`): the owner, or a session the owner asks, merges main into \`claude/issue-$ISSUE\`."
-            } >"$RUNNER_TEMP/stopped.md"
-            gh pr comment "$PULL" --repo "$REPO" --body-file "$RUNNER_TEMP/stopped.md"
-            exit 0
-          fi
           {
             echo "This came back to the builder ($WHY) and it pushed nothing in answer $ROUND ([its run]($RUN_URL)). It waits for the owner (\`needs-owner\`)."
             echo
