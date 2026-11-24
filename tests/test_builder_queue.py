@@ -257,6 +257,8 @@ def github(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{fake}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("REPO", "ARIP-org/BGUcats")
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+    # A test does not wait between asks.
+    monkeypatch.setattr(queue, "ASK_AGAIN_SECONDS", 0)
 
     def run(world):
         world.setdefault("people", {"sasha": "admin", "arip-dev-bot": "write"})
@@ -487,4 +489,36 @@ def test_a_conflicted_pull_request_is_found_on_its_own_page_and_handed_over(gith
         ["POST", f"{base}/127/labels", ["labels[]=reworking"]],
         ["POST", f"{base}/127/labels", ["labels[]=rework-1"]],
     ]
-    assert "#127: in conflict with main, round 1 of 2" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "#127: in conflict with main, round 1 of 2" in out
+    # What it saw of each of the builder's pull requests, every time.
+    assert "Pull request #127 (claude/issue-123): in conflict with main." in out
+    assert "Pull request #128 (claude/issue-125): GitHub has not said whether it merges" in out
+    assert "Pull request #130 (claude/issue-126): merges with main." in out
+    assert "#131" not in out
+
+
+def test_github_is_asked_again_while_it_has_not_said_whether_a_pull_request_merges(monkeypatch):
+    # The first look after #130 merged asked once, was told null for both
+    # pull requests in conflict, and printed "Nothing in the queue".
+    monkeypatch.setattr(queue, "ASK_AGAIN_SECONDS", 0)
+    asked = []
+
+    def answers(*said):
+        left = list(said)
+
+        def gh(path, *args):
+            asked.append(path)
+            return left.pop(0) + "\n"
+
+        return gh
+
+    monkeypatch.setattr(queue, "gh", answers("null", "null", "false"))
+    assert queue.mergeable("o/r", 127) is False
+    assert asked == ["repos/o/r/pulls/127"] * 3
+    monkeypatch.setattr(queue, "gh", answers("true"))
+    assert queue.mergeable("o/r", 128) is True
+    # Still not said after every ask: not known, and left for the next look.
+    monkeypatch.setattr(queue, "gh", answers(*["null"] * queue.ASKS))
+    assert queue.mergeable("o/r", 129) is None
+    assert queue.ASKS >= 3 and queue.ASK_AGAIN_SECONDS == 0
