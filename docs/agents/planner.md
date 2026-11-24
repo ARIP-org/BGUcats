@@ -78,6 +78,15 @@ the builder's.
   at once, counting those `building`. A queue nobody reads is not speed.
 - Every build is paid for from the owner's Claude plan. Prefer few,
   well-cut issues to many.
+- **Two issues that would change the same files are never `ready`
+  together.** The builder takes up to three at once, each from the same
+  `main`, and the second and third to finish no longer merge. For the
+  Swift app that means **one issue at a time**: every screen so far
+  changes the same few files (`ScreensUITests.swift`, `Backend.swift`,
+  its README, `tests/native/test_swift_app.py`). Cut the next one when
+  the pull request of the one before has merged; write the ones after it
+  as issues without `ready` if you want them kept. On 2026-11-24 three
+  Swift issues were cut together: one merged, two stood in conflict.
 - The web member app (`web/social/`) is frozen to fixes; new screens are
   the Swift app's (`docs/ROADMAP.md`, 2g). The Swift app is what the
   owner has on TestFlight (2026-11-23), unfinished: its next screen, and
