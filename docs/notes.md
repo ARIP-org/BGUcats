@@ -408,6 +408,17 @@ an hour that a sentence would have saved.
   runs `tests/web` a second time with `BGUCATS_NO_BROWSER=1`, as the
   deploy sees it. After a merge, "CI is green on `main`" is not "it is
   deployed": the Deploy run's own job is what says so.
+- **"Merge when ready" outlives the commit it was said of.** The
+  reviewer passed #127 and asked GitHub to merge it when the rules were
+  met, naming the commit. The name guards only the asking. The pull
+  request could not merge (a conflict), the ask stayed on it, and four
+  hours later a new commit made it mergeable: GitHub merged it the moment
+  CI ended, unreviewed, with the Mac's check failed (2026-11-24). The fix
+  written an hour earlier (#130: the reviewer reads every check) never
+  ran on that commit, because nothing waited for the reviewer. Two
+  things were true and unseen: auto-merge persists across pushes, and
+  the `review` status was not a required check. A push now takes
+  auto-merge off.
 - **A doubt is tried before it is built on.** The review of #130 doubted
   that the builder could push a merge of `main` carrying a workflow
   change, since its App may not change workflows. It sounded right, a
