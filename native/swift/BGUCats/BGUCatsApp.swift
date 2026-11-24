@@ -47,6 +47,8 @@ struct World {
         if arguments.contains("-uiTesting") {
             // "-signedOut": the test wants the sign-in screen.
             // "-signInEnds": the server refuses the token at the first like.
+            // "-termsRequired": the member has not accepted the terms.
+            // "-termsChanged": the terms changed after the account was read.
             // "-uploadFailsOnce": the second photo's upload times out once.
             // "-offline": no upload reaches the server.
             // "-keepQueue": the upload queue left by the last run is kept,
@@ -54,6 +56,8 @@ struct World {
             var world = World.standIn(
                 signedIn: !arguments.contains("-signedOut"),
                 ends: arguments.contains("-signInEnds"),
+                termsRequired: arguments.contains("-termsRequired"),
+                termsChanged: arguments.contains("-termsChanged"),
                 failsOnce: arguments.contains("-uploadFailsOnce"),
                 offline: arguments.contains("-offline"),
                 keepQueue: arguments.contains("-keepQueue")
@@ -91,6 +95,8 @@ struct World {
     static func standIn(
         signedIn: Bool = true,
         ends: Bool = false,
+        termsRequired: Bool = false,
+        termsChanged: Bool = false,
         failsOnce: Bool = false,
         offline: Bool = false,
         keepQueue: Bool = false
@@ -103,7 +109,15 @@ struct World {
         }
         let gate = StandInGate(signedIn: signedIn)
         let trail = Trail(store: MemoryStore(), now: clock)
-        let backend = StandInBackend(start: start, gate: gate, ends: ends, failsOnce: failsOnce, offline: offline)
+        let backend = StandInBackend(
+            start: start,
+            gate: gate,
+            ends: ends,
+            termsRequired: termsRequired,
+            termsChanged: termsChanged,
+            failsOnce: failsOnce,
+            offline: offline
+        )
         // The queue's files go to the app's temporary folder, emptied at
         // every launch unless the test is checking what a second launch
         // does with what the first one left.

@@ -87,7 +87,7 @@ struct TabsView: View {
                 ScanView(world: world)
             }
             Tab("Home", systemImage: "house", value: AppTab.home) {
-                FeedView(world: world)
+                FeedView(world: world, session: session)
             }
             Tab("Profile", systemImage: "person.crop.circle", value: AppTab.profile) {
                 ProfileView(world: world, session: session, me: me)
@@ -100,6 +100,8 @@ struct TabsView: View {
         .task {
             world.outbox.open()
         }
+        // Over whichever tab asked: the terms before the first write.
+        .termsDialog(session)
     }
 }
 

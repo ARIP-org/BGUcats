@@ -17,6 +17,9 @@ final class Session: ObservableObject {
     @Published private(set) var phase: Phase = .starting
     /// A sign-in is under way.
     @Published private(set) var busy = false
+    /// The terms' dialog is up (`Terms.swift`), waiting for an answer.
+    @Published private(set) var termsAsked = false
+    private var termsAnswer: CheckedContinuation<Bool, Never>?
 
     private let world: World
 
@@ -96,5 +99,59 @@ final class Session: ObservableObject {
     func signOut() {
         world.gate.signOut()
         phase = .signedOut(note: "Signed out. Choose an account to sign in again.")
+    }
+
+    // MARK: The terms first
+
+    /// Before a write: true when the terms in force are accepted, asking
+    /// first when they are not; false when the person said no, and nothing
+    /// is to be sent. `changed`: the server refused a write with
+    /// `terms_required` although the account said they were accepted, so
+    /// the account is read again and the person is asked all the same.
+    /// Throws when the acceptance could not be saved.
+    func termsFirst(changed: Bool = false) async throws -> Bool {
+        guard case .signedIn(var me) = phase else { return false }
+        if changed {
+            me = try await world.backend.me()
+            phase = .signedIn(me)
+        } else if !me.termsRequired {
+            return true
+        }
+        // One dialog at a time: a second tap while it is up sends nothing.
+        guard termsAnswer == nil else { return false }
+        world.trail.mark("terms: asked")
+        let yes = await withCheckedContinuation { answer in
+            termsAnswer = answer
+            termsAsked = true
+        }
+        guard yes else {
+            world.trail.mark("terms: declined")
+            return false
+        }
+        do {
+            let now = try await world.backend.acceptTerms(version: me.termsCurrent ?? "")
+            phase = .signedIn(now)
+            world.trail.mark("terms: accepted")
+            return true
+        } catch let error as ApiError where error.code == "stale_terms" {
+            // They changed between the read and the yes: the next tap asks
+            // with the version in force.
+            world.trail.mark("terms: changed meanwhile")
+            if let fresh = try? await world.backend.me() {
+                phase = .signedIn(fresh)
+            }
+            throw ApiError(status: error.status, code: error.code, message: "The terms changed a moment ago. Tap again to accept them.")
+        } catch {
+            world.trail.mark("terms: not saved")
+            throw error
+        }
+    }
+
+    /// The dialog's two buttons.
+    func answerTerms(_ yes: Bool) {
+        termsAsked = false
+        let answer = termsAnswer
+        termsAnswer = nil
+        answer?.resume(returning: yes)
     }
 }

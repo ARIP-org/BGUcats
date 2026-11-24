@@ -335,7 +335,8 @@ def test_a_sign_in_that_ends_puts_the_sign_in_screen_up():
     assert renew.count("return .notNow") == 2 and renew.count("ended(") == 2
     assert "tokens.idToken)" in renew and renew.count("tokens.idToken") == 1  # only while it is still good
     # The feed leaves it to the session to say: no alert over the sign-in screen.
-    assert code["FeedView.swift"].count("if FeedModel.signInEnded(error) { return }") == 3
+    # Reading the feed, a like, accepting the terms before one, and deleting a post.
+    assert code["FeedView.swift"].count("if FeedModel.signInEnded(error) { return }") == 4
     tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
     assert 'ending.launchArguments = ["-uiTesting", "-look", look, "-signInEnds"]' in tests
     assert 'keep(ending, "sign-in-ended-\\(look)")' in tests
@@ -566,3 +567,37 @@ def test_the_queue_is_kept_where_the_app_keeps_its_own_and_a_test_keeps_nothing_
     assert "world.outbox.open()" in code["RootView.swift"]
     # The queue reaches the server only through Backend: no network of its own.
     assert "URLSession" not in code["Outbox.swift"] + code["ScanView.swift"]
+
+
+# --------------------------------------------------------------- the terms
+
+
+def test_the_terms_are_asked_before_the_first_like_in_the_web_apps_words():
+    code = sources()
+    # The words are the web app's, in English (web/i18n/en.json, terms.*).
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    terms = code["Terms.swift"]
+    for key, name in (("terms.title", "title"), ("terms.body", "body"), ("terms.accept", "accept")):
+        assert f"static let {name} = {json.dumps(words[key])}" in terms, key
+    # Accepting sends the version in force, read from GET /me.
+    backend = code["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'call("POST", "/me/terms", body: ["version": version], as: "terms")' in backend
+    assert 'termsCurrent: text(terms?["current"])' in code["Models.swift"]
+    # The like asks first; a refusal for the terms asks once more.
+    feed = code["FeedView.swift"]
+    assert "try await session.termsFirst(changed: termsChanged)" in feed
+    assert '(error as? ApiError)?.code == "terms_required" && !termsChanged' in feed
+    assert ".termsDialog(session)" in code["RootView.swift"]
+    session = code["Session.swift"]
+    for mark in ("terms: asked", "terms: declined", "terms: accepted"):
+        assert f'world.trail.mark("{mark}")' in session, mark
+    # Its pictures, and the made-up member who has not accepted them.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    assert 'asking.launchArguments = ["-uiTesting", "-look", look, "-termsRequired"]' in tests
+    assert 'changed.launchArguments = ["-uiTesting", "-look", look, "-termsChanged"]' in tests
+    assert 'keep(asking, "terms-\\(look)")' in tests
+    app = code["BGUCatsApp.swift"]
+    assert 'arguments.contains("-termsRequired")' in app and 'arguments.contains("-termsChanged")' in app
+    # The README no longer lists it as missing.
+    missing = (SWIFT / "README.md").read_text().split("## Not here yet")[1]
+    assert "accepting the terms" not in missing
