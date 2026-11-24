@@ -145,6 +145,23 @@ The same two rounds count, whichever the reason. The planner's side of
 it: issues that change the same files are not `ready` together, and for
 the Swift app that is one at a time (`docs/agents/planner.md`).
 
+It was first seen to work the same morning: the builder merged `main`
+into #127 and #128 in four minutes each and pushed. Two things about it
+that are not obvious:
+
+- **The builder can push a merge of `main` that carries a workflow
+  change**, though its App has no `workflows` permission. #130 had
+  changed two workflows, both merges brought them in, and both pushes
+  went through. GitHub refuses a push whose own commits change a
+  workflow, not a merge of commits already on `main`. (The review of
+  #130 doubted this, and a guard against it was written and taken back
+  unmerged.)
+- **GitHub says whether a pull request merges only once it has been
+  asked,** and "not known" until then. The queue asks a few times, a
+  few seconds apart, and on every look prints what it learned of each of
+  the builder's pull requests. Its first look after #130 asked once,
+  was told "not known", and printed "Nothing in the queue".
+
 **The builder is shown what a failed check said.** When a check failed
 on the commit, the rework job reads that check's log with its own token
 and leaves the lines that say why in `failed/`, for Claude to read
