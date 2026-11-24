@@ -145,15 +145,6 @@ The same two rounds count, whichever the reason. The planner's side of
 it: issues that change the same files are not `ready` together, and for
 the Swift app that is one at a time (`docs/agents/planner.md`).
 
-**One merge is not the builder's to make:** when `main` has changed a
-workflow file since the branch was cut. The App has no `workflows`
-permission, on purpose, and GitHub refuses a push that brings a workflow
-change into a branch, a merge of `main` included. The rework job looks
-for that before it starts Claude, and such a pull request goes to the
-owner with a comment that says so: the owner, or a session the owner
-asks, merges `main` into it. (#127 and #128 are the first: the pull
-request that added this path changed two workflows.)
-
 **The builder is shown what a failed check said.** When a check failed
 on the commit, the rework job reads that check's log with its own token
 and leaves the lines that say why in `failed/`, for Claude to read
