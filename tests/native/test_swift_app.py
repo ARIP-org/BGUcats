@@ -534,3 +534,24 @@ def test_no_name_is_declared_twice_in_one_function_of_the_ui_tests():
         declared = re.findall(r"^        (?:let|var) (\w+)\b", body, flags=re.MULTILINE)
         twice = sorted({one for one in declared if declared.count(one) > 1})
         assert not twice, f"{name} declares {twice} more than once"
+
+
+def test_a_dialogs_button_is_tapped_as_the_first_of_its_matches():
+    # iOS 26 reports each button of a system dialog twice: a button inside
+    # a button, with the same name and the same identifier. Asking whether
+    # it exists is fine with two; a tap wants exactly one and fails with
+    # "Multiple matching elements found" (2026-11-24: the terms' walk, the
+    # first time it ran on a Mac). Only a Mac says so, so this reads the
+    # walk: a button of a dialog is tapped through `.firstMatch`.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    dialogs = set(re.findall(r"let (\w+) = \w+\.alerts\[", tests))
+    assert {"terms", "asked"} <= dialogs
+    bare = re.compile(r"\.buttons\[[^\]]+\]\.tap\(\)")
+    wrong = [
+        line.strip()
+        for line in tests.splitlines()
+        if bare.search(line)
+        and (".alerts" in line or any(re.search(rf"\b{one}\.buttons\[", line) for one in dialogs))
+    ]
+    assert not wrong, f"tapped without .firstMatch: {wrong}"
+    assert 'terms.buttons["Cancel"].firstMatch.tap()' in tests
