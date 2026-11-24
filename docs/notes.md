@@ -459,6 +459,16 @@ an hour that a sentence would have saved.
   sheet whose button was greyed out. Ask for the kind of element the
   question is about (`app.buttons[...]`) before asking whether it is
   enabled, and keep the picture before the judgment (#129, 2026-11-24).
+- **A system dialog's button is two elements to a UI test.** iOS 26
+  reports each button of an alert as a button inside a button, both with
+  the same name and identifier. `.exists` is content with two; `.tap()`
+  wants exactly one and fails with "Multiple matching elements found".
+  Tap `.firstMatch`. The terms' walk failed on this the first time it
+  ran on a Mac (2026-11-24): it had merged without ever compiling, so
+  nothing in it had been tried. The failed run keeps "Complete Issue
+  Description.txt" in its `ios-swift` artifact, which draws the matches
+  as a tree: read that before guessing. A Linux test now reads the walk
+  for a dialog's button tapped without `.firstMatch`.
 - **A rule kept in a setting nobody here can read is not known to hold
   until it has refused something.** The owner's lane was "Require review
   from Code Owners" on the `main` ruleset. The docs said it was on, the
