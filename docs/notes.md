@@ -495,6 +495,21 @@ an hour that a sentence would have saved.
   nothing, and one that is not fails once. Read a timing failure in
   `xcodebuild.log` (the `ios-swift` artifact): each step has its second,
   and a gap before "Checking existence" is the simulator, not the app.
+- **Longer waits were not the cure; the first thing to run on a new
+  simulator should not be a test.** The fourth Mac run, with every wait
+  at thirty seconds: the first walk's first question took 29, and then
+  the simulator could not close the app ("Failed to terminate"). Four
+  runs, three failures of the first walk at three different places, and
+  the second walk passed every time it ran. What the three had in
+  common was only being first, within two to four minutes of the
+  simulator's start. The job now runs `WarmUpUITests` before the walk:
+  it opens the app, waits for the first screen and closes it, until one
+  round takes under twenty seconds or four minutes have gone. It asserts
+  nothing, its step cannot fail the job, and its log is kept
+  (`warm-up.log`, with a line a round). This is not a retry: no test of
+  the app is run twice, and a walk that fails still fails the check.
+  If a walk fails on timing after a quick warm-up round, look at the
+  app.
 - **A rule kept in a setting nobody here can read is not known to hold
   until it has refused something.** The owner's lane was "Require review
   from Code Owners" on the `main` ruleset. The docs said it was on, the
