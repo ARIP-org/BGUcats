@@ -408,6 +408,32 @@ an hour that a sentence would have saved.
   runs `tests/web` a second time with `BGUCATS_NO_BROWSER=1`, as the
   deploy sees it. After a merge, "CI is green on `main`" is not "it is
   deployed": the Deploy run's own job is what says so.
+- **"CI passed" was two checks, and the pull request had four.** The
+  reviewer starts when the workflow called CI ends, and asks for the
+  merge on a pass. The iPhone app's checks are another workflow, started
+  by the same push, and nothing waited for them or read them. #126
+  merged with its Mac check failed; `main` then failed the app's screen
+  walk and could not have been built for TestFlight until #129; #127 was
+  "passed" with a compile error (2026-11-24). A gate that names the
+  checks it waits for misses the next check somebody adds. The verdict
+  now reads every check run on the commit, whatever workflow made it.
+- **Work started three at a time on the same files finishes one at a
+  time.** The builder took three Swift issues together, each from the
+  same `main`. Each changed the same UI test file, the same API client,
+  the same README and the same Linux test. The first merged; the other
+  two were in conflict, and GitHub runs no check at all on a pull
+  request in conflict, so they did not even fail: they stood, green from
+  an earlier run (2026-11-24). The queue's limit counts pull requests;
+  it does not know which files they will touch. The planner does, so
+  the rule is the planner's; and a conflicted pull request now goes back
+  to its builder.
+- **A UI test that asks for "any element" by name may be handed its
+  wrapper.** `descendants(matching: .any)["report.send"].firstMatch`
+  answered with something around the bar's button, which is always
+  enabled, and the walk said a report could be sent with no reason, on a
+  sheet whose button was greyed out. Ask for the kind of element the
+  question is about (`app.buttons[...]`) before asking whether it is
+  enabled, and keep the picture before the judgment (#129, 2026-11-24).
 - **A rule kept in a setting nobody here can read is not known to hold
   until it has refused something.** The owner's lane was "Require review
   from Code Owners" on the `main` ruleset. The docs said it was on, the

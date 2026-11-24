@@ -33,6 +33,14 @@ struct FeedView: View {
         })
     }
 
+    private var deleteAsked: Binding<Bool> {
+        Binding(get: { model.toDelete != nil }, set: { shown in
+            if !shown {
+                model.toDelete = nil
+            }
+        })
+    }
+
     @ViewBuilder private var content: some View {
         switch model.phase {
         case .loading:
@@ -60,9 +68,13 @@ struct FeedView: View {
                 ScrollView {
                     LazyVStack(spacing: 28) {
                         ForEach(model.posts) { post in
-                            PostCard(post: post, world: world) {
-                                Task { await model.toggleLike(post) }
-                            }
+                            PostCard(
+                                post: post,
+                                world: world,
+                                like: { Task { await model.toggleLike(post) } },
+                                delete: { model.toDelete = post },
+                                report: { model.reporting = post }
+                            )
                         }
                         if model.hasMore {
                             ProgressView()
@@ -76,6 +88,19 @@ struct FeedView: View {
                 }
                 .refreshable {
                     await model.refresh()
+                }
+                // The system's confirmation before a post goes for everyone.
+                .alert("Delete this post?", isPresented: deleteAsked, presenting: model.toDelete) { post in
+                    Button("Delete", role: .destructive) {
+                        Task { await model.delete(post) }
+                    }
+                    .accessibilityIdentifier("post.delete.confirm")
+                    Button("Cancel", role: .cancel) {}
+                } message: { _ in
+                    Text("It disappears from the feed for everyone. The photos stay with the cat's records.")
+                }
+                .sheet(item: $model.reporting) { post in
+                    ReportView(post: post, world: world)
                 }
             }
         }
@@ -95,6 +120,10 @@ final class FeedModel: ObservableObject {
     @Published private(set) var hasMore = false
     /// Something the person did that failed, in words for them.
     @Published var note: String?
+    /// The member's own post they asked to delete, while the confirmation is up.
+    @Published var toDelete: Post?
+    /// Someone else's post being reported, while its sheet is up.
+    @Published var reporting: Post?
 
     private let world: World
     /// Whose terms come first (`Session.termsFirst`).
@@ -201,16 +230,38 @@ final class FeedModel: ObservableObject {
         }
     }
 
+    /// Leaves the feed at once, then asks the server; a refusal puts the
+    /// card back where it was and says why.
+    func delete(_ post: Post) async {
+        toDelete = nil
+        guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        let card = posts.remove(at: index)
+        do {
+            try await world.backend.deletePost(postId: post.id)
+            world.trail.mark("post: deleted")
+        } catch {
+            if !posts.contains(where: { $0.id == card.id }) {
+                posts.insert(card, at: min(index, posts.count))
+            }
+            world.trail.mark("post: delete failed (\((error as? ApiError)?.status ?? 0))")
+            if FeedModel.signInEnded(error) { return }
+            note = (error as? ApiError)?.message ?? "Try again."
+        }
+    }
+
     private static func signInEnded(_ error: Error) -> Bool {
         (error as? ApiError)?.status == 401
     }
 }
 
-/// One post: who, the photos, the like, which cat, the words.
+/// One post: who, the photos, the like, which cat, the words; and its
+/// menu: Delete on the member's own, Report on anyone else's.
 struct PostCard: View {
     let post: Post
     let world: World
     let like: () -> Void
+    let delete: () -> Void
+    let report: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -224,6 +275,7 @@ struct PostCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                menu
             }
             .padding(.horizontal)
 
@@ -258,6 +310,26 @@ struct PostCard: View {
                     .padding(.horizontal)
             }
         }
+    }
+
+    /// The system's menu on an ellipsis.
+    private var menu: some View {
+        Menu {
+            if post.mine {
+                Button("Delete post", systemImage: "trash", role: .destructive, action: delete)
+                    .accessibilityIdentifier("post.delete")
+            } else {
+                Button("Report", systemImage: "flag", action: report)
+                    .accessibilityIdentifier("post.report")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("menu.\(post.id)")
     }
 
     /// "@name · 2 hr. ago", with whichever of the two there is.

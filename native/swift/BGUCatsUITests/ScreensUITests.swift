@@ -138,6 +138,55 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [liked], timeout: 10), .completed, "Tapping the heart did not like the post.")
         keep(app, "home-liked-\(look)")
 
+        // A post's menu. On the member's own post (the second): Delete,
+        // with the system's confirmation; the card leaves the feed.
+        let own = app.descendants(matching: .any)["menu.p2"].firstMatch
+        reveal(own, in: app)
+        own.tap()
+        let delete = app.buttons["Delete post"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 10), "The menu on one's own post has no Delete. \(onScreen(app))")
+        XCTAssertFalse(app.buttons["Report"].exists, "The menu on one's own post offers Report. \(onScreen(app))")
+        keep(app, "post-menu-own-\(look)")
+        delete.tap()
+        let confirm = app.alerts.buttons["Delete"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Delete did not ask first. \(onScreen(app))")
+        confirm.tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: own)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "The deleted post is still in the feed. \(onScreen(app))")
+        // Two cards are left: the first and the third.
+        reveal(app.descendants(matching: .any)["menu.p1"].firstMatch, in: app)
+        let other = app.descendants(matching: .any)["menu.p3"].firstMatch
+        reveal(other, in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["like.p2"].firstMatch.exists, "The deleted post came back. \(onScreen(app))")
+
+        // On anyone else's: Report, a sheet with the six reasons, and thanks.
+        other.tap()
+        let report = app.buttons["Report"].firstMatch
+        XCTAssertTrue(report.waitForExistence(timeout: 10), "The menu on another's post has no Report. \(onScreen(app))")
+        XCTAssertFalse(app.buttons["Delete post"].exists, "The menu on another's post offers Delete. \(onScreen(app))")
+        keep(app, "post-menu-other-\(look)")
+        report.tap()
+        for reason in ["spam", "offensive", "harassment", "privacy", "not_cat", "other"] {
+            let row = app.descendants(matching: .any)["reason.\(reason)"].firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 10), "The report sheet has no reason \(reason). \(onScreen(app))")
+        }
+        // The button itself, asked for as a button. Asked for as "any
+        // element", the first to answer was something around it in the
+        // bar, which is always enabled: the walk said a report could be
+        // sent with no reason, on a sheet whose button was greyed out
+        // (#126 merged with that failing, 2026-11-24).
+        let send = app.buttons["report.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "The report sheet has no Send. \(onScreen(app))")
+        keep(app, "report-\(look)")
+        XCTAssertFalse(send.isEnabled, "A report can be sent with no reason. \(onScreen(app))")
+        app.descendants(matching: .any)["reason.spam"].firstMatch.tap()
+        XCTAssertTrue(send.isEnabled, "Choosing a reason did not let the report go.")
+        send.tap()
+        let thanks = app.descendants(matching: .any)["report.thanks"].firstMatch
+        XCTAssertTrue(thanks.waitForExistence(timeout: 10), "Sending a report did not say thank you. \(onScreen(app))")
+        app.descendants(matching: .any)["report.done"].firstMatch.tap()
+        XCTAssertTrue(thanks.waitForNonExistence(timeout: 10), "Done did not close the report. \(onScreen(app))")
+
         for (tab, name) in [("Cats", "cats"), ("Scan a cat", "scan"), ("Profile", "profile")] {
             app.tabBars.buttons[tab].tap()
             XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: 10), "The tab \(tab) did not open.")
@@ -160,6 +209,9 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(shown.contains("start: ready"), "App info does not show what the app was doing.")
         XCTAssertTrue(shown.contains("tab: profile"), "App info did not keep the tab that was opened.")
         XCTAssertTrue(shown.contains("feed: 3 posts"), "App info did not keep that the feed was read.")
+        XCTAssertTrue(shown.contains("post: deleted"), "App info did not keep that a post was deleted.")
+        XCTAssertTrue(shown.contains("report: sent (spam)"), "App info did not keep that a report was sent.")
+        XCTAssertFalse(shown.contains("p2") || shown.contains("p3"), "App info names a post.")
         keep(app, "app-info-\(look)")
 
         let copy = app.descendants(matching: .any)["app-info.copy"].firstMatch
@@ -167,6 +219,18 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: 5), "Copying did not say it copied.")
 
         app.terminate()
+    }
+
+    /// Scrolls the feed until the element can be tapped: down first, then
+    /// back up if it went past.
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 where !(element.exists && element.isHittable) {
+            app.swipeUp(velocity: .slow)
+        }
+        for _ in 0..<6 where !(element.exists && element.isHittable) {
+            app.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(element.exists && element.isHittable, "\(element) cannot be reached. \(onScreen(app))")
     }
 
     /// What is on screen, in one line, for a failure's message: nobody

@@ -5,8 +5,9 @@ TestFlight gets** (the owner, 2026-11-23): unfinished, in the same app as
 the packed one it replaces (`native/ios/`), so every screen is seen on
 the phone as it lands. Built so far: the frame (four tabs of the system's
 own controls, so the glass is iOS's), signing in, Home with the feed
-(posts, their photos, a like, and the terms asked before the first like),
-the profile's first rows, and "App info".
+(posts, their photos, a like, the terms asked before the first like,
+a post's menu: Delete on one's own, Report on anyone else's), the
+profile's first rows, and "App info".
 Cats and Scan a cat say "Not built yet".
 
 | File | |
@@ -20,6 +21,8 @@ Cats and Scan a cat say "Not built yet".
 | `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, the tabs, the profile |
 | `SignInView.swift`, `FeedView.swift`, `AppInfoView.swift` | those screens |
+| `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
+| `Ulid.swift` | an id made on the phone (a report's), so a retry is the same request |
 | `Photos.swift` | loading a picture, and the drawn ones UI tests get |
 | `Trail.swift` | the app's own account of what it did |
 
@@ -88,7 +91,8 @@ defined, one iOS version, nothing that signs.
   like), and the servers' counters and logs. Photos, location, friends
   and the phone's notification address join it with the screen that
   first sends them: a test fails a pull request that adds one without
-  the other (`docs/privacy-data.md` has the answers).
+  the other (`docs/privacy-data.md` has the answers). A report and its
+  note are content a person made, a kind already declared for the like.
 - **Signing in is the web app's, in iOS's own sheet** (`Auth.swift`,
   `web/lib/auth.js`): Cognito's page, authorization code with PKCE,
   straight to Google with its account chooser, answered at
@@ -123,6 +127,16 @@ defined, one iOS version, nothing that signs.
   code. Taking a like back writes nothing others read and asks nothing.
   Each screen that writes asks the same way. The trail says "terms:
   asked", "accepted" or "declined".
+- **A post's menu is the system's** (`Menu` on an ellipsis in the
+  card's header). Delete, on the member's own post, asks with the
+  system's alert, takes the card off at once and puts it back with the
+  server's words if it refuses. Report, on anyone else's, opens a sheet
+  with the server's fixed reasons (`src/common/reports.py`) in the web
+  app's words and order, and an optional note of up to 280 characters;
+  the report's id is made when the sheet opens, and the answer is always
+  the same thank you. Neither asks for the terms: the API does not. The
+  trail says "post: deleted" and "report: sent (spam)", never which post
+  or what the note said.
 - **The trail never says who.** A call is marked by its kind and its
   status ("api: feed 200 in 240 ms"), never by its address; a failure by
   its kind and number. A test reads every `trail.mark`.
@@ -130,7 +144,7 @@ defined, one iOS version, nothing that signs.
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
-app skips them for now), a post's menu (delete, report), and the area; a page with the
-full terms (the dialog has their short text). Then capture, cats, the rest of profile, the
+app skips them for now), the area, and a page with the full terms (the
+dialog has their short text). Then capture, cats, the rest of profile, the
 recognition model, and a string catalog for the four languages. Each is
 its own issue, in the plan's order.

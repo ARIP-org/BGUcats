@@ -191,6 +191,10 @@ GH = textwrap.dedent(
         body = [i for i in world["issues"] if label in [l["name"] for l in i["labels"]]]
     elif parts[-1] == "pulls":
         body = world["pulls"]
+    elif parts[-2] == "pulls" and parts[-1].isdigit():
+        # One pull request's own page: the only place that says whether
+        # it still merges.
+        body = next(p for p in world["pulls"] if p["number"] == int(parts[-1]))
     elif parts[-1] == "statuses":
         body = world.get("statuses", {}).get(parts[-2], [])
     elif parts[-1] == "events":
@@ -224,11 +228,13 @@ def api_issue(number, labels, login="arip-dev-bot", kind="User", updated="2026-1
     return found
 
 
-def api_pull(number, ref, sha="aaa", labels=(), repo="ARIP-org/BGUcats"):
+def api_pull(number, ref, sha="aaa", labels=(), repo="ARIP-org/BGUcats", mergeable=True):
     return {
         "number": number,
         "labels": [{"name": name} for name in labels],
         "head": {"ref": ref, "sha": sha, "repo": {"full_name": repo} if repo else None},
+        # true, false, or null while GitHub has not worked it out.
+        "mergeable": mergeable,
     }
 
 
@@ -332,8 +338,8 @@ def test_a_full_house_waits_and_changes_nothing(github, capsys):
 # ------------------------------------------------- sent back by the reviewer
 
 
-def pull(number, ref, *labels, sha="aaa"):
-    return {"number": number, "ref": ref, "sha": sha, "labels": list(labels)}
+def pull(number, ref, *labels, sha="aaa", conflict=False):
+    return {"number": number, "ref": ref, "sha": sha, "labels": list(labels), "conflict": conflict}
 
 
 def review(**by_sha):
@@ -356,10 +362,38 @@ def test_the_words_for_sent_back_are_the_reviewers_own():
 
 def test_a_sent_back_pull_request_of_the_builders_goes_to_the_builder():
     back = queue.sent_back([pull(117, "claude/issue-104")], review(aaa=BACK))
-    assert back == {"rework": [{"issue": 104, "pull": 117, "round": 1, "sha": "aaa"}], "owner": []}
+    assert back == {
+        "rework": [{"issue": 104, "pull": 117, "round": 1, "sha": "aaa", "why": "review"}],
+        "owner": [],
+    }
     # The second time is the second answer.
     back = queue.sent_back([pull(117, "claude/issue-104", "rework-1", sha="bbb")], review(bbb=BACK))
-    assert back["rework"] == [{"issue": 104, "pull": 117, "round": 2, "sha": "bbb"}]
+    assert back["rework"] == [{"issue": 104, "pull": 117, "round": 2, "sha": "bbb", "why": "review"}]
+
+
+def test_a_pull_request_in_conflict_with_main_goes_to_the_builder_too():
+    # 2026-11-24: three issues built at once on the same files. The first
+    # merged; GitHub runs no check on the other two, so no review would
+    # ever have sent them anywhere.
+    nothing = review()
+    back = queue.sent_back([pull(127, "claude/issue-123", conflict=True)], nothing)
+    assert back == {
+        "rework": [{"issue": 123, "pull": 127, "round": 1, "sha": "aaa", "why": "conflict"}],
+        "owner": [],
+    }
+    # The conflict comes first: what the reviewer said is about a commit
+    # that cannot merge anyway.
+    both = queue.sent_back([pull(127, "claude/issue-123", conflict=True)], review(aaa=BACK))
+    assert both["rework"][0]["why"] == "conflict"
+    # Not known yet (GitHub is still working it out) is not a conflict.
+    assert queue.sent_back([pull(127, "claude/issue-123", conflict=None)], nothing) == {"rework": [], "owner": []}
+    # The same two rounds, whichever the reason; then it is the owner's.
+    twice = pull(127, "claude/issue-123", "rework-1", "rework-2", conflict=True)
+    assert queue.sent_back([twice], nothing) == {"rework": [], "owner": [127]}
+    # A session's pull request in conflict is its session's to mend, and
+    # one being answered now is not handed out again.
+    others = [pull(1, "claude/busy-babbage", conflict=True), pull(3, "claude/issue-7", "reworking", conflict=True)]
+    assert queue.sent_back(others, nothing) == {"rework": [], "owner": []}
 
 
 def test_after_two_answers_it_is_the_owners():
@@ -418,7 +452,7 @@ def test_a_sent_back_pull_request_is_marked_and_handed_over(github, capsys):
             },
         }
     )
-    assert output == 'issues=[]\nrework=[{"issue": 104, "pull": 117, "round": 1, "sha": "abc"}]'
+    assert output == 'issues=[]\nrework=[{"issue": 104, "pull": 117, "round": 1, "sha": "abc", "why": "review"}]'
     changed = [(method, path, fields) for method, path, fields in calls if "comments" not in path]
     assert changed == [
         ("POST", f"{base}/117/labels", ["labels[]=reworking"]),
@@ -428,3 +462,29 @@ def test_a_sent_back_pull_request_is_marked_and_handed_over(github, capsys):
     said = [fields[0] for method, path, fields in calls if path == f"{base}/118/comments"]
     assert len(said) == 1 and "waits for the owner" in said[0]
     assert "round 1 of 2" in capsys.readouterr().out
+
+
+def test_a_conflicted_pull_request_is_found_on_its_own_page_and_handed_over(github, capsys):
+    base = "repos/ARIP-org/BGUcats/issues"
+    output, calls = github(
+        {
+            "issues": [],
+            "pulls": [
+                # No longer merges, and nobody reviewed it since: no check ran.
+                api_pull(127, "claude/issue-123", sha="abc", mergeable=False),
+                # GitHub has not worked it out yet: asked again next time.
+                api_pull(128, "claude/issue-125", sha="def", mergeable=None),
+                api_pull(130, "claude/issue-126", sha="fff"),
+                # A session's: not the builder's to mend.
+                api_pull(131, "claude/busy-babbage", sha="eee", mergeable=False),
+            ],
+            "events": {},
+            "statuses": {},
+        }
+    )
+    assert output == 'issues=[]\nrework=[{"issue": 123, "pull": 127, "round": 1, "sha": "abc", "why": "conflict"}]'
+    assert calls == [
+        ["POST", f"{base}/127/labels", ["labels[]=reworking"]],
+        ["POST", f"{base}/127/labels", ["labels[]=rework-1"]],
+    ]
+    assert "#127: in conflict with main, round 1 of 2" in capsys.readouterr().out

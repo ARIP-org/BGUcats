@@ -42,13 +42,16 @@ jobs:
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # The review itself takes a few minutes; the rest is for a check that
+    # is still running beside it (the step before the verdict).
+    timeout-minutes: 50
     # Holds the Claude subscription token and the App's key. The environment
     # allows only main, which is where a workflow_run job runs from.
     environment: claude
     permissions:
       contents: read
       actions: read # CI's screenshots
+      checks: read # how the commit's other checks ended (the iPhone app's)
       pull-requests: write # one comment
       statuses: write # the verdict
     env:
@@ -194,6 +197,27 @@ jobs:
 
       # From here on nothing is Claude's: a script reads its last message,
       # and fixed commands act on the three words it may hold.
+      # CI is two of this commit's checks. The iPhone app's (ios.yml) run
+      # beside it, and this workflow starts when CI ends, whatever they
+      # say: #126 merged with its Mac check failed, and main could not be
+      # built for TestFlight (2026-11-24). So: every check run on the head,
+      # waited for while any is still running, and handed to the verdict.
+      # This run's own job is not one of them.
+      - name: The commit's other checks
+        if: steps.go.outputs.yes && !cancelled()
+        run: |
+          for _ in $(seq 1 50); do
+            gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --paginate \
+              --jq '.check_runs[] | {name, status, conclusion, url: .html_url, id}' |
+              jq -s --arg mine "/runs/$GITHUB_RUN_ID/" '[.[] | select((.url // "") | contains($mine) | not)]' \
+                >"$RUNNER_TEMP/checks.json" || echo "[]" >"$RUNNER_TEMP/checks.json"
+            running=$(jq '[.[] | select(.status != "completed")] | length' "$RUNNER_TEMP/checks.json")
+            if [ "$running" = 0 ]; then break; fi
+            echo "$running still running; looking again in half a minute."
+            sleep 30
+          done
+          jq -r '.[] | "\(.name): \(.status) \(.conclusion // "")"' "$RUNNER_TEMP/checks.json"
+
       - name: The verdict
         id: verdict
         if: steps.go.outputs.yes && !cancelled()
@@ -201,10 +225,11 @@ jobs:
           LOG: ${{ steps.claude.outputs.execution_file }}
         run: |
           # With the diff and main's CODEOWNERS: a change to an owner path
-          # is never "pass", whatever Claude said. The script reads the
-          # paths; no model judges them.
+          # is never "pass", whatever Claude said. And with the commit's
+          # other checks: nor is one with a check red or unfinished. The
+          # script reads both; no model judges them.
           python3 scripts/review_verdict.py "${LOG:-$RUNNER_TEMP/claude-execution-output.json}" "$RUNNER_TEMP/verdict" \
-            .review/pr.diff .github/CODEOWNERS "$(jq -r .changedFiles .review/pr.json)"
+            .review/pr.diff .github/CODEOWNERS "$(jq -r .changedFiles .review/pr.json)" "$RUNNER_TEMP/checks.json"
           {
             echo "verdict=$(jq -r .verdict "$RUNNER_TEMP/verdict/verdict.json")"
             echo "state=$(jq -r .state "$RUNNER_TEMP/verdict/verdict.json")"

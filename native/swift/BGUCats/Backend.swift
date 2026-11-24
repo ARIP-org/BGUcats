@@ -11,6 +11,21 @@ protocol Backend {
     /// Accepts the terms of this version (`Me.termsCurrent`); answers with
     /// the account as it is now.
     func acceptTerms(version: String) async throws -> Me
+    /// The author removes their own post.
+    func deletePost(postId: String) async throws
+    /// Reports a thing. `reportId` is made once on the phone, so a retry is
+    /// the same report. The server answers the same whatever it did.
+    func report(_ report: Report) async throws
+}
+
+/// A report as the API takes it (`POST /api/v1/reports`).
+struct Report: Equatable {
+    let reportId: String
+    /// `post` here; the API also takes `user`, `avatar` and `name`.
+    let targetType: String
+    let targetId: String
+    let reason: ReportReason
+    let note: String?
 }
 
 /// What a call failed with. `status` 0: the server was not reached.
@@ -56,9 +71,26 @@ final class LiveBackend: Backend {
         return me
     }
 
+    func deletePost(postId: String) async throws {
+        _ = try await call("DELETE", "/posts/\(Auth.encode(postId))", as: "delete post")
+    }
+
+    func report(_ report: Report) async throws {
+        var body: [String: Any] = [
+            "reportId": report.reportId,
+            "targetType": report.targetType,
+            "targetId": report.targetId,
+            "reason": report.reason.rawValue,
+        ]
+        if let note = report.note {
+            body["note"] = note
+        }
+        _ = try await call("POST", "/reports", body: body, as: "report")
+    }
+
     /// One call. `name` is what the trail calls it: the kind of call, never
     /// its address, which can carry an id.
-    private func call(_ method: String, _ path: String, cursor: String? = nil, body payload: [String: Any]? = nil, as name: String) async throws -> [String: Any] {
+    private func call(_ method: String, _ path: String, cursor: String? = nil, body: [String: Any]? = nil, as name: String) async throws -> [String: Any] {
         let token: String
         switch await auth.pass() {
         case .token(let fresh):
@@ -81,8 +113,8 @@ final class LiveBackend: Backend {
         // ever. API Gateway gives up at thirty seconds anyway.
         request.timeoutInterval = 20
         request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
-        if let payload {
-            request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        if let body {
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "content-type")
         }
 
@@ -98,7 +130,7 @@ final class LiveBackend: Backend {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         trail.mark("api: \(name) \(status) in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
 
-        let body = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
+        let answer = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
         if status == 401 {
             // The server no longer takes this token. The tabs must not
             // stay up over calls that can only fail: the session is told.
@@ -108,16 +140,16 @@ final class LiveBackend: Backend {
         guard (200..<300).contains(status) else {
             throw ApiError(
                 status: status,
-                code: body["code"] as? String,
-                message: (body["error"] as? String) ?? "The request failed (\(status))."
+                code: answer["code"] as? String,
+                message: (answer["error"] as? String) ?? "The request failed (\(status))."
             )
         }
-        return body
+        return answer
     }
 }
 
 /// For UI tests: a made-up member and three made-up posts, the same every
-/// time. No network.
+/// time; the member wrote the second. No network.
 final class StandInBackend: Backend {
     private let start: Date
     private let gate: StandInGate
@@ -130,6 +162,9 @@ final class StandInBackend: Backend {
     /// the first `me()` says nothing is required and the first like is
     /// refused all the same.
     private var stale: Bool
+    private var deleted: Set<String> = []
+    /// What was reported, for a test that wants to know.
+    private(set) var reports: [Report] = []
 
     init(start: Date, gate: StandInGate, ends: Bool = false, termsRequired: Bool = false, termsChanged: Bool = false) {
         self.start = start
@@ -199,7 +234,7 @@ final class StandInBackend: Backend {
                 state: nil
             ),
         ]
-        return FeedPage(posts: posts, cursor: nil)
+        return FeedPage(posts: posts.filter { !deleted.contains($0.id) }, cursor: nil)
     }
 
     func like(postId: String, on: Bool) async throws -> Int {
@@ -228,5 +263,17 @@ final class StandInBackend: Backend {
         }
         accepted = true
         return try await me()
+    }
+
+    func deletePost(postId: String) async throws {
+        // As the API: only the author may.
+        guard postId == "p2" else {
+            throw ApiError(status: 403, code: "not_yours", message: "This is not your post.")
+        }
+        deleted.insert(postId)
+    }
+
+    func report(_ report: Report) async throws {
+        reports.append(report)
     }
 }
