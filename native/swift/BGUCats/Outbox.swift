@@ -7,8 +7,8 @@ import UIKit
 /// closed app never loses a photo: the queue goes on at the next launch.
 /// Nothing leaves the phone's storage until the server has confirmed it.
 ///
-/// Every id is a ULID made here, so a retry after a lost answer lands on the
-/// same records. The write order is the web app's: the encounter (with its
+/// Every id is a ULID made here (`Ulid.swift`), so a retry after a lost
+/// answer lands on the same records. The write order is the web app's: the encounter (with its
 /// first photo, never empty), then for each photo its record as `pending`,
 /// its bytes, and the confirmation. A photo never goes before its
 /// encounter, and one photo's failure never holds up the others.
@@ -165,7 +165,7 @@ final class Outbox: ObservableObject {
         // place, never by a photo from the gallery.
         let camera = photos.filter { !$0.gallery }
         let place = camera.first(where: { $0.place != nil })?.place ?? (camera.isEmpty ? nil : lateFix)
-        let encounter = Encounter(id: ULID.make(), place: place, created: false)
+        let encounter = Encounter(id: Ulid.make(), place: place, created: false)
         index.encounters.append(encounter)
         index.items += photos.map {
             Item(id: $0.id, encounterId: encounter.id, gallery: $0.gallery, capturedAt: $0.capturedAt, place: $0.gallery ? nil : $0.place, failed: nil)
@@ -422,24 +422,6 @@ struct Chosen: Identifiable {
     let capturedAt: Date?
     /// Where the phone was when it was taken. Always nil from the gallery.
     let place: Fix?
-}
-
-/// A ULID: 48 bits of milliseconds, 80 random bits, Crockford's base 32,
-/// as web/outbox.js makes them. Sorts by time.
-enum ULID {
-    private static let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
-
-    static func make(now: Date = Date()) -> String {
-        var millis = UInt64(max(0, now.timeIntervalSince1970 * 1000))
-        var time = ""
-        for _ in 0..<10 {
-            time = String(alphabet[Int(millis % 32)]) + time
-            millis /= 32
-        }
-        var generator = SystemRandomNumberGenerator()
-        let rest = (0..<16).map { _ in String(alphabet[Int.random(in: 0..<32, using: &generator)]) }.joined()
-        return time + rest
-    }
 }
 
 /// Small copies of pictures, for the grid.
