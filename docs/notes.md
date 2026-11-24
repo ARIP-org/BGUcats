@@ -408,6 +408,20 @@ an hour that a sentence would have saved.
   runs `tests/web` a second time with `BGUCATS_NO_BROWSER=1`, as the
   deploy sees it. After a merge, "CI is green on `main`" is not "it is
   deployed": the Deploy run's own job is what says so.
+- **A doubt is tried before it is built on.** The review of #130 doubted
+  that the builder could push a merge of `main` carrying a workflow
+  change, since its App may not change workflows. It sounded right, a
+  guard was written in an hour (three commits, a test, a paragraph), and
+  it would have sent to the owner exactly what the builder then mended
+  by itself: both pushes went through (2026-11-24). The guard missed its
+  pull request by seconds, which is the only reason it was tried first.
+  What GitHub refuses is a push whose own commits change a workflow.
+- **"Not known yet" is an answer, and it has to be printed.** GitHub
+  works out whether a pull request merges when it is first asked after
+  `main` moved, and says null meanwhile. The queue asked once, read null
+  as nothing to do, and printed "Nothing in the queue" over two pull
+  requests in conflict (2026-11-24). The next look, fourteen minutes
+  later, was told. A look that does nothing says what it saw.
 - **"CI passed" was two checks, and the pull request had four.** The
   reviewer starts when the workflow called CI ends, and asks for the
   merge on a pass. The iPhone app's checks are another workflow, started
