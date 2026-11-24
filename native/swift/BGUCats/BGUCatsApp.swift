@@ -40,9 +40,13 @@ struct World {
         if arguments.contains("-uiTesting") {
             // "-signedOut": the test wants the sign-in screen.
             // "-signInEnds": the server refuses the token at the first like.
+            // "-termsRequired": the member has not accepted the terms.
+            // "-termsChanged": the terms changed after the account was read.
             var world = World.standIn(
                 signedIn: !arguments.contains("-signedOut"),
-                ends: arguments.contains("-signInEnds")
+                ends: arguments.contains("-signInEnds"),
+                termsRequired: arguments.contains("-termsRequired"),
+                termsChanged: arguments.contains("-termsChanged")
             )
             // "-look dark": the test names the look it is about to
             // picture. Asking the simulator to change its appearance did
@@ -69,7 +73,7 @@ struct World {
 
     /// What every UI test sees: the same lines at the same time, so two
     /// pictures of one screen are the same picture. No network at all.
-    static func standIn(signedIn: Bool = true, ends: Bool = false) -> World {
+    static func standIn(signedIn: Bool = true, ends: Bool = false, termsRequired: Bool = false, termsChanged: Bool = false) -> World {
         let start = Date(timeIntervalSince1970: 1_795_000_000)
         var tick = 0.0
         let clock: () -> Date = {
@@ -83,7 +87,7 @@ struct World {
             version: "0.2.0 (test)",
             look: nil,
             gate: gate,
-            backend: StandInBackend(start: start, gate: gate, ends: ends),
+            backend: StandInBackend(start: start, gate: gate, ends: ends, termsRequired: termsRequired, termsChanged: termsChanged),
             photos: DrawnPhotos()
         )
     }

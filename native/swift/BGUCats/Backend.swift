@@ -8,6 +8,9 @@ protocol Backend {
     func feed(cursor: String?) async throws -> FeedPage
     /// Likes or unlikes; answers with the post's new count.
     func like(postId: String, on: Bool) async throws -> Int
+    /// Accepts the terms of this version (`Me.termsCurrent`); answers with
+    /// the account as it is now.
+    func acceptTerms(version: String) async throws -> Me
 }
 
 /// What a call failed with. `status` 0: the server was not reached.
@@ -45,9 +48,17 @@ final class LiveBackend: Backend {
         return Read.int(json["likes"])
     }
 
+    func acceptTerms(version: String) async throws -> Me {
+        let json = try await call("POST", "/me/terms", body: ["version": version], as: "terms")
+        guard let me = Read.me(json) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        return me
+    }
+
     /// One call. `name` is what the trail calls it: the kind of call, never
     /// its address, which can carry an id.
-    private func call(_ method: String, _ path: String, cursor: String? = nil, as name: String) async throws -> [String: Any] {
+    private func call(_ method: String, _ path: String, cursor: String? = nil, body payload: [String: Any]? = nil, as name: String) async throws -> [String: Any] {
         let token: String
         switch await auth.pass() {
         case .token(let fresh):
@@ -70,6 +81,10 @@ final class LiveBackend: Backend {
         // ever. API Gateway gives up at thirty seconds anyway.
         request.timeoutInterval = 20
         request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+        if let payload {
+            request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+        }
 
         let began = Date()
         let data: Data
@@ -109,11 +124,19 @@ final class StandInBackend: Backend {
     /// The test asked for a sign-in that ends at the first like.
     private let ends: Bool
     private var liked: Set<String> = []
+    /// The made-up member has accepted the terms ("-termsRequired": not).
+    private var accepted: Bool
+    /// "-termsChanged": the terms changed after the account was read, so
+    /// the first `me()` says nothing is required and the first like is
+    /// refused all the same.
+    private var stale: Bool
 
-    init(start: Date, gate: StandInGate, ends: Bool = false) {
+    init(start: Date, gate: StandInGate, ends: Bool = false, termsRequired: Bool = false, termsChanged: Bool = false) {
         self.start = start
         self.gate = gate
         self.ends = ends
+        self.accepted = !(termsRequired || termsChanged)
+        self.stale = termsChanged
     }
 
     func me() async throws -> Me {
@@ -125,7 +148,8 @@ final class StandInBackend: Backend {
             role: "user",
             catsMet: 7,
             encounters: 12,
-            termsRequired: false
+            termsRequired: !accepted && !stale,
+            termsCurrent: "draft"
         )
     }
 
@@ -184,11 +208,25 @@ final class StandInBackend: Backend {
             gate.ended()
             throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
         }
+        if on && !accepted {
+            // What the API does (`require_terms`); the account read next
+            // says so.
+            stale = false
+            throw ApiError(status: 403, code: "terms_required", message: "accept the terms first")
+        }
         if on {
             liked.insert(postId)
         } else {
             liked.remove(postId)
         }
         return postId == "p1" ? (on ? 4 : 3) : (on ? 1 : 0)
+    }
+
+    func acceptTerms(version: String) async throws -> Me {
+        guard version == "draft" else {
+            throw ApiError(status: 409, code: "stale_terms", message: "these are not the current terms")
+        }
+        accepted = true
+        return try await me()
     }
 }

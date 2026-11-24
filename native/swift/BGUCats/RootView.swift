@@ -87,7 +87,7 @@ struct TabsView: View {
                 NotBuiltYet(title: "Scan a cat", symbol: "camera")
             }
             Tab("Home", systemImage: "house", value: AppTab.home) {
-                FeedView(world: world)
+                FeedView(world: world, session: session)
             }
             Tab("Profile", systemImage: "person.crop.circle", value: AppTab.profile) {
                 ProfileView(world: world, session: session, me: me)
@@ -96,6 +96,8 @@ struct TabsView: View {
         .onChange(of: tab) { _, opened in
             world.trail.mark("tab: \(opened.rawValue)")
         }
+        // Over whichever tab asked: the terms before the first write.
+        .termsDialog(session)
     }
 }
 
