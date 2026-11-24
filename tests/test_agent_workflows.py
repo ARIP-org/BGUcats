@@ -301,6 +301,33 @@ def test_a_pull_request_in_conflict_is_told_to_merge_main_in():
     assert "($WHY)" in rework["steps"][names.index("Nothing was pushed")]["run"]
 
 
+def test_a_merge_that_carries_a_workflow_change_is_not_the_builders():
+    # Found in review of #130: the App has no `workflows` permission, on
+    # purpose, and GitHub refuses a push that brings a workflow change into
+    # a branch, a merge of main included.
+    rework = builder()["jobs"]["rework"]
+    names = [s.get("name") or s.get("uses", "").split("@")[0] for s in rework["steps"]]
+    can = rework["steps"][names.index("Can the builder merge main in")]
+    assert can["if"] == "matrix.item.why == 'conflict'" and can["id"] == "can"
+    assert 'git merge-base HEAD origin/main' in can["run"]
+    assert 'git diff --name-only "$base" origin/main -- .github/workflows' in can["run"]
+    # Looked at after the checkout and before anything is installed or run.
+    assert names.index("actions/checkout") < names.index("Can the builder merge main in") < names.index("actions/setup-python")
+    for step in rework["steps"][names.index("actions/setup-python") : names.index("What Claude said last")]:
+        assert step["if"] == "steps.can.outputs.no != '1'", step.get("name") or step.get("uses") or step.get("run")
+    assert claude(builder(), "rework")["if"] == "steps.can.outputs.no != '1'"
+    # The pull request is told why, and goes to the owner.
+    last = rework["steps"][names.index("Nothing was pushed")]
+    assert last["env"]["NOT_THE_BUILDERS"] == "${{ steps.can.outputs.no }}"
+    assert 'if [ "$NOT_THE_BUILDERS" = 1 ]; then' in last["run"]
+    assert "main has changed a workflow since its branch was cut" in last["run"]
+    assert last["run"].index("labels[]=needs-owner") < last["run"].index("NOT_THE_BUILDERS")
+    # And the App still has no way to push one.
+    for job in ("fix", "rework"):
+        token = next(s for s in builder()["jobs"][job]["steps"] if s.get("id") == "app")
+        assert "permission-workflows" not in token["with"]
+
+
 def test_the_builder_is_shown_what_a_failed_check_said():
     # The Mac's log is the only compiler the iPhone app has. #127 failed
     # on one redeclared name and nothing showed the builder that line.
