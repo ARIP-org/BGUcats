@@ -619,6 +619,11 @@ final class Outbox: ObservableObject {
         }
         flow = kept
         trail.mark("scan: kept flow back (\(kept.step.rawValue))")
+        // Posted, and nothing of its post left waiting or refused here: it
+        // reached the server, and its encounter, done, was forgotten.
+        if kept.step == .posted, posts[kept.encounterId] == nil {
+            posts[kept.encounterId] = .sent
+        }
         let folder = self.folder
         for shot in kept.photos {
             Task.detached(priority: .utility) {
