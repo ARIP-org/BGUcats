@@ -6,9 +6,10 @@ the packed one it replaces (`native/ios/`), so every screen is seen on
 the phone as it lands. Built so far: the frame (four tabs of the system's
 own controls, so the glass is iOS's), signing in, Home with the feed
 (posts, their photos, a like, the terms asked before the first like,
-a post's menu: Delete on one's own, Report on anyone else's), the first
-half of Scan a cat (photos taken or chosen, sent as one encounter), the
-profile's first rows, and "App info". Cats says "Not built yet".
+a post's menu: Delete on one's own, Report on anyone else's), Scan a
+cat for a cat the app knows (photos taken or chosen, sent as one
+encounter, then "Which cat?" and the post), the profile's first rows,
+and "App info". Cats says "Not built yet".
 
 | File | |
 |---|---|
@@ -21,8 +22,10 @@ profile's first rows, and "App info". Cats says "Not built yet".
 | `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, the tabs, the profile |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
+| `ScanPages.swift` | Scan a cat after "Send": "Which cat?" and the post |
+| `ScanFlow.swift` | where the member is in Scan a cat after "Send", kept on the phone and checked before it is used |
 | `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
-| `Outbox.swift` | the upload queue: photos kept on the phone until the server has them |
+| `Outbox.swift` | the upload queue: photos kept on the phone until the server has them, then the pick and the post; and the scan flow beside it |
 | `Places.swift` | where the phone is when a photo is taken |
 | `Ulid.swift` | an id made on the phone (a report's, an encounter's, a photo's), so a retry is the same request |
 | `Photos.swift` | loading a picture, and the drawn ones UI tests get |
@@ -75,7 +78,7 @@ defined, one iOS version, nothing that signs.
 - **A UI test reads no network and keeps nothing.** The app started with
   `-uiTesting` gets a made-up world (`World.standIn()`): a clock that
   stands still, a trail kept in memory, a made-up member with three
-  made-up posts (`StandInBackend`), and pictures that are drawn
+  made-up posts and a campus of three cats (`StandInBackend`), and pictures that are drawn
   (`DrawnPhotos`), so two pictures of one screen are the same picture.
   `-signedOut` starts it with nobody signed in, `-termsRequired` with
   the terms not accepted, `-termsChanged` with terms that changed after
@@ -83,7 +86,9 @@ defined, one iOS version, nothing that signs.
   and the gallery hand out drawn photos, the place is made up
   (`StandInPlaces`), and the stand-in plays the four upload routes;
   `-uploadFailsOnce` makes the second photo's upload time out once,
-  `-offline` reaches nothing. The upload queue is the one thing it keeps,
+  `-offline` reaches nothing, `-postNotReadyOnce` answers the first
+  post `not_ready`, and `-flowBroken` leaves a kept flow that is not
+  whole. A post made is first in the stand-in's feed. The upload queue is the one thing it keeps,
   in the app's temporary folder, emptied at each launch unless
   `-keepQueue` asks for what the last launch left. What the stand-in was
   asked is at the end of App info, photos by number. A new screen that reads
@@ -178,13 +183,41 @@ defined, one iOS version, nothing that signs.
   (rounded to three decimals) if the person allowed it and one has come;
   nothing waits for it. The trail says each step by kind and status
   ("upload: media 200", "upload: retry, timed out").
+- **After "Send", the cat and the post** (`ScanPages.swift`, the web
+  app's `web/social/scan.js` and its words). "Which cat?" opens from the
+  sent photos: every cat of `GET /api/v1/cats` in a system `List` with
+  its cover, a search field, "Not sure", and "A cat that isn't here",
+  which says "Not built yet". Then the post: the cat said, the photos in
+  their order, a description of up to 280 characters, "Add location"
+  (on unless turned off), and "Post", which asks for the terms first.
+  "Post" queues, behind the photos in the same queue, the pick
+  (`POST /api/encounters/{id}/pick`) and then the post
+  (`POST /api/v1/posts`, `postId` made once on the phone). Each waits
+  until every photo of the encounter is confirmed and goes once;
+  `not_ready` waits and goes again with no tap and nothing on screen,
+  and `already_posted` is the post already there. **A pick is what
+  `_record_pick` takes from an app with no model:** the cat chosen is
+  the one cat shown, `ranked` is empty, `modelVersion` is `none`. "Not
+  sure" sends no pick (nothing was shown, and the server refuses a pick
+  that shows nothing; the web app sends none either) and a post with no
+  claim. Leaving after "Send" without choosing makes no post. Home reads
+  the feed again when a post reaches the server, so the post is first,
+  marked "Being checked". The trail says "scan: cat chosen", "upload:
+  pick 200", "upload: post 201", never a cat, the words or an id.
+- **The scan flow is kept and checked** (`ScanFlow.swift`): the
+  encounter, its photos, the step, the cat and the words are written
+  beside the queue (`flow.json`, with the photos' small pictures) at
+  every change, so a closed app opens on the same page. What the last
+  launch left is read field by field: one that is not whole (an id that
+  is not a ULID, no photos, a post page with no cat chosen) is dropped,
+  the trail says so, and the tab opens empty.
 
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
 app skips them for now), the area, and a page with the full terms (the
-dialog has their short text). In Scan a cat: "Who did you meet?" and the
-model, choosing the cat, a new cat and the post (the second half), video,
-and uploading while the app is closed. Then cats, the rest of profile, the
+dialog has their short text). In Scan a cat: the model and its three
+guesses, a new cat ("A cat that isn't here": the form and
+`POST /api/v1/proposals`), video, and uploading while the app is closed. Then cats, the rest of profile, the
 recognition model, and a string catalog for the four languages. Each is
 its own issue, in the plan's order.
