@@ -122,11 +122,14 @@ Things decided to leave for later, so they are not lost. Newest first.
   the desk's API clears them (an admin's action, or a route the job
   calls) or the events role is widened under `infra/`. Until then D14's
   "nothing links them to a person" is true of the app's table only.
-  Also not built: signing out and deleting the Cognito user (B10b); a
-  profile photo uploaded in the five minutes before deleting and
-  confirmed never (its signed upload outlives the call) stays under
-  `avatars/`; a like, report or proposal written in the second before
-  deletion that an index has not caught up with may be missed. *(2026-11-23.)*
+  Also not built: a profile photo uploaded in the five minutes before
+  deleting and confirmed never (its signed upload outlives the call)
+  stays under `avatars/`; a like, report or proposal written in the
+  second before deletion that an index has not caught up with may be
+  missed. Since B10b the Cognito user is deleted and its refresh tokens
+  revoked, but an ID token already handed out is good for up to an hour
+  (API Gateway does not ask Cognito): used after the job has finished,
+  it makes a new, empty account. *(2026-11-23; 2026-11-25.)*
 
 ## Design
 
