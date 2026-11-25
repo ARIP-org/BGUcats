@@ -816,6 +816,30 @@ def test_a_kept_flow_is_checked_before_it_is_used():
     assert "POST_TEXT_MAX = 280" in handler and "POST_PHOTOS_MAX = 50" in handler
 
 
+def test_a_description_is_counted_as_the_server_counts_it():
+    # The server counts code points after NFKC (src/common/text.py); Swift's
+    # String.count counts characters, and "❤️" is one of those and two code
+    # points. Counted the Swift way, 200 of them passed on the phone and the
+    # post was refused for good.
+    code = sources()
+    flow, page = code["ScanFlow.swift"], code["ScanPages.swift"]
+    assert "text.precomposedStringWithCompatibilityMapping.unicodeScalars.count" in flow
+    assert "ScanFlow.length(text) <= ScanFlow.textLimit" in flow
+    assert "text.count <= ScanFlow.textLimit" not in flow
+    assert "ScanFlow.length(now) > ScanFlow.textLimit" in page and "text = ScanFlow.cut(now)" in page
+    assert 'Text("\\(ScanFlow.length(text))/\\(ScanFlow.textLimit)")' in page
+    assert "flow.text = ScanFlow.cut(text)" in page
+    assert "prefix(ScanFlow.textLimit)" not in page and "text.count" not in page
+
+
+def test_a_post_sent_before_a_launch_says_it_was_sent_after_it():
+    # A sent post's encounter is forgotten once nothing of it waits; a kept
+    # "Posted" flow with no state for its post was sent.
+    opened = sources()["Outbox.swift"].split("private func openFlow()")[1].split("private func setFlowThumb")[0]
+    assert "if kept.step == .posted, posts[kept.encounterId] == nil {" in opened
+    assert "posts[kept.encounterId] = .sent" in opened
+
+
 def test_the_post_pages_use_the_web_apps_words():
     words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
     page = sources()["ScanPages.swift"]
