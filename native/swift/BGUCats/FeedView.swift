@@ -4,10 +4,14 @@ import SwiftUI
 struct FeedView: View {
     let world: World
     @StateObject private var model: FeedModel
+    /// A post made in Scan a cat reaches the server: the feed reads itself
+    /// again, so the member finds it first when they come Home.
+    @ObservedObject private var outbox: Outbox
 
     init(world: World, session: Session) {
         self.world = world
         _model = StateObject(wrappedValue: FeedModel(world: world, session: session))
+        _outbox = ObservedObject(wrappedValue: world.outbox)
     }
 
     var body: some View {
@@ -22,6 +26,14 @@ struct FeedView: View {
         }
         .task {
             await model.open()
+        }
+        // While Home is open, and when it is opened again: a tab out of
+        // sight may not hear the change.
+        .onChange(of: outbox.postsSent) { _, sent in
+            Task { await model.catchUp(sent) }
+        }
+        .onAppear {
+            Task { await model.catchUp(outbox.postsSent) }
         }
     }
 
@@ -131,6 +143,8 @@ final class FeedModel: ObservableObject {
     private var cursor: String?
     private var opened = false
     private var reading = false
+    /// The outbox's count of posts sent when the feed was last caught up.
+    private var postsRead = 0
 
     init(world: World, session: Session) {
         self.world = world
@@ -168,6 +182,15 @@ final class FeedModel: ObservableObject {
                 note = why
             }
         }
+    }
+
+    /// Reads the feed again if a post was made since it was last read.
+    func catchUp(_ postsSent: Int) async {
+        // A read under way may have begun before the post: the next
+        // change or the next look at Home catches up.
+        guard postsSent != postsRead, !reading else { return }
+        postsRead = postsSent
+        await refresh()
     }
 
     func more() async {
