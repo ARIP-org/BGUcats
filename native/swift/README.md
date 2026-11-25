@@ -188,7 +188,8 @@ defined, one iOS version, nothing that signs.
   sent photos: every cat of `GET /api/v1/cats` in a system `List` with
   its cover, a search field, "Not sure", and "A cat that isn't here",
   which says "Not built yet". Then the post: the cat said, the photos in
-  their order, a description of up to 280 characters, "Add location"
+  their order, a description of up to 280 characters as the server
+  counts them (code points after NFKC, so "❤️" is two), "Add location"
   (on unless turned off), and "Post", which asks for the terms first.
   "Post" queues, behind the photos in the same queue, the pick
   (`POST /api/encounters/{id}/pick`) and then the post
