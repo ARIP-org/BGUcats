@@ -46,6 +46,14 @@ struct Post: Equatable, Identifiable {
     let state: String?
 }
 
+/// A campus cat as `GET /cats` lists it: what "Which cat?" shows.
+struct Cat: Equatable, Identifiable {
+    let id: String
+    /// Nil while it has none.
+    let name: String?
+    let cover: URL?
+}
+
 struct FeedPage {
     let posts: [Post]
     /// Absent on the last page.
@@ -126,6 +134,16 @@ enum Read {
             mine: (json["mine"] as? Bool) ?? false,
             state: text(json["state"])
         )
+    }
+
+    /// `GET /cats`: every public cat, in the server's order. One with no id
+    /// is left out; one with no name or no photo is kept.
+    static func cats(_ json: [String: Any]) -> [Cat] {
+        (json["cats"] as? [[String: Any]] ?? []).compactMap { cat in
+            guard let catId = text(cat["catId"]) else { return nil }
+            let cover = cat["cover"] as? [String: Any]
+            return Cat(id: catId, name: text(cat["name"]), cover: url(cover?["thumb"]) ?? url(cover?["medium"]))
+        }
     }
 
     static func page(_ json: [String: Any]) -> FeedPage {
