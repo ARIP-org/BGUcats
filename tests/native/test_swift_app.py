@@ -507,9 +507,19 @@ def test_every_screen_is_kept_in_light_and_in_dark():
     assert 'keep(signedOut, "sign-in-\\(look)")' in tests and 'keep(app, "home-liked-\\(look)")' in tests
     assert 'keep(app, "home-\\(look)")' in tests and 'keep(app, "app-info-\\(look)")' in tests
     assert '[("Cats", "cats"), ("Profile", "profile")]' in tests
-    # Scan a cat, in its four states (issue 125).
+    # Scan a cat, in its four states (issue 125), then the cat, the post,
+    # "Posted" and the feed with the post first (issue 133).
     assert 'func testScanInLight()' in tests and 'func testScanInDark()' in tests
-    for name in ("scan-empty", "scan-photos", "scan-retrying", "scan-sent"):
+    for name in (
+        "scan-empty",
+        "scan-photos",
+        "scan-retrying",
+        "scan-sent",
+        "scan-which-cat",
+        "scan-post",
+        "scan-posted",
+        "home-after-post",
+    ):
         assert f'keep(app, "{name}-\\(look)")' in tests, name
     # A post's menu, both ways, and the report sheet.
     for picture in ("post-menu-own", "post-menu-other", "report"):
@@ -714,3 +724,100 @@ def test_the_walk_waits_with_one_patience_for_what_it_expects():
     # Nor a helper whose default is a number of its own (Scan a cat's
     # `expect` waited ten seconds unless told otherwise).
     assert not re.search(r"(?i)timeout: TimeInterval = \d", tests)
+
+
+# ------------------------------------------------ Scan a cat, the second half
+
+
+def test_the_pick_and_the_post_go_by_the_routes_of_the_capture_flow():
+    # docs/app-plan/04-api.md, "The capture flow", rows 6 and 9, and
+    # GET /cats; the pick on the desk's API, the post and the cats on the
+    # member's, as web/outbox.js and web/social/scan.js call them.
+    code = sources()
+    live = code["Backend.swift"].split("final class StandInBackend")[0]
+    assert '"POST", "/encounters/\\(Auth.encode(encounterId))/pick", base: "/api", body: pick.body' in live
+    assert 'exchange("POST", "/posts", body: post.body, as: "post", quiet: true)' in live
+    assert 'call("GET", "/cats", as: "cats")' in live
+    post = live.split("struct PostBody")[1].split("struct Presigned")[0]
+    for key in ("postId", "sessionId", "photoIds", "claim", "shareRegion"):
+        assert f'"{key}": ' in post, key
+    assert '"claim": catId.map { ["catId": $0] as Any } ?? NSNull()' in post
+    assert 'body["text"] = text' in post
+
+
+def test_a_pick_with_no_model_is_what_the_server_takes():
+    # src/admin/handler.py, `_record_pick`: `shown` lists one to five cats
+    # and `ranked` may be empty. With no model, the cat chosen is the one
+    # shown, as web/social/scan.js does; "Not sure" shows nothing and so
+    # sends no pick at all.
+    import re as regex
+
+    handler = (REPO / "src" / "admin" / "handler.py").read_text()
+    assert "not 0 < len(shown) <= PICK_SHOWN" in handler
+    web = (REPO / "web" / "social" / "scan.js").read_text()
+    no_model = regex.search(r'const NO_MODEL = "(\w+)"', web)[1]
+    pick = sources()["Backend.swift"].split("struct PickBody")[1].split("struct PostBody")[0]
+    assert f'static let noModel = "{no_model}"' in pick
+    assert regex.fullmatch(r"[a-z0-9][a-z0-9.-]{0,39}", no_model)
+    for line in ('"choice": "cat"', '"shown": [catId]', '"ranked": [Any]()', '"photoCount": max(1, photoCount)'):
+        assert line in pick, line
+    flow = sources()["ScanFlow.swift"]
+    assert "let pick = unsure ? nil : catId.map { PickBody(catId: $0, photoCount: photos.count) }" in flow
+    assert "catId: unsure ? nil : catId," in flow
+    # Every photo of the encounter, in the order they were taken.
+    assert "photoIds: photos.map(\\.id)," in flow
+
+
+def test_the_pick_and_the_post_wait_for_every_photo_and_go_once():
+    outbox = sources()["Outbox.swift"]
+    one_pass = outbox.split("private func pass()")[1].split("private func sendOne")[0]
+    # After the photos of the pass, and only for an encounter none of whose
+    # photos is still in the queue.
+    assert one_pass.index("withTaskGroup") < one_pass.index("await sendAfter()")
+    after = outbox.split("private func sendAfter()")[1].split("private func changeAfter")[0]
+    assert "let waiting = Set(index.items.map(\\.encounterId))" in after
+    assert "encounter.created && !waiting.contains(encounter.id)" in after
+    # The pick before the post; each marked sent in the index once it went.
+    assert after.index("backend.pick(") < after.index("backend.post(")
+    assert "$0.pickSent = true" in after and "postWent(encounter.id, post)" in after
+    # not_ready is "again later", never shown; already_posted is success.
+    ready = after.split('failure.code == "not_ready"')[1].split("} catch {")[0]
+    assert "again = true" in ready and "posts[" not in ready
+    posted = after.split('failure.code == "already_posted"')[1].split("} catch let")[0]
+    assert "postWent(encounter.id, post)" in posted
+    # An encounter is forgotten only when nothing follows it any more.
+    assert outbox.count("!(encounter.after?.pending ?? false)") == 2
+
+
+def test_the_terms_come_before_post_sends_anything():
+    page = sources()["ScanPages.swift"].split("struct PostPage")[1]
+    action = page.split("private func post() async")[1]
+    assert action.index("session.termsFirst()") < action.index("outbox.finish(")
+    # The post's id is made once and kept before the post is queued.
+    assert "flow.postId = flow.postId ?? Ulid.make()" in action
+    assert action.index("flow.postId = flow.postId ?? Ulid.make()") < action.index("outbox.keepFlow(flow)")
+
+
+def test_a_kept_flow_is_checked_before_it_is_used():
+    code = sources()
+    flow = code["ScanFlow.swift"]
+    assert "guard let flow = try? JSONDecoder().decode(ScanFlow.self, from: data), flow.whole else { return nil }" in flow
+    for check in ("ScanFlow.isUlid(encounterId)", "!ids.isEmpty", "Set(ids).count == ids.count", "!(unsure && catId != nil)"):
+        assert check in flow, check
+    opened = code["Outbox.swift"].split("private func openFlow()")[1].split("private func setFlowThumb")[0]
+    assert "guard let kept = ScanFlow.read(data) else {" in opened
+    assert 'trail.mark("scan: kept flow dropped, not whole")' in opened and "endFlow()" in opened
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    assert '["-uiTesting", "-look", "light", "-keepQueue", "-flowBroken"]' in tests
+    assert 'arguments.contains("-flowBroken")' in code["BGUCatsApp.swift"]
+    # The limits are the server's.
+    assert "static let textLimit = 280" in flow and "static let photoLimit = 50" in flow
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert "POST_TEXT_MAX = 280" in handler and "POST_PHOTOS_MAX = 50" in handler
+
+
+def test_the_post_pages_use_the_web_apps_words():
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    page = sources()["ScanPages.swift"]
+    for key in ("scan.which", "scan.location", "scan.locationOn", "scan.locationOff", "scan.post", "scan.descriptionHint", "feed.search", "cat.noName"):
+        assert f'"{words[key]}"' in page, key
