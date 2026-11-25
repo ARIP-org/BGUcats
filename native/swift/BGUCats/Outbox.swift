@@ -65,6 +65,14 @@ final class Outbox: ObservableObject {
         var pending: Bool {
             (pick != nil && !pickSent) || (post != nil && !postSent && postFailed == nil)
         }
+
+        /// Kept in the index: something is still to send, or a post was
+        /// refused for good and its flow, which shows why, is not over. The
+        /// refusal lives here only, so forgetting it would turn "Posted"
+        /// after a launch into a post that was never made.
+        var kept: Bool {
+            pending || postFailed != nil
+        }
     }
 
     /// A post as the screen shows it.
@@ -173,7 +181,7 @@ final class Outbox: ObservableObject {
         }
         let kept = index.items
         index.encounters.removeAll { encounter in
-            !kept.contains { $0.encounterId == encounter.id } && !(encounter.after?.pending ?? false)
+            !kept.contains { $0.encounterId == encounter.id } && !(encounter.after?.kept ?? false)
         }
         save()
         for encounter in index.encounters where encounter.after?.post != nil {
@@ -184,6 +192,8 @@ final class Outbox: ObservableObject {
             }
         }
         openFlow()
+        // A refusal is kept for its flow only: with that flow gone, so is it.
+        dropRefused(keeping: flow?.encounterId)
         guard !index.items.isEmpty else {
             kick()
             return
@@ -375,7 +385,7 @@ final class Outbox: ObservableObject {
         let behind = await sendAfter()
         let left = index.items
         index.encounters.removeAll { encounter in
-            encounter.created && !left.contains { $0.encounterId == encounter.id } && !(encounter.after?.pending ?? false)
+            encounter.created && !left.contains { $0.encounterId == encounter.id } && !(encounter.after?.kept ?? false)
         }
         save()
         return stuck || later || behind
@@ -411,7 +421,9 @@ final class Outbox: ObservableObject {
                 trail.mark("upload: post \(status)")
                 postWent(encounter.id, post)
             } catch let failure as ApiError where failure.code == "already_posted" {
-                // Sent before, and the answer was lost: it is there.
+                // Another post of this encounter is on the server (a resent
+                // postId is answered with its own post, not this). The
+                // encounter is in the feed, which is what "Post" was for.
                 trail.mark("upload: post \(failure.status), already there")
                 postWent(encounter.id, post)
             } catch let failure as ApiError where failure.code == "not_ready" || failure.status == 425 {
@@ -601,11 +613,28 @@ final class Outbox: ObservableObject {
     func endFlow() {
         flow = nil
         flowThumbs = [:]
+        dropRefused(keeping: nil)
         try? FileManager.default.removeItem(at: flowFile)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         for name in files where name.hasSuffix(".thumb") {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
         }
+    }
+
+    /// Forgets the encounters kept only for a post refused for good (nothing
+    /// of them waits), but for `encounterId`'s, whose flow still shows it.
+    private func dropRefused(keeping encounterId: String?) {
+        let waiting = Set(index.items.map(\.encounterId))
+        let gone = index.encounters.filter { encounter in
+            guard let after = encounter.after, after.postFailed != nil, !after.pending else { return false }
+            return encounter.id != encounterId && !waiting.contains(encounter.id)
+        }.map(\.id)
+        guard !gone.isEmpty else { return }
+        index.encounters.removeAll { gone.contains($0.id) }
+        for id in gone {
+            posts[id] = nil
+        }
+        save()
     }
 
     /// The flow the last launch left, checked before it is used: one that
