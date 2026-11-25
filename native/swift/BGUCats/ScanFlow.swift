@@ -49,6 +49,28 @@ struct ScanFlow: Codable, Equatable {
     static let textLimit = 280
     static let photoLimit = 50
 
+    /// The length the server checks: code points after NFKC
+    /// (src/common/text.py), not what Swift calls characters. "❤️" is one
+    /// character and two code points; counted as one, a description of
+    /// emoji passed here and was refused for good there.
+    static func length(_ text: String) -> Int {
+        text.precomposedStringWithCompatibilityMapping.unicodeScalars.count
+    }
+
+    /// The longest start of `text` within the limit, cut between
+    /// characters so no emoji or pointed letter is left half.
+    static func cut(_ text: String) -> String {
+        guard length(text) > textLimit else { return text }
+        var kept = ""
+        var used = 0
+        for character in text {
+            used += length(String(character))
+            if used > textLimit { break }
+            kept.append(character)
+        }
+        return kept
+    }
+
     /// What the last launch kept, if it is whole; nil if it is not.
     static func read(_ data: Data) -> ScanFlow? {
         guard let flow = try? JSONDecoder().decode(ScanFlow.self, from: data), flow.whole else { return nil }
@@ -63,7 +85,7 @@ struct ScanFlow: Codable, Equatable {
             !ids.isEmpty, ids.count <= ScanFlow.photoLimit,
             Set(ids).count == ids.count,
             ids.allSatisfy(ScanFlow.isUlid),
-            text.count <= ScanFlow.textLimit,
+            ScanFlow.length(text) <= ScanFlow.textLimit,
             !(unsure && catId != nil)
         else { return false }
         if let catId, catId.isEmpty {
