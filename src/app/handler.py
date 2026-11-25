@@ -548,7 +548,7 @@ def _delete_avatar_objects(user, keep):
             s3.delete_objects(Bucket=MEDIA_BUCKET, Delete={"Objects": targets})
 
 
-def _delete_me(user, body, **_):
+def _delete_me(user, body, claims=None, **_):
     """`DELETE /me`, body `{"confirm": "delete"}`: the account goes
     (03-data-model.md, "Deleting an account"; D14). This marks it
     `deleting`, after which every call by this person, this one again
@@ -560,17 +560,21 @@ def _delete_me(user, body, **_):
     bucket), and the list of cats whose polls and feedings the job must
     look through (it cannot read the dataset, where the cats are listed).
 
-    Signing the person out and deleting their Cognito user is B10b: until
-    then the same sign-in still works, answers `gone` while the job runs,
-    and makes a new, empty account once it has finished."""
+    The job's first step signs the person out everywhere and deletes their
+    Cognito user (B10b), which only the token says: Cognito names a Google
+    user `Google_…`, and nothing in the tables does. So the token's
+    `cognito:username` is kept on the profile here, in the same write
+    that marks it `deleting`."""
     if body.get("confirm") != "delete":
         raise ApiError(400, 'confirm is "delete"', code="confirm")
+    cognito_user = str((claims or {}).get("cognito:username") or "")
     try:
         social_table.update_item(
             Key={"PK": user["PK"], "SK": "PROFILE"},
             UpdateExpression=(
                 "SET #s = :deleting, deletingAt = :now, deletingCats = :cats, "
                 "deletionStep = :zero"
+                + (", cognitoUser = :cognito" if cognito_user else "")
             ),
             # Banned a moment ago, or a second call: the ban stands, and a
             # deletion already started is not started again.
@@ -582,6 +586,7 @@ def _delete_me(user, body, **_):
                 ":now": api.now_iso(),
                 ":cats": sorted({c["catId"] for c in _cats()}),
                 ":zero": 0,
+                **({":cognito": cognito_user} if cognito_user else {}),
             },
         )
     except social_table.meta.client.exceptions.ConditionalCheckFailedException:
@@ -2524,11 +2529,17 @@ def handler(event, context):
         email = api.caller_email(event)
         role = _admit(email)
         handler_fn, params, _ = api.match_route(ROUTES, method, path)
-        user = _account(email, _claims(event))
+        claims = _claims(event)
+        user = _account(email, claims)
         _require_usable(user)
         body = api.parse_body(event)
         result = handler_fn(
-            user=user, role=role, body=body, query=api.query_params(event), **params
+            user=user,
+            role=role,
+            body=body,
+            query=api.query_params(event),
+            claims=claims,
+            **params,
         )
         return _answer(200, result)
     except ApiError as exc:
