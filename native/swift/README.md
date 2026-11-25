@@ -196,7 +196,10 @@ defined, one iOS version, nothing that signs.
   (`POST /api/v1/posts`, `postId` made once on the phone). Each waits
   until every photo of the encounter is confirmed and goes once;
   `not_ready` waits and goes again with no tap and nothing on screen,
-  and `already_posted` is the post already there. **A pick is what
+  `already_posted` (another post of this encounter is on the server; a
+  resent `postId` gets its own post back) counts as sent, and a post
+  refused for good stays in the queue's index, its refusal on the
+  Posted screen across launches, until the flow ends. **A pick is what
   `_record_pick` takes from an app with no model:** the cat chosen is
   the one cat shown, `ranked` is empty, `modelVersion` is `none`. "Not
   sure" sends no pick (nothing was shown, and the server refuses a pick
