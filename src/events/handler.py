@@ -8,8 +8,10 @@ post is published (publish_post). Since B3b, a change to an encounter
 recounts what its person met and keeps its post's cat on the label
 (count_encounter). Since B6, an admin's decision on a new cat releases or
 hides the post that waited for it (decide_proposal). Since B10a, a profile
-marked `deleting` is deleted, a step a change (delete_account). Since B9, four of these changes tell someone's phone
-(notify, and push.py for the sending). Moderation (C1) arrives the same way.
+marked `deleting` is deleted, a step a change (delete_account); since
+B10b its first step signs the person out and deletes their Cognito user.
+Since B9, four of these changes tell someone's phone (notify, and push.py
+for the sending). Moderation (C1) arrives the same way.
 
 The rules every handler keeps:
 
@@ -1606,6 +1608,50 @@ def _rate_keys(me, cats, now):
     return keys
 
 
+# Step 1 (B10b): the person's Cognito user. The pool's id comes from
+# Terraform (infra/main/events.tf); absent in tests and the local app,
+# which have no pool, and then the step logs and moves on.
+COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
+_cognito = None
+
+
+def _cognito_client():
+    global _cognito
+    if _cognito is None:
+        _cognito = boto3.client("cognito-idp")
+    return _cognito
+
+
+def sign_out_everywhere(profile):
+    """Step 1: sign the person out of every device (their refresh tokens
+    stop working), then delete their Cognito user, before anything in the
+    tables goes. `DELETE /me` kept the user's Cognito name on the profile
+    (`cognitoUser`). A user already gone is done, not a failure, so the
+    step can run again; any other answer from Cognito (throttled,
+    unreachable) fails the change, which leaves the account `deleting` at
+    this step for the mapping to try again.
+
+    An ID token already handed out stays valid until it expires (an hour
+    at most): API Gateway does not ask Cognito. While the job runs such a
+    call is answered `gone`."""
+    me, user = profile["userId"], profile.get("cognitoUser")
+    if not user:
+        logger.warning("deleting user=%s: no Cognito user recorded", me)
+        return
+    if not COGNITO_USER_POOL_ID:
+        logger.warning("deleting user=%s: no user pool here", me)
+        return
+    cognito = _cognito_client()
+    try:
+        cognito.admin_user_global_sign_out(
+            UserPoolId=COGNITO_USER_POOL_ID, Username=user
+        )
+        cognito.admin_delete_user(UserPoolId=COGNITO_USER_POOL_ID, Username=user)
+    except cognito.exceptions.UserNotFoundException:
+        pass  # deleted by an earlier run of this step: signed out with it
+    logger.info("deleting user=%s: signed out and Cognito user deleted", me)
+
+
 def delete_last(profile):
     """Steps 6 and 7 (the avatar's objects went with `DELETE /me`, the one
     Lambda that may touch the bucket): the lookups, the rate counters, a
@@ -1635,6 +1681,7 @@ def delete_last(profile):
 
 
 DELETION_STEPS = (
+    sign_out_everywhere,
     delete_posts,
     delete_marks,
     delete_ties,
