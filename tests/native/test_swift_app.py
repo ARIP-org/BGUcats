@@ -785,8 +785,25 @@ def test_the_pick_and_the_post_wait_for_every_photo_and_go_once():
     assert "again = true" in ready and "posts[" not in ready
     posted = after.split('failure.code == "already_posted"')[1].split("} catch let")[0]
     assert "postWent(encounter.id, post)" in posted
-    # An encounter is forgotten only when nothing follows it any more.
-    assert outbox.count("!(encounter.after?.pending ?? false)") == 2
+    # An encounter is forgotten only when nothing follows it any more, and
+    # not while its post's refusal is what its flow shows.
+    assert outbox.count("!(encounter.after?.kept ?? false)") == 2
+    assert "pending ?? false" not in outbox
+    assert "pending || postFailed != nil" in outbox
+
+
+def test_a_post_refused_for_good_outlives_a_launch_until_its_flow_ends():
+    # The refusal lives in the index alone. Forgotten in the pass that got it,
+    # a launch read the kept "Posted" flow as sent: "It is in your feed".
+    outbox = sources()["Outbox.swift"]
+    opened = outbox.split("func open()")[1].split("func send(")[0]
+    assert opened.index("posts[encounter.id] = .failed(failed)") < opened.index("openFlow()")
+    assert opened.index("openFlow()") < opened.index("dropRefused(keeping: flow?.encounterId)")
+    ended = outbox.split("func endFlow()")[1].split("private func dropRefused")[0]
+    assert "dropRefused(keeping: nil)" in ended
+    dropped = outbox.split("private func dropRefused")[1].split("private func openFlow")[0]
+    assert "after.postFailed != nil, !after.pending" in dropped
+    assert "encounter.id != encounterId && !waiting.contains(encounter.id)" in dropped
 
 
 def test_the_terms_come_before_post_sends_anything():
