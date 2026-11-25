@@ -135,8 +135,10 @@ Each of these gets a test.
 
 ## Deleting an account
 
-**Built in B10a (2026-11-23), except step 1 (B10b).** `DELETE /me` sets
-`status = deleting` and answers; it also deletes the profile photo's
+**Built in B10a (2026-11-23) and B10b (2026-11-25).** `DELETE /me` sets
+`status = deleting`, keeps the token's `cognito:username` on the profile
+(`cognitoUser`: Cognito names a Google user `Google_…`, which nothing
+else in the tables holds) and answers; it also deletes the profile photo's
 objects (step 6), because the events Lambda has no access to the bucket,
 and lists every cat's id on the profile (`deletingCats`), because the
 events Lambda cannot read the dataset where cats are listed. The events
@@ -147,10 +149,16 @@ safe to repeat, so a step stopped half-way is run again by the mapping's
 retry and finds its finished part done
 (`tests/app/test_delete_account.py`).
 
-1. Sign the person out everywhere and delete the Cognito user. **Not
-   built (B10b):** the events role has no `cognito-idp` permission. Until
-   then the same sign-in answers `gone` while the job runs, and once it
-   has finished makes a new, empty account.
+1. Sign the person out everywhere (`AdminUserGlobalSignOut`: their
+   refresh tokens stop working) and delete the Cognito user
+   (`AdminDeleteUser`), before any item is touched (B10b,
+   `sign_out_everywhere`). A user already gone is done, so the step runs
+   again safely; any other failure of Cognito leaves the account at this
+   step for the mapping to retry. An ID token already handed out is good
+   for up to an hour (API Gateway does not ask Cognito): while the job
+   runs it is answered `gone`, and after, it would make a new, empty
+   account. A profile with no `cognitoUser` (marked before B10b) skips
+   the step and says so in the log.
 2. Posts: set `removed` (`hiddenReason = deleted`), which drops them from
    every index, and their cat's counters are taken back; `authorId` and
    `GSI1` go too, so the post no longer names its author. The likes
