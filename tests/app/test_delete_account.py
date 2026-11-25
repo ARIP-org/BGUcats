@@ -11,10 +11,13 @@ tests/events/stream.py standing in for the table's stream.
 """
 
 import io
+import json
 import re
 from pathlib import Path
 
+import boto3
 import pytest
+from botocore.exceptions import ClientError
 from PIL import Image
 
 import recount
@@ -388,9 +391,10 @@ def test_what_the_dataset_still_holds_is_what_the_pull_request_says(everything):
 
 
 def test_after_deletion_the_same_sign_in_starts_a_new_empty_account(everything):
-    """Until B10b deletes the Cognito user, the sign-in still works: while
-    the job runs it is answered `gone`, and once it has finished the next
-    call makes a new account with nothing of the old one."""
+    """Should a token outlive the Cognito user (an ID token is good for up
+    to an hour after B10b's step deletes it, and here no pool is stood in):
+    while the job runs it is answered `gone`, and once it has finished the
+    next call makes a new account with nothing of the old one."""
     old = everything["ids"][HELPER]
     delete()
     everything["stream"].settle()
@@ -495,3 +499,165 @@ def test_the_rate_counters_are_the_member_apis_own():
         for a in actions
     }
     assert found == expected
+
+
+# ------------------------------------------------- the Cognito user (B10b)
+
+HELPERS_SIGN_IN = "Google_100000000000000000002"
+ADMINS_SIGN_IN = "Google_100000000000000000001"
+
+
+class Recording:
+    """The Cognito client, every Admin call written down with the social
+    table as it was at that moment. `fail` makes the next calls raise."""
+
+    def __init__(self, social):
+        self.client = boto3.client("cognito-idp", region_name="us-east-1")
+        self.exceptions = self.client.exceptions
+        self.social = social
+        self.calls = []
+        self.fail = None
+
+    def _call(self, name, **kwargs):
+        self.calls.append((name, kwargs["Username"], _normal(scan(self.social))))
+        if self.fail:
+            raise ClientError({"Error": {"Code": self.fail, "Message": "no"}}, name)
+        return getattr(self.client, name)(**kwargs)
+
+    def admin_user_global_sign_out(self, **kwargs):
+        return self._call("admin_user_global_sign_out", **kwargs)
+
+    def admin_delete_user(self, **kwargs):
+        return self._call("admin_delete_user", **kwargs)
+
+
+@pytest.fixture
+def pool(everything, monkeypatch):
+    """A user pool in moto with HELPER's and the admin's Google users."""
+    cognito = boto3.client("cognito-idp", region_name="us-east-1")
+    pool_id = cognito.create_user_pool(PoolName="bgucats-admins")["UserPool"]["Id"]
+    for username, email in ((HELPERS_SIGN_IN, HELPER), (ADMINS_SIGN_IN, ADMIN)):
+        cognito.admin_create_user(
+            UserPoolId=pool_id,
+            Username=username,
+            UserAttributes=[{"Name": "email", "Value": email}],
+        )
+    recording = Recording(everything["social"])
+    monkeypatch.setattr(events, "COGNITO_USER_POOL_ID", pool_id)
+    monkeypatch.setattr(events, "_cognito", recording)
+    everything["pool"] = pool_id
+    everything["cognito"] = recording
+    return everything
+
+
+def delete_signed_in(email=HELPER, username=HELPERS_SIGN_IN):
+    """`DELETE /me` with the ID token's claims as API Gateway passes them."""
+    event = {
+        "requestContext": {
+            "http": {"method": "DELETE", "path": "/api/v1/me"},
+            "authorizer": {
+                "jwt": {"claims": {"email": email, "cognito:username": username}}
+            },
+        },
+        "body": json.dumps({"confirm": "delete"}),
+    }
+    answer = handler.handler(event, None)
+    return answer["statusCode"], json.loads(answer["body"])
+
+
+def users(world):
+    listing = boto3.client("cognito-idp", region_name="us-east-1").list_users(
+        UserPoolId=world["pool"]
+    )
+    return {u["Username"] for u in listing["Users"]}
+
+
+def test_the_person_is_signed_out_and_their_cognito_user_deleted_first(pool):
+    world, me = pool, pool["ids"][HELPER]
+    assert delete_signed_in() == (200, {"deleting": True})
+    profile = get(world["social"], f"USER#{me}", "PROFILE")
+    assert profile["cognitoUser"] == HELPERS_SIGN_IN
+    marked = _normal(scan(world["social"]))
+
+    world["stream"].settle()
+
+    # Both calls, for this person, in that order, with the tables as
+    # `DELETE /me` left them: no item deleted yet.
+    assert [(name, user) for name, user, _ in world["cognito"].calls] == [
+        ("admin_user_global_sign_out", HELPERS_SIGN_IN),
+        ("admin_delete_user", HELPERS_SIGN_IN),
+    ]
+    assert all(tables == marked for _, _, tables in world["cognito"].calls)
+    # Their user is gone from the pool; the admin's is not.
+    assert users(world) == {ADMINS_SIGN_IN}
+    # And the rest of the job ran as before.
+    assert holding(world["social"], me) == set()
+    assert holding(world["social"], HELPERS_SIGN_IN) == set()
+    assert recount.differences(scan(world["social"])) == []
+
+
+def test_the_job_again_and_a_user_already_gone_end_the_same(pool):
+    world = pool
+    stream = world["stream"]
+    before = stream.seen
+    delete_signed_in()
+    start = scan(world["social"])
+    stream.settle()  # asserts that no change failed, here and below
+    plain = _normal(scan(world["social"]))
+    assert users(world) == {ADMINS_SIGN_IN}
+
+    # The whole job again, from `DELETE /me`'s change: the user is already
+    # gone from Cognito, which is success.
+    for _ in range(2):
+        _restore(world["social"], start)
+        stream.seen = before
+        stream.settle()
+        assert _normal(scan(world["social"])) == plain
+    assert users(world) == {ADMINS_SIGN_IN}
+    # Each run asked Cognito: the later ones were told the user was gone.
+    assert [name for name, _, _ in world["cognito"].calls] == [
+        "admin_user_global_sign_out",
+        "admin_delete_user",
+        "admin_user_global_sign_out",
+        "admin_user_global_sign_out",
+    ]
+
+
+@pytest.mark.parametrize("error", ["TooManyRequestsException", "InternalErrorException"])
+def test_a_failure_of_cognito_stops_the_job_before_the_tables(pool, error):
+    """Throttled, or unreachable: the change is reported failed, so the
+    mapping delivers it again, and nothing in the tables has moved."""
+    world, me = pool, pool["ids"][HELPER]
+    stream = world["stream"]
+    delete_signed_in()
+    marked = _normal(scan(world["social"]))
+    now = stream._snapshot()
+    records = stream._records(stream.seen, now)
+    stream.seen = now
+
+    world["cognito"].fail = error
+    answer = events.handler({"Records": records}, None)
+    assert len(answer["batchItemFailures"]) == 1
+    assert _normal(scan(world["social"])) == marked
+    profile = get(world["social"], f"USER#{me}", "PROFILE")
+    assert (profile["status"], int(profile["deletionStep"])) == ("deleting", 0)
+    assert HELPERS_SIGN_IN in users(world)
+
+    # The mapping's retry, with Cognito answering again: the job finishes.
+    world["cognito"].fail = None
+    assert events.handler({"Records": records}, None) == {"batchItemFailures": []}
+    stream.settle()
+    assert users(world) == {ADMINS_SIGN_IN}
+    assert holding(world["social"], me) == set()
+
+
+def test_with_no_cognito_user_recorded_the_job_still_runs(pool):
+    """No `cognito:username` kept (every ID token the app sends has one,
+    but an account marked before B10b has none): the step says so in the
+    log and the tables are deleted as before."""
+    world, me = pool, pool["ids"][HELPER]
+    assert delete()[0] == 200
+    world["stream"].settle()
+    assert world["cognito"].calls == []
+    assert holding(world["social"], me) == set()
+    assert HELPERS_SIGN_IN in users(world)
