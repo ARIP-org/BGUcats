@@ -191,7 +191,7 @@ struct PostPage: View {
             } header: {
                 Text("Description · optional")
             } footer: {
-                Text("\(text.count)/\(ScanFlow.textLimit)")
+                Text("\(ScanFlow.length(text))/\(ScanFlow.textLimit)")
             }
             Section {
                 Toggle(isOn: $shareRegion) {
@@ -228,8 +228,8 @@ struct PostPage: View {
             shareRegion = flow.shareRegion
         }
         .onChange(of: text) { _, now in
-            if now.count > ScanFlow.textLimit {
-                text = String(now.prefix(ScanFlow.textLimit))
+            if ScanFlow.length(now) > ScanFlow.textLimit {
+                text = ScanFlow.cut(now)
                 return
             }
             keep()
@@ -274,7 +274,7 @@ struct PostPage: View {
         }
         // The dialog may have been up a while: the flow as it is now.
         guard var flow = outbox.flow, flow.step == .post else { return }
-        flow.text = String(text.prefix(ScanFlow.textLimit))
+        flow.text = ScanFlow.cut(text)
         flow.shareRegion = shareRegion
         // The post's id first, kept, so a tap after a crash is the same post.
         flow.postId = flow.postId ?? Ulid.make()
