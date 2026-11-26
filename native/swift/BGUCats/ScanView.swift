@@ -5,7 +5,8 @@ import UIKit
 
 /// "Scan a cat": take photos or choose them from the gallery, see them,
 /// and send them as one encounter (the upload queue, Outbox.swift). Then,
-/// if the member wants, "Which cat?" and the post (ScanPages.swift), pages
+/// if the member wants, "Which cat?", the new-cat form and the post
+/// (ScanPages.swift), pages
 /// pushed over this one by the flow's step (`ScanFlow`). Leaving after
 /// "Send" makes no post: the photos are sent either way.
 struct ScanView: View {
@@ -48,6 +49,8 @@ struct ScanView: View {
                 switch step {
                 case .post:
                     PostPage(world: world, session: session, outbox: outbox)
+                case .new:
+                    NewCatPage(world: world, session: session, outbox: outbox)
                 default:
                     WhichCatPage(world: world, outbox: outbox)
                 }
@@ -72,11 +75,13 @@ struct ScanView: View {
         Binding(get: {
             switch outbox.flow?.step {
             case .which: return [.which]
-            case .post: return [.which, .post]
+            case .new: return [.which, .new]
+            // A new cat's post is reached through its form.
+            case .post: return outbox.flow?.proposal != nil ? [.which, .new, .post] : [.which, .post]
             default: return []
             }
         }, set: { pages in
-            guard var flow = outbox.flow, flow.step != .posted else { return }
+            guard var flow = outbox.flow, !flow.ended else { return }
             let step = pages.last ?? .sent
             guard step != flow.step else { return }
             flow.step = step
@@ -264,11 +269,12 @@ struct ScanView: View {
     // ------------------------------------------------------------ sending
 
     /// After "Send": the photos and how far each is, with the way on to
-    /// "Which cat?"; after "Post", "Posted" above them.
+    /// "Which cat?"; after "Post", "Posted" above them, and after "Just
+    /// add", "Added".
     private var sending: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if outbox.flow?.step == .posted {
+                if outbox.flow?.ended == true {
                     posted
                 }
                 header
@@ -285,7 +291,7 @@ struct ScanView: View {
                         }
                     }
                 }
-                if let flow = outbox.flow, flow.step != .posted {
+                if let flow = outbox.flow, !flow.ended {
                     Text("Say which cat it was, and post it if you like. Or leave it here: the photos are sent either way.")
                         .foregroundStyle(.secondary)
                     Button {
@@ -306,15 +312,16 @@ struct ScanView: View {
         }
     }
 
-    /// "Posted", and where the post is.
+    /// "Posted", and where the post is; or "Added", and where the new cat is.
     private var posted: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let added = outbox.flow?.step == .added
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .accessibilityHidden(true)
-                Text("Posted")
-                    .accessibilityIdentifier("scan.posted")
+                Text(added ? "Added" : "Posted")
+                    .accessibilityIdentifier(added ? "scan.added" : "scan.posted")
             }
             .font(.largeTitle.bold())
             Text(postWords)
@@ -324,10 +331,22 @@ struct ScanView: View {
     }
 
     private var postWords: String {
-        guard let encounterId = outbox.flow?.encounterId else { return "" }
-        switch outbox.posts[encounterId] {
+        guard let flow = outbox.flow else { return "" }
+        if flow.step == .added {
+            switch outbox.posts[flow.encounterId] {
+            case .sent:
+                return "Thanks! An admin will look at your new cat."
+            case .failed(let why):
+                return "The new cat could not be added: \(why)"
+            default:
+                return "It goes to an admin as soon as its photos are sent. Nothing to wait for here."
+            }
+        }
+        switch outbox.posts[flow.encounterId] {
         case .sent:
-            return "It is in your feed. Others see it once it has been checked."
+            return flow.proposal != nil
+                ? "It is in your feed. Others see it once an admin has looked at the new cat."
+                : "It is in your feed. Others see it once it has been checked."
         case .failed(let why):
             return "The post could not be made: \(why)"
         default:
@@ -397,7 +416,7 @@ struct ScanView: View {
                 .buttonStyle(.glass)
             }
             Button {
-                if let step = outbox.flow?.step, step != .posted {
+                if let flow = outbox.flow, !flow.ended {
                     world.trail.mark("scan: left without choosing")
                 }
                 outbox.clear()
