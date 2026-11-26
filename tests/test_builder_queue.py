@@ -37,7 +37,7 @@ def issue(number, *labels, author="bot", author_type="User", idle_hours=0):
     }
 
 
-def decide(issues, branches=(), by=None, limit=3):
+def decide(issues, branches=(), by=None, limit=3, waiting=()):
     """`by`: {(number, label): login or (login, type)}; the bot by default."""
 
     def labeled(number, label):
@@ -47,7 +47,9 @@ def decide(issues, branches=(), by=None, limit=3):
         login, kind = who if isinstance(who, tuple) else (who, "User")
         return {"by": login, "type": kind}
 
-    return queue.decide(issues, list(branches), labeled, lambda login: PEOPLE.get(login, "none"), NOW, limit)
+    return queue.decide(
+        issues, list(branches), labeled, lambda login: PEOPLE.get(login, "none"), NOW, limit, list(waiting)
+    )
 
 
 # ----------------------------------------------------------------- who
@@ -116,6 +118,26 @@ def test_open_agent_pull_requests_take_places():
     plan = decide(issues, branches=["claude/issue-90", "claude/some-session", "feature/x"])
     assert plan["take"] == [1] and plan["wait"] == [2]
     assert decide(issues, branches=["claude/a", "claude/b", "claude/c"])["take"] == []
+
+
+def test_a_pull_request_waiting_only_for_the_owner_takes_no_place():
+    # The owner merges once or twice a day; the builder does not stand
+    # idle until then (the owner, 2026-11-26).
+    issues = [issue(1, "ready"), issue(2, "ready"), issue(3, "ready")]
+    open_ = ["claude/issue-90", "claude/issue-91", "claude/some-session"]
+    plan = decide(issues, branches=open_, waiting=["claude/issue-90", "claude/some-session"])
+    assert plan["take"] == [1, 2] and plan["wait"] == [3]
+    # Still open, so its own issue is never built again.
+    plan = decide([issue(90, "ready")], branches=open_, waiting=["claude/issue-90"])
+    assert plan["built"] == [90] and plan["take"] == []
+
+
+def test_no_more_than_three_waiting_for_the_owner_are_left_out():
+    # The reviewer's finding on #140: left out without end, work could
+    # pile up for the owner without end. Past three, they count again.
+    waiting = [f"claude/issue-{n}" for n in range(90, 95)]
+    plan = decide([issue(1, "ready"), issue(2, "ready")], branches=waiting, waiting=waiting)
+    assert plan["take"] == [1] and plan["wait"] == [2]
 
 
 def test_an_issue_being_built_takes_a_place_once():
@@ -362,6 +384,28 @@ def test_the_words_for_sent_back_are_the_reviewers_own():
     assert queue.SENT_BACK not in (verdicts.VERDICTS["pass"][1], verdicts.VERDICTS["owner"][1])
 
 
+OWNERS = {"state": "failure", "description": queue.FOR_OWNER, "by": queue.REVIEWER}
+
+
+def test_the_words_for_the_owner_are_the_reviewers_own():
+    spec = importlib.util.spec_from_file_location("review_verdict", REPO / "scripts" / "review_verdict.py")
+    verdicts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verdicts)
+    assert verdicts.VERDICTS["owner"] == ("failure", queue.FOR_OWNER)
+
+
+def test_only_a_pull_request_passed_up_to_the_owner_waits_for_them():
+    says = review(a=OWNERS, b=BACK, c={**OWNERS, "by": "someone"}, d=None)
+    assert queue.waits_for_owner(pull(1, "claude/issue-1", sha="a"), says)
+    # Sent back, said by anyone but the reviewer, or not reviewed yet.
+    for sha in ("b", "c", "d"):
+        assert not queue.waits_for_owner(pull(1, "claude/issue-1", sha=sha), says), sha
+    # In conflict: back to its author first, so it is work in progress;
+    # and one GitHub has not said of yet counts, to be safe.
+    assert not queue.waits_for_owner(pull(1, "claude/issue-1", sha="a", conflict=True), says)
+    assert not queue.waits_for_owner(pull(1, "claude/issue-1", sha="a", conflict=None), says)
+
+
 def test_a_sent_back_pull_request_of_the_builders_goes_to_the_builder():
     back = queue.sent_back([pull(117, "claude/issue-104")], review(aaa=BACK))
     assert back == {
@@ -431,6 +475,38 @@ def test_only_the_reviewers_own_sent_back_counts():
         assert queue.sent_back(one, lambda sha, said=said: said) == {"rework": [], "owner": []}, said
 
 
+def test_a_house_full_of_pull_requests_for_the_owner_still_builds(github, capsys):
+    output, _ = github(
+        {
+            "issues": [api_issue(104, ["ready"]), api_issue(105, ["ready"])],
+            "pulls": [
+                *(api_pull(10 + n, f"claude/issue-{n}", sha=f"s{n}") for n in (1, 2, 3)),
+                # A session's, passed up to the owner but in conflict: it counts
+                # (the reviewer's finding on #140).
+                api_pull(20, "claude/some-topic", sha="t", mergeable=False),
+            ],
+            "events": {
+                "104": [labeled("ready", "arip-dev-bot")],
+                "105": [labeled("ready", "arip-dev-bot")],
+            },
+            "statuses": {
+                "s1": [api_status("failure", queue.FOR_OWNER)],
+                "s2": [api_status("failure", queue.FOR_OWNER)],
+                "t": [api_status("failure", queue.FOR_OWNER)],
+            },
+        }
+    )
+    # Two of four left out: one place, so 104 starts and 105 waits. Had
+    # the session's been left out too, both would have started.
+    assert output.startswith("issues=[104]")
+    said = capsys.readouterr().out
+    assert "#105 waits" in said
+    assert "#11 (claude/issue-1) waits for the owner" in said
+    assert "#13 (claude/issue-3) waits for the owner" not in said
+    assert "#20 (claude/some-topic): in conflict with main" in said
+    assert "#20 (claude/some-topic) waits for the owner" not in said
+
+
 def test_a_sent_back_pull_request_is_marked_and_handed_over(github, capsys):
     base = "repos/ARIP-org/BGUcats/issues"
     output, calls = github(
@@ -495,7 +571,11 @@ def test_a_conflicted_pull_request_is_found_on_its_own_page_and_handed_over(gith
     assert "Pull request #127 (claude/issue-123): in conflict with main." in out
     assert "Pull request #128 (claude/issue-125): GitHub has not said whether it merges" in out
     assert "Pull request #130 (claude/issue-126): merges with main." in out
-    assert "#131" not in out
+    # A session's is looked at too, since #140 (one in conflict is not
+    # "waiting only for the owner"), and still never handed to the builder:
+    # the calls above have nothing for it.
+    assert "Pull request #131 (claude/busy-babbage): in conflict with main." in out
+    assert "#131: in conflict" not in out
 
 
 def test_github_is_asked_again_while_it_has_not_said_whether_a_pull_request_merges(monkeypatch):

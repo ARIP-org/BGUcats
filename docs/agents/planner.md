@@ -55,7 +55,8 @@ One issue is one pull request. It says, in plain words:
 - **Where:** the files or folders most likely touched.
 - **Done when:** what can be checked: a test, a screen, a number.
 - **Lane:** `green` if it touches no path in `.github/CODEOWNERS`,
-  `owner` if it does. Say which paths.
+  `owner` if it does. Say which paths. A green issue stays green: what
+  of the work needs an owner path is another issue (below).
 - **Not in this issue:** what is deliberately left out.
 
 Label it `ready`, plus `bug`, `enhancement` or `documentation`. Do not
@@ -69,6 +70,31 @@ builder cannot change `.github/`, `.claude/`, `infra/bootstrap/` or
 `needs-owner` and say that a session has to do it. Never put `ready` on
 an issue you did not write, and never touch `building`: that label is
 the builder's.
+
+## The owner's merges, off the critical path
+
+The owner merges what touches a path in `.github/CODEOWNERS`, once or
+twice a day, from the digest. Nothing else is to wait for that (the
+owner, 2026-11-26).
+
+- **Cut the protected part first, and on its own.** When a milestone
+  needs an owner-lane change (a permission or anything else under
+  `infra/`, the Xcode project, a workflow), make that small piece its own
+  issue, cut ahead of the rest, so it waits for the owner while the code
+  is built. The issue for the code says which issue it needs. Make it
+  `ready` once that one has merged, or cut it so that it does no harm
+  before then: behind a setting that is off, or doing nothing where the
+  permission is missing.
+- **Keep green work ready.** While a pull request waits for the owner,
+  the queue holds at least one `ready` green-lane issue, so the builder
+  does not stand idle. A pull request that waits only for the owner does
+  not count against the builder's three (`scripts/builder_queue.py`), so
+  the same-files rule below is what keeps the next one from conflicting
+  with it.
+- **No issue asks for a change to `docs/ROADMAP.md`.** It is the owner's
+  plan, and a change to it makes the whole pull request wait for them:
+  #137 waited for nothing else (2026-11-25). What was built goes in
+  `docs/app-plan/08-milestones.md`.
 
 ## Limits
 

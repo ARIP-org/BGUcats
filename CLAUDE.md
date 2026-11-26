@@ -104,7 +104,11 @@ blocked on someone else.
   (`admin-labeling-tool` → `app-preprod` → `recognition-labeling`) was merged
   into `main` on 2026-10-29 and survives as `rollback/*` tags only.
 - **Work on a short-lived branch**, one change per branch, and open a pull
-  request to `main`. CI runs lint, tests and `terraform plan` for both
+  request to `main`. A session opens a new `claude/<topic>` branch for
+  each change (the owner, 2026-11-26), so one waiting for the owner never
+  holds up the next; and no agent edits `docs/ROADMAP.md`, the owner's
+  plan, which would hold a whole pull request for the owner
+  (`docs/agents.md`, "The owner's merges, off the critical path"). CI runs lint, tests and `terraform plan` for both
   accounts on it (staging: what the merge deploys; production: what the
   next promote would). **Two lanes** (the owner changed the `main`
   ruleset on 2026-11-23): a pull request that touches no owner path
