@@ -245,8 +245,10 @@ final class ScreensUITests: XCTestCase {
     /// Scan a cat: six photos, two of them from the gallery, sent as one
     /// encounter, with the second photo's upload failing once; then "Which
     /// cat?", the post, and the feed with the post first, the server
-    /// answering `not_ready` to the first try. What the made-up server was
-    /// asked is read back from App info.
+    /// answering `not_ready` to the first try. Then a second encounter, of
+    /// a cat that isn't here: the new-cat form, "Add & post", and the feed
+    /// with that post first. What the made-up server was asked is read back
+    /// from App info.
     private func scan(look: String) {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-look", look, "-uploadFailsOnce", "-postNotReadyOnce"]
@@ -292,7 +294,7 @@ final class ScreensUITests: XCTestCase {
         keep(app, "scan-sent-\(look)")
 
         // Which cat? The made-up campus's three cats, a search field, "Not
-        // sure", and a new cat that says it is not built yet.
+        // sure", and a cat that isn't here.
         find(app, "scan.which").tap()
         XCTAssertTrue(app.navigationBars["Which cat?"].waitForExistence(timeout: patience), "Which cat? did not open. \(onScreen(app))")
         for cat in ["c1", "c2", "c3"] {
@@ -302,7 +304,7 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(find(app, "which.unsure").exists, "Which cat? has no Not sure. \(onScreen(app))")
         let newCat = find(app, "which.new")
         XCTAssertTrue(newCat.exists, "Which cat? has no row for a cat that isn't here. \(onScreen(app))")
-        XCTAssertTrue(newCat.label.contains("Not built yet"), "The new cat's row does not say it is not built: \(newCat.label)")
+        XCTAssertFalse(newCat.label.contains("Not built yet"), "The new cat's row still says it is not built: \(newCat.label)")
         keep(app, "scan-which-cat-\(look)")
 
         // A cat: the post, with the six photos, a line typed, the switch on.
@@ -333,8 +335,62 @@ final class ScreensUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " · in ")).firstMatch.exists, "A post's age is in the future. \(onScreen(app))")
         keep(app, "home-after-post-\(look)")
 
+        // A second encounter, of a cat that isn't here: one photo, the
+        // form with every kind of answer given, then "Add & post".
+        app.tabBars.buttons["Scan a cat"].tap()
+        let another = find(app, "scan.another")
+        XCTAssertTrue(another.waitForExistence(timeout: patience), "Posted has no way to scan another cat. \(onScreen(app))")
+        another.tap()
+        XCTAssertTrue(find(app, "scan.take").waitForExistence(timeout: patience), "Scan another cat did not open an empty scan. \(onScreen(app))")
+        find(app, "scan.take").tap()
+        expect(app, "scan.count", "1 photo")
+        find(app, "scan.send").tap()
+        expect(app, "scan.sent", "Sent: 1 photo")
+        find(app, "scan.which").tap()
+        let notHere = find(app, "which.new")
+        XCTAssertTrue(notHere.waitForExistence(timeout: patience), "Which cat? has no row for a cat that isn't here. \(onScreen(app))")
+        notHere.tap()
+        let nameIdea = find(app, "new.name")
+        XCTAssertTrue(nameIdea.waitForExistence(timeout: patience), "A cat that isn't here did not open the new-cat form. \(onScreen(app))")
+        XCTAssertTrue(app.navigationBars["New cat"].exists, "The form is not called New cat. \(onScreen(app))")
+        XCTAssertEqual(find(app, "new.photos").label, "1 photo", "The form does not hold the encounter's photo.")
+        nameIdea.tap()
+        nameIdea.typeText("Hummus\n")
+        choose(app, "new.coat", "Tabby")
+        choose(app, "new.where", "Aranne Library")
+        let friendly = find(app, "new.trait.friendly")
+        reveal(friendly, in: app)
+        friendly.tap()
+        let traitChosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "chosen"), object: friendly)
+        XCTAssertEqual(XCTWaiter().wait(for: [traitChosen], timeout: patience), .completed, "Tapping a trait did not choose it. \(onScreen(app))")
+        XCTAssertTrue(app.staticTexts["An admin looks at every new cat before anyone else sees it."].exists, "The form does not say an admin looks first. \(onScreen(app))")
+        XCTAssertTrue(find(app, "new.add").exists, "The form has no Just add. \(onScreen(app))")
+        keep(app, "scan-new-cat-\(look)")
+
+        // "Add & post": the post, naming the new cat by its name idea.
+        app.buttons["new.post"].firstMatch.tap()
+        let caption = find(app, "post.text")
+        XCTAssertTrue(caption.waitForExistence(timeout: patience), "Add & post did not open the post. \(onScreen(app))")
+        XCTAssertTrue(app.staticTexts["New cat: Hummus"].exists, "The post does not name the new cat. \(onScreen(app))")
+        caption.tap()
+        caption.typeText("A new face by the gym.")
+        app.buttons["post.send"].firstMatch.tap()
+        expect(app, "scan.posted", "Posted")
+        keep(app, "scan-new-cat-posted-\(look)")
+
+        app.tabBars.buttons["Home"].tap()
+        let newest = app.staticTexts["A new face by the gym."].firstMatch
+        XCTAssertTrue(newest.waitForExistence(timeout: patience), "The new cat's post is not in the feed. \(onScreen(app))")
+        let before = app.staticTexts["Asleep by the fountain."].firstMatch
+        XCTAssertTrue(!before.exists || newest.frame.minY < before.frame.minY, "The new cat's post is not first. \(onScreen(app))")
+        keep(app, "home-after-new-cat-\(look)")
+
         let shown = appInfo(app)
-        let record = served(shown)
+        // The two encounters' calls, each from its own "encounter".
+        let both = served(shown)
+        let split = both.lastIndex(of: "encounter place") ?? both.count
+        let record = Array(both[..<split])
+        let second = Array(both[split...])
         XCTAssertEqual(record.first, "encounter place", "The encounter was not asked for first: \(record)")
         for photo in 1...6 {
             let media = record.firstIndex { $0.hasPrefix("media \(photo) ") }
@@ -381,6 +437,32 @@ final class ScreensUITests: XCTestCase {
             XCTAssertTrue(shown.contains(line), "App info did not keep \"\(line)\".")
         }
         XCTAssertFalse(shown.contains("fountain") || shown.contains("Shachor"), "App info holds what was written or a cat's name.")
+
+        // The new cat: its proposal after the photo's confirmation, once,
+        // with the answers given; then the post, naming that proposal (the
+        // stand-in takes a claim only of a proposal it has, for this
+        // encounter); and no pick, since nothing was shown.
+        XCTAssertGreaterThan(second.count, 0, "The second encounter asked the server nothing: \(both)")
+        let confirmed = second.lastIndex { $0.hasPrefix("complete ") }
+        let proposals = second.indices.filter { second[$0].hasPrefix("proposal ") }
+        let named = second.indices.filter { second[$0].hasPrefix("post ") }
+        XCTAssertEqual(proposals.map { second[$0] }, ["proposal 1 name coat tabby region library traits friendly"], "Not one proposal with the answers given: \(second)")
+        XCTAssertEqual(named.map { second[$0] }, ["post proposal 1 photos 7 text region"], "Not one post naming the new cat: \(second)")
+        if let confirmed, let proposal = proposals.first, let post = named.first {
+            XCTAssertTrue(confirmed < proposal && proposal < post, "The proposal and the post did not follow the photo: \(second)")
+        } else {
+            XCTFail("The photo, the proposal or the post is missing: \(second)")
+        }
+        XCTAssertFalse(second.contains { $0.hasPrefix("pick") }, "A new cat sent a pick: \(second)")
+        for line in ["scan: new cat", "upload: proposal 200", "scan: post queued, a new cat"] {
+            XCTAssertTrue(shown.contains(line), "App info did not keep \"\(line)\".")
+        }
+        // The trail names no new cat, no place and nothing written.
+        let trail = shown.components(separatedBy: "stand-in server:").first ?? shown
+        for word in ["Hummus", "gym", "library", "Library", "tabby"] {
+            XCTAssertFalse(trail.contains(word), "The trail holds \"\(word)\".")
+        }
+        XCTAssertFalse(shown.contains("Hummus"), "App info holds the name idea.")
         app.terminate()
     }
 
@@ -435,14 +517,53 @@ final class ScreensUITests: XCTestCase {
         second.terminate()
 
         // A flow kept that is not whole is dropped: the tab opens empty.
+        // The one kept here reads as a flow, on the new-cat form, with a
+        // coat the server does not take.
         let third = XCUIApplication()
         third.launchArguments = ["-uiTesting", "-look", "light", "-keepQueue", "-flowBroken"]
         third.launch()
         openScan(third)
         XCTAssertTrue(find(third, "scan.take").waitForExistence(timeout: patience), "A broken flow did not leave the tab empty. \(onScreen(third))")
         XCTAssertFalse(find(third, "scan.which").exists, "A broken flow was used. \(onScreen(third))")
-        XCTAssertTrue(appInfo(third).contains("scan: kept flow dropped, not whole"), "The trail does not say the flow was dropped.")
+        XCTAssertFalse(find(third, "new.name").exists, "A broken new-cat form was used. \(onScreen(third))")
+
+        // A cat that isn't here, nothing said about it, and "Just add":
+        // the proposal goes, and no post.
+        find(third, "scan.take").tap()
+        expect(third, "scan.count", "1 photo")
+        find(third, "scan.send").tap()
+        expect(third, "scan.sent", "Sent: 1 photo")
+        find(third, "scan.which").tap()
+        let notHere = find(third, "which.new")
+        XCTAssertTrue(notHere.waitForExistence(timeout: patience), "Which cat? has no row for a cat that isn't here. \(onScreen(third))")
+        notHere.tap()
+        let justAdd = third.buttons["new.add"].firstMatch
+        XCTAssertTrue(justAdd.waitForExistence(timeout: patience), "The new-cat form has no Just add. \(onScreen(third))")
+        justAdd.tap()
+        expect(third, "scan.added", "Added")
+        expect(third, "scan.post-state", "Thanks! An admin will look at your new cat.")
+        let told = appInfo(third)
+        XCTAssertTrue(told.contains("scan: kept flow dropped, not whole"), "The trail does not say the flow was dropped.")
+        XCTAssertTrue(told.contains("scan: new cat added, no post"), "The trail does not say the new cat was added.")
+        let asked = served(told)
+        let proposed = asked.firstIndex { $0.hasPrefix("proposal ") }
+        XCTAssertEqual(asked.filter { $0.hasPrefix("proposal ") }, ["proposal 1 no-name coat none region none traits none"], "Not one proposal with nothing said: \(asked)")
+        XCTAssertTrue((proposed ?? -1) > (asked.lastIndex { $0.hasPrefix("complete ") } ?? Int.max), "The proposal went before the photo: \(asked)")
+        XCTAssertFalse(asked.contains { $0.hasPrefix("post") }, "Just add made a post: \(asked)")
+        XCTAssertFalse(asked.contains { $0.hasPrefix("pick") }, "Just add sent a pick: \(asked)")
         third.terminate()
+    }
+
+    /// A menu's choice: the picker, then the item, found by its words.
+    private func choose(_ app: XCUIApplication, _ id: String, _ item: String) {
+        // The picker is a button; asked for as "any element", the first to
+        // answer may be the row around it.
+        let picker = app.buttons[id].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: patience), "There is no \(id). \(onScreen(app))")
+        picker.tap()
+        let option = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", item)).firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: patience), "The menu of \(id) has no \(item). \(onScreen(app))")
+        option.tap()
     }
 
     private func openScan(_ app: XCUIApplication) {
