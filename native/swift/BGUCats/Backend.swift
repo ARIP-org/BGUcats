@@ -28,6 +28,18 @@ protocol Backend {
     /// `POST /api/photos/{id}/complete`: the server confirms the file.
     func complete(photoId: String) async throws -> Int
 
+    // What follows the photos (rows 6 and 9), once every photo of the
+    // encounter is confirmed.
+
+    /// `POST /api/encounters/{id}/pick`: which cat the member said it was.
+    func pick(encounterId: String, _ pick: PickBody) async throws -> Int
+    /// `POST /api/v1/posts`: the post. Sent again with the same `postId`,
+    /// it is the same post.
+    func post(_ post: PostBody) async throws -> Int
+
+    /// `GET /api/v1/cats`: every public cat, for "Which cat?".
+    func cats() async throws -> [Cat]
+
     /// The author removes their own post.
     func deletePost(postId: String) async throws
     /// Reports a thing. `reportId` is made once on the phone, so a retry is
@@ -73,6 +85,57 @@ struct PhotoStart {
             body["lat"] = place.lat
             body["lon"] = place.lon
             body["accuracyM"] = place.accuracyM
+        }
+        return body
+    }
+}
+
+/// A member's answer to "Which cat?", as `_record_pick` in
+/// src/admin/handler.py takes it from an app with no model: the cat chosen
+/// is the one cat shown, the ranking is empty, and the model is "none"
+/// (`NO_MODEL` in web/social/scan.js). "Not sure" sends no pick at all:
+/// with nothing ranked nothing was shown, and the server refuses a pick
+/// that shows nothing (as the web app sends none).
+struct PickBody: Codable, Equatable {
+    static let noModel = "none"
+
+    let catId: String
+    let photoCount: Int
+
+    var body: [String: Any] {
+        [
+            "modelVersion": PickBody.noModel,
+            "choice": "cat",
+            "catId": catId,
+            "shown": [catId],
+            "ranked": [Any](),
+            "photoCount": max(1, photoCount),
+        ]
+    }
+}
+
+/// A post as `POST /api/v1/posts` takes it (docs/app-plan/04-api.md).
+/// `postId` is made once on the phone, so sending it again is the same post.
+struct PostBody: Codable, Equatable {
+    let postId: String
+    let sessionId: String
+    /// Every photo of the encounter, in the order they were taken.
+    var photoIds: [String]
+    /// The cat chosen; nil for "Not sure".
+    let catId: String?
+    let text: String?
+    let shareRegion: Bool
+
+    var body: [String: Any] {
+        var body: [String: Any] = [
+            "postId": postId,
+            "sessionId": sessionId,
+            "photoIds": photoIds,
+            "claim": catId.map { ["catId": $0] as Any } ?? NSNull(),
+            "shareRegion": shareRegion,
+        ]
+        if let text, !text.isEmpty {
+            body["text"] = text
         }
         return body
     }
@@ -199,6 +262,18 @@ final class LiveBackend: Backend {
 
     func complete(photoId: String) async throws -> Int {
         try await exchange("POST", "/photos/\(Auth.encode(photoId))/complete", base: "/api", body: [:], as: "complete", quiet: true).status
+    }
+
+    func pick(encounterId: String, _ pick: PickBody) async throws -> Int {
+        try await exchange("POST", "/encounters/\(Auth.encode(encounterId))/pick", base: "/api", body: pick.body, as: "pick", quiet: true).status
+    }
+
+    func post(_ post: PostBody) async throws -> Int {
+        try await exchange("POST", "/posts", body: post.body, as: "post", quiet: true).status
+    }
+
+    func cats() async throws -> [Cat] {
+        Read.cats(try await call("GET", "/cats", as: "cats"))
     }
 
     /// A presigned POST's body: its fields, then the file, which S3 wants last.
@@ -335,6 +410,12 @@ final class StandInBackend: Backend {
     private let failsOnce: Bool
     /// "-offline": no capture call reaches the server.
     private let offline: Bool
+    /// "-postNotReadyOnce": the first post is answered `not_ready`, as
+    /// when a photo is still being processed.
+    private let notReadyOnce: Bool
+    private var answeredNotReady = false
+    /// The posts made, newest first: the feed shows them above the rest.
+    private var posted: [Post] = []
     private var liked: Set<String> = []
     /// The made-up member has accepted the terms ("-termsRequired": not).
     private var accepted: Bool
@@ -359,7 +440,8 @@ final class StandInBackend: Backend {
         termsRequired: Bool = false,
         termsChanged: Bool = false,
         failsOnce: Bool = false,
-        offline: Bool = false
+        offline: Bool = false,
+        notReadyOnce: Bool = false
     ) {
         self.start = start
         self.gate = gate
@@ -368,10 +450,20 @@ final class StandInBackend: Backend {
         self.stale = termsChanged
         self.failsOnce = failsOnce
         self.offline = offline
+        self.notReadyOnce = notReadyOnce
     }
 
+    /// The made-up campus: three cats, one of them with no name yet.
+    static let campus = [
+        Cat(id: "c1", name: "Mitzi", cover: URL(string: "standin://photo/cat-mitzi")),
+        Cat(id: "c2", name: "Shachor", cover: URL(string: "standin://photo/cat-shachor")),
+        Cat(id: "c3", name: nil, cover: URL(string: "standin://photo/cat-three")),
+    ]
+
     /// One line per capture call, in the order they came: "encounter
-    /// place", "media 1 camera place", "upload 1", "complete 1".
+    /// place", "media 1 camera place", "upload 1", "complete 1", "pick c2
+    /// shown c2 ranked 0", "post not_ready", "post claim c2 photos 1 2
+    /// text region".
     var record: [String] {
         lock.lock()
         defer { lock.unlock() }
@@ -448,6 +540,61 @@ final class StandInBackend: Backend {
         return 200
     }
 
+    func pick(encounterId: String, _ pick: PickBody) async throws -> Int {
+        try await reach()
+        let body = pick.body
+        // What `_record_pick` refuses, refused here too.
+        let shown = body["shown"] as? [String] ?? []
+        let ranked = body["ranked"] as? [Any]
+        guard !shown.isEmpty, ranked != nil, (body["choice"] as? String) == "cat",
+              StandInBackend.campus.contains(where: { $0.id == pick.catId })
+        else {
+            keep("pick refused")
+            throw ApiError(status: 400, code: nil, message: "shown must list 1 to 5 cat ids")
+        }
+        keep("pick \(pick.catId) shown \(shown.joined(separator: ",")) ranked \(ranked?.count ?? -1)")
+        return 200
+    }
+
+    func post(_ post: PostBody) async throws -> Int {
+        try await reach()
+        let first = lock.withLock { () -> Bool in
+            defer { answeredNotReady = true }
+            return notReadyOnce && !answeredNotReady
+        }
+        if first {
+            keep("post not_ready")
+            throw ApiError(status: 425, code: "not_ready", message: "a photo is still uploading")
+        }
+        let photos = post.photoIds.map { "\(number($0))" }.joined(separator: " ")
+        let words = (post.text ?? "").isEmpty ? "no-text" : "text"
+        keep("post \(post.catId.map { "claim \($0)" } ?? "no-claim") photos \(photos) \(words) \(post.shareRegion ? "region" : "no-region")")
+        let cat = StandInBackend.campus.first { $0.id == post.catId }
+        let made = Post(
+            id: post.postId,
+            author: Person(userId: "u-test", username: "test.member", displayName: "Test Member", avatar: nil),
+            catName: cat?.name,
+            photos: post.photoIds.map { Photo(id: $0, thumb: URL(string: "standin://photo/\($0)"), medium: URL(string: "standin://photo/\($0)")) },
+            text: post.text ?? "",
+            likes: 0,
+            liked: false,
+            createdAt: start,
+            mine: true,
+            // The author sees their own post while it is being checked.
+            state: "pending"
+        )
+        lock.withLock {
+            if !posted.contains(where: { $0.id == made.id }) {
+                posted.insert(made, at: 0)
+            }
+        }
+        return 201
+    }
+
+    func cats() async throws -> [Cat] {
+        StandInBackend.campus
+    }
+
     func me() async throws -> Me {
         Me(
             userId: "u-test",
@@ -508,7 +655,8 @@ final class StandInBackend: Backend {
                 state: nil
             ),
         ]
-        return FeedPage(posts: posts.filter { !deleted.contains($0.id) }, cursor: nil)
+        let made = lock.withLock { posted }
+        return FeedPage(posts: (made + posts).filter { !deleted.contains($0.id) }, cursor: nil)
     }
 
     func like(postId: String, on: Bool) async throws -> Int {

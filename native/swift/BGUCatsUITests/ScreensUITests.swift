@@ -243,11 +243,13 @@ final class ScreensUITests: XCTestCase {
     }
 
     /// Scan a cat: six photos, two of them from the gallery, sent as one
-    /// encounter, with the second photo's upload failing once. What the
-    /// made-up server was asked is read back from App info.
+    /// encounter, with the second photo's upload failing once; then "Which
+    /// cat?", the post, and the feed with the post first, the server
+    /// answering `not_ready` to the first try. What the made-up server was
+    /// asked is read back from App info.
     private func scan(look: String) {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting", "-look", look, "-uploadFailsOnce"]
+        app.launchArguments = ["-uiTesting", "-look", look, "-uploadFailsOnce", "-postNotReadyOnce"]
         app.launch()
         openScan(app)
         let take = find(app, "scan.take")
@@ -289,6 +291,44 @@ final class ScreensUITests: XCTestCase {
         XCTAssertFalse(find(app, "scan.retrying").exists, "Sent, and still retrying. \(onScreen(app))")
         keep(app, "scan-sent-\(look)")
 
+        // Which cat? The made-up campus's three cats, a search field, "Not
+        // sure", and a new cat that says it is not built yet.
+        find(app, "scan.which").tap()
+        XCTAssertTrue(app.navigationBars["Which cat?"].waitForExistence(timeout: patience), "Which cat? did not open. \(onScreen(app))")
+        for cat in ["c1", "c2", "c3"] {
+            XCTAssertTrue(find(app, "cat.\(cat)").waitForExistence(timeout: patience), "Which cat? does not list cat \(cat). \(onScreen(app))")
+        }
+        XCTAssertTrue(app.searchFields.firstMatch.exists, "Which cat? has no search field. \(onScreen(app))")
+        XCTAssertTrue(find(app, "which.unsure").exists, "Which cat? has no Not sure. \(onScreen(app))")
+        let newCat = find(app, "which.new")
+        XCTAssertTrue(newCat.exists, "Which cat? has no row for a cat that isn't here. \(onScreen(app))")
+        XCTAssertTrue(newCat.label.contains("Not built yet"), "The new cat's row does not say it is not built: \(newCat.label)")
+        keep(app, "scan-which-cat-\(look)")
+
+        // A cat: the post, with the six photos, a line typed, the switch on.
+        find(app, "cat.c2").tap()
+        let words = find(app, "post.text")
+        XCTAssertTrue(words.waitForExistence(timeout: patience), "Choosing a cat did not open the post. \(onScreen(app))")
+        XCTAssertEqual(find(app, "post.photos").label, "6 photos", "The post does not hold the six photos.")
+        let region = app.switches["post.region"].firstMatch
+        XCTAssertTrue(region.exists, "The post has no Add location. \(onScreen(app))")
+        XCTAssertEqual(region.value as? String, "1", "Add location is not on by default.")
+        words.tap()
+        words.typeText("Asleep by the fountain.")
+        keep(app, "scan-post-\(look)")
+        app.buttons["post.send"].firstMatch.tap()
+        expect(app, "scan.posted", "Posted")
+        keep(app, "scan-posted-\(look)")
+
+        // Home: the post first, once the server has it. The first try was
+        // answered `not_ready`, and it went again with no tap.
+        app.tabBars.buttons["Home"].tap()
+        let mine = app.staticTexts["Asleep by the fountain."].firstMatch
+        XCTAssertTrue(mine.waitForExistence(timeout: patience), "The post is not in the feed. \(onScreen(app))")
+        let older = app.staticTexts["By the library steps again, asleep in the sun."].firstMatch
+        XCTAssertTrue(!older.exists || mine.frame.minY < older.frame.minY, "The new post is not first. \(onScreen(app))")
+        keep(app, "home-after-post-\(look)")
+
         let shown = appInfo(app)
         let record = served(shown)
         XCTAssertEqual(record.first, "encounter place", "The encounter was not asked for first: \(record)")
@@ -314,6 +354,29 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(shown.contains("upload: media 200"), "The trail does not mark the uploads.")
         XCTAssertTrue(shown.contains("upload: retry, timed out"), "The trail does not mark the retry.")
         XCTAssertNil(shown.range(of: "[0-9A-HJKMNP-TV-Z]{26}", options: .regularExpression), "The trail holds an id.")
+
+        // The pick, then the post: after the last photo's confirmation,
+        // once each, with the cat chosen. The pick is what the server takes
+        // from an app with no model: the one cat shown, nothing ranked.
+        let lastComplete = record.lastIndex { $0.hasPrefix("complete ") } ?? -1
+        let picks = record.indices.filter { record[$0].hasPrefix("pick ") }
+        let notReady = record.indices.filter { record[$0] == "post not_ready" }
+        let posts = record.indices.filter { record[$0].hasPrefix("post claim") || record[$0].hasPrefix("post no-claim") }
+        XCTAssertEqual(picks.map { record[$0] }, ["pick c2 shown c2 ranked 0"], "Not one pick of the cat chosen: \(record)")
+        XCTAssertEqual(notReady.count, 1, "The made-up not_ready did not happen once: \(record)")
+        XCTAssertEqual(posts.count, 1, "Not one post: \(record)")
+        if let pick = picks.first, let refused = notReady.first, let post = posts.first {
+            XCTAssertTrue(lastComplete < pick && pick < refused && refused < post, "The pick and the post did not follow the photos: \(record)")
+            let line = record[post]
+            XCTAssertTrue(line.hasPrefix("post claim c2 photos ") && line.hasSuffix(" text region"), "The post is not the one written: \(line)")
+            let numbers = line.dropFirst("post claim c2 photos ".count).dropLast(" text region".count).split(separator: " ")
+            XCTAssertEqual(Set(numbers.map(String.init)), Set((1...6).map(String.init)), "The post does not hold every photo once: \(line)")
+            XCTAssertEqual(numbers.count, 6, "The post does not hold every photo once: \(line)")
+        }
+        for line in ["scan: cat chosen", "upload: pick 200", "upload: post 425, not ready yet", "upload: post 201"] {
+            XCTAssertTrue(shown.contains(line), "App info did not keep \"\(line)\".")
+        }
+        XCTAssertFalse(shown.contains("fountain") || shown.contains("Shachor"), "App info holds what was written or a cat's name.")
         app.terminate()
     }
 
@@ -330,22 +393,52 @@ final class ScreensUITests: XCTestCase {
         expect(first, "scan.count", "3 photos")
         find(first, "scan.send").tap()
         XCTAssertTrue(find(first, "scan.retrying").waitForExistence(timeout: patience), "With no server, the screen does not say it will retry. \(onScreen(first))")
+        // Not sure which cat: the post is made, with no claim and no pick,
+        // and waits on the phone with the photos.
+        find(first, "scan.which").tap()
+        let unsure = find(first, "which.unsure")
+        XCTAssertTrue(unsure.waitForExistence(timeout: patience), "Which cat? has no Not sure. \(onScreen(first))")
+        unsure.tap()
+        let post = first.buttons["post.send"].firstMatch
+        XCTAssertTrue(post.waitForExistence(timeout: patience), "Not sure did not open the post. \(onScreen(first))")
+        XCTAssertEqual(find(first, "post.photos").label, "3 photos", "The post does not hold the three photos.")
+        post.tap()
+        expect(first, "scan.posted", "Posted")
         first.terminate()
 
         let second = XCUIApplication()
         second.launchArguments = ["-uiTesting", "-look", "light", "-keepQueue"]
         second.launch()
-        // Only looked at: nothing on the Scan screen is tapped.
+        // Only looked at: nothing on the Scan screen is tapped. The flow
+        // kept comes back on the page it was left on.
         openScan(second)
         expect(second, "scan.sent", "Sent: 3 photos")
+        expect(second, "scan.posted", "Posted")
         let shown = appInfo(second)
         XCTAssertTrue(shown.contains("upload: 3 waiting from before"), "The second launch did not find the queue.")
+        XCTAssertTrue(shown.contains("scan: kept flow back (posted)"), "The second launch did not find the flow.")
         let record = served(shown)
         XCTAssertEqual(record.first, "encounter place", "The encounter was not asked for first: \(record)")
         for photo in 1...3 {
             XCTAssertTrue(record.contains("complete \(photo)"), "Photo \(photo) was not sent at the next launch: \(record)")
         }
+        // "Not sure": a post with no claim, after the photos, and no pick.
+        let lastComplete = record.lastIndex { $0.hasPrefix("complete ") } ?? -1
+        let posted = record.firstIndex { $0.hasPrefix("post no-claim photos ") }
+        XCTAssertNotNil(posted, "Not sure made no post with no claim: \(record)")
+        XCTAssertTrue((posted ?? -1) > lastComplete, "The post went before the photos: \(record)")
+        XCTAssertFalse(record.contains { $0.hasPrefix("pick") }, "Not sure sent a pick: \(record)")
         second.terminate()
+
+        // A flow kept that is not whole is dropped: the tab opens empty.
+        let third = XCUIApplication()
+        third.launchArguments = ["-uiTesting", "-look", "light", "-keepQueue", "-flowBroken"]
+        third.launch()
+        openScan(third)
+        XCTAssertTrue(find(third, "scan.take").waitForExistence(timeout: patience), "A broken flow did not leave the tab empty. \(onScreen(third))")
+        XCTAssertFalse(find(third, "scan.which").exists, "A broken flow was used. \(onScreen(third))")
+        XCTAssertTrue(appInfo(third).contains("scan: kept flow dropped, not whole"), "The trail does not say the flow was dropped.")
+        third.terminate()
     }
 
     private func openScan(_ app: XCUIApplication) {

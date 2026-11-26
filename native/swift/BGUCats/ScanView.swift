@@ -3,12 +3,14 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// "Scan a cat", its first half: take photos or choose them from the
-/// gallery, see them, and send them as one encounter (the upload queue,
-/// Outbox.swift). Choosing the cat and posting are the second half, not
-/// built yet.
+/// "Scan a cat": take photos or choose them from the gallery, see them,
+/// and send them as one encounter (the upload queue, Outbox.swift). Then,
+/// if the member wants, "Which cat?" and the post (ScanPages.swift), pages
+/// pushed over this one by the flow's step (`ScanFlow`). Leaving after
+/// "Send" makes no post: the photos are sent either way.
 struct ScanView: View {
     let world: World
+    let session: Session
     @ObservedObject private var outbox: Outbox
     @State private var chosen: [Chosen] = []
     @State private var picked: [PhotosPickerItem] = []
@@ -19,15 +21,16 @@ struct ScanView: View {
     /// The stand-in camera's count, so each drawn photo differs.
     @State private var drawn = 0
 
-    init(world: World) {
+    init(world: World, session: Session) {
         self.world = world
+        self.session = session
         _outbox = ObservedObject(wrappedValue: world.outbox)
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: path) {
             Group {
-                if !outbox.batch.isEmpty {
+                if !outbox.batch.isEmpty || outbox.flow != nil {
                     sending
                 } else if chosen.isEmpty {
                     empty
@@ -41,6 +44,14 @@ struct ScanView: View {
             } message: {
                 Text(note ?? "")
             }
+            .navigationDestination(for: ScanFlow.Step.self) { step in
+                switch step {
+                case .post:
+                    PostPage(world: world, session: session, outbox: outbox)
+                default:
+                    WhichCatPage(world: world, outbox: outbox)
+                }
+            }
         }
         // The place is asked for while this screen is open: a camera photo
         // carries the latest fix, and nothing waits for one.
@@ -53,6 +64,24 @@ struct ScanView: View {
         .onChange(of: picked) { _, items in
             Task { await read(items) }
         }
+    }
+
+    /// The pages over this one, from the flow's step; going back sets the
+    /// step to the page gone back to.
+    private var path: Binding<[ScanFlow.Step]> {
+        Binding(get: {
+            switch outbox.flow?.step {
+            case .which: return [.which]
+            case .post: return [.which, .post]
+            default: return []
+            }
+        }, set: { pages in
+            guard var flow = outbox.flow, flow.step != .posted else { return }
+            let step = pages.last ?? .sent
+            guard step != flow.step else { return }
+            flow.step = step
+            outbox.keepFlow(flow)
+        })
     }
 
     private var noteShown: Binding<Bool> {
@@ -234,22 +263,42 @@ struct ScanView: View {
 
     // ------------------------------------------------------------ sending
 
+    /// After "Send": the photos and how far each is, with the way on to
+    /// "Which cat?"; after "Post", "Posted" above them.
     private var sending: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if outbox.flow?.step == .posted {
+                    posted
+                }
                 header
                 LazyVGrid(columns: ScanView.columns, spacing: 8) {
-                    ForEach(outbox.batch) { shown in
+                    ForEach(shots) { shown in
                         VStack(spacing: 6) {
                             Tile(image: shown.thumb, gallery: shown.gallery)
                                 .overlay(alignment: .topTrailing) {
-                                    StateMark(state: outbox.states[shown.id])
+                                    StateMark(state: state(shown.id))
                                         .padding(6)
                                 }
-                            ProgressView(value: fraction(outbox.states[shown.id]))
+                            ProgressView(value: fraction(state(shown.id)))
                                 .accessibilityHidden(true)
                         }
                     }
+                }
+                if let flow = outbox.flow, flow.step != .posted {
+                    Text("Say which cat it was, and post it if you like. Or leave it here: the photos are sent either way.")
+                        .foregroundStyle(.secondary)
+                    Button {
+                        var going = flow
+                        going.step = .which
+                        outbox.keepFlow(going)
+                    } label: {
+                        Label("Which cat?", systemImage: "cat")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+                    .accessibilityIdentifier("scan.which")
                 }
                 notes
             }
@@ -257,9 +306,52 @@ struct ScanView: View {
         }
     }
 
+    /// "Posted", and where the post is.
+    private var posted: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .accessibilityHidden(true)
+                Text("Posted")
+                    .accessibilityIdentifier("scan.posted")
+            }
+            .font(.largeTitle.bold())
+            Text(postWords)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("scan.post-state")
+        }
+    }
+
+    private var postWords: String {
+        guard let encounterId = outbox.flow?.encounterId else { return "" }
+        switch outbox.posts[encounterId] {
+        case .sent:
+            return "It is in your feed. Others see it once it has been checked."
+        case .failed(let why):
+            return "The post could not be made: \(why)"
+        default:
+            return "It goes to the feed as soon as its photos are sent. Nothing to wait for here."
+        }
+    }
+
+    /// The batch's photos; after a launch that found them all sent, the
+    /// flow's.
+    private var shots: [Outbox.Shown] {
+        if !outbox.batch.isEmpty {
+            return outbox.batch
+        }
+        return (outbox.flow?.photos ?? []).map { Outbox.Shown(id: $0.id, gallery: $0.gallery, thumb: outbox.flowThumbs[$0.id]) }
+    }
+
+    /// A photo the queue no longer shows was sent.
+    private func state(_ photoId: String) -> Outbox.State? {
+        outbox.batch.isEmpty ? .sent : outbox.states[photoId]
+    }
+
     @ViewBuilder private var header: some View {
-        let total = outbox.batch.count
-        let sent = outbox.sentCount
+        let total = shots.count
+        let sent = outbox.batch.isEmpty ? total : outbox.sentCount
         if outbox.busy {
             Text("\(sent) of \(total) sent")
                 .font(.title2.bold())
@@ -269,8 +361,6 @@ struct ScanView: View {
                 Text(sent == total ? "Sent: \(total == 1 ? "1 photo" : "\(total) photos")" : "Sent: \(sent) of \(total) photos")
                     .font(.title2.bold())
                     .accessibilityIdentifier("scan.sent")
-                Text("Choosing the cat and posting are not built yet in this app. The app on the home screen has them.")
-                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -307,6 +397,9 @@ struct ScanView: View {
                 .buttonStyle(.glass)
             }
             Button {
+                if let step = outbox.flow?.step, step != .posted {
+                    world.trail.mark("scan: left without choosing")
+                }
                 outbox.clear()
                 chosen = []
             } label: {
@@ -349,7 +442,7 @@ struct ScanView: View {
 }
 
 /// One photo, square, with "from the gallery" on it when it is.
-private struct Tile: View {
+struct Tile: View {
     let image: UIImage?
     let gallery: Bool
 

@@ -720,8 +720,11 @@ App, and any AWS access.
    photos taken or chosen from the gallery, sent as one encounter by the
    web app's routes and write order, through a queue kept on the phone.
    Not tried on a phone yet: the real camera, a real fix from GPS, a
-   large photo over a phone's connection. The second half (the cat, a
-   new cat, the post) is its own issue.
+   large photo over a phone's connection. **Which cat and the post**
+   (#133, 2026-11-25): a cat the app knows or "Not sure", the post,
+   and the pick and the post sent behind the photos through the same
+   queue; the feed shows the post first. A new cat (the proposal) is
+   its own issue.
 
 ## Review against industry practice (2026-11-10)
 

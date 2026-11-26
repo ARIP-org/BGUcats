@@ -84,7 +84,7 @@ struct TabsView: View {
                 NotBuiltYet(title: "Cats", symbol: "cat")
             }
             Tab("Scan a cat", systemImage: "camera", value: AppTab.scan) {
-                ScanView(world: world)
+                ScanView(world: world, session: session)
             }
             Tab("Home", systemImage: "house", value: AppTab.home) {
                 FeedView(world: world, session: session)

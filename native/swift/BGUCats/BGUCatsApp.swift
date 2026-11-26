@@ -51,6 +51,8 @@ struct World {
             // "-termsChanged": the terms changed after the account was read.
             // "-uploadFailsOnce": the second photo's upload times out once.
             // "-offline": no upload reaches the server.
+            // "-postNotReadyOnce": the first post is answered `not_ready`.
+            // "-flowBroken": Scan a cat's kept flow is not whole.
             // "-keepQueue": the upload queue left by the last run is kept,
             // as a phone keeps it between launches; otherwise it is emptied.
             var world = World.standIn(
@@ -60,7 +62,9 @@ struct World {
                 termsChanged: arguments.contains("-termsChanged"),
                 failsOnce: arguments.contains("-uploadFailsOnce"),
                 offline: arguments.contains("-offline"),
-                keepQueue: arguments.contains("-keepQueue")
+                keepQueue: arguments.contains("-keepQueue"),
+                notReadyOnce: arguments.contains("-postNotReadyOnce"),
+                flowBroken: arguments.contains("-flowBroken")
             )
             // "-look dark": the test names the look it is about to
             // picture. Asking the simulator to change its appearance did
@@ -99,7 +103,9 @@ struct World {
         termsChanged: Bool = false,
         failsOnce: Bool = false,
         offline: Bool = false,
-        keepQueue: Bool = false
+        keepQueue: Bool = false,
+        notReadyOnce: Bool = false,
+        flowBroken: Bool = false
     ) -> World {
         let start = Date(timeIntervalSince1970: 1_795_000_000)
         var tick = 0.0
@@ -116,7 +122,8 @@ struct World {
             termsRequired: termsRequired,
             termsChanged: termsChanged,
             failsOnce: failsOnce,
-            offline: offline
+            offline: offline,
+            notReadyOnce: notReadyOnce
         )
         // The queue's files go to the app's temporary folder, emptied at
         // every launch unless the test is checking what a second launch
@@ -124,6 +131,13 @@ struct World {
         let queue = FileManager.default.temporaryDirectory.appendingPathComponent("ui-testing-outbox", isDirectory: true)
         if !keepQueue {
             try? FileManager.default.removeItem(at: queue)
+        }
+        // A flow cut short, as a write the phone never finished leaves one:
+        // an encounter and nothing else.
+        if flowBroken {
+            try? FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
+            try? Data(#"{"encounterId":"01JBROKEN0000000000000000A","step":"post"}"#.utf8)
+                .write(to: queue.appendingPathComponent("flow.json"))
         }
         return World(
             trail: trail,

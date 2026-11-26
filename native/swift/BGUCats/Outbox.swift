@@ -12,6 +12,16 @@ import UIKit
 /// first photo, never empty), then for each photo its record as `pending`,
 /// its bytes, and the confirmation. A photo never goes before its
 /// encounter, and one photo's failure never holds up the others.
+///
+/// What follows the photos rides here too (rows 6 and 9 of "The capture
+/// flow" in docs/app-plan/04-api.md): the member's pick, then the post.
+/// Each waits until every photo of its encounter is confirmed, goes once,
+/// and is kept in the index until the server has it. `not_ready` is "try
+/// again shortly"; `already_posted` is the post already there.
+///
+/// Beside the queue, the Scan screen's flow (`ScanFlow`): which encounter
+/// it is about and how far the member got, kept so a closed app comes back
+/// to the same page.
 @MainActor
 final class Outbox: ObservableObject {
     /// One photo as the screen shows it.
@@ -37,6 +47,40 @@ final class Outbox: ObservableObject {
         let id: String
         let place: Fix?
         var created: Bool
+        /// What follows its photos, once "Post" was tapped. Absent from an
+        /// index written before this existed: nothing follows.
+        var after: After? = nil
+    }
+
+    /// The pick and the post of one encounter, and which have gone.
+    struct After: Codable, Equatable {
+        var pick: PickBody?
+        var pickSent = false
+        var post: PostBody?
+        var postSent = false
+        /// Refused for good, in words: it is not tried again.
+        var postFailed: String?
+
+        /// Something here is still to send.
+        var pending: Bool {
+            (pick != nil && !pickSent) || (post != nil && !postSent && postFailed == nil)
+        }
+
+        /// Kept in the index: something is still to send, or a post was
+        /// refused for good and its flow, which shows why, is not over. The
+        /// refusal lives here only, so forgetting it would turn "Posted"
+        /// after a launch into a post that was never made.
+        var kept: Bool {
+            pending || postFailed != nil
+        }
+    }
+
+    /// A post as the screen shows it.
+    enum PostState: Equatable {
+        /// Kept on the phone; it goes once the photos have.
+        case waiting
+        case sent
+        case failed(String)
     }
 
     struct Item: Codable {
@@ -56,6 +100,15 @@ final class Outbox: ObservableObject {
     /// The photos of the last "Send", in order, with each one's state.
     @Published private(set) var batch: [Shown] = []
     @Published private(set) var states: [String: State] = [:]
+    /// Each post "Post" queued, by its encounter.
+    @Published private(set) var posts: [String: PostState] = [:]
+    /// How many posts reached the server since the app opened: the feed
+    /// reads itself again when it changes.
+    @Published private(set) var postsSent = 0
+    /// The Scan screen's flow, kept beside the queue; nil when none is open.
+    @Published private(set) var flow: ScanFlow?
+    /// The flow's small pictures, by photo id.
+    @Published private(set) var flowThumbs: [String: UIImage] = [:]
 
     /// Photos in flight at once, as in the web app: each is three round
     /// trips, and on a phone's link waiting is most of the time.
@@ -127,9 +180,24 @@ final class Outbox: ObservableObject {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
         }
         let kept = index.items
-        index.encounters.removeAll { encounter in !kept.contains { $0.encounterId == encounter.id } }
+        index.encounters.removeAll { encounter in
+            !kept.contains { $0.encounterId == encounter.id } && !(encounter.after?.kept ?? false)
+        }
         save()
-        guard !index.items.isEmpty else { return }
+        for encounter in index.encounters where encounter.after?.post != nil {
+            if let failed = encounter.after?.postFailed {
+                posts[encounter.id] = .failed(failed)
+            } else if encounter.after?.postSent == false {
+                posts[encounter.id] = .waiting
+            }
+        }
+        openFlow()
+        // A refusal is kept for its flow only: with that flow gone, so is it.
+        dropRefused(keeping: flow?.encounterId)
+        guard !index.items.isEmpty else {
+            kick()
+            return
+        }
 
         batch = index.items.map { Shown(id: $0.id, gallery: $0.gallery, thumb: nil) }
         for item in index.items {
@@ -150,8 +218,9 @@ final class Outbox: ObservableObject {
     /// "Send": writes the photos to the phone, then the index, then sends.
     /// `lateFix`: where the phone is now, for an encounter whose camera
     /// photos were all taken before the first fix.
-    func send(_ photos: [Chosen], lateFix: Fix?) async throws {
-        guard !photos.isEmpty else { return }
+    @discardableResult
+    func send(_ photos: [Chosen], lateFix: Fix?) async throws -> String? {
+        guard !photos.isEmpty else { return nil }
         let folder = self.folder
         try await Task.detached(priority: .userInitiated) {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -176,7 +245,10 @@ final class Outbox: ObservableObject {
             states[photo.id] = .waiting
         }
         trail.mark("upload: \(photos.count) photos queued")
+        // The flow names only photos the queue already holds.
+        startFlow(encounterId: encounter.id, photos: photos)
         kick()
+        return encounter.id
     }
 
     /// "Try again" on photos refused for good.
@@ -189,15 +261,45 @@ final class Outbox: ObservableObject {
         kick()
     }
 
-    /// "Scan another cat": the batch leaves the screen, and photos refused
-    /// for good leave the phone.
+    /// "Scan another cat": the batch and the flow leave the screen, and
+    /// photos refused for good leave the phone, and any post waiting for
+    /// them goes without them (or not at all, if none is left).
     func clear() {
-        for item in index.items where item.failed != nil {
-            forget(item.id)
+        let dropped = Set(index.items.filter { $0.failed != nil }.map(\.id))
+        for photoId in dropped {
+            forget(photoId)
+        }
+        for at in index.encounters.indices {
+            guard var post = index.encounters[at].after?.post, !dropped.isDisjoint(with: post.photoIds) else { continue }
+            post.photoIds.removeAll { dropped.contains($0) }
+            let encounterId = index.encounters[at].id
+            if post.photoIds.isEmpty {
+                index.encounters[at].after?.post = nil
+                posts[encounterId] = nil
+            } else {
+                index.encounters[at].after?.post = post
+            }
         }
         save()
         batch = []
         states = [:]
+        endFlow()
+    }
+
+    /// "Post": the pick (nil for "Not sure") and the post, queued behind
+    /// the encounter's photos. Its photos may all be on the server already,
+    /// and the encounter forgotten here: it comes back, as created.
+    func finish(encounterId: String, pick: PickBody?, post: PostBody?) {
+        let after = After(pick: pick, post: post)
+        if let at = index.encounters.firstIndex(where: { $0.id == encounterId }) {
+            index.encounters[at].after = after
+        } else {
+            index.encounters.append(Encounter(id: encounterId, place: nil, created: true, after: after))
+        }
+        posts[encounterId] = post == nil ? nil : PostState.waiting
+        save()
+        trail.mark("upload: \(pick == nil ? "no pick" : "pick") and \(post == nil ? "no post" : "a post") queued")
+        kick()
     }
 
     // ------------------------------------------------------------ the sending
@@ -280,12 +382,86 @@ final class Outbox: ObservableObject {
             }
             return later
         }
+        let behind = await sendAfter()
         let left = index.items
         index.encounters.removeAll { encounter in
-            encounter.created && !left.contains { $0.encounterId == encounter.id }
+            encounter.created && !left.contains { $0.encounterId == encounter.id } && !(encounter.after?.kept ?? false)
         }
         save()
-        return stuck || later
+        return stuck || later || behind
+    }
+
+    /// The picks and posts whose photos are all confirmed: the pick first,
+    /// then the post, each once. Answers whether one must be tried again.
+    private func sendAfter() async -> Bool {
+        var again = false
+        let waiting = Set(index.items.map(\.encounterId))
+        for encounter in index.encounters where encounter.created && !waiting.contains(encounter.id) {
+            guard let after = encounter.after, after.pending else { continue }
+            if let pick = after.pick, !after.pickSent {
+                do {
+                    let status = try await backend.pick(encounterId: encounter.id, pick)
+                    trail.mark("upload: pick \(status)")
+                } catch {
+                    let outcome = Outbox.judge(error, step: "pick")
+                    trail.mark(outcome.line)
+                    if outcome.again {
+                        // The post waits for its pick: in order.
+                        again = true
+                        continue
+                    }
+                    // Refused (the cat merged away meanwhile): the post
+                    // matters more than the answer, which is dropped.
+                }
+                changeAfter(encounter.id, from: after) { $0.pickSent = true }
+            }
+            guard let post = after.post, !after.postSent, after.postFailed == nil else { continue }
+            do {
+                let status = try await backend.post(post)
+                trail.mark("upload: post \(status)")
+                postWent(encounter.id, post)
+            } catch let failure as ApiError where failure.code == "already_posted" {
+                // Another post of this encounter is on the server (a resent
+                // postId is answered with its own post, not this). The
+                // encounter is in the feed, which is what "Post" was for.
+                trail.mark("upload: post \(failure.status), already there")
+                postWent(encounter.id, post)
+            } catch let failure as ApiError where failure.code == "not_ready" || failure.status == 425 {
+                // A photo is still being processed: not an error to show.
+                trail.mark("upload: post \(failure.status), not ready yet")
+                again = true
+            } catch {
+                let outcome = Outbox.judge(error, step: "post")
+                trail.mark(outcome.line)
+                if outcome.again {
+                    again = true
+                } else {
+                    changeAfter(encounter.id, from: nil) { $0.postFailed = outcome.words }
+                    posts[encounter.id] = .failed(outcome.words)
+                }
+            }
+        }
+        return again
+    }
+
+    /// Changes what follows an encounter's photos, unless "Post" replaced
+    /// it while a request was on its way (`from`: what was read; nil: any).
+    private func changeAfter(_ encounterId: String, from: After?, _ change: (inout After) -> Void) {
+        guard let at = index.encounters.firstIndex(where: { $0.id == encounterId }), var after = index.encounters[at].after else { return }
+        if let from, from.pick != after.pick || from.post != after.post {
+            return
+        }
+        change(&after)
+        index.encounters[at].after = after
+        save()
+    }
+
+    private func postWent(_ encounterId: String, _ post: PostBody) {
+        guard let at = index.encounters.firstIndex(where: { $0.id == encounterId }), index.encounters[at].after?.post == post else { return }
+        index.encounters[at].after?.postSent = true
+        save()
+        posts[encounterId] = .sent
+        postsSent += 1
     }
 
     /// One photo: its record, its bytes, the confirmation. Answers whether
@@ -397,6 +573,99 @@ final class Outbox: ObservableObject {
         }
         states[photoId] = .failed(why)
         save()
+    }
+
+    // ------------------------------------------------------------ the flow
+
+    private var flowFile: URL {
+        folder.appendingPathComponent("flow.json")
+    }
+
+    nonisolated static func thumbName(_ photoId: String) -> String {
+        "\(photoId).thumb"
+    }
+
+    /// A new flow, at "Send": its photos' small pictures first, then the
+    /// flow that names them.
+    private func startFlow(encounterId: String, photos: [Chosen]) {
+        endFlow()
+        for photo in photos {
+            if let small = photo.thumb.jpegData(compressionQuality: 0.7) {
+                try? small.write(to: folder.appendingPathComponent(Outbox.thumbName(photo.id)), options: .atomic)
+            }
+            flowThumbs[photo.id] = photo.thumb
+        }
+        keepFlow(ScanFlow(encounterId: encounterId, photos: photos.map { ScanFlow.Shot(id: $0.id, gallery: $0.gallery) }))
+    }
+
+    /// The flow as the screen changed it, kept at once.
+    func keepFlow(_ changed: ScanFlow) {
+        flow = changed
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try JSONEncoder().encode(changed).write(to: flowFile, options: .atomic)
+        } catch {
+            trail.mark("scan: the flow could not be kept (\(Auth.kind(error)))")
+        }
+    }
+
+    /// The flow is over: what was kept for it leaves the phone.
+    func endFlow() {
+        flow = nil
+        flowThumbs = [:]
+        dropRefused(keeping: nil)
+        try? FileManager.default.removeItem(at: flowFile)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in files where name.hasSuffix(".thumb") {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+        }
+    }
+
+    /// Forgets the encounters kept only for a post refused for good (nothing
+    /// of them waits), but for `encounterId`'s, whose flow still shows it.
+    private func dropRefused(keeping encounterId: String?) {
+        let waiting = Set(index.items.map(\.encounterId))
+        let gone = index.encounters.filter { encounter in
+            guard let after = encounter.after, after.postFailed != nil, !after.pending else { return false }
+            return encounter.id != encounterId && !waiting.contains(encounter.id)
+        }.map(\.id)
+        guard !gone.isEmpty else { return }
+        index.encounters.removeAll { gone.contains($0.id) }
+        for id in gone {
+            posts[id] = nil
+        }
+        save()
+    }
+
+    /// The flow the last launch left, checked before it is used: one that
+    /// is not whole is dropped, and the tab opens empty.
+    private func openFlow() {
+        guard let data = try? Data(contentsOf: flowFile) else { return }
+        guard let kept = ScanFlow.read(data) else {
+            trail.mark("scan: kept flow dropped, not whole")
+            endFlow()
+            return
+        }
+        flow = kept
+        trail.mark("scan: kept flow back (\(kept.step.rawValue))")
+        // Posted, and nothing of its post left waiting or refused here: it
+        // reached the server, and its encounter, done, was forgotten.
+        if kept.step == .posted, posts[kept.encounterId] == nil {
+            posts[kept.encounterId] = .sent
+        }
+        let folder = self.folder
+        for shot in kept.photos {
+            Task.detached(priority: .utility) {
+                let small = UIImage(contentsOfFile: folder.appendingPathComponent(Outbox.thumbName(shot.id)).path)
+                await MainActor.run { self.setFlowThumb(shot.id, small) }
+            }
+        }
+    }
+
+    private func setFlowThumb(_ photoId: String, _ thumb: UIImage?) {
+        if let thumb, flow?.photos.contains(where: { $0.id == photoId }) == true {
+            flowThumbs[photoId] = thumb
+        }
     }
 
     private func progressed(_ photoId: String, _ value: Double) {
