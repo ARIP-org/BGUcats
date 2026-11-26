@@ -85,6 +85,9 @@ def everything(campus, monkeypatch):  # noqa: F811
     monkeypatch.setattr(
         handler, "FLAGS", {"social": True, "gpa": True, "feeding": True}
     )
+    # The events Lambda binds its tables at import, before moto (#135: it
+    # now clears a deleted person's address from the dataset too).
+    monkeypatch.setattr(events, "data_table", campus["data"])
     for who in (THIRD, FOURTH):
         campus["data"].put_item(
             Item={"PK": f"ADMIN#{who}", "SK": "META", "email": who, "role": "user"}
@@ -362,42 +365,94 @@ def test_after_deletion_nothing_in_the_app_names_the_person(everything):
     }
 
 
-def test_what_the_dataset_still_holds_is_what_the_pull_request_says(everything):
-    """D14 keeps the photos and their sessions. Clearing the address they
-    carry needs a write to bgucats-data, which neither the member API nor
-    the events Lambda may make (docs/app-plan/README.md, rule 7): not done
-    in B10a. This pins exactly where it remains, so the change that clears
-    it has to change this test."""
+def test_the_dataset_keeps_what_they_gave_and_not_their_address(everything):
+    """D14 keeps the photos, their sessions and the picks; since #135 (the
+    owner's option 2) the address leaves them. Until then this test pinned
+    where it stayed. What is left of the person is one hash, pinned too:
+    `submitterHash` is an unsalted hash of the address."""
     world = everything
+    data = world["data"]
+    hashes = {
+        s: get(data, f"SESSION#{s}", "META")["submitterHash"]
+        for s in (SESSION, THIRD_SESSION)
+    }
     delete()
     world["stream"].settle()
-    left = holding(world["data"], HELPER)
-    assert left == {
-        # Who may sign in: the allowlist, an admin's to change.
-        (f"ADMIN#{HELPER}", "META", "PK"),
-        (f"ADMIN#{HELPER}", "META", "email"),
-        # Who sent each photo.
-        (f"PHOTO#{PHOTO}", "META", "submittedBy"),
-        (f"PHOTO#{THIRD_PHOTO}", "META", "submittedBy"),
-        # Who started each encounter, also in the index key that lists them.
-        *(
-            (f"SESSION#{s}", "META", f)
-            for s in (SESSION, THIRD_SESSION)
-            for f in ("startedBy", "GSI2SK")
-        ),
-        # Who answered "Who did you meet?".
-        (f"SESSION#{SESSION}", "PICK", "pickedBy"),
+
+    assert holding(data, HELPER) == set()
+    for s in (SESSION, THIRD_SESSION):
+        session = get(data, f"SESSION#{s}", "META")
+        assert "startedBy" not in session
+        # Still in the index, under a key that names nobody.
+        assert session["GSI2PK"] == "ENTITY#ENCOUNTER"
+        assert session["GSI2SK"] == f"{events.DELETED}#{session['startedAt']}"
+        assert session["submitterHash"] == hashes[s]
+    for photo, session in ((PHOTO, SESSION), (THIRD_PHOTO, THIRD_SESSION)):
+        item = get(data, f"PHOTO#{photo}", "META")
+        assert "submittedBy" not in item and item["sessionId"] == session
+    answer = get(data, f"SESSION#{SESSION}", "PICK")
+    assert "pickedBy" not in answer and answer["catId"] == SIMBA
+    # A member's allowlist item goes with them.
+    assert get(data, f"ADMIN#{HELPER}", "META") is None
+    # The admin's encounter, photo and pick are the admin's still.
+    assert get(data, f"SESSION#{SECOND}", "META")["startedBy"] == ADMIN
+    assert get(data, f"PHOTO#{SECOND_PHOTO}", "META")["submittedBy"] == ADMIN
+    assert get(data, f"SESSION#{SECOND}", "PICK")["pickedBy"] == ADMIN
+
+
+def test_photos_merged_into_another_session_lose_the_address_too(everything):
+    """A merge moves the photos and keeps the encounter, with `mergedInto`:
+    the job follows it, and clears only this person's photos there."""
+    world = everything
+    data = world["data"]
+    status, _ = desk_call(
+        "POST",
+        "/api/sessions/merge",
+        {"sourceSessionId": THIRD_SESSION, "targetSessionId": SECOND},
+    )
+    assert status == 200
+    assert get(data, f"PHOTO#{THIRD_PHOTO}", "META")["sessionId"] == SECOND
+    delete()
+    world["stream"].settle()
+    assert holding(data, HELPER) == set()
+    assert "submittedBy" not in get(data, f"PHOTO#{THIRD_PHOTO}", "META")
+    assert get(data, f"PHOTO#{SECOND_PHOTO}", "META")["submittedBy"] == ADMIN
+
+
+def test_an_admin_who_deletes_their_account_keeps_the_desk(everything):
+    """An admin's allowlist item is not a member's: it stays, and so does
+    the bootstrap admin's that Terraform writes. What they contributed
+    loses their address like anyone's."""
+    world = everything
+    data = world["data"]
+    status, _ = delete(email=ADMIN)
+    assert status == 200
+    world["stream"].settle()
+    assert get(data, f"ADMIN#{ADMIN}", "META") == {
+        "PK": f"ADMIN#{ADMIN}",
+        "SK": "META",
+        "email": ADMIN,
     }
+    assert "startedBy" not in get(data, f"SESSION#{SECOND}", "META")
+    assert "submittedBy" not in get(data, f"PHOTO#{SECOND_PHOTO}", "META")
+    assert "pickedBy" not in get(data, f"SESSION#{SECOND}", "PICK")
+    # The member's are untouched.
+    assert get(data, f"SESSION#{SESSION}", "META")["startedBy"] == HELPER
+    assert get(data, f"ADMIN#{HELPER}", "META")["role"] == "collaborator"
 
 
-def test_after_deletion_the_same_sign_in_starts_a_new_empty_account(everything):
-    """Should a token outlive the Cognito user (an ID token is good for up
-    to an hour after B10b's step deletes it, and here no pool is stood in):
-    while the job runs it is answered `gone`, and once it has finished the
-    next call makes a new account with nothing of the old one."""
+def test_after_deletion_the_address_is_admitted_again_by_an_admin(everything):
+    """The member's allowlist item went with the account (#135). While the
+    sign-up policy is the allowlist, the address is refused, an ID token
+    that outlived the Cognito user (up to an hour after B10b's step) too.
+    Added again by an admin, the next call makes a new account with
+    nothing of the old one."""
     old = everything["ids"][HELPER]
     delete()
     everything["stream"].settle()
+    assert call("GET", "/api/v1/me", email=HELPER)[0] == 403
+    status, _ = desk_call("POST", "/api/admins", {"email": HELPER, "role": "user"})
+    assert status == 200
     status, me = call("GET", "/api/v1/me", email=HELPER)
     assert status == 200
     assert me["userId"] != old
@@ -439,11 +494,14 @@ def test_every_step_run_twice_and_the_whole_job_again_end_the_same(
     before = stream.seen
     delete()
     start = scan(world["social"])
+    start_data = scan(world["data"])
 
     stream.settle()
     plain = _normal(scan(world["social"]))
+    plain_data = _normal(scan(world["data"]))
 
     _restore(world["social"], start)
+    _restore(world["data"], start_data)
     stream.seen = before
     twice = []
     for index, step in enumerate(events.DELETION_STEPS):
@@ -469,11 +527,13 @@ def test_every_step_run_twice_and_the_whole_job_again_end_the_same(
     stream.settle()
     assert len(twice) == len(events.DELETION_STEPS)
     assert _normal(scan(world["social"])) == plain
+    assert _normal(scan(world["data"])) == plain_data
 
     # The whole job again: every change it caused, delivered once more.
     assert handle({"Records": records}, None) == {"batchItemFailures": []}
     stream.settle()
     assert _normal(scan(world["social"])) == plain
+    assert _normal(scan(world["data"])) == plain_data
     assert recount.differences(scan(world["social"])) == []
 
 

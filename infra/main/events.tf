@@ -127,6 +127,57 @@ resource "aws_iam_role_policy" "events_lambda_access" {
         ]
         Resource = aws_cognito_user_pool.admins.arn
       },
+      {
+        # Deleting an account, the dataset (#135, the owner's option 2):
+        # what a person contributed stays (D14) and their address leaves
+        # it. The job finds their encounters by address (GSI2) and each
+        # encounter's photos (GSI1), and reads a session a merge moved
+        # them to. The Lambda boundary already allows these
+        # (infra/bootstrap/lambda_boundary.tf, "TableItems").
+        Sid    = "DeleteAccountFindInDataset"
+        Effect = "Allow"
+        Action = ["dynamodb:Query"]
+        Resource = [
+          "${aws_dynamodb_table.data.arn}/index/GSI1",
+          "${aws_dynamodb_table.data.arn}/index/GSI2",
+        ]
+      },
+      {
+        Sid      = "DeleteAccountReadSessions"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem"]
+        Resource = aws_dynamodb_table.data.arn
+        Condition = {
+          "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["SESSION#*"] }
+        }
+      },
+      {
+        # Only the fields that hold the address, and the keys: any other
+        # field in an update is refused, and nothing is sent back.
+        Sid      = "DeleteAccountClearAddress"
+        Effect   = "Allow"
+        Action   = ["dynamodb:UpdateItem"]
+        Resource = aws_dynamodb_table.data.arn
+        Condition = {
+          "ForAllValues:StringEquals" = {
+            "dynamodb:Attributes" = [
+              "PK", "SK", "submittedBy", "startedBy", "pickedBy", "GSI2SK",
+            ]
+          }
+          StringEqualsIfExists = { "dynamodb:ReturnValues" = ["NONE"] }
+        }
+      },
+      {
+        # A member's allowlist item goes with the account; the code asks
+        # only on the condition that its role is a member's.
+        Sid      = "DeleteAccountAllowlistItem"
+        Effect   = "Allow"
+        Action   = ["dynamodb:DeleteItem"]
+        Resource = aws_dynamodb_table.data.arn
+        Condition = {
+          "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["ADMIN#*"] }
+        }
+      },
     ]
   })
 }
@@ -158,6 +209,8 @@ resource "aws_lambda_function" "events" {
       APNS_TOPIC         = local.apns.topic
       # Whose sign-in a deleted account's Cognito user is (B10b).
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.admins.id
+      # Where a deleted account's address is cleared from (#135).
+      DATA_TABLE_NAME = aws_dynamodb_table.data.name
     }
   }
 }

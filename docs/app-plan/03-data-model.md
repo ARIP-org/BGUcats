@@ -157,7 +157,9 @@ retry and finds its finished part done
    step for the mapping to retry. An ID token already handed out is good
    for up to an hour (API Gateway does not ask Cognito): while the job
    runs it is answered `gone`, and after, it would make a new, empty
-   account. A profile with no `cognitoUser` (marked before B10b) skips
+   account if the address were still admitted; a member's allowlist item
+   goes in step 7, so under the allowlist policy it is refused until an
+   admin adds the address again. A profile with no `cognitoUser` (marked before B10b) skips
    the step and says so in the log.
 2. Posts: set `removed` (`hiddenReason = deleted`), which drops them from
    every index, and their cat's counters are taken back; `authorId` and
@@ -178,7 +180,20 @@ retry and finds its finished part done
    names `deleted`.
 6. Devices, badges, counters, `MET`, `METM`, `ENC`, feedings, pushes:
    delete, after taking what they gave each cat's popularity off it.
-7. `USERNAME`, `INVITE`, `IDENTITY` (each only while it still names this
+7. The dataset (#135; the owner's choice, 2026-11-26, of the events
+   role clearing it itself): the person's app encounters, found by
+   address through GSI2 (`ENTITY#ENCOUNTER` / `{email}#…`), lose
+   `startedBy`, and their `GSI2SK` becomes `deleted#{startedAt}`, last, so
+   a run stopped half-way finds the encounter again; their photos lose
+   `submittedBy`, also in a session a merge moved them to (`mergedInto`);
+   their pick loses `pickedBy`. Each write is on the condition that the
+   field still holds the address. Their allowlist item `ADMIN#{email}`
+   is deleted if its role is a member's (`user`, `collaborator`); an
+   admin's stays, and the bootstrap admin's is Terraform's. The role may
+   update only those fields of the dataset, read only its sessions and
+   two indexes, delete only `ADMIN#` items, and gets nothing back
+   (`infra/main/events.tf`; `tests/events/test_events_role.py`).
+8. `USERNAME`, `INVITE`, `IDENTITY` (each only while it still names this
    person), the rate counters of the last four days, a last sweep of the
    partition for anything written while the job ran, and last the `USER`
    item. `PHONE` is not written by any route yet (D5): the milestone that
@@ -188,17 +203,16 @@ While an account is `deleting`, or once its profile is gone, the events
 Lambda counts, awards and tells it nothing (`_being_deleted`), so a late
 change cannot write a piece of it back.
 
-What stays, per D14's answer: the sessions and photos in `bgucats-data`.
-Their `submitterHash` is a salted hash, and with the `IDENTITY` and `ENC`
-items gone nothing in the app's table links them to a person. **But the
-dataset itself still holds the email address** on each photo
-(`submittedBy`), on each app encounter (`startedBy`, and in its `GSI2SK`)
-and on a contributor's pick (`pickedBy`), and on the allowlist's
-`ADMIN#{email}`. Clearing those is a write to `bgucats-data`, which
-neither the member API nor the events Lambda may make (invariant 1,
-README rule 7): it is the owner's decision how (the desk's API, which may
-write the dataset, or a wider events role under `infra/`), and is listed
-in `docs/app-backlog.md`. If D14 is answered otherwise, step 2 also
+What stays, per D14's answer: the sessions, photos and picks in
+`bgucats-data`, with no address on them since step 7, and with the
+`IDENTITY` and `ENC` items gone nothing in the app's table links them to a
+person. **One link is left:** `submitterHash` on each app session and
+photo, and its `SUBMITTER#` item, is a hash of the address, unsalted for
+the app (`_app_submitter_hash` in `src/admin/handler.py`), so anyone who
+knows the address can find what it sent. The stats page counts
+contributors by it; replacing it is listed in `docs/app-backlog.md`. The
+member API still never writes the dataset (README rule 7): the events
+Lambda does, for this one step. If D14 is answered otherwise, step 2 also
 rejects the person's unlabeled sessions through the desk's existing
 reject, which deletes the objects and their versions.
 

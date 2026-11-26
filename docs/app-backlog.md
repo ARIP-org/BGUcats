@@ -113,23 +113,22 @@ Things decided to leave for later, so they are not lost. Newest first.
   and waiting states. *(2026-11-12.)*
 - **Left out of the first build on purpose:** the phone number and
   contact matching (D5), Android. *(2026-11-12.)*
-- **Deleting an account leaves the email in the dataset** (B10a,
-  `docs/app-plan/03-data-model.md`, "Deleting an account"). The photos
-  and encounters stay (D14) but still carry the address: `submittedBy`
-  on each photo, `startedBy` and `GSI2SK` on each app encounter,
-  `pickedBy` on a pick, and `ADMIN#{email}` on the allowlist. Neither of
-  the app's Lambdas may write `bgucats-data`; the owner decides whether
-  the desk's API clears them (an admin's action, or a route the job
-  calls) or the events role is widened under `infra/`. Until then D14's
-  "nothing links them to a person" is true of the app's table only.
-  Also not built: a profile photo uploaded in the five minutes before
+- **Deleting an account leaves a hash of the address in the dataset**
+  (`docs/app-plan/03-data-model.md`, "Deleting an account"). Since #135
+  the job clears the address itself from the photos, encounters and
+  picks, and deletes a member's allowlist item. Left: `submitterHash` on
+  each app session and photo and its `SUBMITTER#` item, an unsalted hash
+  of the address, which the stats page counts contributors by. Replacing
+  it with a random value at deletion would cut the last link and keep
+  the count. Also not built: a profile photo uploaded in the five minutes before
   deleting and confirmed never (its signed upload outlives the call)
   stays under `avatars/`; a like, report or proposal written in the
   second before deletion that an index has not caught up with may be
   missed. Since B10b the Cognito user is deleted and its refresh tokens
   revoked, but an ID token already handed out is good for up to an hour
   (API Gateway does not ask Cognito): used after the job has finished,
-  it makes a new, empty account. *(2026-11-23; 2026-11-25.)*
+  it makes a new, empty account if the address is still admitted.
+  *(2026-11-23; 2026-11-25; 2026-11-26.)*
 
 ## Design
 

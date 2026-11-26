@@ -42,6 +42,11 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 SOCIAL_TABLE_NAME = os.environ.get("SOCIAL_TABLE_NAME", "bgucats-social")
+# The dataset, for one job only: clearing a deleted person's address from
+# what they contributed (`clear_dataset`, #135). The role may read two of
+# its indexes and the sessions, and write those few fields alone
+# (infra/main/events.tf).
+DATA_TABLE_NAME = os.environ.get("DATA_TABLE_NAME", "bgucats-data")
 
 
 def _rules_file(name):
@@ -104,6 +109,7 @@ ALERTS_TOPIC_ARN = os.environ.get("ALERTS_TOPIC_ARN")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "")
 _sns = None
 social_table = boto3.resource("dynamodb").Table(SOCIAL_TABLE_NAME)
+data_table = boto3.resource("dynamodb").Table(DATA_TABLE_NAME)
 _DESERIALIZE = TypeDeserializer()
 
 # (partition key prefix, sort key equal or prefix) -> kind. The first match
@@ -1652,6 +1658,114 @@ def sign_out_everywhere(profile):
     logger.info("deleting user=%s: signed out and Cognito user deleted", me)
 
 
+# The dataset (#135, the owner's option 2): the photos, encounters and
+# picks a person contributed stay (D14), and their address leaves them.
+# Allowlist roles that are a member's, whose item goes with the account.
+# An admin's stays: the desk is theirs to leave, and the bootstrap admin's
+# item is Terraform's.
+MEMBER_ROLES = ("user", "collaborator")
+# A merge can be merged again; a chain longer than this is not followed.
+MERGE_HOPS = 10
+
+
+def _data_index(index, pk, begins=None):
+    """Every item of one of the dataset's indexes (`GSI1`, `GSI2`) under
+    one partition key, and a sort key that begins so, if given."""
+    condition = Key(f"{index}PK").eq(pk)
+    if begins is not None:
+        condition = condition & Key(f"{index}SK").begins_with(begins)
+    items, start = [], None
+    while True:
+        page = data_table.query(
+            IndexName=index,
+            KeyConditionExpression=condition,
+            **({"ExclusiveStartKey": start} if start else {}),
+        )
+        items += page["Items"]
+        start = page.get("LastEvaluatedKey")
+        if not start:
+            return items
+
+
+def _forget_in_dataset(key, field, email):
+    """`field` removed from one item of the dataset while it still holds
+    this address; done already (or never theirs) is not a failure."""
+    try:
+        data_table.update_item(
+            Key=key,
+            UpdateExpression="REMOVE #f",
+            ConditionExpression="#f = :email",
+            ExpressionAttributeNames={"#f": field},
+            ExpressionAttributeValues={":email": email},
+        )
+    except data_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass
+
+
+def clear_dataset(profile):
+    """The person's address, out of the dataset. Their app encounters are
+    found through the index that lists them by address (GSI2
+    `ENTITY#ENCOUNTER` / `{email}#…`). For each: its photos lose
+    `submittedBy`, and so do theirs in any session it was merged into
+    (a merge moves the photos and keeps the encounter, `mergedInto`); its
+    pick loses `pickedBy`; and last the encounter loses `startedBy` and
+    its index key takes `deleted#{startedAt}`, which drops it from the
+    listing. Last, so a run stopped half-way finds the encounter again
+    and does the rest; every write is on the condition that the field
+    still holds this address. Then their allowlist item, if it is a
+    member's (`MEMBER_ROLES`). What stays: `submitterHash`, an unsalted
+    hash of the address (docs/app-backlog.md)."""
+    me, email = profile["userId"], profile.get("email")
+    if not email:
+        logger.warning("deleting user=%s: no address on the profile", me)
+        return
+    encounters = _data_index("GSI2", "ENTITY#ENCOUNTER", begins=f"{email}#")
+    for session in encounters:
+        session_id, seen = session["sessionId"], set()
+        while session_id and session_id not in seen and len(seen) < MERGE_HOPS:
+            seen.add(session_id)
+            for photo in _data_index("GSI1", f"SESSION#{session_id}"):
+                if photo.get("submittedBy") == email:
+                    key = {"PK": photo["PK"], "SK": photo["SK"]}
+                    _forget_in_dataset(key, "submittedBy", email)
+            if session_id == session["sessionId"]:
+                session_id = session.get("mergedInto")
+            else:
+                merged = data_table.get_item(
+                    Key={"PK": f"SESSION#{session_id}", "SK": "META"},
+                    ConsistentRead=True,
+                ).get("Item")
+                session_id = (merged or {}).get("mergedInto")
+        _forget_in_dataset({"PK": session["PK"], "SK": "PICK"}, "pickedBy", email)
+        try:
+            data_table.update_item(
+                Key={"PK": session["PK"], "SK": "META"},
+                UpdateExpression="REMOVE startedBy SET GSI2SK = :gone",
+                ConditionExpression="startedBy = :email",
+                ExpressionAttributeValues={
+                    ":email": email,
+                    ":gone": f"{DELETED}#{session.get('startedAt', '')}",
+                },
+            )
+        except data_table.meta.client.exceptions.ConditionalCheckFailedException:
+            pass
+    try:
+        data_table.delete_item(
+            Key={"PK": f"ADMIN#{email}", "SK": "META"},
+            ConditionExpression="#r IN (:user, :collaborator)",
+            ExpressionAttributeNames={"#r": "role"},
+            ExpressionAttributeValues={
+                ":user": MEMBER_ROLES[0],
+                ":collaborator": MEMBER_ROLES[1],
+            },
+        )
+    except data_table.meta.client.exceptions.ConditionalCheckFailedException:
+        pass  # an admin's, or gone already
+    logger.info(
+        "deleting user=%s: address cleared from %d encounters", me, len(encounters)
+    )
+
+
 def delete_last(profile):
     """Steps 6 and 7 (the avatar's objects went with `DELETE /me`, the one
     Lambda that may touch the bucket): the lookups, the rate counters, a
@@ -1687,6 +1801,7 @@ DELETION_STEPS = (
     delete_ties,
     clear_reports,
     delete_own_items,
+    clear_dataset,
     delete_last,
 )
 
