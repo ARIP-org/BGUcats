@@ -362,11 +362,22 @@ struct PostCard: View {
             parts.append("@\(username)")
         }
         if let at = post.createdAt {
-            let ago = RelativeDateTimeFormatter()
-            ago.unitsStyle = .abbreviated
-            parts.append(ago.localizedString(for: at, relativeTo: world.now()))
+            parts.append(Self.age(of: at, now: world.now()))
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// How old a post is, as the web app says it (`ago` in
+    /// web/social/i18n.js): under a minute either way is "Just now". A
+    /// post made a moment ago carries the server's clock, which can be a
+    /// second ahead of the phone's, and read "in 0s" (2026-11-26).
+    static func age(of at: Date, now: Date) -> String {
+        if abs(at.timeIntervalSince(now)) < 60 {
+            return "Just now"
+        }
+        let ago = RelativeDateTimeFormatter()
+        ago.unitsStyle = .abbreviated
+        return ago.localizedString(for: at, relativeTo: now)
     }
 
     /// The photos, square, one at a time; more than one can be swiped.
