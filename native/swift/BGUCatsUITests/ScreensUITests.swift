@@ -327,6 +327,10 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(mine.waitForExistence(timeout: patience), "The post is not in the feed. \(onScreen(app))")
         let older = app.staticTexts["By the library steps again, asleep in the sun."].firstMatch
         XCTAssertTrue(!older.exists || mine.frame.minY < older.frame.minY, "The new post is not first. \(onScreen(app))")
+        // Made a moment ago: "Just now", never "in 0s".
+        let fresh = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", " · Just now")).firstMatch
+        XCTAssertTrue(fresh.exists, "The new post does not say \"Just now\". \(onScreen(app))")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " · in ")).firstMatch.exists, "A post's age is in the future. \(onScreen(app))")
         keep(app, "home-after-post-\(look)")
 
         let shown = appInfo(app)
