@@ -862,3 +862,17 @@ def test_the_post_pages_use_the_web_apps_words():
     page = sources()["ScanPages.swift"]
     for key in ("scan.which", "scan.location", "scan.locationOn", "scan.locationOff", "scan.post", "scan.descriptionHint", "feed.search", "cat.noName"):
         assert f'"{words[key]}"' in page, key
+
+
+def test_a_post_made_a_moment_ago_says_just_now_as_the_web_app_does():
+    # A post's time is the server's, a second ahead of the phone's now and
+    # then: the post at the top of Home read "in 0s" (2026-11-26). Under a
+    # minute either way is "Just now", in the web app's word.
+    feed = (SWIFT / "BGUCats" / "FeedView.swift").read_text()
+    assert "abs(at.timeIntervalSince(now)) < 60" in feed
+    assert 'return "Just now"' in feed
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    assert words["time.justNow"] == "Just now"
+    assert "Math.abs(seconds) < 60" in (REPO / "web" / "social" / "i18n.js").read_text()
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    assert '" · Just now"' in tests and '" · in "' in tests
