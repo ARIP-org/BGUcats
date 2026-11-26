@@ -321,9 +321,12 @@ to `docs/ROADMAP.md`.
   the owner while the code is built, and **keeps green-lane work
   ready** (`docs/agents/planner.md`).
 - **A pull request that waits only for the owner takes no place** in
-  the builder's three (`scripts/builder_queue.py`, `waits_for_owner`).
-  The planner's rule that two issues changing the same files are never
-  `ready` together is what keeps the builds past it from conflicting.
+  the builder's three (`scripts/builder_queue.py`, `waits_for_owner`):
+  passed up by the reviewer and merging with main, a session's as well
+  as the builder's. Three at most are left out (`WAITING_MAX`), so work
+  cannot pile up for the owner without end. The planner's rule that two
+  issues changing the same files are never `ready` together is what
+  keeps the builds past them from conflicting.
 - **The builder keeps a green issue green** and **never edits
   `docs/ROADMAP.md`**: progress goes in `docs/app-plan/08-milestones.md`
   (`.github/workflows/claude-fix.yml`).
