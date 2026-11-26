@@ -82,7 +82,9 @@ secret, **from who put the label on, never from what an issue says:**
 
 **At most three pieces of agent work are open at once:** this
 repository's open pull requests from `claude/` branches (a session's
-too), plus issues being built that have no pull request yet. The rest
+too), plus issues being built that have no pull request yet. A pull
+request that waits only for the owner, passed up by the reviewer and
+not in conflict, does not count (since 2026-11-26, below). The rest
 wait in the queue, the owner's `approved` first, then the oldest. The
 queue is looked at when a label is added, after every deploy (so after
 every merge), and every two hours. Not on the push itself: Claude's
@@ -298,6 +300,36 @@ variable to start them again.
 **At most three pieces of agent work are open at once**, counted by the
 builder's queue (above). At three, an issue waits in the queue with its
 label; nothing is dropped and nothing has to be labeled again.
+
+## The owner's merges, off the critical path
+
+The guardrails stay: what touches an owner path waits for the owner.
+What changed on 2026-11-26 (the owner: "waiting for me to merge slows
+down the entire process") is that nothing else waits with it. In the
+week before, every owner-lane pull request held the work behind it: a
+session pushes to one branch, so it could not start the next change
+while one waited; the permission for deleting an account was cut with
+the code that needed it, so both waited; and #137, a screen of the
+Swift app, waited for nothing but a status line the builder had added
+to `docs/ROADMAP.md`.
+
+- **A session opens a new `claude/<topic>` branch for each change**
+  (`CLAUDE.md`, "Workflow"), so one pull request waiting for the owner
+  does not hold up the next.
+- **The planner cuts the protected part first, on its own** (an
+  `infra/` permission, the Xcode project, a workflow), so it waits for
+  the owner while the code is built, and **keeps green-lane work
+  ready** (`docs/agents/planner.md`).
+- **A pull request that waits only for the owner takes no place** in
+  the builder's three (`scripts/builder_queue.py`, `waits_for_owner`).
+  The planner's rule that two issues changing the same files are never
+  `ready` together is what keeps the builds past it from conflicting.
+- **The builder keeps a green issue green** and **never edits
+  `docs/ROADMAP.md`**: progress goes in `docs/app-plan/08-milestones.md`
+  (`.github/workflows/claude-fix.yml`).
+- **The digest opens with "Ready for you to merge"**: the owner-lane
+  pull requests whose checks are green, one line each, so one or two
+  sittings a day merge them (`docs/agents/digest.md`).
 
 ## The planner and the digest
 
@@ -522,7 +554,7 @@ plan, and nothing to keep running.
 | AWS | none. SSO sign-in is not possible in a cloud session |
 | Rules | the same `CLAUDE.md` and the same deny rules (`.claude/settings.json`) |
 | Tools | `scripts/cloud_session_setup.sh` runs when the session starts: the dev dependencies in a virtual environment (`~/.venvs/bgucats`, first on PATH, because the system Python's Debian packages cannot be upgraded by pip) and Terraform. Its message names whatever did not install ("setup INCOMPLETE"), and the session starts anyway; the log is `/tmp/bgucats-cloud-setup.log`. A Chrome is already there, so `make screenshots` works |
-| Ends in | a branch `claude/<topic>` and a pull request authored by the bot, which the owner approves and merges |
+| Ends in | a branch `claude/<topic>` per change, each with its pull request authored by the bot. One in the owner's lane waits for the owner while the session goes on to the next; one in the green lane merges by itself |
 
 **How a session goes:** describe the change, attach screenshots, sketches
 or a Figma link. Claude makes it, runs `make lint` and `make test`, and
