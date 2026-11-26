@@ -7,8 +7,9 @@ the phone as it lands. Built so far: the frame (four tabs of the system's
 own controls, so the glass is iOS's), signing in, Home with the feed
 (posts, their photos, a like, the terms asked before the first like,
 a post's menu: Delete on one's own, Report on anyone else's), Scan a
-cat for a cat the app knows (photos taken or chosen, sent as one
-encounter, then "Which cat?" and the post), the profile's first rows,
+cat (photos taken or chosen, sent as one encounter, then "Which cat?",
+the new-cat form for a cat that isn't here, and the post), the
+profile's first rows,
 and "App info". Cats says "Not built yet".
 
 | File | |
@@ -22,10 +23,10 @@ and "App info". Cats says "Not built yet".
 | `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, the tabs, the profile |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
-| `ScanPages.swift` | Scan a cat after "Send": "Which cat?" and the post |
+| `ScanPages.swift` | Scan a cat after "Send": "Which cat?", the new-cat form and the post |
 | `ScanFlow.swift` | where the member is in Scan a cat after "Send", kept on the phone and checked before it is used |
 | `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
-| `Outbox.swift` | the upload queue: photos kept on the phone until the server has them, then the pick and the post; and the scan flow beside it |
+| `Outbox.swift` | the upload queue: photos kept on the phone until the server has them, then the pick or the proposal, and the post; and the scan flow beside it |
 | `Places.swift` | where the phone is when a photo is taken |
 | `Ulid.swift` | an id made on the phone (a report's, an encounter's, a photo's), so a retry is the same request |
 | `Photos.swift` | loading a picture, and the drawn ones UI tests get |
@@ -87,8 +88,9 @@ defined, one iOS version, nothing that signs.
   (`StandInPlaces`), and the stand-in plays the four upload routes;
   `-uploadFailsOnce` makes the second photo's upload time out once,
   `-offline` reaches nothing, `-postNotReadyOnce` answers the first
-  post `not_ready`, and `-flowBroken` leaves a kept flow that is not
-  whole. A post made is first in the stand-in's feed. The upload queue is the one thing it keeps,
+  post `not_ready`, and `-flowBroken` leaves a kept flow that reads as
+  one and is not whole (the new-cat form with a coat the server does not
+  take). A post made is first in the stand-in's feed. The upload queue is the one thing it keeps,
   in the app's temporary folder, emptied at each launch unless
   `-keepQueue` asks for what the last launch left. What the stand-in was
   asked is at the end of App info, photos by number. A new screen that reads
@@ -187,7 +189,7 @@ defined, one iOS version, nothing that signs.
   app's `web/social/scan.js` and its words). "Which cat?" opens from the
   sent photos: every cat of `GET /api/v1/cats` in a system `List` with
   its cover, a search field, "Not sure", and "A cat that isn't here",
-  which says "Not built yet". Then the post: the cat said, the photos in
+  which opens the new-cat form (below). Then the post: the cat said, the photos in
   their order, a description of up to 280 characters as the server
   counts them (code points after NFKC, so "❤️" is two), "Add location"
   (on unless turned off), and "Post", which asks for the terms first.
@@ -208,12 +210,36 @@ defined, one iOS version, nothing that signs.
   the feed again when a post reaches the server, so the post is first,
   marked "Being checked". The trail says "scan: cat chosen", "upload:
   pick 200", "upload: post 201", never a cat, the words or an id.
+- **A cat that isn't here** (`NewCatPage`, the web app's `NewCat` and
+  `endingWrites`): the encounter's photos, a name idea (optional, 24 at
+  most as the server counts), the coat and where it hangs out (system
+  menus, "Not said" until chosen; the places and "Somewhere else"), any
+  traits (rows with a check, several allowed), the note that an admin
+  looks first, and two ways out. The choices are the server's
+  (`src/common/proposals.py`) and the places `web/regions.json`'s, copied
+  into `Campus` (`Models.swift`) and held equal to both, with the web
+  app's words, by a Linux test. **"Just add"** asks for the terms (a
+  proposal is written for the campus) and queues the proposal alone;
+  the screen says "Added", then "Thanks! An admin will look at your new
+  cat." **"Add & post"** goes on to the post, which names the new cat
+  by its name idea or "New cat", and whose "Post" asks for the terms and
+  queues the proposal and the post. The proposal (`POST
+  /api/v1/proposals`, `proposalId` made once on the phone and kept with
+  the flow) waits for every photo to be confirmed, the post
+  (`claim: {proposalId}`) for the proposal; `already_proposed` counts
+  as sent, the daily limit (429) and any other refusal for good are
+  said on the Added or Posted screen and stop the post that names it.
+  **No pick**: nothing was shown, and the server refuses a pick that
+  shows nothing. The trail says "scan: new cat", "upload: proposal
+  200", "scan: post queued, a new cat", never the name idea, a place or
+  an id.
 - **The scan flow is kept and checked** (`ScanFlow.swift`): the
-  encounter, its photos, the step, the cat and the words are written
-  beside the queue (`flow.json`, with the photos' small pictures) at
-  every change, so a closed app opens on the same page. What the last
-  launch left is read field by field: one that is not whole (an id that
-  is not a ULID, no photos, a post page with no cat chosen) is dropped,
+  encounter, its photos, the step, the cat, the new cat's answers and
+  the words are written beside the queue (`flow.json`, with the photos'
+  small pictures) at every change, so a closed app opens on the same
+  page. What the last launch left is read field by field: one that is
+  not whole (an id that is not a ULID, no photos, a post page with no
+  cat chosen, a new cat's answer the server would not take) is dropped,
   the trail says so, and the tab opens empty.
 
 ## Not here yet
@@ -221,7 +247,7 @@ defined, one iOS version, nothing that signs.
 In the feed: friends' votes on a name (the API sends those cards; this
 app skips them for now), the area, and a page with the full terms (the
 dialog has their short text). In Scan a cat: the model and its three
-guesses, a new cat ("A cat that isn't here": the form and
-`POST /api/v1/proposals`), video, and uploading while the app is closed. Then cats, the rest of profile, the
+guesses, "My proposals" (`GET /me/proposals`), video, and uploading
+while the app is closed. Then cats, the rest of profile, the
 recognition model, and a string catalog for the four languages. Each is
 its own issue, in the plan's order.

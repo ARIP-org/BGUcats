@@ -13,11 +13,12 @@ import UIKit
 /// its bytes, and the confirmation. A photo never goes before its
 /// encounter, and one photo's failure never holds up the others.
 ///
-/// What follows the photos rides here too (rows 6 and 9 of "The capture
-/// flow" in docs/app-plan/04-api.md): the member's pick, then the post.
-/// Each waits until every photo of its encounter is confirmed, goes once,
-/// and is kept in the index until the server has it. `not_ready` is "try
-/// again shortly"; `already_posted` is the post already there.
+/// What follows the photos rides here too (rows 6, 8 and 9 of "The capture
+/// flow" in docs/app-plan/04-api.md): the member's pick or their new cat's
+/// proposal, then the post. Each waits until every photo of its encounter
+/// is confirmed, goes once, in that order, and is kept in the index until
+/// the server has it. `not_ready` is "try again shortly"; `already_posted`
+/// is the post already there, `already_proposed` the proposal.
 ///
 /// Beside the queue, the Scan screen's flow (`ScanFlow`): which encounter
 /// it is about and how far the member got, kept so a closed app comes back
@@ -52,18 +53,26 @@ final class Outbox: ObservableObject {
         var after: After? = nil
     }
 
-    /// The pick and the post of one encounter, and which have gone.
+    /// The pick or the proposal, and the post, of one encounter, and which
+    /// have gone.
     struct After: Codable, Equatable {
         var pick: PickBody?
         var pickSent = false
+        /// Optional, both: an index kept before they existed has neither,
+        /// and must still be read (a field it lacks would drop it whole).
+        var proposal: ProposalBody?
+        var proposalDone: Bool?
         var post: PostBody?
         var postSent = false
-        /// Refused for good, in words: it is not tried again.
+        /// The post, or with no post the proposal, refused for good, in
+        /// words: it is not tried again.
         var postFailed: String?
 
         /// Something here is still to send.
         var pending: Bool {
-            (pick != nil && !pickSent) || (post != nil && !postSent && postFailed == nil)
+            (pick != nil && !pickSent)
+                || (proposal != nil && proposalDone != true)
+                || (post != nil && !postSent && postFailed == nil)
         }
 
         /// Kept in the index: something is still to send, or a post was
@@ -75,7 +84,7 @@ final class Outbox: ObservableObject {
         }
     }
 
-    /// A post as the screen shows it.
+    /// A post as the screen shows it; with no post, a new cat's proposal.
     enum PostState: Equatable {
         /// Kept on the phone; it goes once the photos have.
         case waiting
@@ -100,7 +109,8 @@ final class Outbox: ObservableObject {
     /// The photos of the last "Send", in order, with each one's state.
     @Published private(set) var batch: [Shown] = []
     @Published private(set) var states: [String: State] = [:]
-    /// Each post "Post" queued, by its encounter.
+    /// Each post "Post" queued (or proposal "Just add" queued), by its
+    /// encounter.
     @Published private(set) var posts: [String: PostState] = [:]
     /// How many posts reached the server since the app opened: the feed
     /// reads itself again when it changes.
@@ -184,10 +194,10 @@ final class Outbox: ObservableObject {
             !kept.contains { $0.encounterId == encounter.id } && !(encounter.after?.kept ?? false)
         }
         save()
-        for encounter in index.encounters where encounter.after?.post != nil {
+        for encounter in index.encounters where encounter.after?.post != nil || encounter.after?.proposal != nil {
             if let failed = encounter.after?.postFailed {
                 posts[encounter.id] = .failed(failed)
-            } else if encounter.after?.postSent == false {
+            } else if encounter.after?.pending == true {
                 posts[encounter.id] = .waiting
             }
         }
@@ -286,19 +296,21 @@ final class Outbox: ObservableObject {
         endFlow()
     }
 
-    /// "Post": the pick (nil for "Not sure") and the post, queued behind
-    /// the encounter's photos. Its photos may all be on the server already,
-    /// and the encounter forgotten here: it comes back, as created.
-    func finish(encounterId: String, pick: PickBody?, post: PostBody?) {
-        let after = After(pick: pick, post: post)
+    /// "Post" or "Just add": the pick (nil for "Not sure" and a new cat),
+    /// the proposal (a new cat's) and the post (nil for "Just add"), queued
+    /// behind the encounter's photos. Its photos may all be on the server
+    /// already, and the encounter forgotten here: it comes back, as created.
+    func finish(encounterId: String, pick: PickBody?, proposal: ProposalBody? = nil, post: PostBody?) {
+        let after = After(pick: pick, proposal: proposal, post: post)
         if let at = index.encounters.firstIndex(where: { $0.id == encounterId }) {
             index.encounters[at].after = after
         } else {
             index.encounters.append(Encounter(id: encounterId, place: nil, created: true, after: after))
         }
-        posts[encounterId] = post == nil ? nil : PostState.waiting
+        posts[encounterId] = post == nil && proposal == nil ? nil : PostState.waiting
         save()
-        trail.mark("upload: \(pick == nil ? "no pick" : "pick") and \(post == nil ? "no post" : "a post") queued")
+        let what: [String?] = [pick == nil ? "no pick" : "pick", proposal == nil ? nil : "a proposal", post == nil ? "no post" : "a post"]
+        trail.mark("upload: \(what.compactMap { $0 }.joined(separator: ", ")) queued")
         kick()
     }
 
@@ -391,8 +403,9 @@ final class Outbox: ObservableObject {
         return stuck || later || behind
     }
 
-    /// The picks and posts whose photos are all confirmed: the pick first,
-    /// then the post, each once. Answers whether one must be tried again.
+    /// The picks, proposals and posts whose photos are all confirmed: the
+    /// pick or the proposal first, then the post, each once. Answers
+    /// whether one must be tried again.
     private func sendAfter() async -> Bool {
         var again = false
         let waiting = Set(index.items.map(\.encounterId))
@@ -414,6 +427,37 @@ final class Outbox: ObservableObject {
                     // matters more than the answer, which is dropped.
                 }
                 changeAfter(encounter.id, from: after) { $0.pickSent = true }
+            }
+            if let proposal = after.proposal, after.proposalDone != true {
+                do {
+                    let status = try await backend.propose(proposal)
+                    trail.mark("upload: proposal \(status)")
+                } catch let failure as ApiError where failure.code == "already_proposed" {
+                    // The encounter has its new cat on the server already
+                    // (a retry whose first answer was lost): sent.
+                    trail.mark("upload: proposal \(failure.status), already there")
+                } catch {
+                    let outcome = Outbox.judge(error, step: "proposal")
+                    trail.mark(outcome.line)
+                    if outcome.again {
+                        // The post waits for its proposal: in order.
+                        again = true
+                        continue
+                    }
+                    // Refused for good: the post that names it cannot go
+                    // either, and the screen says why.
+                    changeAfter(encounter.id, from: after) {
+                        $0.proposalDone = true
+                        $0.postFailed = outcome.words
+                    }
+                    posts[encounter.id] = .failed(outcome.words)
+                    continue
+                }
+                changeAfter(encounter.id, from: after) { $0.proposalDone = true }
+                if after.post == nil {
+                    // "Just add": the proposal was all there was to send.
+                    posts[encounter.id] = .sent
+                }
             }
             guard let post = after.post, !after.postSent, after.postFailed == nil else { continue }
             do {
@@ -448,7 +492,7 @@ final class Outbox: ObservableObject {
     /// it while a request was on its way (`from`: what was read; nil: any).
     private func changeAfter(_ encounterId: String, from: After?, _ change: (inout After) -> Void) {
         guard let at = index.encounters.firstIndex(where: { $0.id == encounterId }), var after = index.encounters[at].after else { return }
-        if let from, from.pick != after.pick || from.post != after.post {
+        if let from, from.pick != after.pick || from.proposal != after.proposal || from.post != after.post {
             return
         }
         change(&after)
@@ -528,6 +572,9 @@ final class Outbox: ObservableObject {
         case 409 where step == "complete":
             // Storage has not shown the file to the server yet.
             return Outcome(again: true, words: "Storage has not confirmed it yet. Trying again.", line: "upload: retry, \(step) 409")
+        case 429 where step == "proposal":
+            // Ten new cats a day: trying again within the day only fails.
+            return Outcome(again: false, words: failure.message, line: "upload: failed, \(step) 429")
         case 400, 403, 404, 409, 413:
             return Outcome(again: false, words: failure.message, line: "upload: failed, \(step) \(failure.status)")
         case 400..<500 where step == "storage":
@@ -648,9 +695,9 @@ final class Outbox: ObservableObject {
         }
         flow = kept
         trail.mark("scan: kept flow back (\(kept.step.rawValue))")
-        // Posted, and nothing of its post left waiting or refused here: it
-        // reached the server, and its encounter, done, was forgotten.
-        if kept.step == .posted, posts[kept.encounterId] == nil {
+        // Posted or added, and nothing of it left waiting or refused here:
+        // it reached the server, and its encounter, done, was forgotten.
+        if kept.ended, posts[kept.encounterId] == nil {
             posts[kept.encounterId] = .sent
         }
         let folder = self.folder

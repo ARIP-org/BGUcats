@@ -1148,6 +1148,21 @@ which parts no person has run.
 
 - **Needs:** N1. Already in `docs/app-backlog.md`.
 
+### The Swift app's screens
+
+The member app rewritten in Swift (`docs/ROADMAP.md`, 2g, "Order", step
+5) lands screen by screen; `native/swift/README.md` says how each works.
+What landed before the list below is in the roadmap.
+
+- **Scan a cat, a cat that isn't here** (#141, built 2026-11-26): the
+  new-cat form after "Which cat?" (the photos, a name idea of up to 24,
+  the coat, where it hangs out, traits, and the note that an admin looks
+  first), "Just add" and "Add & post". The proposal (`POST /proposals`,
+  its id made once on the phone) goes behind the photos through the same
+  queue, the post naming it (`claim: {proposalId}`) after it, and no
+  pick. The places are a copy of `web/regions.json` held equal by a
+  Linux test. Pictured in a simulator only: not tried on a phone yet.
+
 ---
 
 ## Gates

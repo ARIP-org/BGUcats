@@ -519,6 +519,11 @@ def test_every_screen_is_kept_in_light_and_in_dark():
         "scan-post",
         "scan-posted",
         "home-after-post",
+        # A cat that isn't here: the form, "Posted" after "Add & post", and
+        # the feed with that post first (issue 141).
+        "scan-new-cat",
+        "scan-new-cat-posted",
+        "home-after-new-cat",
     ):
         assert f'keep(app, "{name}-\\(look)")' in tests, name
     # A post's menu, both ways, and the report sheet.
@@ -741,7 +746,9 @@ def test_the_pick_and_the_post_go_by_the_routes_of_the_capture_flow():
     post = live.split("struct PostBody")[1].split("struct Presigned")[0]
     for key in ("postId", "sessionId", "photoIds", "claim", "shareRegion"):
         assert f'"{key}": ' in post, key
-    assert '"claim": catId.map { ["catId": $0] as Any } ?? NSNull()' in post
+    # A cat chosen, else a new cat's proposal, else nothing ("Not sure").
+    claim = '"claim": catId.map { ["catId": $0] as Any } ?? proposalId.map { ["proposalId": $0] as Any } ?? NSNull()'
+    assert claim in post
     assert 'body["text"] = text' in post
 
 
@@ -851,10 +858,11 @@ def test_a_description_is_counted_as_the_server_counts_it():
 
 def test_a_post_sent_before_a_launch_says_it_was_sent_after_it():
     # A sent post's encounter is forgotten once nothing of it waits; a kept
-    # "Posted" flow with no state for its post was sent.
+    # "Posted" (or "Added") flow with no state for its post was sent.
     opened = sources()["Outbox.swift"].split("private func openFlow()")[1].split("private func setFlowThumb")[0]
-    assert "if kept.step == .posted, posts[kept.encounterId] == nil {" in opened
+    assert "if kept.ended, posts[kept.encounterId] == nil {" in opened
     assert "posts[kept.encounterId] = .sent" in opened
+    assert "step == .posted || step == .added" in sources()["ScanFlow.swift"]
 
 
 def test_the_post_pages_use_the_web_apps_words():
@@ -876,3 +884,153 @@ def test_a_post_made_a_moment_ago_says_just_now_as_the_web_app_does():
     assert "Math.abs(seconds) < 60" in (REPO / "web" / "social" / "i18n.js").read_text()
     tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
     assert '" · Just now"' in tests and '" · in "' in tests
+
+
+# ------------------------------------------------- Scan a cat, a new cat
+
+
+def swift_strings(text, call):
+    """The (id, words) pairs of every `call(id: "...", name: "...")`."""
+    return re.findall(rf'{call}\(id: "([^"]+)", name: "([^"]+)"\)', text)
+
+
+def test_the_new_cats_choices_are_the_servers_with_the_web_apps_words():
+    # src/common/proposals.py is what the server takes, web/regions.json the
+    # places it knows; the app holds a copy of both, in the web app's words.
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("proposals", REPO / "src" / "common" / "proposals.py")
+    proposals = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(proposals)
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    models = sources()["Models.swift"].split("enum Campus")[1].split("struct FeedPage")[0]
+    coats = models.split("static let coats")[1].split("static let traits")[0]
+    traits = models.split("static let traits")[1].split("static let places")[0]
+    places = models.split("static let places")[1].split("static let elsewhere")[0]
+    assert swift_strings(coats, "Choice") == [(c, words[f"coat.{c}"]) for c in proposals.COATS]
+    assert swift_strings(traits, "Choice") == [(t, words[f"trait.{t}"]) for t in proposals.TRAITS]
+    regions = json.loads((REPO / "web" / "regions.json").read_text())["regions"]
+    assert swift_strings(places, "Choice") == [(r["id"], r["names"]["en"]) for r in regions]
+    assert f'static let elsewhere = Choice(id: "{proposals.ELSEWHERE}", name: "{words["scan.elsewhere"]}")' in models
+
+
+def test_a_proposal_goes_by_its_route_with_the_body_the_server_takes():
+    # docs/app-plan/04-api.md, POST /proposals, and row 8 of the capture flow.
+    code = sources()
+    live = code["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'exchange("POST", "/proposals", body: proposal.body, as: "proposal", quiet: true)' in live
+    body = live.split("struct ProposalBody")[1].split("struct PostBody")[0]
+    for key in ("proposalId", "sessionId"):
+        assert f'"{key}": {key},' in body, key
+    for key in ("nameIdea", "coat", "regionId", "traits"):
+        assert f'body["{key}"] = {key}' in body, key
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert 'text.clean(body.get("nameIdea"), "nameIdea", 24, required=False)' in handler
+    flow = code["ScanFlow.swift"]
+    assert "static let nameLimit = 24" in flow
+    # The id is made on the phone, once, and is what the post names.
+    assert "proposalId: proposed?.proposalId," in flow
+
+
+def test_a_new_cat_sends_no_pick():
+    # With no model nothing was shown, and a pick that shows nothing is
+    # refused (400); the web app sends none either (`endingWrites`).
+    web = (REPO / "web" / "social" / "scan.js").read_text()
+    assert "if (!writes.pick.shown.length) writes.pick = null;" in web
+    code = sources()
+    flow = code["ScanFlow.swift"]
+    # A new cat has no catId: the one line that makes a pick makes none.
+    assert "proposal == nil || (catId == nil && !unsure && proposal?.whole == true)" in flow
+    assert "let pick = unsure ? nil : catId.map { PickBody(catId: $0, photoCount: photos.count) }" in flow
+    adding = code["ScanPages.swift"].split("private func add() async")[1]
+    assert "outbox.finish(encounterId: flow.encounterId, pick: nil, proposal: proposal, post: nil)" in adding
+
+
+def test_the_proposal_waits_for_every_photo_and_the_post_for_the_proposal():
+    outbox = sources()["Outbox.swift"]
+    after = outbox.split("private func sendAfter()")[1].split("private func changeAfter")[0]
+    # After the pick and before the post, in the pass that waits for every
+    # photo of the encounter.
+    assert after.index("backend.pick(") < after.index("backend.propose(") < after.index("backend.post(")
+    proposing = after.split("backend.propose(")[1].split("backend.post(")[0]
+    # Tried again: the post waits for it, in order.
+    again = proposing.split("if outcome.again {")[1].split("}")[0]
+    assert "again = true" in again and "continue" in again
+    # already_proposed is sent.
+    assert 'failure.code == "already_proposed"' in proposing
+    taken = proposing.split('failure.code == "already_proposed"')[1].split("} catch {")[0]
+    assert "again" not in taken and "postFailed" not in taken
+    # Refused for good: the post that names it cannot go, and the screen
+    # says why.
+    assert "$0.postFailed = outcome.words" in proposing and "posts[encounter.id] = .failed(outcome.words)" in proposing
+    assert "$0.proposalDone = true" in proposing
+    # Kept until it has gone; an index from before it existed still reads.
+    assert "(proposal != nil && proposalDone != true)" in outbox
+    assert "var proposal: ProposalBody?" in outbox and "var proposalDone: Bool?" in outbox
+    assert "from.proposal != after.proposal" in outbox
+    # Ten a day: refused, not tried again all day.
+    assert 'case 429 where step == "proposal":' in outbox
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert "PROPOSALS_PER_DAY = 10" in handler
+
+
+def test_the_terms_come_before_just_add_sends_anything():
+    page = sources()["ScanPages.swift"].split("struct NewCatPage")[1].split("struct PostPage")[0]
+    adding = page.split("private func add() async")[1]
+    assert adding.index("session.termsFirst()") < adding.index("outbox.finish(")
+    # The proposal's id is made once and kept before it is queued.
+    made = "flow.proposalId = flow.proposalId ?? Ulid.make()"
+    assert made in adding and adding.index(made) < adding.index("outbox.keepFlow(flow)") < adding.index("outbox.finish(")
+    # "Add & post" asks nothing yet: "Post" asks, and queues both.
+    post = sources()["ScanPages.swift"].split("struct PostPage")[1].split("private func post() async")[1]
+    assert made in post and post.index("session.termsFirst()") < post.index(made) < post.index("outbox.finish(")
+    assert "proposal: writes.proposal, post: made" in post
+
+
+def test_a_kept_new_cat_form_is_checked_before_it_is_used():
+    code = sources()
+    flow = code["ScanFlow.swift"]
+    proposal = flow.split("struct Proposal")[1].split("/// The name idea")[0]
+    for check in (
+        "ScanFlow.length(nameIdea) <= ScanFlow.nameLimit",
+        "Campus.coats.contains",
+        "region == Campus.elsewhere.id || Campus.places.contains",
+        "Set(traits).count == traits.count",
+        "Campus.traits.contains",
+    ):
+        assert check in proposal, check
+    assert "proposalId.map(ScanFlow.isUlid) ?? true" in flow
+    whole = flow.split("var whole: Bool {")[2]
+    assert "case .new:\n            return proposal != nil" in whole
+    assert "case .added:\n            return proposal != nil && proposed" in whole
+    # The walk's broken flow reads as one, on the form, with a coat the
+    # server does not take.
+    app = code["BGUCatsApp.swift"]
+    assert '"step":"new"' in app and '"coat":"purple"' in app
+
+
+def test_the_new_cat_form_uses_the_web_apps_words():
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    code = sources()
+    page = code["ScanPages.swift"].split("struct NewCatPage")[1].split("struct PostPage")[0]
+    for key in ("scan.newCatTitle", "scan.nameIdeaHint", "scan.coat", "scan.where", "scan.traits", "scan.newCatNote", "scan.addOnly", "scan.addAndPost"):
+        assert f'"{words[key]}"' in page, key
+    assert f'"{words["scan.nameIdea"]} {words["scan.optional"]}"' in page
+    assert f'"{words["scan.newCat"]}"' in code["ScanPages.swift"].split("struct PostPage")[1]
+    assert f'"{words["scan.doneNew"]}"' in code["ScanView.swift"]
+    # The row on "Which cat?" opens it, and no longer says it is not built.
+    which = code["ScanPages.swift"].split("struct WhichCatPage")[1].split("struct CatRow")[0]
+    assert "Not built yet" not in which and "newCat()" in which
+
+
+def test_the_trail_marks_a_new_cats_steps_and_never_its_answers():
+    code = sources()
+    page = code["ScanPages.swift"]
+    for mark in ("scan: new cat", "scan: new cat, to the post", "scan: new cat added, no post"):
+        assert f'world.trail.mark("{mark}")' in page, mark
+    outbox = code["Outbox.swift"]
+    assert 'trail.mark("upload: proposal \\(status)")' in outbox
+    marks = re.findall(r"trail\.mark\((.*)\)", page + outbox)
+    for mark in marks:
+        for answer in ("nameIdea", "coat", "regionId", "traits", "proposalId", "name"):
+            assert answer not in mark.replace("new cat", ""), mark
