@@ -43,7 +43,7 @@ a write by a moment. Nothing is decided on an item's absence from it
 | Item | PK | SK | GSI keys | Written by | Notes |
 |---|---|---|---|---|---|
 | Cat | `CAT#{catId}` | `META` | GSI2 `ENTITY#CAT` / `createdAt` | admin API | `name`, `notes` (the admins' own, never sent to a user), `photoCount`; since B2 the public `bio` (≤ 280) and `usualRegionId` (an id from `web/regions.json`) |
-| Session | `SESSION#{sessionId}` | `META` | app encounters: GSI2 `ENTITY#ENCOUNTER` / `{email}#{startedAt}` | ingest; admin API (app encounters) | one encounter with one cat. `catId` is written as `null` and set by a label: a condition on "no label" must accept absent **or** null |
+| Session | `SESSION#{sessionId}` | `META` | app encounters: GSI2 `ENTITY#ENCOUNTER` / `{email}#{startedAt}`, or `deleted#{startedAt}` once its starter deleted their account (#135), when `startedBy` goes too | ingest; admin API (app encounters) | one encounter with one cat. `catId` is written as `null` and set by a label: a condition on "no label" must accept absent **or** null |
 | Photo | `PHOTO#{photoId}` | `META` | GSI1 `SESSION#{sessionId}` / `createdAt`; GSI2 `STATUS#{status}` / `createdAt`; GSI3 `CAT#{catId}` / `createdAt` once labeled | ingest; admin API; process | on GSI2 as `STATUS#pending` from the moment it is written. Statuses: `pending`, `unlabeled`, `labeled`, `rejected`, `duplicate`. `origin = "gallery"` (since #108) on a photo picked from the phone's gallery, written with the record and never changed: it holds no `coarseLat`/`coarseLon`; absent means the camera |
 | Byte-identical photo | `SHA#{sha256}` | `META` | | process | `photoId` of the first photo with these bytes. A later one is marked `duplicate` |
 
@@ -106,7 +106,7 @@ dataset's.
 
 | Item | PK | SK | Holds |
 |---|---|---|---|
-| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey` (the published profile photo's object) and `pendingAvatarKey`, `pendingAvatarAt` (B1b: a new photo, its owner's alone until the events Lambda publishes it), `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`; `banned` is written by the desk's API since B8c, with `bannedBy` and `bannedAt`; `deleting` by `DELETE /me` since B10a, with `deletingAt`, `deletingCats` (every cat's id when deletion began, for the job, which cannot read the dataset), `cognitoUser` (since B10b: the sign-in's Cognito username, from the token, for the job's first step) and `deletionStep` (the events Lambda's progress, 0 to 6; the item is deleted at the end)), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
+| User **(written since F4)** | `USER#{userId}` | `PROFILE` | `email` (never sent to others), `username`, `displayName` (the one everyone sees), `pendingName` and `pendingNameAt` (B1a: a changed name, shown to its owner alone until the events Lambda publishes it), `avatarKey` (the published profile photo's object) and `pendingAvatarKey`, `pendingAvatarAt` (B1b: a new photo, its owner's alone until the events Lambda publishes it), `phone` (D5; never sent to others), `language`, `theme`, `notifications`, `inviteCode`, `status` (`active` / `banned` / `deleting`; `banned` is written by the desk's API since B8c, with `bannedBy` and `bannedAt`; `deleting` by `DELETE /me` since B10a, with `deletingAt`, `deletingCats` (every cat's id when deletion began, for the job, which cannot read the dataset), `cognitoUser` (since B10b: the sign-in's Cognito username, from the token, for the job's first step) and `deletionStep` (the events Lambda's progress, 0 to 7; the item is deleted at the end)), `termsAcceptedAt`, `createdAt`. On `GSI2` as `ENTITY#USER` / `createdAt` |
 | Sign-in lookup **(F4)** | `IDENTITY#{email}` | `META` | `userId` |
 | Username lookup **(F4)** | `USERNAME#{username}` | `META` | `userId` |
 | Phone lookup (D5) | `PHONE#{hmac}` | `META` | `userId`. The key is an HMAC of the number in international form, keyed with a secret from SSM, so the table holds no list of numbers that can be reversed by trying them all |
@@ -228,6 +228,7 @@ the permissions boundary in `infra/bootstrap`:
 | admin API | items of the table and its indexes |
 | sign-up trigger | get one item (it reads `ADMIN#{email}`); its own role, so a trigger Google can cause to run cannot write |
 | beacon | update `TRAFFIC#` items only (an IAM condition on the key) |
+| events (since #135) | deleting an account: query GSI1 and GSI2, get `SESSION#` items, update only `submittedBy`, `startedBy`, `pickedBy` and `GSI2SK` (an IAM condition on the fields), delete `ADMIN#` items (a member's, on a condition in the code) |
 | the deploy role | `ADMIN#` items only, for the bootstrap admin |
 
 | Lambda | `bgucats-social` |
