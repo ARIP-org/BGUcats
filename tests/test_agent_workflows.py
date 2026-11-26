@@ -737,3 +737,28 @@ def test_each_scheduled_agent_has_its_job_in_a_file_and_may_only_write_issues():
     planner = (REPO / "docs" / "agents" / "planner.md").read_text()
     assert "Do not\nlabel anything `approved`" in planner
     assert "never label it `ready`" in planner
+
+
+def test_the_owners_merges_are_kept_off_the_critical_path():
+    # The owner, 2026-11-26: the guardrails stay, and nothing else waits
+    # for the owner's merge. The planner cuts the protected part first and
+    # keeps green work ready; the builder keeps a green issue green and
+    # never edits the owner's roadmap (#137 waited for that alone); the
+    # digest opens with what is ready to merge.
+    planner = (REPO / "docs" / "agents" / "planner.md").read_text()
+    assert "## The owner's merges, off the critical path" in planner
+    for rule in (
+        "**Cut the protected part first, and on its own.**",
+        "**Keep green work ready.**",
+        "**No issue asks for a change to `docs/ROADMAP.md`.**",
+        "A green issue stays green",
+    ):
+        assert rule in planner, rule
+    fix = load(WORKFLOWS / "claude-fix.yml")
+    build = claude(fix, "fix")["with"]["prompt"]
+    assert "Never edit docs/ROADMAP.md" in build
+    assert "An issue whose lane is green stays green" in build
+    assert "docs/ROADMAP.md" in claude(fix, "rework")["with"]["prompt"]
+    digest = (REPO / "docs" / "agents" / "digest.md").read_text()
+    first = digest.index("1. **Ready for you to merge.**")
+    assert first < digest.index("2. **Needs you.**") < digest.index("3. **Broken.**")
