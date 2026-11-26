@@ -54,6 +54,45 @@ struct Cat: Equatable, Identifiable {
     let cover: URL?
 }
 
+/// What a new-cat proposal is chosen from (`POST /proposals`): the server's
+/// fixed lists (src/common/proposals.py) and the campus places
+/// (web/regions.json), each with the web app's words (web/i18n/en.json).
+/// A copy, held equal to those files by tests/native/test_swift_app.py.
+enum Campus {
+    struct Choice: Identifiable, Equatable {
+        let id: String
+        let name: String
+    }
+
+    static let coats = [
+        Choice(id: "ginger", name: "Ginger"),
+        Choice(id: "black", name: "Black"),
+        Choice(id: "white", name: "White"),
+        Choice(id: "gray", name: "Gray"),
+        Choice(id: "tabby", name: "Tabby"),
+        Choice(id: "calico", name: "Calico"),
+        Choice(id: "tuxedo", name: "Tuxedo"),
+    ]
+
+    static let traits = [
+        Choice(id: "friendly", name: "Friendly"),
+        Choice(id: "shy", name: "Shy"),
+        Choice(id: "ear-tipped", name: "Ear-tipped"),
+        Choice(id: "kitten", name: "Kitten"),
+        Choice(id: "collar", name: "Has a collar"),
+    ]
+
+    /// "Where does it hang out?": the places, then "Somewhere else".
+    static let places = [
+        Choice(id: "engineering", name: "Building 96 · Engineering"),
+        Choice(id: "library", name: "Aranne Library"),
+        Choice(id: "union", name: "Student Union"),
+        Choice(id: "dorms", name: "Dorms"),
+        Choice(id: "lawn", name: "Sports lawn"),
+    ]
+    static let elsewhere = Choice(id: "elsewhere", name: "Somewhere else")
+}
+
 struct FeedPage {
     let posts: [Post]
     /// Absent on the last page.
