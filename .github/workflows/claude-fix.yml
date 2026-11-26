@@ -235,6 +235,13 @@ jobs:
               tests/web and look at the screenshot it saves in
               build/screenshots/ before you call the work done.
             - Update the docs in the same change (CLAUDE.md, "Workflow").
+            - Never edit docs/ROADMAP.md: it is the owner's plan, and a change
+              to it makes the whole pull request wait for the owner. What you
+              built goes in docs/app-plan/08-milestones.md.
+            - An issue whose lane is green stays green: touch no path in
+              .github/CODEOWNERS. If the work turns out to need one, build
+              what does not, and say in the pull request what is left for
+              an owner-lane issue.
             - No AWS commands: this job has no AWS access, by design.
 
             When the checks pass: commit one file at a time (`git add
@@ -488,7 +495,8 @@ jobs:
 
             Rules, all from CLAUDE.md, which you read first and follow:
             - Only what the findings need. No second change riding along.
-            - Never touch .github/, infra/bootstrap/, infra/org/ or .claude/.
+            - Never touch .github/, infra/bootstrap/, infra/org/ or .claude/,
+              nor docs/ROADMAP.md (the owner's plan).
             - Tests for what you change. Run `make lint`, then the tests in
               pieces: `pytest -q --ignore=tests/web` (two minutes), and of
               `tests/web` the files for what you changed. CI runs the whole
