@@ -170,6 +170,16 @@ the made-up ones of `make seed-staging`:
 If a model or photo fetch fails, check the media bucket's CORS rule first
 (`s3.tf`).
 
+**Deleting an account** (once in each account after B10b reaches it, and
+after a change to `events.tf`'s Cognito statement). Sign in on staging
+with a made-up Google account that is on the allowlist, delete it from
+Profile, and within a minute: the user is gone from the pool (Cognito →
+the user pool → Users), the events Lambda's log has "signed out and
+Cognito user deleted" and no error, and signing in again makes a new,
+empty account. An `AccessDeniedException` in the log is the role's
+statement or the boundary; the account then stays `deleting` and the
+alert email follows.
+
 **The app's counters, counted again** (`scripts/recount.py`, since
 2026-11-13). Points, cats met, badges, a cat's popularity and "last fed"
 are sums the events Lambda keeps. The script reads the app's table once,

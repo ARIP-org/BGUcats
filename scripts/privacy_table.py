@@ -21,10 +21,10 @@ https://developer.apple.com/app-store/app-privacy-details/ as read on
 than the request takes; what stays on the phone (the upload queue, "App
 info") is not collected.
 
-Written before the app has moderation (C1) or push on a phone (N2), and
-before account deletion was finished (B10b): each of those changes an
-answer, and the pull request that builds it changes this file. B10a
-(deleting what the app's table holds) changed "Deleting" below.
+Written before the app has moderation (C1) or push on a phone (N2): each
+of those changes an answer, and the pull request that builds it changes
+this file. B10a (deleting what the app's table holds) and B10b (signing
+out and deleting the Cognito user) changed "Deleting" below.
 """
 
 import re
@@ -250,7 +250,7 @@ ELSEWHERE = [
 NOTES = [
     "**Tracking: no.** Nothing is shared with a data broker or joined with anyone else's data for advertising. There is no advertising SDK and no analytics SDK in the app.",
     "**Who else holds it.** Amazon Web Services stores and runs everything, as a processor. Google is asked who a person is at sign-in and is sent nothing else. When moderation is built (C1) Google will also be sent what is about to become public; this file changes with it.",
-    "**Deleting.** `DELETE /api/v1/me` (B10a) deletes everything the app's own table holds about the person: profile, username, invite code, friends, requests, blocks, likes, votes, feedings, counters, badges, devices and the profile photo; their posts are removed and no longer name them, names they suggested and reports they made stay with them cut out. Not deleted yet: the sign-in (Cognito, B10b), so the same Google account can sign in again and starts a new, empty account; and, in the dataset, the photos and encounters they sent, which stay (D14) but still carry their email address (who sent each photo, who started each encounter, who answered \"Who did you meet?\"), because neither of the app's Lambdas may write the dataset. There is no button for it in the app yet (the Swift app's profile). Apple requires one before the App Store.",
+    "**Deleting.** `DELETE /api/v1/me` (B10a) deletes everything the app's own table holds about the person: profile, username, invite code, friends, requests, blocks, likes, votes, feedings, counters, badges, devices and the profile photo; their posts are removed and no longer name them, names they suggested and reports they made stay with them cut out. Since B10b the person is signed out of every device and their sign-in (the Cognito user) is deleted first, before anything in the table; a token already handed out works for up to an hour after, and is answered as deleted while the job runs. Not deleted yet: in the dataset, the photos and encounters they sent, which stay (D14) but still carry their email address (who sent each photo, who started each encounter, who answered \"Who did you meet?\"), because neither of the app's Lambdas may write the dataset. There is no button for it in the app yet (the Swift app's profile). Apple requires one before the App Store.",
     "**Not from the iPhone app.** The Telegram bot's contributors are in the same tables (`SUBMITTER#`, `TGMSG#`) under a salted hash, and the landing page counts visits with no visitor in them. Neither is the app's collection.",
 ]
 

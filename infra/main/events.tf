@@ -42,7 +42,8 @@ resource "aws_iam_role_policy_attachment" "events_lambda_logs" {
 }
 
 # What it does: read the stream, write bgucats-social (never the dataset),
-# report a failed record, and read the one secret push needs.
+# report a failed record, read the one secret push needs, and delete a
+# deleted account's Cognito user.
 resource "aws_iam_role_policy" "events_lambda_access" {
   name = "bgucats-events-lambda-access"
   role = aws_iam_role.events_lambda.id
@@ -113,6 +114,19 @@ resource "aws_iam_role_policy" "events_lambda_access" {
           StringEquals = { "kms:EncryptionContext:PARAMETER_ARN" = local.apns_key_arn }
         }
       },
+      {
+        # Deleting an account, step 1 (B10b): sign the person out of every
+        # device and delete their Cognito user, in this account's pool
+        # only. The Lambda boundary already allows exactly these two
+        # (infra/bootstrap/lambda_boundary.tf).
+        Sid    = "DeleteAccountSignIn"
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:AdminUserGlobalSignOut",
+          "cognito-idp:AdminDeleteUser",
+        ]
+        Resource = aws_cognito_user_pool.admins.arn
+      },
     ]
   })
 }
@@ -142,6 +156,8 @@ resource "aws_lambda_function" "events" {
       APNS_KEY_ID        = local.apns.key_id
       APNS_TEAM_ID       = local.apns.team_id
       APNS_TOPIC         = local.apns.topic
+      # Whose sign-in a deleted account's Cognito user is (B10b).
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.admins.id
     }
   }
 }
