@@ -170,15 +170,21 @@ the made-up ones of `make seed-staging`:
 If a model or photo fetch fails, check the media bucket's CORS rule first
 (`s3.tf`).
 
-**Deleting an account** (once in each account after B10b reaches it, and
-after a change to `events.tf`'s Cognito statement). Sign in on staging
-with a made-up Google account that is on the allowlist, delete it from
-Profile, and within a minute: the user is gone from the pool (Cognito →
-the user pool → Users), the events Lambda's log has "signed out and
-Cognito user deleted" and no error, and signing in again makes a new,
-empty account. An `AccessDeniedException` in the log is the role's
-statement or the boundary; the account then stays `deleting` and the
-alert email follows.
+**Deleting an account** (once in each account after B10b and #135 reach
+it, and after a change to `events.tf`'s Cognito or dataset statements).
+Sign in on staging with a made-up Google account that is on the
+allowlist as a user, take a photo of anything in Capture (an encounter
+of it), delete the account from Profile, and within a minute: the user
+is gone from the pool (Cognito → the user pool → Users); the events
+Lambda's log has "signed out and Cognito user deleted" and "address
+cleared from 1 encounters" and no error; in `bgucats-data` the
+encounter has no `startedBy`, its photo no `submittedBy`, and the
+address's `ADMIN#` item is gone (the desk's People screen no longer
+lists it). Signing in again is refused, since the address is off the
+allowlist: add it again on the People screen, and the next sign-in makes
+a new, empty account. An `AccessDeniedException` in the log is the
+role's statement or the boundary; the account then stays `deleting` at
+that step and the alert email follows.
 
 **The app's counters, counted again** (`scripts/recount.py`, since
 2026-11-13). Points, cats met, badges, a cat's popularity and "last fed"
