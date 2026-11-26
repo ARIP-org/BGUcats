@@ -28,11 +28,14 @@ protocol Backend {
     /// `POST /api/photos/{id}/complete`: the server confirms the file.
     func complete(photoId: String) async throws -> Int
 
-    // What follows the photos (rows 6 and 9), once every photo of the
+    // What follows the photos (rows 6, 8 and 9), once every photo of the
     // encounter is confirmed.
 
     /// `POST /api/encounters/{id}/pick`: which cat the member said it was.
     func pick(encounterId: String, _ pick: PickBody) async throws -> Int
+    /// `POST /api/v1/proposals`: "A cat that isn't here". Sent again with
+    /// the same `proposalId`, it is the same proposal.
+    func propose(_ proposal: ProposalBody) async throws -> Int
     /// `POST /api/v1/posts`: the post. Sent again with the same `postId`,
     /// it is the same post.
     func post(_ post: PostBody) async throws -> Int
@@ -114,6 +117,40 @@ struct PickBody: Codable, Equatable {
     }
 }
 
+/// A new-cat proposal as `POST /api/v1/proposals` takes it
+/// (docs/app-plan/04-api.md). `proposalId` is made once on the phone, so
+/// sending it again is the same proposal; it becomes the cat's id if an
+/// admin approves it. An answer not given is left out.
+struct ProposalBody: Codable, Equatable {
+    let proposalId: String
+    let sessionId: String
+    let nameIdea: String?
+    let coat: String?
+    /// A campus place's id, or "elsewhere".
+    let regionId: String?
+    let traits: [String]
+
+    var body: [String: Any] {
+        var body: [String: Any] = [
+            "proposalId": proposalId,
+            "sessionId": sessionId,
+        ]
+        if let nameIdea, !nameIdea.isEmpty {
+            body["nameIdea"] = nameIdea
+        }
+        if let coat {
+            body["coat"] = coat
+        }
+        if let regionId {
+            body["regionId"] = regionId
+        }
+        if !traits.isEmpty {
+            body["traits"] = traits
+        }
+        return body
+    }
+}
+
 /// A post as `POST /api/v1/posts` takes it (docs/app-plan/04-api.md).
 /// `postId` is made once on the phone, so sending it again is the same post.
 struct PostBody: Codable, Equatable {
@@ -121,8 +158,11 @@ struct PostBody: Codable, Equatable {
     let sessionId: String
     /// Every photo of the encounter, in the order they were taken.
     var photoIds: [String]
-    /// The cat chosen; nil for "Not sure".
+    /// The cat chosen; nil for "Not sure" and for a new cat.
     let catId: String?
+    /// The new cat's proposal, which goes first. Absent from a post kept
+    /// before this existed.
+    let proposalId: String?
     let text: String?
     let shareRegion: Bool
 
@@ -131,7 +171,7 @@ struct PostBody: Codable, Equatable {
             "postId": postId,
             "sessionId": sessionId,
             "photoIds": photoIds,
-            "claim": catId.map { ["catId": $0] as Any } ?? NSNull(),
+            "claim": catId.map { ["catId": $0] as Any } ?? proposalId.map { ["proposalId": $0] as Any } ?? NSNull(),
             "shareRegion": shareRegion,
         ]
         if let text, !text.isEmpty {
@@ -266,6 +306,10 @@ final class LiveBackend: Backend {
 
     func pick(encounterId: String, _ pick: PickBody) async throws -> Int {
         try await exchange("POST", "/encounters/\(Auth.encode(encounterId))/pick", base: "/api", body: pick.body, as: "pick", quiet: true).status
+    }
+
+    func propose(_ proposal: ProposalBody) async throws -> Int {
+        try await exchange("POST", "/proposals", body: proposal.body, as: "proposal", quiet: true).status
     }
 
     func post(_ post: PostBody) async throws -> Int {
@@ -428,6 +472,8 @@ final class StandInBackend: Backend {
     /// Photos by the order they were first recorded in, so the record says
     /// "photo 2", never an id.
     private var numbers: [String: Int] = [:]
+    /// Proposals likewise, and the encounter each is for.
+    private var proposals: [String: (number: Int, sessionId: String)] = [:]
     private var kept: [String] = []
     private var deleted: Set<String> = []
     /// What was reported, for a test that wants to know.
@@ -462,8 +508,10 @@ final class StandInBackend: Backend {
 
     /// One line per capture call, in the order they came: "encounter
     /// place", "media 1 camera place", "upload 1", "complete 1", "pick c2
-    /// shown c2 ranked 0", "post not_ready", "post claim c2 photos 1 2
-    /// text region".
+    /// shown c2 ranked 0", "proposal 1 name coat tabby region library
+    /// traits friendly", "post not_ready", "post claim c2 photos 1 2 text
+    /// region", "post proposal 1 photos 3 text region". A name idea is
+    /// recorded as "name" or "no-name", never itself.
     var record: [String] {
         lock.lock()
         defer { lock.unlock() }
@@ -556,8 +604,50 @@ final class StandInBackend: Backend {
         return 200
     }
 
+    func propose(_ proposal: ProposalBody) async throws -> Int {
+        try await reach()
+        // What `_create_proposal` refuses, refused here too.
+        let coatKnown = proposal.coat.map { coat in Campus.coats.contains { $0.id == coat } } ?? true
+        let placeKnown = proposal.regionId.map { region in region == Campus.elsewhere.id || Campus.places.contains { $0.id == region } } ?? true
+        let traitsKnown = proposal.traits.allSatisfy { trait in Campus.traits.contains { $0.id == trait } }
+        guard ScanFlow.isUlid(proposal.proposalId), coatKnown, placeKnown, traitsKnown,
+              (proposal.nameIdea ?? "").unicodeScalars.count <= ScanFlow.nameLimit
+        else {
+            keep("proposal refused")
+            throw ApiError(status: 400, code: nil, message: "the new cat's answers are not ones the server takes")
+        }
+        let taken = lock.withLock { () -> Bool in
+            proposals[proposal.proposalId] == nil && proposals.values.contains { $0.sessionId == proposal.sessionId }
+        }
+        if taken {
+            keep("proposal already_proposed")
+            throw ApiError(status: 409, code: "already_proposed", message: "this encounter has a proposal already")
+        }
+        let number = lock.withLock { () -> Int in
+            if let known = proposals[proposal.proposalId] {
+                return known.number
+            }
+            let made = proposals.count + 1
+            proposals[proposal.proposalId] = (made, proposal.sessionId)
+            return made
+        }
+        let name = (proposal.nameIdea ?? "").isEmpty ? "no-name" : "name"
+        let traits = proposal.traits.isEmpty ? "none" : proposal.traits.joined(separator: ",")
+        keep("proposal \(number) \(name) coat \(proposal.coat ?? "none") region \(proposal.regionId ?? "none") traits \(traits)")
+        return 200
+    }
+
     func post(_ post: PostBody) async throws -> Int {
         try await reach()
+        var named: Int?
+        if let proposalId = post.proposalId, post.catId == nil {
+            // As `_claimed_proposal`: the post names a proposal the server has.
+            named = lock.withLock { proposals[proposalId].flatMap { $0.sessionId == post.sessionId ? $0.number : nil } }
+            if named == nil {
+                keep("post refused, no such proposal")
+                throw ApiError(status: 400, code: nil, message: "no such proposal for this encounter")
+            }
+        }
         let first = lock.withLock { () -> Bool in
             defer { answeredNotReady = true }
             return notReadyOnce && !answeredNotReady
@@ -568,7 +658,8 @@ final class StandInBackend: Backend {
         }
         let photos = post.photoIds.map { "\(number($0))" }.joined(separator: " ")
         let words = (post.text ?? "").isEmpty ? "no-text" : "text"
-        keep("post \(post.catId.map { "claim \($0)" } ?? "no-claim") photos \(photos) \(words) \(post.shareRegion ? "region" : "no-region")")
+        let claim = post.catId.map { "claim \($0)" } ?? named.map { "proposal \($0)" } ?? "no-claim"
+        keep("post \(claim) photos \(photos) \(words) \(post.shareRegion ? "region" : "no-region")")
         let cat = StandInBackend.campus.first { $0.id == post.catId }
         let made = Post(
             id: post.postId,
