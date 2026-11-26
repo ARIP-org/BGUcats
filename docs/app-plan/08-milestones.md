@@ -29,7 +29,7 @@ A session ticks its row in the pull request that finishes it.
 | B7 | Achievements (B7b: GPA, computed; B7c: feedings) | B7a (points, levels, six badges) and B7b (the grade) merged 2026-11-13; B7c (feedings, behind the `feeding` flag) and the recount script merged 2026-11-14 |
 | B8 | Reports, blocks, bans, the desk's tools | merged 2026-11-13 (B8a blocks, B8b reports, B8c bans) |
 | B9 | Push | built 2026-11-14, in review: the device routes, the four notifications, the cap, the sender. Sends nothing until a phone registers (N2) and Apple's key is set (O7) |
-| B10 | Deleting an account | B10a (`DELETE /me` and the job on the tables) built 2026-11-23; B10b (signing out, the Cognito user) built 2026-11-25, in review; the email in the dataset is the owner's decision (`docs/app-backlog.md`) |
+| B10 | Deleting an account | B10a (`DELETE /me` and the job on the tables) built 2026-11-23; B10b (signing out, the Cognito user) built 2026-11-25; the address cleared from the dataset (#135, the owner's option 2) built 2026-11-26, in review |
 | C1 | Moderation: the client, the policy, shadow runs on text | |
 | C2 | Moderation in the desk, and measured | |
 | C3 | The blocklist, the gold set, enforce | |
@@ -608,10 +608,9 @@ was built.
   (`03-data-model.md`), with `tests/app/test_delete_account.py` for each
   part of "done when": no user id left in the social table, a clean
   recount, every step run twice and the whole job again ending the same,
-  `gone` for every later call. **Not done:** a scan of the dataset still
-  finds the email (photos, encounters, picks, the allowlist), which the
-  test pins; neither of the app's Lambdas may write the dataset, and how
-  it is cleared is the owner's to decide.
+  `gone` for every later call. **Not done then:** a scan of the dataset
+  still found the email (photos, encounters, picks, the allowlist), which
+  the test pinned; cleared since #135 (below).
 - **Built in B10b (2026-11-25):** step 1, signing out and deleting the
   Cognito user, with `cognito-idp:AdminUserGlobalSignOut` and
   `AdminDeleteUser` on the events role, this account's pool only
@@ -621,6 +620,17 @@ was built.
   throttled or failing Cognito stops the job before the tables. **Not
   shown by a test:** the real call against a real pool, which is seen on
   staging (`docs/deploy.md`, "Post-deploy checks").
+- **Built 2026-11-26 (#135, the owner's option 2):** step 7, the address
+  out of the dataset, with the events role allowed to update those four
+  fields of `bgucats-data` and nothing else (`infra/main/events.tf`).
+  `tests/app/test_delete_account.py` pins the dataset after a deletion:
+  the address nowhere, the photos, encounters and picks kept, a member's
+  allowlist item gone and an admin's kept, the photos of a merged
+  encounter cleared too, and the job run twice ending the same in both
+  tables. `tests/events/test_events_role.py` holds the role to the fields
+  the job writes. **Not shown by a test:** the IAM conditions against
+  real DynamoDB, seen on staging. What still links: `submitterHash`
+  (`03-data-model.md`).
 
 ---
 
