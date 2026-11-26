@@ -132,12 +132,16 @@ struct World {
         if !keepQueue {
             try? FileManager.default.removeItem(at: queue)
         }
-        // A flow cut short, as a write the phone never finished leaves one:
-        // an encounter and nothing else.
+        // A flow that reads as one and is not whole: every part is there,
+        // and the new-cat form's coat is not one the server takes. (One
+        // cut short, as a write the phone never finished leaves, does not
+        // even read.)
         if flowBroken {
             try? FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
-            try? Data(#"{"encounterId":"01JBROKEN0000000000000000A","step":"post"}"#.utf8)
-                .write(to: queue.appendingPathComponent("flow.json"))
+            let kept = #"{"encounterId":"01JC0000000000000000000ENC","photos":[{"id":"01JC0000000000000000000PH1","gallery":false}],"#
+                + #""step":"new","unsure":false,"text":"","shareRegion":true,"#
+                + #""proposal":{"nameIdea":"","coat":"purple","traits":[]}}"#
+            try? Data(kept.utf8).write(to: queue.appendingPathComponent("flow.json"))
         }
         return World(
             trail: trail,
