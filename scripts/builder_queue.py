@@ -21,6 +21,12 @@ What holds:
 - At most `LIMIT` pieces of agent work at once: this repository's open
   pull requests from `claude/` branches, plus issues being built that have
   no pull request yet. The rest wait in the queue; nothing is dropped.
+  A pull request that waits only for the owner (the reviewer passed it and
+  sent it up: "the owner should look at this") does not count: the owner
+  merges once or twice a day, and the builder is not to stand idle until
+  then (the owner, 2026-11-26). The planner keeps two issues that change
+  the same files from being `ready` together, so building past one that
+  waits does not build a conflict.
 - An issue marked `building` with no open pull request and nothing moving
   for `STALE_HOURS` goes to the owner (`needs-owner`) and frees its place.
 - An issue whose pull request is already open is never built a second
@@ -61,6 +67,9 @@ CAN_PUSH = frozenset({"admin", "maintain", "write"})
 # verdict `changes` (a test holds the two together), and the status must be
 # the reviewer workflow's own.
 SENT_BACK = "Reviewed: sent back to its author"
+# The reviewer's word for a change it passed that is the owner's to merge
+# (scripts/review_verdict.py, "owner").
+FOR_OWNER = "Reviewed: the owner should look at this"
 REVIEWER = "github-actions[bot]"
 REWORKING = "reworking"
 ROUNDS = 2
@@ -83,11 +92,13 @@ def _person(who, permission):
     return permission(who["by"])
 
 
-def decide(issues, branches, labeled, permission, now, limit=LIMIT):
+def decide(issues, branches, labeled, permission, now, limit=LIMIT, waiting=()):
     """What to do with the queue, as data.
 
     issues: open issues, each {number, author, author_type, labels, updated}.
     branches: this repository's branches that have an open pull request.
+    waiting: those of them whose pull request waits only for the owner;
+    still open (an issue of theirs is never built again), not counted.
     labeled(number, label): who last put that label on, {by, type}, or None.
     permission(login): "admin", "write", "read", "none"...
 
@@ -96,7 +107,7 @@ def decide(issues, branches, labeled, permission, now, limit=LIMIT):
     queue although its pull request is open; to be marked, not built.
     """
     ours = [name for name in branches if name.startswith("claude/")]
-    stale, busy = [], len(ours)
+    stale, busy = [], len([name for name in ours if name not in waiting])
     for issue in issues:
         if BUILDING not in issue["labels"] or branch(issue["number"]) in ours:
             continue
@@ -257,6 +268,20 @@ def mergeable(repo, number):
     return None
 
 
+def waits_for_owner(pull, review):
+    """True when nothing but the owner's merge holds this pull request:
+    the reviewer's own status on its head passed it up to the owner, and
+    it is not in conflict (that goes back to its author first)."""
+    if pull.get("conflict") is True:
+        return False
+    said = review(pull["sha"]) or {}
+    return (said.get("state"), said.get("description"), said.get("by")) == (
+        "failure",
+        FOR_OWNER,
+        REVIEWER,
+    )
+
+
 def review_of(repo):
     def review(sha):
         # Newest first; the first with our context is the one that stands.
@@ -315,8 +340,15 @@ def main():
     repo = os.environ["REPO"]
     issues, pulls = read(repo)
     branches = [pull["ref"] for pull in pulls]
-    plan = decide(issues, branches, labeled_by(repo), permission_in(repo), datetime.now(UTC))
-    back = sent_back(pulls, review_of(repo))
+    review = review_of(repo)
+    waiting = [pull["ref"] for pull in pulls if waits_for_owner(pull, review)]
+    for pull in pulls:
+        if pull["ref"] in waiting:
+            print(f"Pull request #{pull['number']} ({pull['ref']}) waits for the owner: not counted against {LIMIT}.")
+    plan = decide(
+        issues, branches, labeled_by(repo), permission_in(repo), datetime.now(UTC), waiting=waiting
+    )
+    back = sent_back(pulls, review)
     labels = {issue["number"]: issue["labels"] for issue in issues}
 
     # What was learned of each of the builder's pull requests, said every
