@@ -24,9 +24,11 @@ What holds:
   A pull request that waits only for the owner (the reviewer passed it and
   sent it up: "the owner should look at this") does not count: the owner
   merges once or twice a day, and the builder is not to stand idle until
-  then (the owner, 2026-11-26). The planner keeps two issues that change
-  the same files from being `ready` together, so building past one that
-  waits does not build a conflict.
+  then (the owner, 2026-11-26). At most `WAITING_MAX` of them are left
+  out; more, and the rest count again, so work cannot pile up for the
+  owner without end. The planner keeps two issues that change the same
+  files from being `ready` together, so building past one that waits does
+  not build a conflict.
 - An issue marked `building` with no open pull request and nothing moving
   for `STALE_HOURS` goes to the owner (`needs-owner`) and frees its place.
 - An issue whose pull request is already open is never built a second
@@ -57,6 +59,8 @@ import time
 from datetime import UTC, datetime, timedelta
 
 LIMIT = 3
+# Pull requests waiting only for the owner that are left out of LIMIT.
+WAITING_MAX = 3
 STALE_HOURS = 3
 QUEUE = ("approved", "ready")  # in the order they are taken
 BUILDING = "building"
@@ -107,7 +111,8 @@ def decide(issues, branches, labeled, permission, now, limit=LIMIT, waiting=()):
     queue although its pull request is open; to be marked, not built.
     """
     ours = [name for name in branches if name.startswith("claude/")]
-    stale, busy = [], len([name for name in ours if name not in waiting])
+    left_out = min(len([name for name in ours if name in waiting]), WAITING_MAX)
+    stale, busy = [], len(ours) - left_out
     for issue in issues:
         if BUILDING not in issue["labels"] or branch(issue["number"]) in ours:
             continue
@@ -242,8 +247,10 @@ def read(repo):
         f'.[] | select(.head.repo.full_name == "{repo}") '
         "| {number, ref: .head.ref, sha: .head.sha, labels: [.labels[].name]}",
     )
+    # Every agent's pull request, a session's too: one in conflict is not
+    # "waiting only for the owner" (waits_for_owner).
     for pull in pulls:
-        if ISSUE_BRANCH.match(pull["ref"]):
+        if pull["ref"].startswith("claude/"):
             merges = mergeable(repo, pull["number"])
             pull["conflict"] = None if merges is None else not merges
     return list(found.values()), pulls
@@ -271,8 +278,9 @@ def mergeable(repo, number):
 def waits_for_owner(pull, review):
     """True when nothing but the owner's merge holds this pull request:
     the reviewer's own status on its head passed it up to the owner, and
-    it is not in conflict (that goes back to its author first)."""
-    if pull.get("conflict") is True:
+    GitHub says it merges with main (one in conflict goes back to its
+    author first; one GitHub has not answered for counts, to be safe)."""
+    if pull.get("conflict") is not False:
         return False
     said = review(pull["sha"]) or {}
     return (said.get("state"), said.get("description"), said.get("by")) == (
