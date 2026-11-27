@@ -81,7 +81,7 @@ struct TabsView: View {
     var body: some View {
         TabView(selection: $tab) {
             Tab("Cats", systemImage: "cat", value: AppTab.cats) {
-                NotBuiltYet(title: "Cats", symbol: "cat")
+                CatsView(world: world, session: session)
             }
             Tab("Scan a cat", systemImage: "camera", value: AppTab.scan) {
                 ScanView(world: world, session: session)
