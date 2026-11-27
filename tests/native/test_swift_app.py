@@ -119,13 +119,16 @@ def test_the_swift_job_builds_and_looks_with_no_secret():
 
 
 def test_the_walks_time_limits_hold_every_test_at_its_longest():
-    # A walk is one test and grows with every screen. At three minutes a
-    # test, the cold walk (281 s with five launches of the app) was failed
-    # with every step passed (2026-11-24). The limit is there for a hang:
-    # it is well over what a test takes, the step's limit holds every test
-    # of ScreensUITests at its longest (two walks, then Scan a cat's three
-    # tests), and the job's holds the step with the warm-up and the build
-    # before it and the archive after.
+    # A walk grows with every screen. At three minutes a test, the cold
+    # walk (281 s with five launches of the app) was failed with every
+    # step passed (2026-11-24); at eight, Profile took the one walk past
+    # it on a slow Mac (#150, 2026-11-27), and the walk was cut by launch
+    # into tests of their own. The limit is there for a hang: it is well
+    # over what a test takes, the step's limit holds every test of
+    # ScreensUITests at its longest (the account's and every screen's
+    # walks in each look, then Scan a cat's three tests), and the job's
+    # holds the step with the warm-up and the build before it and the
+    # archive after.
     job = workflow()["jobs"]["swift"]
     test = next(step for step in job["steps"] if step.get("name") == "walk through every screen")
     assert "-test-timeouts-enabled YES" in test["run"]
@@ -135,10 +138,26 @@ def test_the_walks_time_limits_hold_every_test_at_its_longest():
     walks = re.findall(
         r"^    func (test\w+)\(\)", (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text(), flags=re.MULTILINE
     )
-    assert {"testEveryScreenInLight", "testEveryScreenInDark"} <= set(walks), walks
+    assert {"testAccountInLight", "testAccountInDark", "testEveryScreenInLight", "testEveryScreenInDark"} <= set(walks), walks
     assert len(walks) * most <= test["timeout-minutes"] * 60, (walks, test["timeout-minutes"])
     wake = next(step for step in job["steps"] if step.get("name") == "wake the simulator")
     assert test["timeout-minutes"] + wake["timeout-minutes"] + 20 <= job["timeout-minutes"]
+
+
+def test_a_walk_cut_in_two_keeps_both_looks():
+    # The walk is cut by launch into tests of their own (#150,
+    # 2026-11-27), and each part is still walked in both looks: a test
+    # for one look has its twin for the other, calling the same walk.
+    text = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    calls = dict(re.findall(r"^    func (test\w+)\(\) \{\n\s+(\w+)\(look: \"(?:light|dark)\"\)", text, flags=re.MULTILINE))
+    looks = {name: walk for name, walk in calls.items() if name.endswith(("InLight", "InDark"))}
+    assert {"testAccountInLight", "testEveryScreenInLight", "testScanInLight"} <= set(looks), looks
+    for name, walk in looks.items():
+        twin = name.replace("InLight", "InDark") if name.endswith("InLight") else name.replace("InDark", "InLight")
+        assert looks.get(twin) == walk, (name, twin, looks)
+    for name, walk in looks.items():
+        look = "light" if name.endswith("InLight") else "dark"
+        assert f'    func {name}() {{\n        {walk}(look: "{look}")' in text, name
 
 
 def test_the_simulator_is_woken_before_the_walk_and_that_is_not_counted():
