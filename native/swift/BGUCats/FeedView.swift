@@ -18,11 +18,7 @@ struct FeedView: View {
         NavigationStack {
             content
                 .navigationTitle("Home")
-                .alert("That did not work", isPresented: noteShown) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text(model.note ?? "")
-                }
+                .postActions(model, world: world)
         }
         .task {
             await model.open()
@@ -35,22 +31,6 @@ struct FeedView: View {
         .onAppear {
             Task { await model.catchUp(outbox.postsSent) }
         }
-    }
-
-    private var noteShown: Binding<Bool> {
-        Binding(get: { model.note != nil }, set: { shown in
-            if !shown {
-                model.note = nil
-            }
-        })
-    }
-
-    private var deleteAsked: Binding<Bool> {
-        Binding(get: { model.toDelete != nil }, set: { shown in
-            if !shown {
-                model.toDelete = nil
-            }
-        })
     }
 
     @ViewBuilder private var content: some View {
@@ -80,13 +60,7 @@ struct FeedView: View {
                 ScrollView {
                     LazyVStack(spacing: 28) {
                         ForEach(model.posts) { post in
-                            PostCard(
-                                post: post,
-                                world: world,
-                                like: { Task { await model.toggleLike(post) } },
-                                delete: { model.toDelete = post },
-                                report: { model.reporting = post }
-                            )
+                            PostCard(post: post, world: world, model: model)
                         }
                         if model.hasMore {
                             ProgressView()
@@ -101,30 +75,77 @@ struct FeedView: View {
                 .refreshable {
                     await model.refresh()
                 }
-                // The system's confirmation before a post goes for everyone.
-                .alert("Delete this post?", isPresented: deleteAsked, presenting: model.toDelete) { post in
-                    Button("Delete", role: .destructive) {
-                        Task { await model.delete(post) }
-                    }
-                    .accessibilityIdentifier("post.delete.confirm")
-                    Button("Cancel", role: .cancel) {}
-                } message: { _ in
-                    Text("It disappears from the feed for everyone. The photos stay with the cat's records.")
-                }
-                .sheet(item: $model.reporting) { post in
-                    ReportView(post: post, world: world)
-                }
             }
         }
     }
 }
 
+/// What a post's card can ask for, wherever its cards are drawn (Home, a
+/// cat's page): the confirmation before a delete, the report sheet, and
+/// the words when something the person did failed.
+struct PostActions: ViewModifier {
+    @ObservedObject var model: FeedModel
+    let world: World
+
+    func body(content: Content) -> some View {
+        content
+            .alert("That did not work", isPresented: noteShown) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(model.note ?? "")
+            }
+            // The system's confirmation before a post goes for everyone.
+            .alert("Delete this post?", isPresented: deleteAsked, presenting: model.toDelete) { post in
+                Button("Delete", role: .destructive) {
+                    Task { await model.delete(post) }
+                }
+                .accessibilityIdentifier("post.delete.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("It disappears from the feed for everyone. The photos stay with the cat's records.")
+            }
+            .sheet(item: $model.reporting) { post in
+                ReportView(post: post, world: world)
+            }
+    }
+
+    private var noteShown: Binding<Bool> {
+        Binding(get: { model.note != nil }, set: { shown in
+            if !shown {
+                model.note = nil
+            }
+        })
+    }
+
+    private var deleteAsked: Binding<Bool> {
+        Binding(get: { model.toDelete != nil }, set: { shown in
+            if !shown {
+                model.toDelete = nil
+            }
+        })
+    }
+}
+
+extension View {
+    func postActions(_ model: FeedModel, world: World) -> some View {
+        modifier(PostActions(model: model, world: world))
+    }
+}
+
+/// A list of posts read a page at a time, with what a card can do to
+/// them: Home's feed, or one cat's posts on its page.
 @MainActor
 final class FeedModel: ObservableObject {
     enum Phase {
         case loading
         case loaded
         case failed(String)
+    }
+
+    /// Which posts: the feed's, or one cat's (`GET /cats/{catId}/posts`).
+    enum Source {
+        case feed
+        case cat(String)
     }
 
     @Published private(set) var posts: [Post] = []
@@ -140,15 +161,34 @@ final class FeedModel: ObservableObject {
     private let world: World
     /// Whose terms come first (`Session.termsFirst`).
     private let session: Session
+    private let source: Source
     private var cursor: String?
     private var opened = false
     private var reading = false
     /// The outbox's count of posts sent when the feed was last caught up.
     private var postsRead = 0
 
-    init(world: World, session: Session) {
+    init(world: World, session: Session, source: Source = .feed) {
         self.world = world
         self.session = session
+        self.source = source
+    }
+
+    /// What the trail calls this list: "feed" or "cat", never which cat.
+    private var kind: String {
+        switch source {
+        case .feed: "feed"
+        case .cat: "cat"
+        }
+    }
+
+    private func read(_ cursor: String?) async throws -> FeedPage {
+        switch source {
+        case .feed:
+            try await world.backend.feed(cursor: cursor)
+        case .cat(let id):
+            try await world.backend.catPosts(id: id, cursor: cursor)
+        }
     }
 
     /// The first read. Coming back to the tab reads nothing again: pulling
@@ -164,12 +204,12 @@ final class FeedModel: ObservableObject {
         reading = true
         defer { reading = false }
         do {
-            let page = try await world.backend.feed(cursor: nil)
+            let page = try await read(nil)
             posts = page.posts
             cursor = page.cursor
             hasMore = page.cursor != nil
             phase = .loaded
-            world.trail.mark("feed: \(page.posts.count) posts")
+            world.trail.mark("\(kind): \(page.posts.count) posts")
         } catch {
             // A sign-in that ended is the session's to say: the sign-in
             // screen is on its way up.
@@ -198,12 +238,12 @@ final class FeedModel: ObservableObject {
         reading = true
         defer { reading = false }
         do {
-            let page = try await world.backend.feed(cursor: from)
+            let page = try await read(from)
             let known = Set(posts.map(\.id))
             posts += page.posts.filter { !known.contains($0.id) }
             cursor = page.cursor
             hasMore = page.cursor != nil
-            world.trail.mark("feed: \(page.posts.count) more")
+            world.trail.mark("\(kind): \(page.posts.count) more")
         } catch {
             // The spinner at the end goes; pulling down reads again.
             hasMore = false
@@ -241,7 +281,7 @@ final class FeedModel: ObservableObject {
                 posts[now].liked = before.liked
                 posts[now].likes = before.likes
             }
-            world.trail.mark("feed: a like failed")
+            world.trail.mark("\(kind): a like failed")
             if FeedModel.signInEnded(error) { return }
             if (error as? ApiError)?.code == "terms_required" && !termsChanged {
                 // The terms changed since the account was read: ask once
@@ -272,7 +312,7 @@ final class FeedModel: ObservableObject {
         }
     }
 
-    private static func signInEnded(_ error: Error) -> Bool {
+    static func signInEnded(_ error: Error) -> Bool {
         (error as? ApiError)?.status == 401
     }
 }
@@ -285,6 +325,16 @@ struct PostCard: View {
     let like: () -> Void
     let delete: () -> Void
     let report: () -> Void
+
+    /// A card whose like, delete and report go to the list it is in
+    /// (`FeedModel`), with `postActions` on a view around it.
+    init(post: Post, world: World, model: FeedModel) {
+        self.post = post
+        self.world = world
+        like = { Task { await model.toggleLike(post) } }
+        delete = { model.toDelete = post }
+        report = { model.reporting = post }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
