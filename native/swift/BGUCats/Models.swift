@@ -46,12 +46,82 @@ struct Post: Equatable, Identifiable {
     let state: String?
 }
 
-/// A campus cat as `GET /cats` lists it: what "Which cat?" shows.
+/// A campus cat as `GET /cats` lists it. "Which cat?" reads the first
+/// three; the gallery and a cat's page the rest. A field the server left
+/// out (or sent as null) is nil here, and a screen leaves it out: never a
+/// zero or a dash the server did not send.
 struct Cat: Equatable, Identifiable {
     let id: String
     /// Nil while it has none.
     let name: String?
+    /// The small picture: what a list shows.
     let cover: URL?
+    /// The larger one, for the cat of the day.
+    var coverMedium: URL? = nil
+    /// Where the shown name came from: `poll`, `admin` or `none`.
+    var nameSource: String? = nil
+    /// A campus place's id (`Campus.places`).
+    var regionId: String? = nil
+    /// A coat's id (`Campus.coats`).
+    var coat: String? = nil
+    /// One decimal, 4.0 for the most popular cat. Nil: none sent (nobody
+    /// met it lately, or the `gpa` flag is off).
+    var gpa: Double? = nil
+    var posts: Int? = nil
+    var likes: Int? = nil
+    var lastSeenAt: Date? = nil
+    var firstSeenAt: Date? = nil
+
+    /// The web app's words for a cat with no name yet (`cat.noName`).
+    static let noName = "A cat with no name yet"
+
+    var shownName: String { name ?? Cat.noName }
+
+    /// Its usual place in the web app's words, if it is a campus place.
+    var area: String? {
+        regionId.flatMap { id in Campus.places.first { $0.id == id }?.name }
+    }
+
+    var coatName: String? {
+        coat.flatMap { id in Campus.coats.first { $0.id == id }?.name }
+    }
+
+    /// The name poll's summary, as words (`cat.namedBy…` in the web app).
+    var named: String? {
+        switch nameSource {
+        case "poll": "Named by vote"
+        case "admin": "Named by the people who look after the cats"
+        case "none": "No name yet"
+        default: nil
+        }
+    }
+}
+
+/// `GET /cats`: every public cat, and today's cat of the day (the same
+/// for everyone on one Israel day; nil when there is none).
+struct CatList: Equatable {
+    let cats: [Cat]
+    let catOfTheDay: String?
+}
+
+/// The caller and one cat (`met` on `GET /cats/{catId}`).
+struct Met: Equatable {
+    let encounters: Int
+    let days: Int
+    /// "2026-11-03": the Israel day of the first and of the last.
+    let firstDay: Date?
+    let lastDay: Date?
+}
+
+/// `GET /cats/{catId}`: the cat as the list has it, and more.
+struct CatDetail: Equatable {
+    let cat: Cat
+    /// Nil when it has none.
+    let bio: String?
+    /// Nil: the caller never met this cat.
+    let met: Met?
+    /// Newest first.
+    let photos: [Photo]
 }
 
 /// What a new-cat proposal is chosen from (`POST /proposals`): the server's
@@ -175,14 +245,74 @@ enum Read {
         )
     }
 
-    /// `GET /cats`: every public cat, in the server's order. One with no id
-    /// is left out; one with no name or no photo is kept.
+    /// A number the server sent, or nil when it sent none (or null).
+    static func number(_ any: Any?) -> Int? {
+        (any as? NSNumber)?.intValue
+    }
+
+    /// A day as the API writes it, "2026-11-03".
+    static func day(_ any: Any?) -> Date? {
+        guard let text = any as? String else { return nil }
+        let reader = DateFormatter()
+        reader.locale = Locale(identifier: "en_US_POSIX")
+        reader.timeZone = TimeZone(identifier: "UTC")
+        reader.dateFormat = "yyyy-MM-dd"
+        return reader.date(from: text)
+    }
+
+    /// One cat of `GET /cats` or `GET /cats/{catId}`. One with no id is
+    /// nil; one with no name or no photo is kept.
+    static func cat(_ json: [String: Any]) -> Cat? {
+        guard let catId = text(json["catId"]) else { return nil }
+        let cover = json["cover"] as? [String: Any]
+        return Cat(
+            id: catId,
+            name: text(json["name"]),
+            cover: url(cover?["thumb"]) ?? url(cover?["medium"]),
+            coverMedium: url(cover?["medium"]) ?? url(cover?["thumb"]),
+            nameSource: text(json["nameSource"]),
+            regionId: text(json["regionId"]),
+            coat: text(json["coat"]),
+            gpa: (json["gpa"] as? NSNumber)?.doubleValue,
+            posts: number(json["posts"]),
+            likes: number(json["likes"]),
+            lastSeenAt: date(json["lastSeenAt"]),
+            firstSeenAt: date(json["firstSeenAt"])
+        )
+    }
+
+    /// `GET /cats`: every public cat, in the server's order.
     static func cats(_ json: [String: Any]) -> [Cat] {
-        (json["cats"] as? [[String: Any]] ?? []).compactMap { cat in
-            guard let catId = text(cat["catId"]) else { return nil }
-            let cover = cat["cover"] as? [String: Any]
-            return Cat(id: catId, name: text(cat["name"]), cover: url(cover?["thumb"]) ?? url(cover?["medium"]))
+        (json["cats"] as? [[String: Any]] ?? []).compactMap { Read.cat($0) }
+    }
+
+    /// `GET /cats` whole: the cats and the cat of the day, which is left
+    /// out if it is not one of them.
+    static func catList(_ json: [String: Any]) -> CatList {
+        let listed = Read.cats(json)
+        let today = text(json["catOfTheDay"])
+        return CatList(cats: listed, catOfTheDay: listed.contains { $0.id == today } ? today : nil)
+    }
+
+    /// `GET /cats/{catId}`.
+    static func catDetail(_ json: [String: Any]) -> CatDetail? {
+        guard let body = json["cat"] as? [String: Any], let read = Read.cat(body) else { return nil }
+        let met = (body["met"] as? [String: Any]).map { met in
+            Met(
+                encounters: int(met["encounters"]),
+                days: int(met["days"]),
+                firstDay: day(met["firstDay"]),
+                lastDay: day(met["lastDay"])
+            )
         }
+        let photos = (body["photos"] as? [[String: Any]] ?? []).enumerated().map { index, photo in
+            Photo(
+                id: (photo["photoId"] as? String) ?? "\(read.id)-\(index)",
+                thumb: url(photo["thumb"]),
+                medium: url(photo["medium"])
+            )
+        }
+        return CatDetail(cat: read, bio: text(body["bio"]), met: met, photos: photos)
     }
 
     static func page(_ json: [String: Any]) -> FeedPage {
