@@ -1447,6 +1447,22 @@ def test_the_profile_says_each_refusal_in_the_web_apps_words_never_as_a_code():
     assert "username = " not in commit.split("sending = field")[1]
 
 
+def test_a_field_finished_while_the_other_is_sent_waits_and_is_not_dropped():
+    # The username finished while the name is on its way is sent once the
+    # name is answered, against the account that answer left; the same
+    # field again ("done", then leaving it) sends nothing more.
+    profile = sources()["ProfileView.swift"]
+    assert "@State private var waiting: ProfileModel.Field?" in profile
+    commit = profile.split("private func commit(")[1].split("private var noteShown")[0]
+    busy = commit.split("guard sending == nil else {")[1].split("return\n")[0]
+    assert "if sending != field {" in busy and "waiting = field" in busy
+    assert "let account = session.me ?? me" in commit
+    answered = commit.split("let saved = await model.save(field, typed)")[1]
+    assert "sending = nil" in answered
+    assert answered.index("sending = nil") < answered.index("if let next = waiting {")
+    assert "waiting = nil" in answered and "commit(next)" in answered
+
+
 def test_the_name_and_the_username_ask_for_the_terms_and_deleting_does_not():
     profile = sources()["ProfileView.swift"]
     save = profile.split("func save(_ field: Field")[1].split("static func words(")[0]
