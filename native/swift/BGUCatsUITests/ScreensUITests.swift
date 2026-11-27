@@ -173,6 +173,10 @@ final class ScreensUITests: XCTestCase {
             XCTAssertTrue(namingTrail.contains(line), "App info did not keep \"\(line)\".")
         }
         XCTAssertFalse(namingTrail.contains("Hummus") || namingTrail.contains("hummus"), "The trail holds the name suggested.")
+        // The rest of the profile, in the same launch: its feed still has
+        // the member's post being checked, and the terms were accepted
+        // above. It ends with the account deleted.
+        profile(naming, look: look)
         naming.terminate()
 
         let app = XCUIApplication()
@@ -413,6 +417,119 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(none.waitForExistence(timeout: patience), "A search that finds nothing does not say so. \(onScreen(app))")
         XCTAssertTrue(app.staticTexts["No cat called “Garfield”."].exists, "A search that finds nothing does not say so in the web app's words. \(onScreen(app))")
         keep(app, "cats-search-none-\(look)")
+    }
+
+    /// Profile: a new name, which waits to be checked; a username refused
+    /// under its field, which keeps what was typed; My posts, with the
+    /// member's post being checked and an older public one; and Delete
+    /// account: Cancel sends nothing, then the account goes, the sign-in
+    /// screen says so, and the made-up server was asked once, with the
+    /// body the API takes. App info was left open on Profile.
+    private func profile(_ app: XCUIApplication, look: String) {
+        let back = app.navigationBars["App info"].buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: patience), "Profile is not on App info as the walk left it. \(onScreen(app))")
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: patience), "Back did not come to Profile. \(onScreen(app))")
+        for row in ["profile.me", "profile.name", "profile.username", "row.my-posts", "row.app-info", "profile.sign-out"] {
+            XCTAssertTrue(find(app, row).waitForExistence(timeout: patience), "Profile has no \(row). \(onScreen(app))")
+        }
+
+        // A new name, typed in its row: the server takes it, the member
+        // sees it at once, and the row says others see it once checked.
+        let nameField = app.textFields["profile.name"].firstMatch
+        retype(nameField, "Tess Member")
+        let pending = find(app, "profile.name-pending")
+        XCTAssertTrue(pending.waitForExistence(timeout: patience), "A new name does not say it is being checked. \(onScreen(app))")
+        XCTAssertEqual(pending.label, "Others see your new name once it has been checked.")
+        XCTAssertTrue(find(app, "profile.me").label.contains("Tess Member"), "The new name is not the member's at once. \(onScreen(app))")
+        keep(app, "profile-name-pending-\(look)")
+
+        // A username someone has: refused under the field, in the web
+        // app's words; the field keeps what was typed, the account its name.
+        let usernameField = app.textFields["profile.username"].firstMatch
+        retype(usernameField, "first.tester")
+        let refused = find(app, "profile.username-note")
+        XCTAssertTrue(refused.waitForExistence(timeout: patience), "A username taken is not said under the field. \(onScreen(app))")
+        XCTAssertEqual(refused.label, "That username is taken. Try another.")
+        XCTAssertEqual(usernameField.value as? String, "first.tester", "The field did not keep what was typed.")
+        XCTAssertTrue(find(app, "profile.me").label.contains("@test.member"), "A refused username changed the account. \(onScreen(app))")
+        keep(app, "profile-username-taken-\(look)")
+
+        // My posts: two, the one being checked says so, the public one
+        // says nothing.
+        find(app, "row.my-posts").tap()
+        let checking = find(app, "post.state.p2")
+        XCTAssertTrue(checking.waitForExistence(timeout: patience), "My posts does not mark the post being checked. \(onScreen(app))")
+        XCTAssertEqual(checking.label, "Being checked")
+        keep(app, "my-posts-\(look)")
+        let older = find(app, "menu.p4")
+        reveal(older, in: app)
+        XCTAssertFalse(find(app, "post.state.p4").exists, "A public post is marked. \(onScreen(app))")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: patience), "Back did not come to Profile. \(onScreen(app))")
+
+        // Delete account, last: the system's confirmation with the plan's
+        // sentence. Cancel sends nothing.
+        let deleteRow = app.buttons["profile.delete-account"].firstMatch
+        reveal(deleteRow, in: app)
+        deleteRow.tap()
+        let asked = app.alerts["Delete your account?"]
+        XCTAssertTrue(asked.waitForExistence(timeout: patience), "Delete account did not ask first. \(onScreen(app))")
+        let sentence = "Your posts, badges, points and friends will be removed for good. The cat photos you took stay with the cats' records, with nothing left that points to you."
+        XCTAssertTrue(asked.staticTexts[sentence].exists, "The confirmation does not say what goes and what stays. \(onScreen(app))")
+        keep(app, "delete-account-\(look)")
+        asked.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(gone(asked), "The confirmation stayed after Cancel.")
+        let cancelled = appInfo(app)
+        XCTAssertFalse(served(cancelled).contains { $0.hasPrefix("delete me") }, "Cancel sent the deletion: \(served(cancelled))")
+        app.navigationBars["App info"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: patience), "Back did not come to Profile. \(onScreen(app))")
+
+        // Confirmed: the account is being deleted, and the sign-in screen
+        // says so in one line.
+        reveal(deleteRow, in: app)
+        deleteRow.tap()
+        XCTAssertTrue(asked.waitForExistence(timeout: patience), "Delete account did not ask the second time. \(onScreen(app))")
+        asked.buttons["Delete account"].firstMatch.tap()
+        let signIn = find(app, "sign-in.google")
+        XCTAssertTrue(signIn.waitForExistence(timeout: patience), "After deleting, the sign-in screen did not come up. \(onScreen(app))")
+        XCTAssertEqual(find(app, "sign-in.note").label, "Your account is being deleted.", "The sign-in screen does not say the account is being deleted.")
+        keep(app, "signed-out-deleted-\(look)")
+
+        // What the made-up server was asked, from App info on the sign-in
+        // screen: the deletion once, with {"confirm": "delete"}.
+        app.buttons["App info"].firstMatch.tap()
+        let text = find(app, "app-info.text")
+        XCTAssertTrue(text.waitForExistence(timeout: patience), "App info did not open from the sign-in screen.")
+        let shown = text.label + "\n" + (text.value as? String ?? "")
+        let asks = served(shown)
+        XCTAssertEqual(asks.filter { $0.hasPrefix("delete me") }, ["delete me confirm delete"], "Not one deletion, as the API takes it: \(asks)")
+        XCTAssertEqual(asks.filter { $0.hasPrefix("rename") || $0.hasPrefix("username") }, ["rename", "username name_taken"], "Not one name and one username: \(asks)")
+        let trail = shown.components(separatedBy: "stand-in server:").first ?? shown
+        for line in [
+            "profile: name saved",
+            "profile: username refused (name_taken)",
+            "my posts: 2 posts",
+            "account: delete asked",
+            "account: delete cancelled",
+            "account: deleting",
+            "upload: everything waiting dropped",
+        ] {
+            XCTAssertTrue(trail.contains(line), "App info did not keep \"\(line)\".")
+        }
+        for word in ["Tess", "first.tester"] {
+            XCTAssertFalse(trail.contains(word), "The trail holds \"\(word)\".")
+        }
+    }
+
+    /// Puts the cursor at the end of a field's text (the end is on the
+    /// right: the profile's fields are aligned there), deletes what is
+    /// there and types `text` and "done".
+    private func retype(_ field: XCUIElement, _ text: String) {
+        XCTAssertTrue(field.waitForExistence(timeout: patience), "\(field) is not there.")
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        let had = (field.value as? String)?.count ?? 0
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: had + 2) + text + "\n")
     }
 
     func testScanInLight() {
@@ -820,7 +937,8 @@ final class ScreensUITests: XCTestCase {
         // a system dialog iOS dims the screen behind it by about a fifth,
         // so a light one's bar is lowered by as much; still far above dark.
         let bright = ScreensUITests.brightness(shot.image)
-        let light = name.hasPrefix("terms-") ? 0.52 : 0.65
+        let dimmed = name.hasPrefix("terms-") || name.hasPrefix("delete-account-")
+        let light = dimmed ? 0.52 : 0.65
         if name.hasSuffix("-dark") {
             XCTAssertLessThan(bright, 0.35, "\(name) is not dark: the screen's brightness is \(bright).")
         } else {
