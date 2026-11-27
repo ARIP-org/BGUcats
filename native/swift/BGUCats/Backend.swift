@@ -42,6 +42,14 @@ protocol Backend {
 
     /// `GET /api/v1/cats`: every public cat, for "Which cat?".
     func cats() async throws -> [Cat]
+    /// `GET /api/v1/cats` whole: the cats and today's cat of the day, for
+    /// the gallery.
+    func catList() async throws -> CatList
+    /// `GET /api/v1/cats/{catId}`: a cat's page.
+    func cat(id: String) async throws -> CatDetail
+    /// `GET /api/v1/cats/{catId}/posts`: the cat's visible posts, newest
+    /// first, as the feed's cards.
+    func catPosts(id: String, cursor: String?) async throws -> FeedPage
 
     /// The author removes their own post.
     func deletePost(postId: String) async throws
@@ -317,7 +325,23 @@ final class LiveBackend: Backend {
     }
 
     func cats() async throws -> [Cat] {
-        Read.cats(try await call("GET", "/cats", as: "cats"))
+        try await catList().cats
+    }
+
+    func catList() async throws -> CatList {
+        Read.catList(try await call("GET", "/cats", as: "cats"))
+    }
+
+    func cat(id: String) async throws -> CatDetail {
+        let json = try await call("GET", "/cats/\(Auth.encode(id))", as: "cat")
+        guard let cat = Read.catDetail(json) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        return cat
+    }
+
+    func catPosts(id: String, cursor: String?) async throws -> FeedPage {
+        Read.page(try await call("GET", "/cats/\(Auth.encode(id))/posts", cursor: cursor, as: "cat posts"))
     }
 
     /// A presigned POST's body: its fields, then the file, which S3 wants last.
@@ -499,12 +523,45 @@ final class StandInBackend: Backend {
         self.notReadyOnce = notReadyOnce
     }
 
-    /// The made-up campus: three cats, one of them with no name yet.
+    /// The made-up campus: three cats, one of them with no name yet, no
+    /// place, no coat, no description and no grade; the member met the
+    /// first twice and the others never.
     static let campus = [
-        Cat(id: "c1", name: "Mitzi", cover: URL(string: "standin://photo/cat-mitzi")),
-        Cat(id: "c2", name: "Shachor", cover: URL(string: "standin://photo/cat-shachor")),
-        Cat(id: "c3", name: nil, cover: URL(string: "standin://photo/cat-three")),
+        Cat(
+            id: "c1", name: "Mitzi", cover: URL(string: "standin://photo/cat-mitzi"),
+            coverMedium: URL(string: "standin://photo/cat-mitzi"),
+            nameSource: "poll", regionId: "library", coat: "calico", gpa: 4.0, posts: 1, likes: 3
+        ),
+        Cat(
+            id: "c2", name: "Shachor", cover: URL(string: "standin://photo/cat-shachor"),
+            coverMedium: URL(string: "standin://photo/cat-shachor"),
+            nameSource: "admin", regionId: "engineering", coat: "black", gpa: 2.6, posts: 1, likes: 11
+        ),
+        Cat(
+            id: "c3", name: nil, cover: URL(string: "standin://photo/cat-three"),
+            coverMedium: URL(string: "standin://photo/cat-three"),
+            nameSource: "none", posts: 0, likes: 0
+        ),
     ]
+
+    /// The campus with its dates, which hang on the stand-in's clock.
+    private var dated: [Cat] {
+        StandInBackend.campus.map { cat in
+            var cat = cat
+            switch cat.id {
+            case "c1":
+                cat.lastSeenAt = start.addingTimeInterval(-2 * 3600)
+                cat.firstSeenAt = start.addingTimeInterval(-40 * 86400)
+            case "c2":
+                cat.lastSeenAt = start.addingTimeInterval(-3 * 86400)
+                cat.firstSeenAt = start.addingTimeInterval(-90 * 86400)
+            default:
+                // Never seen since it was added: no "last seen" is sent.
+                cat.firstSeenAt = start.addingTimeInterval(-5 * 86400)
+            }
+            return cat
+        }
+    }
 
     /// One line per capture call, in the order they came: "encounter
     /// place", "media 1 camera place", "upload 1", "complete 1", "pick c2
@@ -686,6 +743,45 @@ final class StandInBackend: Backend {
         StandInBackend.campus
     }
 
+    func catList() async throws -> CatList {
+        try await reach()
+        return CatList(cats: dated, catOfTheDay: "c2")
+    }
+
+    func cat(id: String) async throws -> CatDetail {
+        try await reach()
+        guard let cat = dated.first(where: { $0.id == id }) else {
+            throw ApiError(status: 404, code: "gone", message: "no such cat")
+        }
+        let photos = (1...3).map { index in
+            let url = URL(string: "standin://photo/\(id)-\(index)")
+            return Photo(id: "\(id)-\(index)", thumb: url, medium: url)
+        }
+        switch id {
+        case "c1":
+            let day = { (back: Double) in self.start.addingTimeInterval(-back * 86400) }
+            return CatDetail(
+                cat: cat,
+                bio: "Sleeps on the library steps most afternoons. Likes a chin scratch, not a lap.",
+                met: Met(encounters: 2, days: 2, firstDay: day(20), lastDay: day(1)),
+                photos: photos
+            )
+        case "c2":
+            return CatDetail(cat: cat, bio: "The black cat of the engineering building.", met: nil, photos: photos)
+        default:
+            return CatDetail(cat: cat, bio: nil, met: nil, photos: Array(photos.prefix(1)))
+        }
+    }
+
+    func catPosts(id: String, cursor: String?) async throws -> FeedPage {
+        try await reach()
+        guard let name = StandInBackend.campus.first(where: { $0.id == id })?.name else {
+            return FeedPage(posts: [], cursor: nil)
+        }
+        let made = lock.withLock { posted }
+        return FeedPage(posts: (made + madeUp).filter { $0.catName == name && !deleted.contains($0.id) }, cursor: nil)
+    }
+
     func me() async throws -> Me {
         Me(
             userId: "u-test",
@@ -701,6 +797,12 @@ final class StandInBackend: Backend {
     }
 
     func feed(cursor: String?) async throws -> FeedPage {
+        let made = lock.withLock { posted }
+        return FeedPage(posts: (made + madeUp).filter { !deleted.contains($0.id) }, cursor: nil)
+    }
+
+    /// The three made-up posts, as the member's likes left them.
+    private var madeUp: [Post] {
         func photo(_ name: String) -> Photo {
             let url = URL(string: "standin://photo/\(name)")
             return Photo(id: name, thumb: url, medium: url)
@@ -708,7 +810,7 @@ final class StandInBackend: Backend {
         func person(_ id: String, _ name: String, _ username: String) -> Person {
             Person(userId: id, username: username, displayName: name, avatar: nil)
         }
-        let posts = [
+        return [
             Post(
                 id: "p1",
                 author: person("u-a", "First Tester", "first.tester"),
@@ -746,8 +848,6 @@ final class StandInBackend: Backend {
                 state: nil
             ),
         ]
-        let made = lock.withLock { posted }
-        return FeedPage(posts: (made + posts).filter { !deleted.contains($0.id) }, cursor: nil)
     }
 
     func like(postId: String, on: Bool) async throws -> Int {
