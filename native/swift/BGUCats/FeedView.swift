@@ -142,10 +142,12 @@ final class FeedModel: ObservableObject {
         case failed(String)
     }
 
-    /// Which posts: the feed's, or one cat's (`GET /cats/{catId}/posts`).
+    /// Which posts: the feed's, one cat's (`GET /cats/{catId}/posts`), or
+    /// the member's own (`GET /me/posts`, with each one's state).
     enum Source {
         case feed
         case cat(String)
+        case mine
     }
 
     @Published private(set) var posts: [Post] = []
@@ -179,6 +181,7 @@ final class FeedModel: ObservableObject {
         switch source {
         case .feed: "feed"
         case .cat: "cat"
+        case .mine: "my posts"
         }
     }
 
@@ -188,6 +191,8 @@ final class FeedModel: ObservableObject {
             try await world.backend.feed(cursor: cursor)
         case .cat(let id):
             try await world.backend.catPosts(id: id, cursor: cursor)
+        case .mine:
+            try await world.backend.myPosts()
         }
     }
 
@@ -312,8 +317,12 @@ final class FeedModel: ObservableObject {
         }
     }
 
+    /// The sign-in is over: the server refused the token, or the account
+    /// is being deleted (`gone`, 403). The session puts the sign-in screen
+    /// up and says which; a screen says nothing of its own over it.
     static func signInEnded(_ error: Error) -> Bool {
-        (error as? ApiError)?.status == 401
+        guard let refusal = error as? ApiError else { return false }
+        return refusal.status == 401 || Session.isGone(refusal)
     }
 }
 
@@ -370,10 +379,12 @@ struct PostCard: View {
                         .font(.subheadline.weight(.medium))
                 }
                 Spacer()
-                if post.state == "pending" {
-                    Label("Being checked", systemImage: "clock")
+                // Its author's alone: why others do not see it (yet).
+                if let words = post.stateWords {
+                    Label(words, systemImage: post.state == "hidden" ? "eye.slash" : "clock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("post.state.\(post.id)")
                 }
             }
             .padding(.horizontal)
