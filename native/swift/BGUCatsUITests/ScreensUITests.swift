@@ -199,12 +199,11 @@ final class ScreensUITests: XCTestCase {
         app.descendants(matching: .any)["report.done"].firstMatch.tap()
         XCTAssertTrue(thanks.waitForNonExistence(timeout: patience), "Done did not close the report. \(onScreen(app))")
 
-        // Scan a cat has its own walk below.
-        for (tab, name) in [("Cats", "cats"), ("Profile", "profile")] {
-            app.tabBars.buttons[tab].tap()
-            XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: patience), "The tab \(tab) did not open.")
-            keep(app, "\(name)-\(look)")
-        }
+        // Scan a cat has its own walk below, and Cats comes last in this
+        // one, after App info: a search leaves the keyboard over the tabs.
+        app.tabBars.buttons["Profile"].tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: patience), "The tab Profile did not open.")
+        keep(app, "profile-\(look)")
 
         // Profile says who is signed in.
         XCTAssertTrue(app.staticTexts["Test Member"].exists || app.descendants(matching: .any)["profile.me"].firstMatch.exists, "Profile does not say who is signed in.")
@@ -231,7 +230,94 @@ final class ScreensUITests: XCTestCase {
         copy.tap()
         XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: patience), "Copying did not say it copied.")
 
+        cats(app, look: look)
         app.terminate()
+    }
+
+    /// Cats: the gallery with the cat of the day and the made-up campus's
+    /// three cats; Mitzi's page, her post liked there, and back to the
+    /// gallery as it was; the page of the cat with no name, where nothing
+    /// is put in place of what the server did not send; and the search,
+    /// with one cat left and with none. The like on Home earlier in the
+    /// walk reached the made-up server, so her post starts liked.
+    private func cats(_ app: XCUIApplication, look: String) {
+        app.tabBars.buttons["Cats"].tap()
+        XCTAssertTrue(app.navigationBars["Cats"].waitForExistence(timeout: patience), "The tab Cats did not open. \(onScreen(app))")
+        let mitzi = find(app, "gallery.c1")
+        XCTAssertTrue(mitzi.waitForExistence(timeout: patience), "The gallery did not show its cats. \(onScreen(app))")
+        XCTAssertFalse(app.staticTexts["Not built yet"].exists, "Cats still says it is not built.")
+        XCTAssertTrue(find(app, "cats.today").exists, "The gallery has no cat of the day. \(onScreen(app))")
+        XCTAssertTrue(app.staticTexts["Cat of the day"].exists, "The cat of the day is not called so. \(onScreen(app))")
+        XCTAssertTrue(find(app, "gallery.c2").exists, "The gallery has no Shachor. \(onScreen(app))")
+        XCTAssertTrue(find(app, "gallery.c3").exists, "The gallery has no cat with no name. \(onScreen(app))")
+        XCTAssertTrue(find(app, "cats.sort").exists, "The gallery has no way to sort. \(onScreen(app))")
+        XCTAssertTrue(app.searchFields.firstMatch.exists, "The gallery has no search field. \(onScreen(app))")
+        keep(app, "cats-\(look)")
+
+        // Mitzi's page: photos, numbers, "You met", and her post below.
+        reveal(mitzi, in: app)
+        mitzi.tap()
+        let name = find(app, "cat.name")
+        XCTAssertTrue(name.waitForExistence(timeout: patience), "A cat's page did not open. \(onScreen(app))")
+        XCTAssertEqual(name.label, "Mitzi")
+        for part in ["cat.photos", "cat.named", "cat.area", "cat.coat", "cat.bio", "cat.number.posts", "cat.number.likes", "cat.number.last-seen", "cat.number.gpa", "cat.met"] {
+            XCTAssertTrue(find(app, part).waitForExistence(timeout: patience), "Mitzi's page has no \(part). \(onScreen(app))")
+        }
+        XCTAssertTrue(app.staticTexts["You met this cat 2 times."].exists, "\"You met\" does not say how often. \(onScreen(app))")
+        keep(app, "cat-\(look)")
+
+        // Her post, on the feed's own card: taking the like back and
+        // liking again both count, here as on Home.
+        // The posts are drawn as they scroll into sight.
+        let heart = find(app, "like.p1")
+        reveal(heart, in: app)
+        XCTAssertTrue(heart.waitForExistence(timeout: patience), "Mitzi's page has no post. \(onScreen(app))")
+        XCTAssertTrue(find(app, "menu.p1").exists, "The post on a cat's page has no menu. \(onScreen(app))")
+        XCTAssertEqual(heart.value as? String, "liked", "The cat's page does not show the like the member gave on Home.")
+        heart.tap()
+        let unliked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 3"), object: heart)
+        XCTAssertEqual(XCTWaiter().wait(for: [unliked], timeout: patience), .completed, "Taking the like back on a cat's page did not count. \(onScreen(app))")
+        heart.tap()
+        let relike = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Like, 4"), object: heart)
+        XCTAssertEqual(XCTWaiter().wait(for: [relike], timeout: patience), .completed, "A like on a cat's page did not count. \(onScreen(app))")
+        XCTAssertEqual(heart.value as? String, "liked")
+        keep(app, "cat-post-\(look)")
+
+        // Back: the gallery, as it was left.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Cats"].waitForExistence(timeout: patience), "Back did not come to the gallery. \(onScreen(app))")
+        XCTAssertTrue(mitzi.waitForExistence(timeout: patience), "Back on the gallery, its cats are gone. \(onScreen(app))")
+        XCTAssertTrue(find(app, "cats.today").exists && find(app, "gallery.c2").exists, "Back on the gallery, it is not as it was. \(onScreen(app))")
+
+        // The cat with no name and no meeting: the web app's words for the
+        // name, and nothing where the server sent nothing.
+        let unnamed = find(app, "gallery.c3")
+        reveal(unnamed, in: app)
+        unnamed.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: patience), "The unnamed cat's page did not open. \(onScreen(app))")
+        XCTAssertEqual(name.label, "A cat with no name yet")
+        XCTAssertTrue(find(app, "cat.no-posts").waitForExistence(timeout: patience), "The unnamed cat's page does not say it has no posts. \(onScreen(app))")
+        for part in ["cat.met", "cat.area", "cat.coat", "cat.bio", "cat.number.last-seen", "cat.number.gpa"] {
+            XCTAssertFalse(find(app, part).exists, "The unnamed cat's page shows \(part), which the server did not send. \(onScreen(app))")
+        }
+        keep(app, "cat-unnamed-\(look)")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(mitzi.waitForExistence(timeout: patience), "Back did not come to the gallery. \(onScreen(app))")
+
+        // The search, on the phone: one cat left, then none.
+        let field = app.searchFields.firstMatch
+        field.tap()
+        field.typeText("Mitz")
+        XCTAssertTrue(gone(find(app, "gallery.c2")), "A search for Mitzi left Shachor. \(onScreen(app))")
+        XCTAssertTrue(mitzi.exists, "A search for Mitzi left her out. \(onScreen(app))")
+        XCTAssertFalse(find(app, "gallery.c3").exists, "A search for Mitzi left the cat with no name. \(onScreen(app))")
+        keep(app, "cats-search-\(look)")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4) + "Garfield")
+        XCTAssertTrue(gone(mitzi), "A search for Garfield left Mitzi. \(onScreen(app))")
+        let none = find(app, "cats.none")
+        XCTAssertTrue(none.waitForExistence(timeout: patience), "A search that finds nothing does not say so. \(onScreen(app))")
+        XCTAssertTrue(app.staticTexts["No cat called “Garfield”."].exists, "A search that finds nothing does not say so in the web app's words. \(onScreen(app))")
+        keep(app, "cats-search-none-\(look)")
     }
 
     func testScanInLight() {

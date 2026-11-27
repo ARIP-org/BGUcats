@@ -8,9 +8,8 @@ own controls, so the glass is iOS's), signing in, Home with the feed
 (posts, their photos, a like, the terms asked before the first like,
 a post's menu: Delete on one's own, Report on anyone else's), Scan a
 cat (photos taken or chosen, sent as one encounter, then "Which cat?",
-the new-cat form for a cat that isn't here, and the post), the
-profile's first rows,
-and "App info". Cats says "Not built yet".
+the new-cat form for a cat that isn't here, and the post), Cats (the
+gallery and a cat's page), the profile's first rows, and "App info".
 
 | File | |
 |---|---|
@@ -23,6 +22,7 @@ and "App info". Cats says "Not built yet".
 | `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, the tabs, the profile |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
+| `CatsView.swift`, `CatView.swift` | Cats: the gallery, and a cat's page pushed on the tab's stack |
 | `ScanPages.swift` | Scan a cat after "Send": "Which cat?", the new-cat form and the post |
 | `ScanFlow.swift` | where the member is in Scan a cat after "Send", kept on the phone and checked before it is used |
 | `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
@@ -79,7 +79,9 @@ defined, one iOS version, nothing that signs.
 - **A UI test reads no network and keeps nothing.** The app started with
   `-uiTesting` gets a made-up world (`World.standIn()`): a clock that
   stands still, a trail kept in memory, a made-up member with three
-  made-up posts and a campus of three cats (`StandInBackend`), and pictures that are drawn
+  made-up posts and a campus of three cats (`StandInBackend`: Shachor is
+  the cat of the day, the member met Mitzi twice, and the third has no
+  name, place, coat, description, grade or meeting), and pictures that are drawn
   (`DrawnPhotos`), so two pictures of one screen are the same picture.
   `-signedOut` starts it with nobody signed in, `-termsRequired` with
   the terms not accepted, `-termsChanged` with terms that changed after
@@ -242,12 +244,44 @@ defined, one iOS version, nothing that signs.
   cat chosen, a new cat's answer the server would not take) is dropped,
   the trail says so, and the tab opens empty.
 
+- **Cats** (`CatsView.swift`, `CatView.swift`; the web app's
+  `web/social/gallery.js` and `cat.js`, and their words). The gallery is
+  every cat of `GET /cats` in a `LazyVGrid` of two columns: cover, shown
+  name (or "A cat with no name yet"), its area; above them the cat of
+  the day, while nothing is searched. `.searchable` filters by name and a
+  system `Menu` sorts, both on the phone: the web app's five sorts in its
+  order and words, "Highest GPA" first and only when some cat has a
+  grade (the server sends none with the `gpa` flag off), a tie going to
+  the cat seen last. Pull to refresh. Each state says what it is:
+  loading, "No cats yet.", "No cat called “…”.", and "The cats could
+  not be loaded." with Try again. A cat opens on the tab's
+  `NavigationStack`, so Back finds the gallery as it was left. **A cat's
+  page** (`GET /cats/{catId}`): its photos in a `TabView` of the page
+  style, the name and what named it (the poll's summary as words: by
+  vote, by the people who look after the cats, no name yet), "Usually
+  near" its area, its coat, the description, the numbers in a
+  `GroupBox` (posts, likes, last seen, first seen, and the GPA only when
+  there is one), "You met" from `met` (how often, on how many days, the
+  first and last day) and nothing when it is null; then its posts (`GET
+  /cats/{catId}/posts`) on Home's `PostCard`, through the same
+  `FeedModel` (its `Source` says which list) and `postActions` (the
+  delete confirmation, the report sheet, a failure's words), so a like
+  there asks for the terms as on Home. **A field the server left out, or
+  sent as null, is left out of the page**: `Cat`'s added fields are
+  optional, and no zero or dash stands in for one. `Cat` is what "Which
+  cat?" reads: its new fields have defaults, so that page is as it was.
+  The trail says "api: cats 200 in … ms", "api: cat 200 in … ms",
+  "cats: 3 listed", "cats: opened a cat", "cat: 1 posts", never a cat's
+  id, a name or a search word.
+
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
 app skips them for now), the area, and a page with the full terms (the
 dialog has their short text). In Scan a cat: the model and its three
 guesses, "My proposals" (`GET /me/proposals`), video, and uploading
-while the app is closed. Then cats, the rest of profile, the
-recognition model, and a string catalog for the four languages. Each is
+while the app is closed. On a cat's page: the name poll (voting on a
+name and suggesting one, part 2 of Cats), the map, and "Feed a cat".
+Then the rest of profile, the recognition model, and a string catalog
+for the four languages. Each is
 its own issue, in the plan's order.
