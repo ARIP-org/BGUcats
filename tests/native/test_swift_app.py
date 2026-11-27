@@ -1349,3 +1349,211 @@ def test_the_trail_marks_the_poll_and_never_a_name_a_key_or_a_cat():
     assert 'naming.launchArguments = ["-uiTesting", "-look", look, "-termsRequired"]' in tests
     missing = (SWIFT / "README.md").read_text().split("## Not here yet")[1]
     assert "name poll" not in missing
+
+
+# ------------------------------------------------------------- the profile
+
+
+def test_the_profile_goes_by_the_routes_of_the_api():
+    code = sources()
+    live = code["Backend.swift"].split("final class StandInBackend")[0]
+    # docs/app-plan/04-api.md, the rows PATCH /me, PUT /me/username,
+    # GET /me/posts and DELETE /me, word for word.
+    assert 'call("PATCH", "/me", body: ["displayName": displayName], as: "rename")' in live
+    assert 'call("PUT", "/me/username", body: ["username": username], as: "username")' in live
+    assert 'call("GET", "/me/posts", as: "my posts")' in live
+    assert 'call("DELETE", "/me", body: ["confirm": confirm], as: "delete account")' in live
+    assert '(json["deleting"] as? Bool) == true' in live
+    # What the app sends as `confirm` is the one word the server takes.
+    assert code["Session.swift"].count('deleteAccount(confirm: "delete")') == 1
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    for route in (
+        '("PATCH", r"^/api/v1/me$", _update_me, "user")',
+        '("DELETE", r"^/api/v1/me$", _delete_me, "user")',
+        '("PUT", r"^/api/v1/me/username$", _choose_username, "user")',
+    ):
+        assert route in handler, route
+    assert "_my_posts" in handler and r"/api/v1/me/posts$" in handler
+    assert 'if body.get("confirm") != "delete":' in handler and 'return {"deleting": True}' in handler
+    api = (REPO / "docs" / "app-plan" / "04-api.md").read_text()
+    for row in ("| `PATCH /me` |", "| `PUT /me/username` |", "| `GET /me/posts` |", "| `DELETE /me` |"):
+        assert row in api, row
+
+
+def test_the_account_and_a_post_are_read_as_the_server_writes_them():
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert '"namePending": bool(user.get("pendingName"))' in handler
+    # Only its author is told a post waits for a new cat: its proposal.
+    assert 'card["proposal"] = {' in handler and '"status": proposal["status"],' in handler
+    assert '"status": "open",' in handler
+    models = sources()["Models.swift"]
+    assert 'namePending: (json["namePending"] as? Bool) ?? false' in models
+    assert 'heldForNewCat: text((json["proposal"] as? [String: Any])?["status"]) == "open"' in models
+
+
+def test_the_profile_uses_the_web_apps_words_and_the_plans_for_deleting():
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    profile = sources()["ProfileView.swift"]
+    for name, key in (
+        ("name", "profile.name"),
+        ("nameLabel", "profile.nameLabel"),
+        ("namePlaceholder", "profile.namePlaceholder"),
+        ("nameChecking", "profile.nameChecking"),
+        ("nameLimit", "profile.nameLimit"),
+        ("username", "profile.username"),
+        ("usernameSaved", "profile.usernameSaved"),
+        ("usernameTaken", "profile.usernameTaken"),
+        ("usernameRule", "profile.usernameRule"),
+        ("usernameLimit", "profile.usernameLimit"),
+        ("myPosts", "home.myPosts"),
+    ):
+        assert f'static let {name} = "{words[key]}"' in profile, name
+    # The web app has no deletion yet: the plan's sentence (D14), and that
+    # the photos stay, with nothing that points to the person.
+    decisions = (REPO / "docs" / "app-plan" / "DECISIONS.md").read_text()
+    said = '"Your posts, badges, points and friends will be removed for\ngood."'
+    assert said in decisions and "nothing left that points to the person" in decisions
+    body = re.search(r'static let deleteBody = "([^"]+)"', profile)[1]
+    assert body.startswith("Your posts, badges, points and friends will be removed for good. ")
+    assert "cat photos you took stay" in body and "nothing left that points to you" in body
+    mine = sources()["MyPostsView.swift"]
+    assert f'static let none = "{words["home.noPosts"]}"' in mine
+    assert f'static let failed = "{words["home.postsFailed"]}"' in mine
+    # A post's state, as the web app says it.
+    models = sources()["Models.swift"]
+    for state in ("pending", "hidden", "removed"):
+        assert f'case "{state}": return "{words["post.state." + state]}"' in models, state
+    assert f'return "{words["post.waitingNewCat"]}"' in models
+    # The sentence the sign-in screen says after.
+    assert 'nonisolated static let deletedNote = "Your account is being deleted."' in sources()["Session.swift"]
+
+
+def test_the_profile_says_each_refusal_in_the_web_apps_words_never_as_a_code():
+    profile = sources()["ProfileView.swift"]
+    words = profile.split("static func words(")[1].split("private func setNote")[0]
+    # `said` in the web app's Profile, code for code.
+    web = (REPO / "web" / "social" / "home.js").read_text().split("const said = {")[1].split("};")[0]
+    for code, name in (
+        ("rate_limited", "usernameLimit"),
+        ("name_taken", "usernameTaken"),
+        ("bad_username", "usernameRule"),
+    ):
+        assert f"{code}:" in web and f'case "{code}"' in words and f"ProfileWords.{name}" in words, code
+    assert "ProfileWords.nameLimit" in words
+    # A name refused is put back as it was; a username refused keeps what
+    # was typed, under its reason.
+    commit = profile.split("private func commit(")[1].split("private var noteShown")[0]
+    assert "if field == .name && !saved {" in commit and "name = session.me?.displayName ?? now" in commit
+    assert "username = " not in commit.split("sending = field")[1]
+
+
+def test_the_name_and_the_username_ask_for_the_terms_and_deleting_does_not():
+    profile = sources()["ProfileView.swift"]
+    save = profile.split("func save(_ field: Field")[1].split("static func words(")[0]
+    assert "guard try await session.termsFirst(changed: changed) else { return false }" in save
+    assert 'if refusal?.code == "terms_required" && !changed {' in save
+    delete = profile.split("func deleteAccount() async {")[1]
+    assert "termsFirst" not in delete
+    session = sources()["Session.swift"].split("func deleteAccount() async throws {")[1].split("private func endDeleted")[0]
+    assert "termsFirst" not in session
+    # The server: the name and the username need them, deleting does not.
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert "require_terms(user)" in handler.split("def _choose_username(")[1].split("\ndef ")[0]
+    assert "require_terms(user)" in handler.split("def _update_me(")[1].split("\ndef ")[0]
+    assert "require_terms" not in handler.split("def _delete_me(")[1].split("\ndef ")[0]
+    # The stand-in refuses the two without them, as the API.
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    for call in ("func rename(", "func chooseUsername("):
+        assert "try termsFirst()" in stand_in.split(call)[1].split("    func ")[0], call
+
+
+def test_an_account_being_deleted_ends_the_session_with_its_own_sentence():
+    code = sources()
+    live = code["Backend.swift"].split("final class StandInBackend")[0]
+    gone = live.split('if status == 403 && (json["code"] as? String) == "gone" {')[1].split("}")[0]
+    assert "auth.accountGone()" in gone and "Session.deletedNote" in gone
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert 'raise ApiError(403, "this account is being deleted", code="gone")' in handler
+    session = code["Session.swift"]
+    assert "world.gate.onGone = { [weak self] in" in session
+    ended = session.split("private func endDeleted()")[1].split("\n    }\n")[0]
+    for step in ("world.gate.signOut()", "world.outbox.dropEverything()", "phase = .signedOut(note: Session.deletedNote)"):
+        assert step in ended, step
+    assert "error.status == 403 && error.code == \"gone\"" in session
+    # A screen says nothing of its own over it: the feed's test for an
+    # ended sign-in counts the account going too.
+    assert "return refusal.status == 401 || Session.isGone(refusal)" in code["FeedView.swift"]
+    # The upload queue and the kept flow leave the phone.
+    drop = code["Outbox.swift"].split("func dropEverything()")[1].split("\n    }\n")[0]
+    for part in ("index = Index()", "flow = nil", "try? FileManager.default.removeItem(at: folder)"):
+        assert part in drop, part
+    assert "var onGone: (() -> Void)? { get set }" in code["Auth.swift"]
+
+
+def test_my_posts_says_each_state_and_deletes_as_the_feed_does():
+    mine = sources()["MyPostsView.swift"]
+    for state in ("case .loading:", "case .failed(let why):", "case .loaded:", "model.posts.isEmpty"):
+        assert state in mine, state
+    assert 'Button("Try again")' in mine
+    assert "FeedModel(world: world, session: session, source: .mine)" in mine
+    assert "PostCard(post: post, world: world, model: model)" in mine
+    assert ".postActions(model, world: world)" in mine
+    feed = sources()["FeedView.swift"]
+    assert "case .mine:\n            try await world.backend.myPosts()" in feed
+    assert "if let words = post.stateWords {" in feed
+    # The stand-in's member has one public post and one being checked.
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    my_posts = stand_in.split("func myPosts()")[1].split("    func ")[0]
+    assert 'state: "visible"' in my_posts and "madeUp.filter(\\.mine)" in my_posts
+    made_up = stand_in.split("private var madeUp: [Post]")[1]
+    assert made_up.count("mine: true") == 1 and 'state: "pending"' in made_up
+
+
+def test_the_profile_is_built_on_the_systems_own_controls():
+    profile = sources()["ProfileView.swift"]
+    for control in ("List {", "TextField(ProfileWords.namePlaceholder", "TextField(ProfileWords.username", ".alert(ProfileWords.deleteTitle", "NavigationLink {"):
+        assert control in profile, control
+    assert "glass" not in profile.lower()
+    # Delete account is last in the list, and destructive.
+    rows = profile.split("List {")[1].split(".navigationTitle(")[0]
+    assert re.sub(r"[\s}]+$", "", rows).endswith('.accessibilityIdentifier("profile.delete-account")')
+    assert "Button(role: .destructive) {" in rows.split("profile.sign-out")[1]
+    assert "struct ProfileView" not in sources()["RootView.swift"]
+
+
+def test_the_trail_marks_the_profile_and_never_a_name_or_an_id():
+    code = sources()
+    profile, session = code["ProfileView.swift"], code["Session.swift"]
+    for line in (
+        'world.trail.mark("profile: \\(field.rawValue) saved")',
+        'world.trail.mark("profile: \\(field.rawValue) refused (\\(why))")',
+        'world.trail.mark("account: delete asked")',
+        'world.trail.mark("account: delete cancelled")',
+    ):
+        assert line in profile, line
+    assert 'world.trail.mark("account: deleting")' in session
+    for mark in re.findall(r"trail\.mark\((.*)\)", profile):
+        for taken in re.findall(r"\\\((.*?)\)", mark):
+            assert taken in ("field.rawValue", "why", "status"), mark
+    # The walk reads them back, with the made-up server's record.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    for line in ('"profile: name saved"', '"profile: username refused (name_taken)"', '"account: delete asked"', '"account: deleting"'):
+        assert line in tests, line
+
+
+def test_the_walk_deletes_the_account_once_and_cancel_sends_nothing():
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    walk = tests.split("private func walk(")[1].split("\n    private func ")[0]
+    assert "profile(naming, look: look)" in walk
+    profile = tests.split("private func profile(")[1].split("\n    private func ")[0]
+    assert profile.index('asked.buttons["Cancel"].firstMatch.tap()') < profile.index('asked.buttons["Delete account"].firstMatch.tap()')
+    assert 'XCTAssertFalse(served(cancelled).contains { $0.hasPrefix("delete me") }' in profile
+    assert '["delete me confirm delete"]' in profile
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    assert 'keep("delete me confirm \\(confirm)")' in stand_in
+    # Each picture the issue asks for, in both looks.
+    for name in ("profile-name-pending", "profile-username-taken", "my-posts", "delete-account", "signed-out-deleted"):
+        assert f'keep(app, "{name}-\\(look)")' in profile, name
+    assert 'keep(app, "profile-\\(look)")' in walk
+    # Behind the system's dialog the screen is dimmed, as for the terms.
+    assert 'name.hasPrefix("delete-account-")' in tests
