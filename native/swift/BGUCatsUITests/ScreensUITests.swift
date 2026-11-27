@@ -132,6 +132,49 @@ final class ScreensUITests: XCTestCase {
         XCTAssertFalse(changed.alerts["That did not work"].exists, "The server's refusal was shown. \(onScreen(changed))")
         changed.terminate()
 
+        // The terms not accepted yet, on a cat's page: a name suggested asks
+        // for them first. "Cancel" sends nothing; accepting sends the name
+        // as it was typed, and the poll the server answers shows it as the
+        // member's, "Being checked".
+        let naming = XCUIApplication()
+        naming.launchArguments = ["-uiTesting", "-look", look, "-termsRequired"]
+        naming.launch()
+        let namingTab = naming.tabBars.buttons["Cats"]
+        XCTAssertTrue(namingTab.waitForExistence(timeout: patience), "The tabs did not open. \(onScreen(naming))")
+        namingTab.tap()
+        let namingCat = find(naming, "gallery.c1")
+        XCTAssertTrue(namingCat.waitForExistence(timeout: patience), "The gallery did not show its cats. \(onScreen(naming))")
+        namingCat.tap()
+        let nameField = find(naming, "poll.field")
+        XCTAssertTrue(nameField.waitForExistence(timeout: patience), "Mitzi's page has no field to suggest a name. \(onScreen(naming))")
+        reveal(nameField, in: naming)
+        nameField.tap()
+        nameField.typeText("Hummus")
+        let suggestName = naming.buttons["poll.suggest"].firstMatch
+        suggestName.tap()
+        let askFirst = naming.alerts["Before you post"]
+        XCTAssertTrue(askFirst.waitForExistence(timeout: patience), "A name suggested before the terms did not ask for them. \(onScreen(naming))")
+        askFirst.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(gone(askFirst), "The terms' dialog stayed after Cancel.")
+        XCTAssertFalse(find(naming, "poll.option.hummus").exists, "A suggestion declined at the terms reached the poll. \(onScreen(naming))")
+        suggestName.tap()
+        XCTAssertTrue(askFirst.waitForExistence(timeout: patience), "The next suggestion did not ask for the terms again. \(onScreen(naming))")
+        askFirst.buttons["Accept and go on"].firstMatch.tap()
+        let hummus = find(naming, "poll.option.hummus")
+        XCTAssertTrue(hummus.waitForExistence(timeout: patience), "The name suggested is not in the poll. \(onScreen(naming))")
+        XCTAssertEqual(hummus.label, "Hummus, 1 vote, Being checked", "The name suggested is not the member's, being checked.")
+        XCTAssertEqual(hummus.value as? String, "chosen", "The name suggested does not carry the member's vote.")
+        XCTAssertTrue(find(naming, "poll.suggested").exists, "The poll does not say the name is in. \(onScreen(naming))")
+        keep(naming, "cat-poll-suggested-\(look)")
+        let namingInfo = appInfo(naming)
+        XCTAssertEqual(served(namingInfo).filter { $0.hasPrefix("suggest") }, ["suggest Hummus, new"], "Not one suggestion, as typed: \(served(namingInfo))")
+        let namingTrail = namingInfo.components(separatedBy: "stand-in server:").first ?? namingInfo
+        for line in ["terms: asked", "terms: declined", "terms: accepted", "poll: suggested, being checked"] {
+            XCTAssertTrue(namingTrail.contains(line), "App info did not keep \"\(line)\".")
+        }
+        XCTAssertFalse(namingTrail.contains("Hummus") || namingTrail.contains("hummus"), "The trail holds the name suggested.")
+        naming.terminate()
+
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-look", look]
         app.launch()
@@ -235,7 +278,8 @@ final class ScreensUITests: XCTestCase {
     }
 
     /// Cats: the gallery with the cat of the day and the made-up campus's
-    /// three cats; Mitzi's page, her post liked there, and back to the
+    /// three cats; Mitzi's page, her post liked there, her name poll voted
+    /// on, moved and taken back, and back to the
     /// gallery as it was; the page of the cat with no name, where nothing
     /// is put in place of what the server did not send; and the search,
     /// with one cat left and with none. The like on Home earlier in the
@@ -282,6 +326,57 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [relike], timeout: patience), .completed, "A like on a cat's page did not count. \(onScreen(app))")
         XCTAssertEqual(heart.value as? String, "liked")
         keep(app, "cat-post-\(look)")
+
+        // The name poll: her name leading, a second name, and the member's
+        // own suggestion still being checked, with no vote of theirs on it.
+        // Revealed from its top, so the whole poll is in the picture.
+        reveal(find(app, "poll.total"), in: app)
+        let leader = find(app, "poll.option.mitzi")
+        let runnerUp = find(app, "poll.option.pilpel")
+        let pending = find(app, "poll.option.ptitim")
+        XCTAssertTrue(leader.waitForExistence(timeout: patience), "Mitzi's page has no name poll. \(onScreen(app))")
+        XCTAssertEqual(leader.label, "Mitzi, 5 votes, LEADING", "The leader is not marked.")
+        XCTAssertEqual(runnerUp.label, "Pilpel, 2 votes")
+        XCTAssertEqual(pending.label, "Ptitim, 0 votes, Being checked", "The member's own name is not marked as being checked.")
+        XCTAssertEqual(find(app, "poll.total").label, "7 votes")
+        for option in [leader, runnerUp, pending] {
+            XCTAssertEqual(option.value as? String, "not chosen", "\(option.identifier) is chosen before any vote.")
+        }
+        keep(app, "cat-poll-\(look)")
+
+        // A vote: the member's choice, and the counts as the server answered.
+        runnerUp.tap()
+        expect(app, "poll.option.pilpel", "Pilpel, 3 votes")
+        XCTAssertEqual(runnerUp.value as? String, "chosen", "The vote is not shown as the member's choice.")
+        expect(app, "poll.total", "8 votes")
+        keep(app, "cat-poll-voted-\(look)")
+        // Moved to another option, then taken back by a tap on the choice.
+        leader.tap()
+        expect(app, "poll.option.mitzi", "Mitzi, 6 votes, LEADING")
+        XCTAssertEqual(runnerUp.label, "Pilpel, 2 votes", "The vote moved and stayed counted where it was.")
+        XCTAssertEqual(leader.value as? String, "chosen")
+        leader.tap()
+        expect(app, "poll.option.mitzi", "Mitzi, 5 votes, LEADING")
+        XCTAssertEqual(leader.value as? String, "not chosen", "The vote taken back is still shown.")
+
+        // What the made-up server was asked: each once, in order. App info
+        // was left open on Profile earlier in the walk: back to its list.
+        app.tabBars.buttons["Profile"].tap()
+        let profileBack = app.navigationBars["App info"].buttons.element(boundBy: 0)
+        XCTAssertTrue(profileBack.waitForExistence(timeout: patience), "Profile is not where the walk left it. \(onScreen(app))")
+        profileBack.tap()
+        let polled = appInfo(app)
+        let votesSent = served(polled).filter { $0.hasPrefix("vote") || $0.hasPrefix("unvote") }
+        XCTAssertEqual(votesSent, ["vote pilpel", "vote mitzi from pilpel", "unvote mitzi"], "Not a vote, a vote moved and a vote taken back, each once.")
+        let pollTrail = polled.components(separatedBy: "stand-in server:").first ?? polled
+        for line in ["poll: voted", "poll: vote taken back"] {
+            XCTAssertTrue(pollTrail.contains(line), "App info did not keep \"\(line)\".")
+        }
+        for word in ["Pilpel", "pilpel", "Ptitim", "ptitim"] {
+            XCTAssertFalse(pollTrail.contains(word), "The trail holds \"\(word)\".")
+        }
+        app.tabBars.buttons["Cats"].tap()
+        XCTAssertTrue(name.waitForExistence(timeout: patience), "Cats is not on Mitzi's page as it was left. \(onScreen(app))")
 
         // Back: the gallery, as it was left.
         app.navigationBars.buttons.element(boundBy: 0).tap()

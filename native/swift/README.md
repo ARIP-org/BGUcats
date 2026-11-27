@@ -9,7 +9,8 @@ own controls, so the glass is iOS's), signing in, Home with the feed
 a post's menu: Delete on one's own, Report on anyone else's), Scan a
 cat (photos taken or chosen, sent as one encounter, then "Which cat?",
 the new-cat form for a cat that isn't here, and the post), Cats (the
-gallery and a cat's page), the profile's first rows, and "App info".
+gallery and a cat's page with its name poll), the profile's first rows,
+and "App info".
 
 | File | |
 |---|---|
@@ -23,6 +24,7 @@ gallery and a cat's page), the profile's first rows, and "App info".
 | `RootView.swift` | the first screen by state, the tabs, the profile |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
 | `CatsView.swift`, `CatView.swift` | Cats: the gallery, and a cat's page pushed on the tab's stack |
+| `NamePoll.swift` | the name poll on a cat's page: voting, taking a vote back, suggesting a name |
 | `ScanPages.swift` | Scan a cat after "Send": "Which cat?", the new-cat form and the post |
 | `ScanFlow.swift` | where the member is in Scan a cat after "Send", kept on the phone and checked before it is used |
 | `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
@@ -273,6 +275,33 @@ defined, one iOS version, nothing that signs.
   The trail says "api: cats 200 in … ms", "api: cat 200 in … ms",
   "cats: 3 listed", "cats: opened a cat", "cat: 1 posts", never a cat's
   id, a name or a search word.
+- **The name poll on a cat's page** (`NamePoll.swift`, the web app's
+  `web/social/poll.js` and its `poll.*` words), between the cat's
+  numbers and its posts: `GET /cats/{catId}/names`, the count of votes,
+  the lead (or, when an admin set the name, the web app's sentence for
+  that, and the poll still open below it), the options as rows in a
+  `GroupBox` (most votes first, the leader marked "LEADING", the
+  member's choice checked, their own name not checked yet "Being
+  checked"), and a `TextField` with "Suggest" (24 characters as the
+  server counts them). A tap on an option moves the member's vote (`PUT
+  …/vote`), a tap on their choice takes it back (`DELETE …/vote`), and
+  "Suggest" sends the name with runs of spaces made one (`POST
+  …/names`); **each answer is the poll as it now is, and only that is
+  drawn**: nothing is counted on the phone first. The poll's answer is
+  also the newest word on the cat's name and on "Named by vote · 5 of
+  8" above it, as in the web app. The terms come first for a vote or a
+  suggestion, as for a like ("Cancel" sends nothing, `terms_required`
+  asks once more); taking a vote back asks nothing, as the API. A
+  refusal is said in the web app's words, never its code: `not_accepted`
+  "That name was not accepted.", `try_again` (or `gone`) reads the poll
+  again and says "The poll just changed. Try again.", `rate_limited`
+  "That's enough for now. Try again later.". The stand-in's Mitzi has
+  three options (her name leading, "Pilpel", and the member's own
+  "Ptitim" being checked); it records "vote key", "vote key from old",
+  "unvote key" and "suggest Name, new" (or "merged into key"), and a UI
+  test reads them in App info. The trail says "poll: voted", "poll:
+  vote taken back", "poll: suggested, being checked" (or "merged"), and
+  "poll: vote refused (409)", never a name, a key or a cat.
 
 ## Not here yet
 
@@ -280,8 +309,7 @@ In the feed: friends' votes on a name (the API sends those cards; this
 app skips them for now), the area, and a page with the full terms (the
 dialog has their short text). In Scan a cat: the model and its three
 guesses, "My proposals" (`GET /me/proposals`), video, and uploading
-while the app is closed. On a cat's page: the name poll (voting on a
-name and suggesting one, part 2 of Cats), the map, and "Feed a cat".
+while the app is closed. On a cat's page: the map, and "Feed a cat".
 Then the rest of profile, the recognition model, and a string catalog
 for the four languages. Each is
 its own issue, in the plan's order.

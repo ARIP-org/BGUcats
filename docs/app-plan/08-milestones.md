@@ -1174,6 +1174,18 @@ What landed before the list below is in the roadmap.
   feed's own card, with its like and menu. Voting on a name and
   suggesting one are part 2. Pictured in a simulator only: not tried on a
   phone yet.
+- **Cats, the name poll on a cat's page** (#146, built 2026-11-27; part 2
+  of 2): between the numbers and the posts, `GET /cats/{catId}/names` as
+  system rows: the options most votes first with their votes, the leader
+  marked, the member's choice checked, their own name not yet checked
+  "Being checked", the locked name's sentence when an admin set it. A
+  tap moves the vote (`PUT …/vote`) or, on the member's choice, takes it
+  back (`DELETE …/vote`); "Suggest" sends a name (`POST …/names`). Each
+  answer is the poll drawn as it is, with nothing counted on the phone
+  first, and also renames the page as the web app does. Terms first for a
+  vote or a suggestion; refusals in the web app's words (`poll.*`).
+  Pictured in a simulator only (`cat-poll`, `cat-poll-voted`,
+  `cat-poll-suggested`): not tried on a phone yet.
 
 ---
 

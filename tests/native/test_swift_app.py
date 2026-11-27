@@ -531,6 +531,11 @@ def test_every_screen_is_kept_in_light_and_in_dark():
         "home-after-new-cat",
     ):
         assert f'keep(app, "{name}-\\(look)")' in tests, name
+    # The name poll on a cat's page (issue 146): as it is, after a vote,
+    # and after a name suggested under -termsRequired.
+    for name in ("cat-poll", "cat-poll-voted"):
+        assert f'keep(app, "{name}-\\(look)")' in tests, name
+    assert 'keep(naming, "cat-poll-suggested-\\(look)")' in tests
     # A post's menu, both ways, and the report sheet.
     for picture in ("post-menu-own", "post-menu-other", "report"):
         assert f'keep(app, "{picture}-\\(look)")' in tests, picture
@@ -1147,7 +1152,10 @@ def test_the_cats_screens_use_the_web_apps_words():
 def test_a_field_the_server_left_out_is_left_out_of_the_page():
     about = sources()["CatView.swift"].split("private struct CatAbout")[1]
     for shown in (
-        "if let named = cat.named",
+        # What named it: the poll's answer once read, else the cat's
+        # (issue 146).
+        "if let named = CatAbout.named(cat, poll: poll)",
+        "guard let poll, let source = poll.nameSource else { return cat.named }",
         "if let area = cat.area",
         "if let coat = cat.coatName",
         "if let bio = detail.bio",
@@ -1185,3 +1193,159 @@ def test_the_trail_marks_the_cats_and_never_which():
         for taken in re.findall(r"\\\((.*?)\)", mark):
             for who in ("catId", "id", "name", "search", "words"):
                 assert who not in taken.replace("kind", ""), mark
+
+
+# ------------------------------------------------------- Cats, the name poll
+
+
+def test_the_poll_goes_by_the_routes_of_the_api():
+    # docs/app-plan/04-api.md: GET and POST /cats/{catId}/names, PUT and
+    # DELETE /cats/{catId}/vote, each answering the poll as it now is.
+    # Named for the trail by kind, never by the address.
+    live = sources()["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'call("GET", "/cats/\\(Auth.encode(catId))/names", as: "names")' in live
+    assert 'call("POST", "/cats/\\(Auth.encode(catId))/names", body: ["name": name], as: "suggest")' in live
+    assert 'call("PUT", "/cats/\\(Auth.encode(catId))/vote", body: ["nameKey": nameKey], as: "vote")' in live
+    assert 'call("DELETE", "/cats/\\(Auth.encode(catId))/vote", as: "unvote")' in live
+    protocol = live.split("protocol Backend {")[1].split("\n}\n")[0]
+    for call in (
+        "func names(catId: String) async throws -> Poll",
+        "func suggest(catId: String, name: String) async throws -> Poll",
+        "func vote(catId: String, nameKey: String) async throws -> Poll",
+        "func unvote(catId: String) async throws -> Poll",
+    ):
+        assert call in protocol, call
+    plan = (REPO / "docs" / "app-plan" / "04-api.md").read_text()
+    for route in (
+        "| `GET /cats/{catId}/names` |",
+        "| `POST /cats/{catId}/names` |",
+        "| `PUT /cats/{catId}/vote` |",
+        "| `DELETE /cats/{catId}/vote` |",
+    ):
+        assert route in plan, route
+
+
+def test_the_poll_is_read_field_by_field_as_the_server_writes_it():
+    import ast
+
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    tree = ast.parse(handler)
+    view = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_names_view")
+    sent = {k.value for n in ast.walk(view) if isinstance(n, ast.Dict) for k in n.keys if isinstance(k, ast.Constant)}
+    reader = sources()["Models.swift"].split("static func poll(_ json")[1].split("static func page(")[0]
+    for key in ("name", "nameSource", "options", "total", "locked"):
+        assert key in sent, key
+        assert f'json["{key}"]' in reader, key
+    for key in ("nameKey", "name", "votes", "leading", "mine"):
+        assert key in sent, key
+        assert f'option["{key}"]' in reader, key
+    # The member's own pending name is marked by the keyword `pending`.
+    assert "pending=True" in handler.split("def _names_view")[1].split("def _get_names")[0]
+    assert 'option["pending"]' in reader
+    # A total the server did not send is nil, never a zero.
+    assert 'total: number(json["total"])' in reader
+
+
+def test_the_poll_uses_the_web_apps_words():
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    poll = sources()["NamePoll.swift"].split("enum PollWords {")[1].split("\n}\n")[0]
+    for key in (
+        "title",
+        "lead",
+        "leading",
+        "checking",
+        "suggest",
+        "suggestButton",
+        "suggested",
+        "notAccepted",
+        "tryAgain",
+        "slowDown",
+    ):
+        assert f"static let {key} = {json.dumps(words['poll.' + key])}" in poll, key
+    assert words["poll.locked"] == "The people who look after the cats have set the name: {name}. The poll goes on."
+    assert '"The people who look after the cats have set the name: \\(name). The poll goes on."' in poll
+    assert words["poll.votes"] == {"one": "{count} vote", "other": "{count} votes"}
+    assert 'count == 1 ? "1 vote" : "\\(count) votes"' in poll
+    assert words["error.generic"] == "Something went wrong: {message}"
+    assert '"Something went wrong: \\(message)"' in poll
+    assert words["cat.namedByVoteOf"] == "Named by vote · {votes} of {total}"
+    assert '"Named by vote · \\(leader.votes) of \\(total)"' in sources()["CatView.swift"]
+
+
+def test_the_poll_says_each_refusal_in_the_web_apps_words_never_as_a_code():
+    poll = sources()["NamePoll.swift"].split("final class PollModel")[1].split("struct NamePollSection")[0]
+    send = poll.split("private func send(")[1].split("private func isUnvote")[0]
+    # The web app's REFUSED in poll.js, word for word.
+    refused = (REPO / "web" / "social" / "poll.js").read_text().split("export const REFUSED = {")[1].split("};")[0]
+    for code, key in (("not_accepted", "notAccepted"), ("try_again", "tryAgain"), ("rate_limited", "slowDown")):
+        assert f'{code}: "poll.{key}"' in refused, code
+        assert f'"{code}"' in send and f"note = PollWords.{key}" in send, code
+    # The poll changed: it is read again before the words are said.
+    changed = send.split('case "try_again", "gone":')[1].split("case ")[0]
+    assert changed.index("await read()") < changed.index("note = PollWords.tryAgain")
+    # Nothing is drawn but the server's answer.
+    assert "poll = now" in send and "moved(" not in poll
+
+
+def test_the_terms_come_before_a_vote_or_a_suggestion_and_not_before_taking_one_back():
+    poll = sources()["NamePoll.swift"].split("final class PollModel")[1].split("struct NamePollSection")[0]
+    send = poll.split("private func send(")[1].split("private func isUnvote")[0]
+    assert "if changed || !isUnvote(write) {" in send
+    assert "guard try await session.termsFirst(changed: changed) else { return false }" in send
+    # A refusal for the terms asks once more instead of showing the code.
+    assert 'case "terms_required" where !changed:' in send
+    # The stand-in refuses a vote and a suggestion without them, and asks
+    # nothing to take a vote back, as the API (`_unvote`).
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    for call in ("func suggest(catId", "func vote(catId"):
+        assert "try termsFirst()" in stand_in.split(call)[1].split("    func ")[0], call
+    assert "termsFirst" not in stand_in.split("func unvote(catId")[1].split("    func ")[0]
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert "require_terms" not in handler.split("def _unvote(")[1].split("\ndef ")[0]
+
+
+def test_the_poll_is_built_on_the_systems_own_controls():
+    page = sources()["CatView.swift"]
+    assert "NamePollSection(model: poll)" in page
+    assert "PollModel(world: world, session: session, catId: catId)" in page
+    poll = sources()["NamePoll.swift"]
+    for control in ("GroupBox {", "TextField(PollWords.suggest", ".buttonStyle(.bordered)", ".buttonStyle(.plain)", ".alert("):
+        assert control in poll, control
+    assert "glass" not in poll.lower()
+    # A total or a lock the server left out is left out.
+    assert "if let total = poll.total {" in poll and "if let locked = poll.locked {" in poll
+    # The field takes what the server takes: 24 characters as it counts.
+    assert "ScanFlow.cut(now, to: ScanFlow.nameLimit)" in poll
+    assert "NAME_MAX = 24" in (REPO / "src" / "common" / "polls.py").read_text()
+
+
+def test_the_stand_in_poll_has_what_the_pictures_need():
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    polls = stand_in.split("private static let madeUpPolls")[1].split("    ]\n")[0]
+    mitzi = polls.split('"c1": [')[1].split("],")[0]
+    # Three options: one leads, one is the member's own name being checked.
+    assert mitzi.count("Option(") == 3 and mitzi.count("pending: true") == 1
+    assert 'Option(key: "mitzi", name: "Mitzi", votes: 5' in mitzi
+
+
+def test_the_trail_marks_the_poll_and_never_a_name_a_key_or_a_cat():
+    poll = sources()["NamePoll.swift"]
+    for line in ('"poll: voted"', '"poll: vote taken back"', '"poll: suggested, \\(state)"'):
+        assert line in poll, line
+    assert 'world.trail.mark("poll: \\(write.kind) refused (\\(status))")' in poll
+    marks = re.findall(r"trail\.mark\((.*)\)", poll)
+    assert len(marks) == 2, marks
+    for mark in marks:
+        for taken in re.findall(r"\\\((.*?)\)", mark):
+            for who in ("catId", "name", "key", "typed", "option"):
+                assert who not in taken, mark
+    # What a suggestion's line says of the answer: its state, never which.
+    done = poll.split("private static func done(")[1].split("\n}\n")[0]
+    assert "nameKey" not in done and ".name" not in done
+    # The walk reads them back, with the made-up server's record.
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    assert '["vote pilpel", "vote mitzi from pilpel", "unvote mitzi"]' in tests
+    assert '["suggest Hummus, new"]' in tests
+    assert 'naming.launchArguments = ["-uiTesting", "-look", look, "-termsRequired"]' in tests
+    missing = (SWIFT / "README.md").read_text().split("## Not here yet")[1]
+    assert "name poll" not in missing

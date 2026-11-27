@@ -51,6 +51,20 @@ protocol Backend {
     /// first, as the feed's cards.
     func catPosts(id: String, cursor: String?) async throws -> FeedPage
 
+    // The name poll on a cat's page (docs/app-plan/04-api.md). Each answers
+    // with the poll as it is now, the same as `names` would.
+
+    /// `GET /api/v1/cats/{catId}/names`.
+    func names(catId: String) async throws -> Poll
+    /// `POST /api/v1/cats/{catId}/names` `{name}`: a name for the poll, with
+    /// the caller's vote. One that is already an option is a vote for it.
+    func suggest(catId: String, name: String) async throws -> Poll
+    /// `PUT /api/v1/cats/{catId}/vote` `{nameKey}`: the caller's one vote,
+    /// moved to this option.
+    func vote(catId: String, nameKey: String) async throws -> Poll
+    /// `DELETE /api/v1/cats/{catId}/vote`: taken back.
+    func unvote(catId: String) async throws -> Poll
+
     /// The author removes their own post.
     func deletePost(postId: String) async throws
     /// Reports a thing. `reportId` is made once on the phone, so a retry is
@@ -344,6 +358,29 @@ final class LiveBackend: Backend {
         Read.page(try await call("GET", "/cats/\(Auth.encode(id))/posts", cursor: cursor, as: "cat posts"))
     }
 
+    func names(catId: String) async throws -> Poll {
+        try LiveBackend.poll(try await call("GET", "/cats/\(Auth.encode(catId))/names", as: "names"))
+    }
+
+    func suggest(catId: String, name: String) async throws -> Poll {
+        try LiveBackend.poll(try await call("POST", "/cats/\(Auth.encode(catId))/names", body: ["name": name], as: "suggest"))
+    }
+
+    func vote(catId: String, nameKey: String) async throws -> Poll {
+        try LiveBackend.poll(try await call("PUT", "/cats/\(Auth.encode(catId))/vote", body: ["nameKey": nameKey], as: "vote"))
+    }
+
+    func unvote(catId: String) async throws -> Poll {
+        try LiveBackend.poll(try await call("DELETE", "/cats/\(Auth.encode(catId))/vote", as: "unvote"))
+    }
+
+    private static func poll(_ json: [String: Any]) throws -> Poll {
+        guard let poll = Read.poll(json) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        return poll
+    }
+
     /// A presigned POST's body: its fields, then the file, which S3 wants last.
     static func form(_ fields: [String: String], file: URL, boundary: String) throws -> Data {
         var form = Data()
@@ -502,6 +539,10 @@ final class StandInBackend: Backend {
     private var deleted: Set<String> = []
     /// What was reported, for a test that wants to know.
     private(set) var reports: [Report] = []
+    /// The name polls, by cat (`StandInBackend.madeUpPolls`), and the
+    /// member's vote on each.
+    private var polls = StandInBackend.madeUpPolls
+    private var votes: [String: String] = [:]
 
     init(
         start: Date,
@@ -543,6 +584,140 @@ final class StandInBackend: Backend {
             nameSource: "none", posts: 0, likes: 0
         ),
     ]
+
+    /// One option of a made-up poll. `order` stands for when it was
+    /// suggested: the earlier wins a tie, as on the server.
+    private struct Option {
+        let key: String
+        let name: String
+        var votes: Int
+        /// The member's own suggestion, not checked yet.
+        var pending: Bool
+        let order: Int
+    }
+
+    /// Mitzi's poll: her name leading, a second name behind it, and the
+    /// member's own suggestion still being checked, which they voted for
+    /// and have since taken the vote off. Shachor's: the admins' name,
+    /// with no votes. The cat with no name: no option yet.
+    private static let madeUpPolls: [String: [Option]] = [
+        "c1": [
+            Option(key: "mitzi", name: "Mitzi", votes: 5, pending: false, order: 0),
+            Option(key: "pilpel", name: "Pilpel", votes: 2, pending: false, order: 1),
+            Option(key: "ptitim", name: "Ptitim", votes: 0, pending: true, order: 2),
+        ],
+        "c2": [Option(key: "shachor", name: "Shachor", votes: 0, pending: false, order: 0)],
+        "c3": [],
+    ]
+
+    /// The poll as `_names_view` answers it. Called under the lock.
+    private func pollView(_ catId: String) -> Poll {
+        let options = polls[catId] ?? []
+        let mine = votes[catId]
+        let live = options.filter { !$0.pending }.sorted { ($0.votes, -$0.order) > ($1.votes, -$1.order) }
+        let leader = live.first { $0.votes > 0 }
+        let shown = { (option: Option) in
+            Poll.Option(
+                nameKey: option.key, name: option.name, votes: option.votes,
+                leading: option.key == leader?.key, mine: option.key == mine, pending: option.pending
+            )
+        }
+        let admins = StandInBackend.campus.first { $0.id == catId }?.name
+        return Poll(
+            name: leader?.name ?? admins,
+            nameSource: leader != nil ? "poll" : admins != nil ? "admin" : "none",
+            options: live.map(shown) + options.filter(\.pending).map(shown),
+            total: live.reduce(0) { $0 + $1.votes },
+            locked: nil
+        )
+    }
+
+    /// The member's vote moved to `key` (nil: taken back), as `_move_vote`.
+    /// Called under the lock.
+    private func move(_ catId: String, to key: String?) {
+        let old = votes[catId]
+        guard old != key, var options = polls[catId] else { return }
+        for index in options.indices {
+            if options[index].key == old {
+                options[index].votes -= 1
+            }
+            if options[index].key == key {
+                options[index].votes += 1
+            }
+        }
+        polls[catId] = options
+        votes[catId] = key
+    }
+
+    /// What `require_terms` refuses, refused here too.
+    private func termsFirst() throws {
+        if !accepted {
+            stale = false
+            throw ApiError(status: 403, code: "terms_required", message: "accept the terms first")
+        }
+    }
+
+    func names(catId: String) async throws -> Poll {
+        try await reach()
+        return lock.withLock { pollView(catId) }
+    }
+
+    /// Recorded as "suggest Name, new" or "suggest Name, merged into key":
+    /// the name as typed, so the test knows it went as written. Only the
+    /// made-up server's record holds it, never the trail.
+    func suggest(catId: String, name: String) async throws -> Poll {
+        try await reach()
+        try termsFirst()
+        let cleaned = name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !cleaned.isEmpty, ScanFlow.length(cleaned) <= ScanFlow.nameLimit else {
+            keep("suggest refused")
+            throw ApiError(status: 400, code: nil, message: "name is longer than 24 characters")
+        }
+        let key = cleaned.lowercased()
+        return lock.withLock { () -> Poll in
+            guard polls[catId] != nil else { return pollView(catId) }
+            if polls[catId]?.contains(where: { $0.key == key }) == true {
+                kept.append("suggest \(cleaned), merged into \(key)")
+            } else {
+                let order = polls[catId]?.count ?? 0
+                polls[catId]?.append(Option(key: key, name: cleaned, votes: 0, pending: true, order: order))
+                kept.append("suggest \(cleaned), new")
+            }
+            move(catId, to: key)
+            return pollView(catId)
+        }
+    }
+
+    /// Recorded as "vote key" for a first vote and "vote key from old" for
+    /// a vote moved.
+    func vote(catId: String, nameKey: String) async throws -> Poll {
+        try await reach()
+        try termsFirst()
+        return try lock.withLock { () -> Poll in
+            guard polls[catId]?.contains(where: { $0.key == nameKey }) == true else {
+                kept.append("vote gone")
+                throw ApiError(status: 404, code: "gone", message: "no such name in this poll")
+            }
+            let old = votes[catId]
+            if old != nameKey {
+                kept.append(old.map { "vote \(nameKey) from \($0)" } ?? "vote \(nameKey)")
+            }
+            move(catId, to: nameKey)
+            return pollView(catId)
+        }
+    }
+
+    /// Recorded as "unvote key". Asks no terms, as the API.
+    func unvote(catId: String) async throws -> Poll {
+        try await reach()
+        return lock.withLock { () -> Poll in
+            if let old = votes[catId] {
+                kept.append("unvote \(old)")
+            }
+            move(catId, to: nil)
+            return pollView(catId)
+        }
+    }
 
     /// The campus with its dates, which hang on the stand-in's clock.
     private var dated: [Cat] {
