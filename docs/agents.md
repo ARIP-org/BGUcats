@@ -338,7 +338,8 @@ to `docs/ROADMAP.md`.
 
 Two more roles of the chain (`docs/ROADMAP.md`, 2g), and neither is a
 workflow: each is a **cloud session of its own** on the owner's Claude
-account, woken once a day by a schedule, acting on GitHub as
+account, woken by a schedule (the digest once a day, the planner every
+three hours), acting on GitHub as
 `arip-dev-bot` like any cloud session. (A schedule that starts a fresh
 session each day was tried first, 2026-11-22: made from another session,
 such a session gets no GitHub tools, so it could read the code and no
@@ -349,12 +350,14 @@ in its file; the workflows above check the same thing by permission.
 
 | Agent | Runs | Does | Its whole job is in |
 |---|---|---|---|
-| **Planner** | once a day, early morning in Israel | turns the owner's feedback, failures and the plan's next milestone into at most three small issues labeled `ready` | `docs/agents/planner.md` |
+| **Planner** | every three hours, 05:45 to 20:45 in Israel (since 2026-11-27; once a day before, which left the builder idle from a dawn merge to the next morning) | turns the owner's feedback, failures and the plan's next milestone into at most three small issues labeled `ready` | `docs/agents/planner.md` |
 | **Digest** | once a day, in the morning | one comment on the "Daily digest" issue: what needs the owner, what is broken, what merged, what is next | `docs/agents/digest.md` |
 
-Each is told one thing, every day: update to `main`, read its file
-again, and do what it says. So changing what an agent does is a pull request to that
-file, which is an owner path, and never an edit to a schedule.
+Each is told one thing, every time it wakes: update to `main`, read its
+file again, and do what it says. So changing what an agent does is a pull
+request to that file, which is an owner path, and never an edit to a
+schedule's words. How often it wakes is the schedule's alone, and the
+owner's to set (the planner's, to every three hours, on 2026-11-27).
 
 **What holds them:** they are the bot, so they have what the bot has and
 no more: no approval, no merge past `main`'s rules, no tag, no AWS. What
