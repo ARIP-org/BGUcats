@@ -320,8 +320,18 @@ def test_the_builder_is_shown_what_a_failed_check_said():
     assert logs["env"] == {"GH_TOKEN": "${{ github.token }}"}
     assert "commits/$SHA/check-runs" in logs["run"] and "actions/jobs/$id/logs" in logs["run"]
     assert '"$RUNNER_TEMP/failed/$id.log"' in logs["run"]
+    # Asked again while the log is being stored, and then read from the
+    # run's kept files: on 2026-11-27 both reads of the Mac's log, 42 s
+    # after it ended, were refused, and #150 spent its two answers blind
+    # (#151). Why a read was refused is said, never thrown away.
+    assert "for try in 1 2 3 4 5 6" in logs["run"] and "sleep 20" in logs["run"]
+    assert 'gh run download "$run"' in logs["run"] and "-name '*.log'" in logs["run"]
+    assert "2>/dev/null; then" not in logs["run"]
+    assert '2>"$why"' in logs["run"] and "::warning::" in logs["run"]
+    assert rework["timeout-minutes"] >= 60
     # A log is long and mostly noise: the lines that say why, cut short.
     assert "XCTAssert" in logs["run"] and "tail -n 150" in logs["run"] and "cut -c1-600" in logs["run"]
+    assert "Test Case .* failed" in logs["run"]
     prompt = " ".join(claude(builder(), "rework")["with"]["prompt"].split())
     assert "${{ runner.temp }}/failed/" in prompt and "read it before you change anything" in prompt
 

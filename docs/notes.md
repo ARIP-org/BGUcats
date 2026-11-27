@@ -459,6 +459,19 @@ an hour that a sentence would have saved.
   sheet whose button was greyed out. Ask for the kind of element the
   question is about (`app.buttons[...]`) before asking whether it is
   enabled, and keep the picture before the judgment (#129, 2026-11-24).
+- **A job's log is not there the moment the job ends, and a read that
+  throws its error away says nothing.** The builder's answer to a
+  failed check reads that check's log first (`claude-fix.yml`, "What
+  the failed checks said"). For #150 both reads came about 40 seconds
+  after the Mac's job had ended, both were refused, and the step had
+  sent `gh`'s error to `/dev/null`: it said "its log could not be
+  read", the builder found the folder empty, and it spent both of its
+  answers on #150 without the one line that named the failure
+  (`ScreensUITests.swift:463`). The same logs read fine an hour later
+  (#151, 2026-11-27). Now the step asks again for two minutes, then
+  reads the run's kept files (the Mac's job keeps `xcodebuild.log` in
+  its artifact), and prints why each read was refused, with a warning
+  on the run when nothing could be read.
 - **A system dialog's button is two elements to a UI test.** iOS 26
   reports each button of an alert as a button inside a button, both with
   the same name and identifier. `.exists` is content with two; `.tap()`

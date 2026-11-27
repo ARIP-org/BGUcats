@@ -404,21 +404,47 @@ jobs:
             --jq '.check_runs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | "\(.id) \(.name)"' |
             while read -r id name; do
               out="$RUNNER_TEMP/failed/$id.log"
-              if gh api "repos/$REPO/actions/jobs/$id/logs" >"$RUNNER_TEMP/whole.log" 2>/dev/null; then
+              whole="$RUNNER_TEMP/whole.log"
+              why="$RUNNER_TEMP/why.txt"
+              : >"$whole"
+              # A job's log can be refused for a while after the job has
+              # ended, while it is being stored: on 2026-11-27 both reads of
+              # the Mac's log, 42 s after it ended, were refused, and #150
+              # spent both of its answers blind (#151). So: asked again for
+              # two minutes, saying each time what the answer was.
+              for try in 1 2 3 4 5 6; do
+                if gh api "repos/$REPO/actions/jobs/$id/logs" >"$whole" 2>"$why" && [ -s "$whole" ]; then
+                  break
+                fi
+                echo "$name: its log was refused, try $try of 6: $(head -c 300 "$why" | tr '\n' ' ')"
+                : >"$whole"
+                [ "$try" = 6 ] || sleep 20
+              done
+              # Then the files its run kept: the Mac's job keeps the whole of
+              # xcodebuild's output in its artifact (ios.yml, "the pictures").
+              if [ ! -s "$whole" ]; then
+                run=$(gh api "repos/$REPO/actions/jobs/$id" --jq .run_id 2>"$why" || true)
+                if [ -n "$run" ] && gh run download "$run" --repo "$REPO" --dir "$RUNNER_TEMP/kept-$id" 2>"$why"; then
+                  find "$RUNNER_TEMP/kept-$id" -name '*.log' -exec cat {} + >"$whole" 2>/dev/null || true
+                  [ -s "$whole" ] && echo "$name: read from the files its run kept"
+                fi
+              fi
+              if [ -s "$whole" ]; then
                 {
                   echo "The check \"$name\" failed. Its lines that say why, then its last lines."
                   echo
-                  grep -nE "error|rror:|XCTAssert|FAILED|Traceback|AssertionError|\*\* (TEST|BUILD)" "$RUNNER_TEMP/whole.log" | cut -c1-600 | tail -n 150
+                  grep -nE "error|rror:|XCTAssert|FAILED|Traceback|AssertionError|\*\* (TEST|BUILD)|Test Case .* failed" "$RUNNER_TEMP/whole.log" | cut -c1-600 | tail -n 150
                   echo
                   echo "--- the last lines"
                   tail -n 60 "$RUNNER_TEMP/whole.log" | cut -c1-600
                 } >"$out"
                 echo "$name: $(wc -l <"$out") lines kept in failed/$id.log"
               else
-                echo "$name: its log could not be read."
+                echo "$name: its log could not be read: $(head -c 300 "$why" | tr '\n' ' ')"
+                echo "::warning::The log of the failed check \"$name\" could not be read: the builder is told only that it failed."
               fi
             done
-          rm -f "$RUNNER_TEMP/whole.log"
+          rm -f "$RUNNER_TEMP/whole.log" "$RUNNER_TEMP/why.txt"
           ls "$RUNNER_TEMP/failed" | wc -l | xargs echo "Failed checks with a log:"
 
       - name: A token for Claude's own identity
