@@ -17,6 +17,9 @@ struct ProfileView: View {
     /// The field whose change is on its way: "done" and leaving the field
     /// both commit, and only the first one sends.
     @State private var sending: ProfileModel.Field?
+    /// The other field, finished while one was on its way: it is sent
+    /// when that one is answered, not dropped.
+    @State private var waiting: ProfileModel.Field?
     /// The username the server last refused: leaving the field with it
     /// still typed does not ask again (it counts against ten a day).
     @State private var refusedUsername: String?
@@ -211,9 +214,20 @@ struct ProfileView: View {
     /// puts back what the account says. A name refused does too; a
     /// username refused stays as typed, under its reason.
     private func commit(_ field: ProfileModel.Field) {
-        guard sending == nil else { return }
+        guard sending == nil else {
+            // The same field again ("done", then leaving it) sends nothing
+            // more; the other one waits for the first answer.
+            if sending != field {
+                waiting = field
+            }
+            return
+        }
+        // The account as the server last answered: a field that waited is
+        // compared with what the first change left, not with what was
+        // drawn when it started.
+        let account = session.me ?? me
         let typed = ProfileModel.clean(field == .name ? name : username)
-        let now = field == .name ? me.displayName : (me.username ?? "")
+        let now = field == .name ? account.displayName : (account.username ?? "")
         guard !typed.isEmpty, typed != now else {
             if field == .name {
                 name = now
@@ -237,6 +251,10 @@ struct ProfileView: View {
             }
             if field == .username {
                 refusedUsername = saved || model.usernameNote == nil ? nil : typed
+            }
+            if let next = waiting {
+                waiting = nil
+                commit(next)
             }
         }
     }
