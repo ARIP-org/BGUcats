@@ -353,9 +353,11 @@ in its file; the workflows above check the same thing by permission.
 | **Planner** | every three hours, 05:45 to 20:45 in Israel (since 2026-11-27; once a day before, which left the builder idle from a dawn merge to the next morning) | turns the owner's feedback, failures and the plan's next milestone into at most three small issues labeled `ready` | `docs/agents/planner.md` |
 | **Digest** | once a day, in the morning | one comment on the "Daily digest" issue: what needs the owner, what is broken, what merged, what is next | `docs/agents/digest.md` |
 
-Each is told one thing, every day: update to `main`, read its file
-again, and do what it says. So changing what an agent does is a pull request to that
-file, which is an owner path, and never an edit to a schedule.
+Each is told one thing, every time it wakes: update to `main`, read its
+file again, and do what it says. So changing what an agent does is a pull
+request to that file, which is an owner path, and never an edit to a
+schedule's words. How often it wakes is the schedule's alone, and the
+owner's to set (the planner's, to every three hours, on 2026-11-27).
 
 **What holds them:** they are the bot, so they have what the bot has and
 no more: no approval, no merge past `main`'s rules, no tag, no AWS. What
