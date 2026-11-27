@@ -1162,6 +1162,18 @@ What landed before the list below is in the roadmap.
   queue, the post naming it (`claim: {proposalId}`) after it, and no
   pick. The places are a copy of `web/regions.json` held equal by a
   Linux test. Pictured in a simulator only: not tried on a phone yet.
+- **Cats, the gallery and a cat's page** (#143, built 2026-11-27; part 1
+  of 2): the Cats tab stops saying "Not built yet". The gallery
+  (`GET /cats`): today's cat of the day, every cat's cover, name and
+  area in two columns, a search field and the web app's five sorts in a
+  system menu ("Highest GPA" only when the answer has grades), sorted and
+  searched on the phone, pull to refresh. A cat's page (`GET
+  /cats/{catId}`): its photos in a paged strip, name and what named it,
+  area and coat, the description, the numbers the server sent, "You met"
+  when the member has, and its posts (`GET /cats/{catId}/posts`) on the
+  feed's own card, with its like and menu. Voting on a name and
+  suggesting one are part 2. Pictured in a simulator only: not tried on a
+  phone yet.
 
 ---
 
