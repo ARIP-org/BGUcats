@@ -65,6 +65,21 @@ protocol Backend {
     /// `DELETE /api/v1/cats/{catId}/vote`: taken back.
     func unvote(catId: String) async throws -> Poll
 
+    // The member's own account (docs/app-plan/04-api.md, "Me").
+
+    /// `PATCH /me` `{displayName}`: the account as it is now, the new name
+    /// `namePending` until it has been checked. Needs the terms.
+    func rename(_ displayName: String) async throws -> Me
+    /// `PUT /me/username` `{username}`: the account as it is now. Needs the
+    /// terms; `bad_username` and `name_taken` refuse it.
+    func chooseUsername(_ username: String) async throws -> Me
+    /// `GET /me/posts`: the member's posts, those others cannot see
+    /// included, each with its state. One page: the server sends them all.
+    func myPosts() async throws -> FeedPage
+    /// `DELETE /me` `{"confirm": confirm}`, which the server takes only as
+    /// "delete". True when it answered `{"deleting": true}`.
+    func deleteAccount(confirm: String) async throws -> Bool
+
     /// The author removes their own post.
     func deletePost(postId: String) async throws
     /// Reports a thing. `reportId` is made once on the phone, so a retry is
@@ -254,6 +269,31 @@ final class LiveBackend: Backend {
 
     func deletePost(postId: String) async throws {
         _ = try await call("DELETE", "/posts/\(Auth.encode(postId))", as: "delete post")
+    }
+
+    func rename(_ displayName: String) async throws -> Me {
+        try LiveBackend.me(try await call("PATCH", "/me", body: ["displayName": displayName], as: "rename"))
+    }
+
+    func chooseUsername(_ username: String) async throws -> Me {
+        try LiveBackend.me(try await call("PUT", "/me/username", body: ["username": username], as: "username"))
+    }
+
+    func myPosts() async throws -> FeedPage {
+        let page = Read.page(try await call("GET", "/me/posts", as: "my posts"))
+        return FeedPage(posts: page.posts, cursor: nil)
+    }
+
+    func deleteAccount(confirm: String) async throws -> Bool {
+        let json = try await call("DELETE", "/me", body: ["confirm": confirm], as: "delete account")
+        return (json["deleting"] as? Bool) == true
+    }
+
+    private static func me(_ json: [String: Any]) throws -> Me {
+        guard let me = Read.me(json) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        return me
     }
 
     func report(_ report: Report) async throws {
@@ -471,6 +511,12 @@ final class LiveBackend: Backend {
             auth.ended("the API answered 401")
             throw ApiError(status: 401, code: "signed_out", message: "Your sign-in ended. Sign in again.")
         }
+        if status == 403 && (json["code"] as? String) == "gone" {
+            // The account is being deleted (`_require_usable`): every call
+            // will answer this. The session ends, with its own sentence.
+            auth.accountGone()
+            throw ApiError(status: 403, code: "gone", message: Session.deletedNote)
+        }
         guard (200..<300).contains(status) else {
             throw ApiError(
                 status: status,
@@ -543,6 +589,10 @@ final class StandInBackend: Backend {
     /// member's vote on each.
     private var polls = StandInBackend.madeUpPolls
     private var votes: [String: String] = [:]
+    /// The member's account as the profile changed it.
+    private var displayName = "Test Member"
+    private var username = "test.member"
+    private var namePending = false
 
     init(
         start: Date,
@@ -958,17 +1008,96 @@ final class StandInBackend: Backend {
     }
 
     func me() async throws -> Me {
-        Me(
-            userId: "u-test",
-            username: "test.member",
-            displayName: "Test Member",
-            avatar: nil,
-            role: "user",
-            catsMet: 7,
-            encounters: 12,
-            termsRequired: !accepted && !stale,
-            termsCurrent: "draft"
+        lock.withLock {
+            Me(
+                userId: "u-test",
+                username: username,
+                displayName: displayName,
+                avatar: nil,
+                role: "user",
+                catsMet: 7,
+                encounters: 12,
+                termsRequired: !accepted && !stale,
+                termsCurrent: "draft",
+                namePending: namePending
+            )
+        }
+    }
+
+    /// Recorded as "rename": the name itself only in the account. As the
+    /// server, a new name is the member's at once and pending for others.
+    func rename(_ displayName: String) async throws -> Me {
+        try await reach()
+        try termsFirst()
+        let name = displayName.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !name.isEmpty, name.unicodeScalars.count <= 30 else {
+            keep("rename refused")
+            throw ApiError(status: 400, code: nil, message: "displayName is 1 to 30 characters")
+        }
+        lock.withLock {
+            if name != self.displayName {
+                kept.append("rename")
+                self.displayName = name
+                namePending = true
+            }
+        }
+        return try await me()
+    }
+
+    /// The other made-up members' usernames are taken, as on the server.
+    /// Recorded as "username ok", "username name_taken" or "username
+    /// bad_username", never the name.
+    func chooseUsername(_ username: String) async throws -> Me {
+        try await reach()
+        try termsFirst()
+        let name = username.trimmingCharacters(in: .whitespaces).lowercased()
+        let rule = #"^[a-z0-9](?:[a-z0-9]|[._](?=[a-z0-9])){1,18}[a-z0-9]$"#
+        guard name.range(of: rule, options: .regularExpression) != nil else {
+            keep("username bad_username")
+            throw ApiError(status: 400, code: "bad_username", message: "a username is 3 to 20 letters a-z, digits, dots or underscores")
+        }
+        if ["first.tester", "second.tester", "admin"].contains(name) {
+            keep("username name_taken")
+            throw ApiError(status: 409, code: "name_taken", message: "that username is taken")
+        }
+        lock.withLock {
+            kept.append("username ok")
+            self.username = name
+        }
+        return try await me()
+    }
+
+    /// The member's posts as `_my_posts` answers them: the one being
+    /// checked from the feed (until it is deleted), the posts made in this
+    /// run, and an older public one the feed's page does not reach.
+    func myPosts() async throws -> FeedPage {
+        try await reach()
+        let made = lock.withLock { posted }
+        let old = Post(
+            id: "p4",
+            author: Person(userId: "u-test", username: "test.member", displayName: "Test Member", avatar: nil),
+            catName: "Shachor",
+            photos: [Photo(id: "d1", thumb: URL(string: "standin://photo/d1"), medium: URL(string: "standin://photo/d1"))],
+            text: "Found him by the engineering doors.",
+            likes: 5,
+            liked: false,
+            createdAt: start.addingTimeInterval(-9 * 86400),
+            mine: true,
+            state: "visible"
         )
+        let own = (made + madeUp.filter(\.mine) + [old]).filter { !deleted.contains($0.id) }
+        return FeedPage(posts: own, cursor: nil)
+    }
+
+    /// Recorded as "delete me confirm <what was sent>", so a test sees the
+    /// body went as the server takes it, and how many times.
+    func deleteAccount(confirm: String) async throws -> Bool {
+        try await reach()
+        keep("delete me confirm \(confirm)")
+        guard confirm == "delete" else {
+            throw ApiError(status: 400, code: "confirm", message: "confirm is \"delete\"")
+        }
+        return true
     }
 
     func feed(cursor: String?) async throws -> FeedPage {
@@ -1055,7 +1184,7 @@ final class StandInBackend: Backend {
 
     func deletePost(postId: String) async throws {
         // As the API: only the author may.
-        guard postId == "p2" else {
+        guard postId == "p2" || postId == "p4" else {
             throw ApiError(status: 403, code: "not_yours", message: "This is not your post.")
         }
         deleted.insert(postId)
