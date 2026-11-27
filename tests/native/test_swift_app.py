@@ -506,7 +506,12 @@ def test_every_screen_is_kept_in_light_and_in_dark():
     assert 'signedOut.launchArguments = ["-uiTesting", "-look", look, "-signedOut"]' in tests
     assert 'keep(signedOut, "sign-in-\\(look)")' in tests and 'keep(app, "home-liked-\\(look)")' in tests
     assert 'keep(app, "home-\\(look)")' in tests and 'keep(app, "app-info-\\(look)")' in tests
-    assert '[("Cats", "cats"), ("Profile", "profile")]' in tests
+    assert 'keep(app, "profile-\\(look)")' in tests
+    # Cats (issue 143): the gallery, a search with one cat and with none, a
+    # cat's page and its post, and the page of the cat with no name.
+    for name in ("cats", "cats-search", "cats-search-none", "cat", "cat-post", "cat-unnamed"):
+        assert f'keep(app, "{name}-\\(look)")' in tests, name
+    assert "cats(app, look: look)" in tests.split("private func walk(")[1].split("private func cats(")[0]
     # Scan a cat, in its four states (issue 125), then the cat, the post,
     # "Posted" and the feed with the post first (issue 133).
     assert 'func testScanInLight()' in tests and 'func testScanInDark()' in tests
@@ -1034,3 +1039,149 @@ def test_the_trail_marks_a_new_cats_steps_and_never_its_answers():
     for mark in marks:
         for answer in ("nameIdea", "coat", "regionId", "traits", "proposalId", "name"):
             assert answer not in mark.replace("new cat", ""), mark
+
+
+# ------------------------------------------------------------------- Cats
+
+
+def test_the_cats_tab_is_built_on_the_systems_own_controls():
+    code = sources()
+    root = code["RootView.swift"]
+    tab = root.split('Tab("Cats"')[1].split("}")[0]
+    assert "CatsView(world: world, session: session)" in tab and "NotBuiltYet" not in tab
+    gallery = code["CatsView.swift"]
+    for control in ("NavigationStack {", ".navigationDestination(for: CatRoute.self)", ".searchable(", "LazyVGrid(", ".refreshable {", "Menu {", "Picker("):
+        assert control in gallery, control
+    page = code["CatView.swift"]
+    assert ".tabViewStyle(.page)" in page
+    # The posts are the feed's own card, with its like, menu and sheets.
+    assert "PostCard(post: post, world: world, model: posts)" in page
+    assert ".postActions(posts, world: world)" in page
+    assert "FeedModel(world: world, session: session, source: .cat(catId))" in page
+    assert ".postActions(model, world: world)" in code["FeedView.swift"]
+
+
+def test_the_cats_go_by_the_routes_of_the_api():
+    # docs/app-plan/04-api.md: GET /cats, GET /cats/{catId}, GET
+    # /cats/{catId}/posts. Each call is named for the trail by its kind,
+    # never by its address, which carries the cat's id.
+    live = sources()["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'call("GET", "/cats", as: "cats")' in live
+    assert 'call("GET", "/cats/\\(Auth.encode(id))", as: "cat")' in live
+    assert 'call("GET", "/cats/\\(Auth.encode(id))/posts", cursor: cursor, as: "cat posts")' in live
+    # "Which cat?" reads the same answer.
+    assert "try await catList().cats" in live
+    plan = (REPO / "docs" / "app-plan" / "04-api.md").read_text()
+    for route in ("| `GET /cats` |", "| `GET /cats/{catId}` |", "| `GET /cats/{catId}/posts` |"):
+        assert route in plan, route
+
+
+def test_a_cat_is_read_field_by_field_as_the_server_writes_it():
+    import ast
+
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    tree = ast.parse(handler)
+    public = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "public_cat")
+    sent = {k.value for n in ast.walk(public) if isinstance(n, ast.Dict) for k in n.keys if isinstance(k, ast.Constant)}
+    models = sources()["Models.swift"]
+    reader = models.split("static func cat(_ json")[1].split("static func cats(")[0]
+    for key in ("catId", "name", "cover", "nameSource", "regionId", "coat", "gpa", "posts", "likes", "lastSeenAt", "firstSeenAt"):
+        assert key in sent, key
+        assert f'json["{key}"]' in reader, key
+    # A number the server did not send is nil, never a zero.
+    for key in ("posts", "likes"):
+        assert f'number(json["{key}"])' in reader, key
+    detail = models.split("static func catDetail")[1]
+    for key in ("met", "bio", "photos", "encounters", "days", "firstDay", "lastDay"):
+        assert f'"{key}"' in detail, key
+    assert '"catOfTheDay": cat_of_the_day(listed, today)' in handler
+    assert 'text(json["catOfTheDay"])' in models
+    for key in ('"bio"', '"met": _met(user, cat_id)', '"photos"'):
+        assert key in handler.split("def _get_cat(")[1].split("def _met(")[0], key
+
+
+def test_which_cat_still_reads_the_cat_it_read():
+    # Cat is widened with defaults, so "Which cat?" builds it as before and
+    # stays as it is (issue 143).
+    code = sources()
+    cat = code["Models.swift"].split("struct Cat: Equatable, Identifiable {")[1].split("\n}\n")[0]
+    for kept in ("let id: String", "let name: String?", "let cover: URL?"):
+        assert kept in cat, kept
+    widened = re.findall(r"^    var (\w+): [^=]+= nil$", cat, re.MULTILINE)
+    assert set(widened) >= {"coverMedium", "nameSource", "regionId", "coat", "gpa", "posts", "likes", "lastSeenAt", "firstSeenAt"}
+    which = code["ScanPages.swift"].split("struct WhichCatPage")[1].split("struct CatRow")[0]
+    assert "world.backend.cats()" in which
+
+
+def test_the_sorts_are_the_web_apps_in_its_order_with_its_words():
+    gallery_js = (REPO / "web" / "social" / "gallery.js").read_text()
+    sorts = re.findall(r"^  (\w+): ", gallery_js.split("export const SORTS = {")[1].split("};")[0], re.MULTILINE)
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    view = sources()["CatsView.swift"]
+    assert f"case {', '.join(sorts)}" in view
+    for sort in sorts:
+        assert f'case .{sort}: "{words["gallery.sort." + sort]}"' in view, sort
+    # GPA only when there are grades, first, as in the web app.
+    assert "cats.contains { $0.gpa != nil } ? allCases : allCases.filter { $0 != .gpa }" in view
+
+
+def test_the_cats_screens_use_the_web_apps_words():
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    code = sources()
+    gallery, page, models = code["CatsView.swift"], code["CatView.swift"], code["Models.swift"]
+    for key in ("feed.cotd", "feed.search", "gallery.empty", "gallery.failed", "gallery.sort", "gallery.sortBy"):
+        assert f'"{words[key]}"' in gallery, key
+    assert '"No cat called “\\(words)”."' in gallery and words["gallery.noMatch"] == "No cat called “{search}”."
+    assert f'static let noName = "{words["cat.noName"]}"' in models
+    for key in ("cat.namedByVote", "cat.namedByAdmins", "cat.notNamed"):
+        assert f'"{words[key]}"' in models, key
+    for key in ("cat.lastSeen", "cat.recentPosts", "cat.gpa"):
+        assert f'"{words[key]}"' in page, key
+    assert words["cat.usuallyNear"] == "Usually near {place}" and '"Usually near \\(area)"' in page
+    assert f'"{words["cat.met"]["one"]}"' in page
+    assert words["cat.met"]["other"] == "You met this cat {count} times." and '"You met this cat \\(met.encounters) times."' in page
+    for key in ("posts", "likes"):
+        assert f'"{words["cat." + key]["one"]}" : "{words["cat." + key]["other"]}"' in page, key
+
+
+def test_a_field_the_server_left_out_is_left_out_of_the_page():
+    about = sources()["CatView.swift"].split("private struct CatAbout")[1]
+    for shown in (
+        "if let named = cat.named",
+        "if let area = cat.area",
+        "if let coat = cat.coatName",
+        "if let bio = detail.bio",
+        "if let met = detail.met",
+        "if let posts = cat.posts",
+        "if let likes = cat.likes",
+        "if let seen = cat.lastSeenAt",
+        "if let first = cat.firstSeenAt",
+        "if let gpa = cat.gpa",
+    ):
+        assert shown in about, shown
+    # Nothing stands in for a missing number.
+    assert '"—"' not in about and "?? 0" not in about
+
+
+def test_the_stand_in_campus_has_what_the_pictures_need():
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    campus = stand_in.split("static let campus = [")[1].split("    ]\n")[0]
+    assert campus.count("Cat(") == 3 and 'id: "c3", name: nil' in campus
+    assert campus.count("regionId:") == 2 and campus.count("coat:") == 2
+    detail = stand_in.split("func cat(id: String)")[1].split("func catPosts")[0]
+    # The member met one cat, twice, and the unnamed one never.
+    assert detail.count("Met(") == 1 and "Met(encounters: 2" in detail
+    assert "return CatDetail(cat: cat, bio: nil, met: nil" in detail
+    assert 'catOfTheDay: "c2"' in stand_in
+
+
+def test_the_trail_marks_the_cats_and_never_which():
+    code = sources()
+    for mark in ("cats: opened a cat",):
+        assert f'world.trail.mark("{mark}")' in code["CatView.swift"], mark
+    assert 'world.trail.mark("cats: \\(list.cats.count) listed")' in code["CatsView.swift"]
+    marks = re.findall(r"trail\.mark\((.*)\)", code["CatsView.swift"] + code["CatView.swift"] + code["FeedView.swift"])
+    for mark in marks:
+        for taken in re.findall(r"\\\((.*?)\)", mark):
+            for who in ("catId", "id", "name", "search", "words"):
+                assert who not in taken.replace("kind", ""), mark
