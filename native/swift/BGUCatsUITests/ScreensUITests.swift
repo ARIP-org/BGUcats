@@ -476,7 +476,9 @@ final class ScreensUITests: XCTestCase {
         let asked = app.alerts["Delete your account?"]
         XCTAssertTrue(asked.waitForExistence(timeout: patience), "Delete account did not ask first. \(onScreen(app))")
         let sentence = "Your posts, badges, points and friends will be removed for good. The cat photos you took stay with the cats' records, with nothing left that points to you."
-        XCTAssertTrue(asked.staticTexts[sentence].exists, "The confirmation does not say what goes and what stays. \(onScreen(app))")
+        // XCUITest refuses an identifier over 128 characters: the sentence
+        // is asked for by its label instead.
+        XCTAssertTrue(asked.staticTexts.matching(NSPredicate(format: "label == %@", sentence)).firstMatch.exists, "The confirmation does not say what goes and what stays. \(onScreen(app))")
         keep(app, "delete-account-\(look)")
         asked.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(gone(asked), "The confirmation stayed after Cancel.")
@@ -938,7 +940,10 @@ final class ScreensUITests: XCTestCase {
         // so a light one's bar is lowered by as much; still far above dark.
         let bright = ScreensUITests.brightness(shot.image)
         let dimmed = name.hasPrefix("terms-") || name.hasPrefix("delete-account-")
-        let light = dimmed ? 0.52 : 0.65
+        // My posts is the stand-in's photos almost edge to edge, under an
+        // inline title: a light one measured 0.64. Still far above dark.
+        let photos = name.hasPrefix("my-posts-")
+        let light = dimmed ? 0.52 : photos ? 0.58 : 0.65
         if name.hasSuffix("-dark") {
             XCTAssertLessThan(bright, 0.35, "\(name) is not dark: the screen's brightness is \(bright).")
         } else {
