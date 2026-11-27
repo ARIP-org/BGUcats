@@ -3,14 +3,15 @@ import SwiftUI
 /// A cat's page, pushed on the Cats tab's stack (`GET /cats/{catId}`, the
 /// web app's `web/social/cat.js`): its photos in a paged strip, its name
 /// and what named it, its place and coat, the description, the numbers the
-/// server sent, "You met" when the member has, and below them the cat's
-/// posts (`GET /cats/{catId}/posts`) on the feed's own card, like and menu
+/// server sent, "You met" when the member has, the name poll
+/// (`NamePoll.swift`), and below them the cat's posts (`GET /cats/{catId}/posts`) on the feed's own card, like and menu
 /// and all. What the server leaves out is left out here.
 struct CatView: View {
     let world: World
     let catId: String
     @State private var phase: Phase = .loading
     @StateObject private var posts: FeedModel
+    @StateObject private var poll: PollModel
 
     enum Phase {
         case loading
@@ -22,6 +23,7 @@ struct CatView: View {
         self.world = world
         self.catId = catId
         _posts = StateObject(wrappedValue: FeedModel(world: world, session: session, source: .cat(catId)))
+        _poll = StateObject(wrappedValue: PollModel(world: world, session: session, catId: catId))
     }
 
     var body: some View {
@@ -38,11 +40,16 @@ struct CatView: View {
             .task {
                 await posts.open()
             }
+            .task {
+                if poll.poll == nil {
+                    await poll.read()
+                }
+            }
     }
 
     private var title: String {
         if case .loaded(let detail) = phase {
-            return detail.cat.shownName
+            return CatAbout.name(detail.cat, poll: poll.poll)
         }
         return ""
     }
@@ -68,14 +75,16 @@ struct CatView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     CatPhotos(detail: detail, photos: world.photos)
-                    CatAbout(detail: detail, now: world.now())
+                    CatAbout(detail: detail, poll: poll.poll, now: world.now())
                         .padding(.horizontal)
+                    NamePollSection(model: poll)
                     postsSection
                 }
                 .padding(.vertical)
             }
             .refreshable {
                 await load()
+                await poll.read()
                 await posts.refresh()
             }
         }
@@ -175,9 +184,11 @@ private struct CatPhotos: View {
 
 /// The name, what named it, where it is usually, its coat, the
 /// description, the numbers, and "You met". Each is shown only if the
-/// server sent it.
+/// server sent it. The poll's own answer, once read, is the newest word on
+/// the name (as the web app's `cat.js`): it counts the vote just cast.
 private struct CatAbout: View {
     let detail: CatDetail
+    let poll: Poll?
     let now: Date
 
     private var cat: Cat { detail.cat }
@@ -185,10 +196,10 @@ private struct CatAbout: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(cat.shownName)
+                Text(CatAbout.name(cat, poll: poll))
                     .font(.title.weight(.bold))
                     .accessibilityIdentifier("cat.name")
-                if let named = cat.named {
+                if let named = CatAbout.named(cat, poll: poll) {
                     Text(named)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -271,6 +282,22 @@ private struct CatAbout: View {
             shown.append(Number(key: "gpa", label: "GPA", value: String(format: "%.1f / 4", gpa)))
         }
         return shown
+    }
+
+    /// The name the cat goes by: the poll's, once read.
+    static func name(_ cat: Cat, poll: Poll?) -> String {
+        guard let poll, poll.nameSource != nil else { return cat.shownName }
+        return poll.name ?? Cat.noName
+    }
+
+    /// What named it: the poll's answer once read, with the leader's
+    /// votes of the total when a vote named it (`cat.namedByVoteOf`).
+    static func named(_ cat: Cat, poll: Poll?) -> String? {
+        guard let poll, let source = poll.nameSource else { return cat.named }
+        if source == "poll", let leader = poll.options.first(where: \.leading), let total = poll.total {
+            return "Named by vote · \(leader.votes) of \(total)"
+        }
+        return Cat.named(by: source)
     }
 
     /// The web app's words (`cat.met`).
