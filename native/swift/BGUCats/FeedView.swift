@@ -384,6 +384,11 @@ struct PostCard: View {
                     Label(words, systemImage: post.state == "hidden" ? "eye.slash" : "clock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        // One element, read as its words: a Label's
+                        // identifier otherwise lands on the symbol too,
+                        // which answers "Clock" (2026-11-27).
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(words)
                         .accessibilityIdentifier("post.state.\(post.id)")
                 }
             }
