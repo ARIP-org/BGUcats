@@ -106,8 +106,9 @@ owner, 2026-11-26).
 ## Limits
 
 - Look first: an open issue or pull request that already covers the work
-  means you write nothing new. So does an issue you opened earlier today,
-  open or closed.
+  means you write nothing new. So does an issue you opened earlier today
+  that is still open, or that a merged pull request closed. One closed
+  any other way (its build came to nothing) is work still to cut.
 - At most three new `ready` issues a run, and never more than five open
   at once, counting those `building`. A queue nobody reads is not speed.
 - Every build is paid for from the owner's Claude plan. Prefer few,
