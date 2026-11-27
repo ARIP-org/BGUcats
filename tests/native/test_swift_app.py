@@ -1517,6 +1517,11 @@ def test_my_posts_says_each_state_and_deletes_as_the_feed_does():
     feed = sources()["FeedView.swift"]
     assert "case .mine:\n            try await world.backend.myPosts()" in feed
     assert "if let words = post.stateWords {" in feed
+    # The mark is one element read as its words: on a bare Label the
+    # identifier reached the symbol, which answered "Clock".
+    mark = feed.split("if let words = post.stateWords {")[1].split('.accessibilityIdentifier("post.state.')[0]
+    assert ".accessibilityElement(children: .ignore)" in mark
+    assert ".accessibilityLabel(words)" in mark
     # The stand-in's member has one public post and one being checked.
     stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
     my_posts = stand_in.split("func myPosts()")[1].split("    func ")[0]
