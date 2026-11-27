@@ -311,7 +311,9 @@ defined, one iOS version, nothing that signs.
   words). A system `List`: who is signed in and the two counters; the
   display name and the username, each a `TextField` in its row, sent at
   "done" or when the field is left, cleaned as the web app does (runs of
-  spaces as one), nothing sent when nothing changed; My posts and App
+  spaces as one), nothing sent when nothing changed; one field finished
+  while the other is on its way is sent when that one is answered, never
+  dropped; My posts and App
   info; Sign out; and Delete account, last and destructive. **The name
   and the username ask for the terms first**, as every write
   (`terms_required` all the same asks once more). The answer is `GET
