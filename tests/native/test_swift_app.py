@@ -1578,3 +1578,9 @@ def test_the_walk_deletes_the_account_once_and_cancel_sends_nothing():
     assert 'keep(app, "profile-\\(look)")' in walk
     # Behind the system's dialog the screen is dimmed, as for the terms.
     assert 'name.hasPrefix("delete-account-")' in tests
+    # The sentence is over XCUITest's 128 characters for an identifier:
+    # it is found by its label.
+    assert 'asked.staticTexts[sentence]' not in profile
+    assert 'NSPredicate(format: "label == %@", sentence)' in profile
+    # My posts is mostly photos; its light bar is lower, still far above dark.
+    assert 'let photos = name.hasPrefix("my-posts-")' in tests
