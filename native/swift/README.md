@@ -140,7 +140,10 @@ defined, one iOS version, nothing that signs.
 - **An identifier goes on the element itself, never on a stack around
   others.** On a container SwiftUI hands the identifier to everything
   inside, over their own: a post card's stack named `post.p1` left no
-  `like.p1` to find (2026-11-23).
+  `like.p1` to find (2026-11-23). A `Label` is such a container: its
+  identifier reaches the symbol too, so a test asking `post.state.p2`
+  for its label read "Clock" (2026-11-27). Make it one element
+  (`.accessibilityElement(children: .ignore)` and its words as the label).
 - **It belongs to staging** (`Site.swift`), as every build so far. The
   site's public `config.json` says which Cognito; it is read at launch
   and the last one read is kept for a launch with no signal.
