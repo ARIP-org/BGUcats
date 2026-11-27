@@ -88,7 +88,12 @@ struct Cat: Equatable, Identifiable {
 
     /// The name poll's summary, as words (`cat.namedBy…` in the web app).
     var named: String? {
-        switch nameSource {
+        Cat.named(by: nameSource)
+    }
+
+    /// The words for where a name came from; nil for a source with none.
+    static func named(by source: String?) -> String? {
+        switch source {
         case "poll": "Named by vote"
         case "admin": "Named by the people who look after the cats"
         case "none": "No name yet"
@@ -122,6 +127,37 @@ struct CatDetail: Equatable {
     let met: Met?
     /// Newest first.
     let photos: [Photo]
+}
+
+/// The name poll as `GET /cats/{catId}/names` answers it, and every write
+/// to it (`POST …/names`, `PUT` and `DELETE …/vote`) too: the poll as it
+/// is now, which the page draws, never a guess of its own.
+struct Poll: Equatable {
+    struct Option: Equatable, Identifiable {
+        let nameKey: String
+        let name: String
+        let votes: Int
+        /// The option that names the cat (`polls.leader` on the server).
+        let leading: Bool
+        /// The caller's vote is on it.
+        let mine: Bool
+        /// The caller's own suggestion, still being checked; nobody else
+        /// sees it.
+        let pending: Bool
+
+        var id: String { nameKey }
+    }
+
+    /// The name the cat goes by now, and why (`poll`, `admin`, `locked`,
+    /// `none`), as these options make it. Nil when not sent.
+    let name: String?
+    let nameSource: String?
+    /// Live options most votes first, then the caller's pending ones.
+    let options: [Option]
+    /// Votes on live options. Nil when not sent.
+    let total: Int?
+    /// The name an admin set; the poll goes on below it.
+    let locked: String?
 }
 
 /// What a new-cat proposal is chosen from (`POST /proposals`): the server's
@@ -313,6 +349,30 @@ enum Read {
             )
         }
         return CatDetail(cat: read, bio: text(body["bio"]), met: met, photos: photos)
+    }
+
+    /// The name poll (`_names_view` in src/app/handler.py). An option with
+    /// no key or no name is skipped; an answer with no options at all is
+    /// not a poll.
+    static func poll(_ json: [String: Any]) -> Poll? {
+        guard let options = json["options"] as? [[String: Any]] else { return nil }
+        return Poll(
+            name: text(json["name"]),
+            nameSource: text(json["nameSource"]),
+            options: options.compactMap { option in
+                guard let key = text(option["nameKey"]), let name = text(option["name"]) else { return nil }
+                return Poll.Option(
+                    nameKey: key,
+                    name: name,
+                    votes: int(option["votes"]),
+                    leading: (option["leading"] as? Bool) ?? false,
+                    mine: (option["mine"] as? Bool) ?? false,
+                    pending: (option["pending"] as? Bool) ?? false
+                )
+            },
+            total: number(json["total"]),
+            locked: text(json["locked"])
+        )
     }
 
     static func page(_ json: [String: Any]) -> FeedPage {
