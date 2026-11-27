@@ -9,8 +9,9 @@ own controls, so the glass is iOS's), signing in, Home with the feed
 a post's menu: Delete on one's own, Report on anyone else's), Scan a
 cat (photos taken or chosen, sent as one encounter, then "Which cat?",
 the new-cat form for a cat that isn't here, and the post), Cats (the
-gallery and a cat's page with its name poll), the profile's first rows,
-and "App info".
+gallery and a cat's page with its name poll), Profile (the name, the
+username, my posts, signing out and deleting the account), and "App
+info".
 
 | File | |
 |---|---|
@@ -21,7 +22,8 @@ and "App info".
 | `Models.swift` | what the API answers with, read field by field |
 | `Session.swift` | who is signed in, whether the app has started, and the terms first |
 | `Terms.swift` | the terms' words and their dialog |
-| `RootView.swift` | the first screen by state, the tabs, the profile |
+| `RootView.swift` | the first screen by state, and the tabs |
+| `ProfileView.swift`, `MyPostsView.swift` | Profile: the name, the username, the counters, My posts, App info, Sign out, Delete account; and the member's own posts |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
 | `CatsView.swift`, `CatView.swift` | Cats: the gallery, and a cat's page pushed on the tab's stack |
 | `NamePoll.swift` | the name poll on a cat's page: voting, taking a vote back, suggesting a name |
@@ -81,7 +83,8 @@ defined, one iOS version, nothing that signs.
 - **A UI test reads no network and keeps nothing.** The app started with
   `-uiTesting` gets a made-up world (`World.standIn()`): a clock that
   stands still, a trail kept in memory, a made-up member with three
-  made-up posts and a campus of three cats (`StandInBackend`: Shachor is
+  made-up posts (the second the member's own, being checked; My posts
+  adds an older public one) and a campus of three cats (`StandInBackend`: Shachor is
   the cat of the day, the member met Mitzi twice, and the third has no
   name, place, coat, description, grade or meeting), and pictures that are drawn
   (`DrawnPhotos`), so two pictures of one screen are the same picture.
@@ -303,6 +306,50 @@ defined, one iOS version, nothing that signs.
   vote taken back", "poll: suggested, being checked" (or "merged"), and
   "poll: vote refused (409)", never a name, a key or a cat.
 
+- **Profile** (`ProfileView.swift`, `MyPostsView.swift`; the web app's
+  `Profile`, `TextRow` and `MyPosts` in `web/social/home.js`, and their
+  words). A system `List`: who is signed in and the two counters; the
+  display name and the username, each a `TextField` in its row, sent at
+  "done" or when the field is left, cleaned as the web app does (runs of
+  spaces as one), nothing sent when nothing changed; My posts and App
+  info; Sign out; and Delete account, last and destructive. **The name
+  and the username ask for the terms first**, as every write
+  (`terms_required` all the same asks once more). The answer is `GET
+  /me`'s and is the session's at once (`Session.update`). A new name is
+  the member's at once, and while `namePending` the row says "Others see
+  your new name once it has been checked.". A refusal is said under its
+  field in the web app's words, never its code: `name_taken` "That
+  username is taken. Try another.", `bad_username` the rule,
+  `rate_limited` the day's limit, anything else the server's sentence.
+  A name refused is put back as it was; a username refused stays as
+  typed, and leaving the field with it does not send it again. **My
+  posts** (`GET /me/posts`) is read each time it opens, on Home's
+  `PostCard` through `FeedModel` (`Source.mine`) and `postActions`, so
+  Delete is in each card's menu as in the feed; a post's state is said
+  in words when it is not public (`Post.stateWords`: "Being checked",
+  "Not published", or "Waiting for an admin to confirm the new cat"
+  while the new cat it names is not confirmed). Loading, "You haven't
+  posted yet.", and "Your posts could not be loaded." with Try again.
+  **Delete account** asks with the system's alert and D14's sentence
+  ("Your posts, badges, points and friends will be removed for good.",
+  and that the cat photos stay with nothing left that points to the
+  person). It asks no terms (the API needs none); Cancel sends nothing.
+  Confirmed, it sends `DELETE /me` with `{"confirm": "delete"}`; on
+  `{"deleting": true}` the app forgets its tokens, drops the upload
+  queue and the kept flow (`Outbox.dropEverything`), and shows the
+  sign-in screen with "Your account is being deleted.". **Any call
+  answered 403 `gone`** (the account is being deleted, from this phone
+  or another) ends the session the same way (`Gate.onGone`), as a 401
+  ends a sign-in; a 404 `gone` is a thing not there and ends nothing.
+  The stand-in takes a new name (recorded "rename"), refuses the other
+  made-up members' usernames ("username name_taken") and records
+  "delete me confirm delete"; the walk reads them in App info, Cancel
+  first. The trail says "profile: name saved", "profile: username
+  refused (name_taken)", "account: delete asked", "account: delete
+  cancelled", "account: deleting", never a name, a username or an id.
+  The name and the username were declared in the privacy manifest with
+  the account, so it gains no line.
+
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
@@ -310,6 +357,8 @@ app skips them for now), the area, and a page with the full terms (the
 dialog has their short text). In Scan a cat: the model and its three
 guesses, "My proposals" (`GET /me/proposals`), video, and uploading
 while the app is closed. On a cat's page: the map, and "Feed a cat".
-Then the rest of profile, the recognition model, and a string catalog
+In Profile: the profile photo (part 2), friends, the invite,
+achievements, "My proposals", and the language, theme and notification
+settings (the app follows the phone's). Then the recognition model, and a string catalog
 for the four languages. Each is
 its own issue, in the plan's order.
