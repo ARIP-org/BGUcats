@@ -158,7 +158,7 @@ jobs:
   # the compiler, so a pull request learns here whether it even builds.
   swift:
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: 110
     env:
       PROJECT: native/swift/BGUCats.xcodeproj
     steps:
@@ -230,20 +230,23 @@ jobs:
       # not counted against a test. Each test has a time limit of its own:
       # the first run of this job sat for twenty minutes without a word.
       # The limit is for a walk that hangs, not for one that is long: a
-      # walk is one test, it grows with every screen, and the first of the
-      # two runs on a cold simulator. With five launches of the app the
-      # cold one took 281 seconds and the warm one 151 (2026-11-24); at
-      # three minutes the cold one was failed with every step passed.
-      # Each line "Test Case ... passed (N seconds)" below says how long a
-      # test takes now. The step's own limit holds every test of
-      # ScreensUITests at its longest, so a hang is reported by the test
-      # that hung and not cut off by the step: five tests since Scan a
-      # cat, eight minutes each (tests/native/test_swift_app.py). A run
-      # where nothing hangs takes a quarter of that.
+      # walk grows with every screen. With five launches of the app the
+      # cold walk took 281 seconds and the warm one 151 (2026-11-24); at
+      # three minutes the cold one was failed with every step passed. At
+      # eight minutes, Profile took the one walk past it on a slow Mac
+      # (#150, 2026-11-27), so the walk is now cut by launch into tests of
+      # their own (ScreensUITests). Each line "Test Case ... passed (N
+      # seconds)" below says how long a test takes now. The step's own
+      # limit holds every test of ScreensUITests at its longest, so a hang
+      # is reported by the test that hung and not cut off by the step:
+      # seven tests, eight minutes each, and room for two more, so the
+      # next walk split off needs no change here
+      # (tests/native/test_swift_app.py). A run where nothing hangs takes
+      # under half an hour.
       # The whole of xcodebuild's output is kept with the pictures; the
       # log here shows the lines that say what happened.
       - name: walk through every screen
-        timeout-minutes: 40
+        timeout-minutes: 75
         run: |
           mkdir -p build/ios-swift
           xcrun simctl bootstatus "$UDID" -b

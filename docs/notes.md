@@ -459,6 +459,19 @@ an hour that a sentence would have saved.
   sheet whose button was greyed out. Ask for the kind of element the
   question is about (`app.buttons[...]`) before asking whether it is
   enabled, and keep the picture before the judgment (#129, 2026-11-24).
+- **A job's log is not there the moment the job ends, and a read that
+  throws its error away says nothing.** The builder's answer to a
+  failed check reads that check's log first (`claude-fix.yml`, "What
+  the failed checks said"). For #150 both reads came about 40 seconds
+  after the Mac's job had ended, both were refused, and the step had
+  sent `gh`'s error to `/dev/null`: it said "its log could not be
+  read", the builder found the folder empty, and it spent both of its
+  answers on #150 without the one line that named the failure
+  (`ScreensUITests.swift:463`). The same logs read fine an hour later
+  (#151, 2026-11-27). Now the step asks again for two minutes, then
+  reads the run's kept files (the Mac's job keeps `xcodebuild.log` in
+  its artifact), and prints why each read was refused, with a warning
+  on the run when nothing could be read.
 - **A system dialog's button is two elements to a UI test.** iOS 26
   reports each button of an alert as a button inside a button, both with
   the same name and identifier. `.exists` is content with two; `.tap()`
@@ -484,6 +497,14 @@ an hour that a sentence would have saved.
   same tap, it is the app's and not the simulator's. When a walk nears
   five minutes, split it by launch into tests of their own rather than
   raise the limit again.
+  That was not done in time. Profile (#150, 2026-11-27) added a minute
+  to a walk already near seven on a slow Mac: the dark walk was cut off
+  at eight minutes with every step passing, the light one passed in
+  462 seconds. The builder's two answers were spent, and what was left
+  was the step's limit, in a workflow the builder may not edit. The
+  walk is now cut by launch: the account's launches are a
+  test of their own, in each look, and the step holds nine tests at
+  eight minutes, so the next cut needs no workflow change.
 - **The first walk runs on a simulator that is still starting up, and a
   short wait there fails an app that is right.** The third Mac run of
   the same day: the app's first launch took 118 seconds (19 the run

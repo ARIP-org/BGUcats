@@ -28,6 +28,21 @@ final class ScreensUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    // A walk is a test of its own for each look, and it is cut by launch
+    // of the app: a launch starts from nothing, so a part needs nothing
+    // that an earlier one did. The walk was one test a look until it grew
+    // past its time limit with every step passing (#150, 2026-11-27: eight
+    // minutes on a slow Mac, the light one 462 seconds). A test that nears
+    // half its limit on the Mac is split the same way.
+
+    func testAccountInLight() {
+        account(look: "light")
+    }
+
+    func testAccountInDark() {
+        account(look: "dark")
+    }
+
     func testEveryScreenInLight() {
         walk(look: "light")
     }
@@ -36,7 +51,11 @@ final class ScreensUITests: XCTestCase {
         walk(look: "dark")
     }
 
-    private func walk(look: String) {
+    /// The account's own launches: nobody signed in, a sign-in that ends,
+    /// and the terms, asked before a like, again when they changed, and
+    /// before a name suggested on a cat's page. Each is a launch of its
+    /// own, closed before the next.
+    private func account(look: String) {
         // Nobody signed in: the sign-in screen, with its one button. The
         // sheet behind it is Google's and is not opened here.
         let signedOut = XCUIApplication()
@@ -178,7 +197,11 @@ final class ScreensUITests: XCTestCase {
         // above. It ends with the account deleted.
         profile(naming, look: look)
         naming.terminate()
+    }
 
+    /// Signed in, with the terms accepted: Home and a post's menus, Profile
+    /// and App info, then Cats. One launch, in this order.
+    private func walk(look: String) {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-look", look]
         app.launch()

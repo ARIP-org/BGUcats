@@ -73,6 +73,17 @@ defined, one iOS version, nothing that signs.
   text size by themselves.
 - **No screen without a picture.** A screen comes with its step in
   `ScreensUITests`, which keeps its picture in both looks.
+- **A walk is cut by launch, and each part is a test of its own.** A
+  launch of the app starts from nothing, so a part needs nothing from
+  an earlier one: the account's launches (`testAccountIn…`: signed out,
+  a sign-in that ends, the terms), every screen signed in
+  (`testEveryScreenIn…`), Scan a cat's, each in light and in dark. A
+  test may take eight minutes on the Mac, for a hang; one that nears
+  half of that is split by launch the same way, in both looks. Profile
+  took the one walk there was past its limit with every step passing
+  (#150, 2026-11-27). The step holds nine tests at their longest, seven now;
+  past that its limit is raised in `.github/workflows/ios.yml`, an
+  owner path.
 - **The walk's waits are one `patience`, and the simulator is woken
   first.** A wait for something expected takes `patience`; a number of
   its own is only for something that must not come. A dialog's button is
