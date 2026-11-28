@@ -20,6 +20,9 @@ struct Me: Equatable {
     /// A new display name is waiting to be checked: its owner sees it
     /// already (`displayName`), everyone else once it has been.
     var namePending: Bool = false
+    /// The same for a new profile photo: `avatar` is already the new one
+    /// for its owner, everyone else sees it once it has been checked.
+    var avatarPending: Bool = false
 }
 
 struct Person: Equatable {
@@ -265,7 +268,8 @@ enum Read {
             encounters: int(counters?["encounters"]),
             termsRequired: (terms?["required"] as? Bool) ?? false,
             termsCurrent: text(terms?["current"]),
-            namePending: (json["namePending"] as? Bool) ?? false
+            namePending: (json["namePending"] as? Bool) ?? false,
+            avatarPending: (json["avatarPending"] as? Bool) ?? false
         )
     }
 
