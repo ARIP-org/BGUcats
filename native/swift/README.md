@@ -9,9 +9,9 @@ own controls, so the glass is iOS's), signing in, Home with the feed
 a post's menu: Delete on one's own, Report on anyone else's), Scan a
 cat (photos taken or chosen, sent as one encounter, then "Which cat?",
 the new-cat form for a cat that isn't here, and the post), Cats (the
-gallery and a cat's page with its name poll), Profile (the name, the
-username, my posts, signing out and deleting the account), and "App
-info".
+gallery and a cat's page with its name poll), Profile (the photo, the
+name, the username, my posts, signing out and deleting the account),
+and "App info".
 
 | File | |
 |---|---|
@@ -23,7 +23,8 @@ info".
 | `Session.swift` | who is signed in, whether the app has started, and the terms first |
 | `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, and the tabs |
-| `ProfileView.swift`, `MyPostsView.swift` | Profile: the name, the username, the counters, My posts, App info, Sign out, Delete account; and the member's own posts |
+| `ProfileView.swift`, `MyPostsView.swift` | Profile: the photo, the name, the username, the counters, My posts, App info, Sign out, Delete account; and the member's own posts |
+| `Avatar.swift` | a profile photo made ready on the phone: square, upright, 512 px, a new JPEG of 200 KB at most with no metadata |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
 | `CatsView.swift`, `CatView.swift` | Cats: the gallery, and a cat's page pushed on the tab's stack |
 | `NamePoll.swift` | the name poll on a cat's page: voting, taking a vote back, suggesting a name |
@@ -33,7 +34,7 @@ info".
 | `Outbox.swift` | the upload queue: photos kept on the phone until the server has them, then the pick or the proposal, and the post; and the scan flow beside it |
 | `Places.swift` | where the phone is when a photo is taken |
 | `Ulid.swift` | an id made on the phone (a report's, an encounter's, a photo's), so a retry is the same request |
-| `Photos.swift` | loading a picture, and the drawn ones UI tests get |
+| `Photos.swift` | loading a picture, and the drawn ones UI tests get (and a drawn camera file with made-up EXIF, for the profile photo) |
 | `Trail.swift` | the app's own account of what it did |
 
 | | |
@@ -365,6 +366,45 @@ defined, one iOS version, nothing that signs.
   cancelled", "account: deleting", never a name, a username or an id.
   The name and the username were declared in the privacy manifest with
   the account, so it gains no line.
+- **The profile photo** (`ProfileView.swift`, `Avatar.swift`; the web
+  app's `web/social/avatar.js`, its `Profile` and its `profile.photo*`
+  words). The photo at the top of Profile is a system `Menu` ("Profile
+  photo"): "Choose a photo", which opens the system's `PhotosPicker`
+  (images only; it asks the phone for nothing), and "Remove photo" when
+  there is one. **The picture is made ready on the phone**, as the web
+  app does, with Core Graphics and ImageIO alone: read upright and no
+  larger than needed, cut to a centred square, drawn anew at 512 px at
+  most, and written as a JPEG at the web app's qualities until it is
+  200,000 bytes or less (smaller sides, down to 128, if none fits). Any
+  APP1 (EXIF, XMP) or APP13 (IPTC) segment ImageIO writes of its own is
+  taken out, and the file is checked the way the server checks it
+  (`jpeg_problem` in src/common/media.py) before it goes. A picture the
+  phone cannot open or make small enough says "That picture could not
+  be used. Try another one." and sends nothing. **Then three calls**,
+  the terms first as every write: `POST /me/avatar` (an id and a
+  presigned upload), the bytes to it (twenty seconds, as every call),
+  and `POST /me/avatar/{avatarId}/complete`, whose answer is `GET /me`'s
+  and the session's at once; while `avatarPending` the photo is the new
+  one and the web app's sentence says others see it once it has been
+  checked. A refusal (`bad_photo`, the five-a-day `rate_limited`) is
+  said in the web app's words and the photo shown stays the one from
+  before; a failure to reach the server or storage says why and keeps
+  the picture for "Try again", which reuses the upload already started
+  rather than spend another of the day's five. **"Remove photo"** asks
+  with the system's alert, asks no terms (the API needs none) and sends
+  `DELETE /me/avatar`; the profile says "Photo removed". Under
+  `-uiTesting` there is no picker: "Choose a photo" hands the screen a
+  drawn picture of 1200 by 900 with made-up EXIF, TIFF and GPS in it
+  (`DrawnPhotos.cameraFile`). The stand-in records each call ("avatar
+  start 1", "avatar upload 1 jpeg 143201 bytes 512x512 metadata none",
+  read from the bytes themselves, "avatar complete 1", "avatar
+  remove"), refuses the second picture of a launch with `bad_photo`, and
+  the walk reads the record in App info. The trail says "avatar:
+  chosen", "avatar: made ready, 143 KB", "api: avatar 200 in … ms",
+  "avatar: refused (bad_photo)", "avatar: removed", never a file's
+  name, an id or a place. A profile photo is a photo the person gives,
+  shown with their account: the manifest's photos, declared with Scan a
+  cat, and `docs/privacy-data.md` already say so, so it gains no line.
 
 ## Not here yet
 
@@ -373,7 +413,7 @@ app skips them for now), the area, and a page with the full terms (the
 dialog has their short text). In Scan a cat: the model and its three
 guesses, "My proposals" (`GET /me/proposals`), video, and uploading
 while the app is closed. On a cat's page: the map, and "Feed a cat".
-In Profile: the profile photo (part 2), friends, the invite,
+In Profile: taking the profile photo with the camera, friends, the invite,
 achievements, "My proposals", and the language, theme and notification
 settings (the app follows the phone's). Then the recognition model, and a string catalog
 for the four languages. Each is

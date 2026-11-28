@@ -80,6 +80,22 @@ protocol Backend {
     /// "delete". True when it answered `{"deleting": true}`.
     func deleteAccount(confirm: String) async throws -> Bool
 
+    // The profile photo (docs/app-plan/04-api.md, the three avatar rows):
+    // where to send it, the bytes, the confirmation; and removing it.
+
+    /// `POST /me/avatar`: an avatar id, and a presigned upload pinned to
+    /// the member's own key, to JPEG and to 200 KB. Needs the terms; five
+    /// a day (`rate_limited`).
+    func startAvatar() async throws -> AvatarStart
+    /// The JPEG (`Avatar.ready`) to that upload. Answers storage's status.
+    func uploadAvatar(_ jpeg: Data, to target: Presigned) async throws -> Int
+    /// `POST /me/avatar/{avatarId}/complete`: the account as it is now,
+    /// the new photo `avatarPending` until it has been checked.
+    /// `bad_photo`: not a JPEG, or one that still carries EXIF, XMP or IPTC.
+    func completeAvatar(avatarId: String) async throws -> Me
+    /// `DELETE /me/avatar`: the account with no photo.
+    func removeAvatar() async throws -> Me
+
     /// The author removes their own post.
     func deletePost(postId: String) async throws
     /// Reports a thing. `reportId` is made once on the phone, so a retry is
@@ -218,8 +234,14 @@ struct PostBody: Codable, Equatable {
     }
 }
 
+/// What `POST /me/avatar` answered.
+struct AvatarStart: Equatable {
+    let avatarId: String
+    let target: Presigned
+}
+
 /// A presigned POST: the address and the form fields that go before the file.
-struct Presigned {
+struct Presigned: Equatable {
     let url: URL
     let fields: [String: String]
 }
@@ -289,6 +311,52 @@ final class LiveBackend: Backend {
         return (json["deleting"] as? Bool) == true
     }
 
+    func startAvatar() async throws -> AvatarStart {
+        let json = try await call("POST", "/me/avatar", body: [:], as: "avatar")
+        let upload = json["upload"] as? [String: Any]
+        guard let avatarId = json["avatarId"] as? String, let address = Read.url(upload?["url"]) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        var fields: [String: String] = [:]
+        for (name, value) in (upload?["fields"] as? [String: Any]) ?? [:] {
+            fields[name] = "\(value)"
+        }
+        return AvatarStart(avatarId: avatarId, target: Presigned(url: address, fields: fields))
+    }
+
+    func uploadAvatar(_ jpeg: Data, to target: Presigned) async throws -> Int {
+        let boundary = "bgucats-\(UUID().uuidString)"
+        var request = URLRequest(url: target.url)
+        request.httpMethod = "POST"
+        // 200 KB at most: it gives up as every call does.
+        request.timeoutInterval = 20
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "content-type")
+        let began = Date()
+        let response: URLResponse
+        do {
+            (_, response) = try await URLSession.shared.upload(
+                for: request, from: LiveBackend.form(target.fields, data: jpeg, boundary: boundary)
+            )
+        } catch {
+            trail.mark("api: avatar upload not reached (\(Auth.kind(error)))")
+            throw ApiError(status: 0, code: Auth.kind(error), message: "The photo did not reach storage. Check the connection and try again.")
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        trail.mark("api: avatar upload \(status) in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
+        guard (200..<300).contains(status) else {
+            throw ApiError(status: status, code: "storage", message: "Storage refused the photo (\(status)).")
+        }
+        return status
+    }
+
+    func completeAvatar(avatarId: String) async throws -> Me {
+        try LiveBackend.me(try await call("POST", "/me/avatar/\(Auth.encode(avatarId))/complete", body: [:], as: "avatar complete"))
+    }
+
+    func removeAvatar() async throws -> Me {
+        try LiveBackend.me(try await call("DELETE", "/me/avatar", as: "remove avatar"))
+    }
+
     private static func me(_ json: [String: Any]) throws -> Me {
         guard let me = Read.me(json) else {
             throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
@@ -342,7 +410,7 @@ final class LiveBackend: Backend {
         let boundary = "bgucats-\(UUID().uuidString)"
         // Up to 20 MB, read and wrapped away from the screen's thread.
         let form = try await Task.detached(priority: .utility) {
-            try LiveBackend.form(target.fields, file: file, boundary: boundary)
+            try LiveBackend.form(target.fields, data: Data(contentsOf: file), boundary: boundary)
         }.value
         var request = URLRequest(url: target.url)
         request.httpMethod = "POST"
@@ -422,7 +490,7 @@ final class LiveBackend: Backend {
     }
 
     /// A presigned POST's body: its fields, then the file, which S3 wants last.
-    static func form(_ fields: [String: String], file: URL, boundary: String) throws -> Data {
+    static func form(_ fields: [String: String], data: Data, boundary: String) -> Data {
         var form = Data()
         func line(_ text: String) {
             form.append(Data((text + "\r\n").utf8))
@@ -437,7 +505,7 @@ final class LiveBackend: Backend {
         line("Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"")
         line("Content-Type: image/jpeg")
         line("")
-        form.append(try Data(contentsOf: file))
+        form.append(data)
         line("")
         line("--\(boundary)--")
         return form
@@ -593,6 +661,13 @@ final class StandInBackend: Backend {
     private var displayName = "Test Member"
     private var username = "test.member"
     private var namePending = false
+    /// The profile photo: the number of the picture shown (nil: none), and
+    /// whether it waits to be checked. Pictures are numbered as they are
+    /// started, so the record says "avatar 2", never an id.
+    private var avatar: Int?
+    private var avatarPending = false
+    private var avatars: [String: Int] = [:]
+    private var avatarBytes: [Int: Data] = [:]
 
     init(
         start: Date,
@@ -1013,13 +1088,14 @@ final class StandInBackend: Backend {
                 userId: "u-test",
                 username: username,
                 displayName: displayName,
-                avatar: nil,
+                avatar: avatar.map { URL(string: "standin://photo/avatar-\($0)")! },
                 role: "user",
                 catsMet: 7,
                 encounters: 12,
                 termsRequired: !accepted && !stale,
                 termsCurrent: "draft",
-                namePending: namePending
+                namePending: namePending,
+                avatarPending: avatarPending
             )
         }
     }
@@ -1098,6 +1174,74 @@ final class StandInBackend: Backend {
             throw ApiError(status: 400, code: "confirm", message: "confirm is \"delete\"")
         }
         return true
+    }
+
+    /// Recorded as "avatar start 1". Needs the terms, as the API.
+    func startAvatar() async throws -> AvatarStart {
+        try await reach()
+        try termsFirst()
+        let id = Ulid.make()
+        let number = lock.withLock { () -> Int in
+            let made = avatars.count + 1
+            avatars[id] = made
+            kept.append("avatar start \(made)")
+            return made
+        }
+        return AvatarStart(avatarId: id, target: Presigned(url: URL(string: "standin://storage/avatar-\(number)")!, fields: [:]))
+    }
+
+    /// Recorded as what storage was sent, read from the bytes themselves:
+    /// "avatar upload 1 jpeg 143201 bytes 512x512 metadata none". A file
+    /// over 200 KB is refused, as the presigned POST's size range.
+    func uploadAvatar(_ jpeg: Data, to target: Presigned) async throws -> Int {
+        try await reach()
+        let number = Int(target.url.lastPathComponent.split(separator: "-").last ?? "") ?? 0
+        let kind = jpeg.starts(with: [0xFF, 0xD8, 0xFF]) ? "jpeg" : "not-jpeg"
+        let size = Avatar.pixels(jpeg).map { "\($0.width)x\($0.height)" } ?? "unreadable"
+        let metadata = Avatar.problem(jpeg) == nil ? "none" : "found"
+        keep("avatar upload \(number) \(kind) \(jpeg.count) bytes \(size) metadata \(metadata)")
+        guard jpeg.count <= Avatar.maxBytes else {
+            throw ApiError(status: 400, code: "storage", message: "Storage refused the photo (400).")
+        }
+        lock.withLock { avatarBytes[number] = jpeg }
+        return 204
+    }
+
+    /// Recorded as "avatar complete 1", or "avatar complete 2 bad_photo".
+    /// As `_complete_avatar`: refused if the bytes are not a JPEG or still
+    /// carry metadata. And the second picture of a launch is refused all
+    /// the same, so a walk sees a refusal.
+    func completeAvatar(avatarId: String) async throws -> Me {
+        try await reach()
+        let (number, bytes) = lock.withLock { () -> (Int, Data?) in
+            let number = avatars[avatarId] ?? 0
+            return (number, avatarBytes[number])
+        }
+        guard let bytes else {
+            keep("avatar complete \(number) try_again")
+            throw ApiError(status: 409, code: "try_again", message: "the photo has not reached storage yet")
+        }
+        if number == 2 || Avatar.problem(bytes) != nil {
+            keep("avatar complete \(number) bad_photo")
+            throw ApiError(status: 400, code: "bad_photo", message: "this photo cannot be a profile photo: it still carries EXIF or XMP data")
+        }
+        lock.withLock {
+            kept.append("avatar complete \(number)")
+            avatar = number
+            avatarPending = true
+        }
+        return try await me()
+    }
+
+    /// Recorded as "avatar remove". Asks no terms, as the API.
+    func removeAvatar() async throws -> Me {
+        try await reach()
+        lock.withLock {
+            kept.append("avatar remove")
+            avatar = nil
+            avatarPending = false
+        }
+        return try await me()
     }
 
     func feed(cursor: String?) async throws -> FeedPage {

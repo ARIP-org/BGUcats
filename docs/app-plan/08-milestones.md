@@ -1205,6 +1205,25 @@ What landed before the list below is in the roadmap.
   (`profile-name-pending`, `profile-username-taken`, `my-posts`,
   `delete-account`, `signed-out-deleted`): not tried on a phone yet, and
   no account has been deleted from it.
+- **Profile, the profile photo** (#157, built 2026-11-28; part 2 of 2):
+  the photo at the top of Profile is the system's menu, "Choose a photo"
+  (the system's `PhotosPicker`, images only, no permission asked) and
+  "Remove photo" when there is one. `Avatar.swift` makes the picture
+  ready on the phone as `web/social/avatar.js` does, with Core Graphics
+  and ImageIO: a centred square, upright, 512 px at most, a new JPEG of
+  200,000 bytes at most with the quality stepped down, and nothing of
+  the file's EXIF, XMP or IPTC (checked the server's way before it is
+  sent). Then the three calls (`POST /me/avatar`, the presigned upload,
+  `…/complete`), the terms first; the new photo is shown with "Others
+  see your new photo once it has been checked." while `avatarPending`.
+  A refusal is said in the web app's words with the old photo still
+  shown; a failure to reach the server or storage keeps the picture for
+  "Try again". "Remove photo" asks with the system's alert, then
+  `DELETE /me/avatar`. Pictured in a simulator only
+  (`profile-photo-menu`, `profile-photo-pending`,
+  `profile-photo-refused`, `profile-photo-removed`), the bytes sent
+  checked by the walk: not tried on a phone yet, and no photo from a
+  real gallery has been sent from it.
 
 ---
 

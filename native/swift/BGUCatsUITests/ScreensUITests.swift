@@ -443,7 +443,9 @@ final class ScreensUITests: XCTestCase {
     }
 
     /// Profile: a new name, which waits to be checked; a username refused
-    /// under its field, which keeps what was typed; My posts, with the
+    /// under its field, which keeps what was typed; the profile photo,
+    /// chosen (a drawn picture with made-up EXIF), refused the second
+    /// time, and removed; My posts, with the
     /// member's post being checked and an older public one; and Delete
     /// account: Cancel sends nothing, then the account goes, the sign-in
     /// screen says so, and the made-up server was asked once, with the
@@ -477,6 +479,55 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(usernameField.value as? String, "first.tester", "The field did not keep what was typed.")
         XCTAssertTrue(find(app, "profile.me").label.contains("@test.member"), "A refused username changed the account. \(onScreen(app))")
         keep(app, "profile-username-taken-\(look)")
+
+        // The profile photo. None yet: the menu on it has "Choose a photo"
+        // and nothing to remove. The stand-in hands over a drawn picture
+        // that carries made-up EXIF and GPS; the terms were accepted above.
+        let photo = app.buttons["profile.photo"].firstMatch
+        reveal(photo, in: app)
+        XCTAssertEqual(photo.value as? String, "no photo", "The member has a photo to begin with. \(onScreen(app))")
+        photo.tap()
+        let choosePhoto = item(app, "Choose a photo")
+        XCTAssertTrue(choosePhoto.waitForExistence(timeout: patience), "The photo's menu has no \"Choose a photo\". \(onScreen(app))")
+        XCTAssertFalse(item(app, "Remove photo").exists, "With no photo, the menu offers to remove one. \(onScreen(app))")
+        choosePhoto.tap()
+        // Taken: the new photo in place, with the web app's words that it
+        // is being checked.
+        let photoPending = find(app, "profile.photo-pending")
+        XCTAssertTrue(photoPending.waitForExistence(timeout: patience), "A new photo does not say it is being checked. \(onScreen(app))")
+        XCTAssertEqual(photoPending.label, "Others see your new photo once it has been checked.")
+        XCTAssertEqual(photo.value as? String, "photo, being checked", "The new photo is not in place. \(onScreen(app))")
+        keep(app, "profile-photo-pending-\(look)")
+
+        // With a photo the menu also has "Remove photo". A second picture:
+        // the stand-in refuses it as the server refuses one it cannot use,
+        // said in the web app's words, and the photo from before stays.
+        photo.tap()
+        XCTAssertTrue(item(app, "Remove photo").waitForExistence(timeout: patience), "With a photo, the menu has no \"Remove photo\". \(onScreen(app))")
+        XCTAssertTrue(item(app, "Choose a photo").exists, "The menu has no \"Choose a photo\". \(onScreen(app))")
+        keep(app, "profile-photo-menu-\(look)")
+        item(app, "Choose a photo").tap()
+        let photoNote = find(app, "profile.photo-note")
+        XCTAssertTrue(photoNote.waitForExistence(timeout: patience), "A refused photo is not said. \(onScreen(app))")
+        XCTAssertEqual(photoNote.label, "That picture could not be used. Try another one.", "The refusal is not in the web app's words.")
+        XCTAssertEqual(photo.value as? String, "photo, being checked", "A refused photo took the old one's place. \(onScreen(app))")
+        XCTAssertFalse(find(app, "profile.photo-retry").exists, "A photo refused for good offers to send it again. \(onScreen(app))")
+        keep(app, "profile-photo-refused-\(look)")
+
+        // "Remove photo": the system's confirmation, then the profile with
+        // no photo.
+        photo.tap()
+        let removeItem = item(app, "Remove photo")
+        XCTAssertTrue(removeItem.waitForExistence(timeout: patience), "The menu has no \"Remove photo\". \(onScreen(app))")
+        removeItem.tap()
+        let removing = app.alerts["Remove your profile photo?"]
+        XCTAssertTrue(removing.waitForExistence(timeout: patience), "Remove photo did not ask first. \(onScreen(app))")
+        removing.buttons["Remove photo"].firstMatch.tap()
+        XCTAssertTrue(gone(removing), "The confirmation stayed after Remove photo.")
+        let noPhoto = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "no photo"), object: photo)
+        XCTAssertEqual(XCTWaiter().wait(for: [noPhoto], timeout: patience), .completed, "After removing, the profile still has a photo. \(onScreen(app))")
+        XCTAssertFalse(find(app, "profile.photo-pending").exists, "A removed photo still says it is being checked. \(onScreen(app))")
+        keep(app, "profile-photo-removed-\(look)")
 
         // My posts: two, the one being checked says so, the public one
         // says nothing.
@@ -530,6 +581,29 @@ final class ScreensUITests: XCTestCase {
         let asks = served(shown)
         XCTAssertEqual(asks.filter { $0.hasPrefix("delete me") }, ["delete me confirm delete"], "Not one deletion, as the API takes it: \(asks)")
         XCTAssertEqual(asks.filter { $0.hasPrefix("rename") || $0.hasPrefix("username") }, ["rename", "username name_taken"], "Not one name and one username: \(asks)")
+        // The photo: the three calls in order, once each for each picture,
+        // the second refused; then one removal.
+        let avatarCalls = asks.filter { $0.hasPrefix("avatar") }
+        XCTAssertEqual(
+            avatarCalls.map { $0.hasPrefix("avatar upload") ? String($0.prefix(15)) : $0 },
+            ["avatar start 1", "avatar upload 1", "avatar complete 1", "avatar start 2", "avatar upload 2", "avatar complete 2 bad_photo", "avatar remove"],
+            "Not the photo's calls in order, once each: \(avatarCalls)"
+        )
+        // What storage was sent, read from the bytes: a JPEG of at most
+        // 200,000 bytes, square, at most 512 px a side, with no EXIF, XMP
+        // or IPTC segment, from a picture 1200 by 900 that carried them.
+        for sent in avatarCalls where sent.hasPrefix("avatar upload") {
+            let words = sent.components(separatedBy: " ")
+            XCTAssertEqual(words.count, 9, "The upload's record cannot be read: \(sent)")
+            guard words.count == 9 else { continue }
+            XCTAssertEqual(words[3], "jpeg", "The photo sent is not a JPEG: \(sent)")
+            XCTAssertLessThanOrEqual(Int(words[4]) ?? .max, 200_000, "The photo sent is over 200,000 bytes: \(sent)")
+            let sides = words[6].components(separatedBy: "x").compactMap { Int($0) }
+            XCTAssertEqual(sides.count, 2, "The photo sent has no size: \(sent)")
+            XCTAssertEqual(sides.first, sides.last, "The photo sent is not square: \(sent)")
+            XCTAssertLessThanOrEqual(sides.first ?? .max, 512, "The photo sent is over 512 px a side: \(sent)")
+            XCTAssertEqual(words[8], "none", "The photo sent still carries EXIF, XMP or IPTC: \(sent)")
+        }
         let trail = shown.components(separatedBy: "stand-in server:").first ?? shown
         for line in [
             "profile: name saved",
@@ -539,12 +613,21 @@ final class ScreensUITests: XCTestCase {
             "account: delete cancelled",
             "account: deleting",
             "upload: everything waiting dropped",
+            "avatar: chosen",
+            "avatar: made ready, ",
+            "avatar: refused (bad_photo)",
+            "avatar: removed",
         ] {
             XCTAssertTrue(trail.contains(line), "App info did not keep \"\(line)\".")
         }
         for word in ["Tess", "first.tester"] {
             XCTAssertFalse(trail.contains(word), "The trail holds \"\(word)\".")
         }
+    }
+
+    /// An item of an open menu, found by its words.
+    private func item(_ app: XCUIApplication, _ words: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == %@", words)).firstMatch
     }
 
     /// Puts the cursor at the end of a field's text (the end is on the
@@ -962,7 +1045,8 @@ final class ScreensUITests: XCTestCase {
         // a system dialog iOS dims the screen behind it by about a fifth,
         // so a light one's bar is lowered by as much; still far above dark.
         let bright = ScreensUITests.brightness(shot.image)
-        let dimmed = name.hasPrefix("terms-") || name.hasPrefix("delete-account-")
+        // An open menu dims it the same way.
+        let dimmed = name.hasPrefix("terms-") || name.hasPrefix("delete-account-") || name.hasPrefix("profile-photo-menu-")
         // My posts is the stand-in's photos almost edge to edge, under an
         // inline title: a light one measured 0.64. Still far above dark.
         let photos = name.hasPrefix("my-posts-")
