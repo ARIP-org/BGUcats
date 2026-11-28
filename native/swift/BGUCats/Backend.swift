@@ -96,6 +96,25 @@ protocol Backend {
     /// `DELETE /me/avatar`: the account with no photo.
     func removeAvatar() async throws -> Me
 
+    // Friends and a person's page (docs/app-plan/04-api.md, "Friends").
+    // Neither removing a friend nor blocking needs the terms.
+
+    /// `GET /friends?period=…`: the member and their friends, most cats
+    /// found in the period first.
+    func friends(period: FriendsPeriod) async throws -> [Friend]
+    /// `GET /users/{userId}`: `gone` for nobody, an account that is going,
+    /// and anyone a block keeps apart from the member.
+    func person(userId: String) async throws -> PersonDetail
+    /// `GET /users/{userId}/posts`: their visible posts, newest first, as
+    /// the feed's cards.
+    func personPosts(userId: String, cursor: String?) async throws -> FeedPage
+    /// `DELETE /friends/{userId}`: both sides. The same answer if they were
+    /// not friends.
+    func removeFriend(userId: String) async throws
+    /// `PUT /blocks/{userId}`: the block, and the end of the friendship.
+    /// Twice is once.
+    func block(userId: String) async throws
+
     /// The author removes their own post.
     func deletePost(postId: String) async throws
     /// Reports a thing. `reportId` is made once on the phone, so a retry is
@@ -106,7 +125,7 @@ protocol Backend {
 /// A report as the API takes it (`POST /api/v1/reports`).
 struct Report: Equatable {
     let reportId: String
-    /// `post` here; the API also takes `user`, `avatar` and `name`.
+    /// `post` or `user` here; the API also takes `avatar` and `name`.
     let targetType: String
     let targetId: String
     let reason: ReportReason
@@ -291,6 +310,30 @@ final class LiveBackend: Backend {
 
     func deletePost(postId: String) async throws {
         _ = try await call("DELETE", "/posts/\(Auth.encode(postId))", as: "delete post")
+    }
+
+    func friends(period: FriendsPeriod) async throws -> [Friend] {
+        Read.friends(try await call("GET", "/friends?period=\(period.rawValue)", as: "friends"))
+    }
+
+    func person(userId: String) async throws -> PersonDetail {
+        let json = try await call("GET", "/users/\(Auth.encode(userId))", as: "person")
+        guard let person = Read.personDetail(json) else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        return person
+    }
+
+    func personPosts(userId: String, cursor: String?) async throws -> FeedPage {
+        Read.page(try await call("GET", "/users/\(Auth.encode(userId))/posts", cursor: cursor, as: "person posts"))
+    }
+
+    func removeFriend(userId: String) async throws {
+        _ = try await call("DELETE", "/friends/\(Auth.encode(userId))", as: "remove friend")
+    }
+
+    func block(userId: String) async throws {
+        _ = try await call("PUT", "/blocks/\(Auth.encode(userId))", as: "block")
     }
 
     func rename(_ displayName: String) async throws -> Me {
@@ -668,6 +711,10 @@ final class StandInBackend: Backend {
     private var avatarPending = false
     private var avatars: [String: Int] = [:]
     private var avatarBytes: [Int: Data] = [:]
+    /// The member's friends as removing and blocking left them, and whom
+    /// they blocked.
+    private var friendIds: Set<String> = Set(StandInBackend.madeUpFriends.map(\.person.userId))
+    private var blocked: Set<String> = []
 
     init(
         start: Date,
@@ -709,6 +756,114 @@ final class StandInBackend: Backend {
             nameSource: "none", posts: 0, likes: 0
         ),
     ]
+
+    /// A made-up friend: no real name, cats found this month and in all,
+    /// how many days they have been friends, and friends in common.
+    private struct MadeUpFriend {
+        let person: Person
+        let month: Int
+        let all: Int
+        let days: Double
+        let mutual: Int
+    }
+
+    /// Four friends, the first two the authors of the feed's other posts.
+    /// With the member (4 this month, 7 in all) the podium is First
+    /// Tester, the member and Second Tester this month, and Second Tester,
+    /// First Tester and the member in all.
+    private static let madeUpFriends = [
+        MadeUpFriend(person: Person(userId: "u-a", username: "first.tester", displayName: "First Tester", avatar: nil), month: 6, all: 9, days: 240, mutual: 2),
+        MadeUpFriend(person: Person(userId: "u-b", username: "second.tester", displayName: "Second Tester", avatar: nil), month: 2, all: 14, days: 60, mutual: 1),
+        MadeUpFriend(person: Person(userId: "u-c", username: "third.tester", displayName: "Third Tester", avatar: nil), month: 0, all: 3, days: 20, mutual: 0),
+        MadeUpFriend(person: Person(userId: "u-d", username: "fourth.tester", displayName: "Fourth Tester", avatar: nil), month: 1, all: 1, days: 10, mutual: 0),
+    ]
+
+    /// The friend whose account went between the list and a tap on them:
+    /// their page answers `gone`.
+    private static let leaving = "u-d"
+
+    /// The member as others see them. Called under the lock.
+    private var memberPerson: Person {
+        Person(
+            userId: "u-test",
+            username: username,
+            displayName: displayName,
+            avatar: avatar.map { URL(string: "standin://photo/avatar-\($0)")! }
+        )
+    }
+
+    /// As `_get_friends`: most found first, then by name, then by id.
+    func friends(period: FriendsPeriod) async throws -> [Friend] {
+        try await reach()
+        return lock.withLock { () -> [Friend] in
+            let member = Friend(person: memberPerson, found: period == .month ? 4 : 7, me: true)
+            let rows = StandInBackend.madeUpFriends
+                .filter { friendIds.contains($0.person.userId) }
+                .map { Friend(person: $0.person, found: period == .month ? $0.month : $0.all, me: false) }
+            return ([member] + rows).sorted { first, second in
+                (first.found, second.person.displayName.lowercased(), second.person.userId)
+                    > (second.found, first.person.displayName.lowercased(), first.person.userId)
+            }
+        }
+    }
+
+    /// As `_get_user`: the member's own page, a friend's, or `gone` for the
+    /// one who left and for anyone blocked.
+    func person(userId: String) async throws -> PersonDetail {
+        try await reach()
+        return try lock.withLock { () -> PersonDetail in
+            if userId == "u-test" {
+                return PersonDetail(person: memberPerson, found: 7, me: true, friend: false, friendSince: nil, mutual: nil)
+            }
+            guard let made = StandInBackend.madeUpFriends.first(where: { $0.person.userId == userId }),
+                  userId != StandInBackend.leaving, !blocked.contains(userId)
+            else {
+                throw ApiError(status: 404, code: "gone", message: "no such person")
+            }
+            let friend = friendIds.contains(userId)
+            return PersonDetail(
+                person: made.person,
+                found: made.all,
+                me: false,
+                friend: friend,
+                friendSince: friend ? start.addingTimeInterval(-made.days * 86400) : nil,
+                mutual: made.mutual
+            )
+        }
+    }
+
+    /// Their visible posts, as `_user_posts`.
+    func personPosts(userId: String, cursor: String?) async throws -> FeedPage {
+        try await reach()
+        let (made, hidden) = lock.withLock { (posted, blocked.contains(userId) || userId == StandInBackend.leaving) }
+        if hidden {
+            throw ApiError(status: 404, code: "gone", message: "no such person")
+        }
+        let theirs = (made + madeUp).filter { post in
+            post.author.userId == userId && !deleted.contains(post.id) && (post.state ?? "visible") == "visible"
+        }
+        return FeedPage(posts: theirs, cursor: nil)
+    }
+
+    /// Recorded as "unfriend u-c": a made-up id, never a name.
+    func removeFriend(userId: String) async throws {
+        try await reach()
+        lock.withLock {
+            kept.append("unfriend \(userId)")
+            _ = friendIds.remove(userId)
+        }
+    }
+
+    /// Recorded as "block u-b". The friendship ends with it, and their
+    /// posts leave the feed and a cat's posts, as on the server.
+    func block(userId: String) async throws {
+        try await reach()
+        lock.withLock {
+            kept.append("block \(userId)")
+            blocked.insert(userId)
+            _ = friendIds.remove(userId)
+        }
+    }
 
     /// One option of a made-up poll. `order` stands for when it was
     /// suggested: the earlier wins a tie, as on the server.
@@ -1078,8 +1233,9 @@ final class StandInBackend: Backend {
         guard let name = StandInBackend.campus.first(where: { $0.id == id })?.name else {
             return FeedPage(posts: [], cursor: nil)
         }
-        let made = lock.withLock { posted }
-        return FeedPage(posts: (made + madeUp).filter { $0.catName == name && !deleted.contains($0.id) }, cursor: nil)
+        let (made, apart) = lock.withLock { (posted, blocked) }
+        let shown = (made + madeUp).filter { $0.catName == name && !deleted.contains($0.id) && !apart.contains($0.author.userId) }
+        return FeedPage(posts: shown, cursor: nil)
     }
 
     func me() async throws -> Me {
@@ -1245,8 +1401,8 @@ final class StandInBackend: Backend {
     }
 
     func feed(cursor: String?) async throws -> FeedPage {
-        let made = lock.withLock { posted }
-        return FeedPage(posts: (made + madeUp).filter { !deleted.contains($0.id) }, cursor: nil)
+        let (made, apart) = lock.withLock { (posted, blocked) }
+        return FeedPage(posts: (made + madeUp).filter { !deleted.contains($0.id) && !apart.contains($0.author.userId) }, cursor: nil)
     }
 
     /// The three made-up posts, as the member's likes left them.
@@ -1334,7 +1490,14 @@ final class StandInBackend: Backend {
         deleted.insert(postId)
     }
 
+    /// Recorded as "report user u-a harassment", or "report post spam":
+    /// a post's id stays out, as App info is held to name no post.
     func report(_ report: Report) async throws {
         reports.append(report)
+        if report.targetType == "user" {
+            keep("report user \(report.targetId) \(report.reason.rawValue)")
+        } else {
+            keep("report \(report.targetType) \(report.reason.rawValue)")
+        }
     }
 }
