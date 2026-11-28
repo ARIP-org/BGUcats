@@ -497,6 +497,14 @@ an hour that a sentence would have saved.
   same tap, it is the app's and not the simulator's. When a walk nears
   five minutes, split it by launch into tests of their own rather than
   raise the limit again.
+  That was not done in time. Profile (#150, 2026-11-27) added a minute
+  to a walk already near seven on a slow Mac: the dark walk was cut off
+  at eight minutes with every step passing, the light one passed in
+  462 seconds. The builder's two answers were spent, and what was left
+  was the step's limit, in a workflow the builder may not edit. The
+  walk is now cut by launch: the account's launches are a
+  test of their own, in each look, and the step holds nine tests at
+  eight minutes, so the next cut needs no workflow change.
 - **The first walk runs on a simulator that is still starting up, and a
   short wait there fails an app that is right.** The third Mac run of
   the same day: the app's first launch took 118 seconds (19 the run
