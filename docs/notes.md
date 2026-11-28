@@ -313,15 +313,20 @@ an hour that a sentence would have saved.
   is the old value until then.
 - **A macOS runner's minute counts as about ten.** iOS builds are for
   release candidates, not for every merge.
-- **"Fix", "closes" or "resolves" before a number in a merged pull
-  request's description closes that number, even inside a quotation.**
-  #154's description quoted the owner's choice, "Split walk + fix
-  #150", and its merge closed #150, the pull request it was written to
-  unblock. The close is recorded as done by whoever merged (2026-11-28).
-  A builder pull request that is closed loses its auto-merge, and its
-  issue keeps `building`. Write "closes #N" only for the issue a pull
-  request finishes. Elsewhere, put a plain word between the verb and
-  the number, or link the full URL.
+- **A closing word right before a number closes that number when it
+  reaches `main`: in a pull request's description, in a commit message,
+  even inside a quotation.** The words are close, fix and resolve, in
+  every form ("closes", "closed", "fixed", "resolves"...). #154's
+  description quoted the owner's choice, "Split walk + fix #150", and
+  its merge closed pull request 150, the one it was written to
+  unblock. The note written about that had, in its own commit message,
+  "closed" and the same number, and its merge closed pull request 150
+  a second time (2026-11-28). The close is recorded as done by whoever
+  merged. A builder pull request that is closed loses its auto-merge,
+  and its issue keeps `building`. Write "closes #N" only for the issue a
+  pull request finishes. Anywhere else, in a description or a commit
+  message, put a plain word between the verb and the number ("closed
+  pull request 150"), or link the full URL.
 
 ## Testing
 
