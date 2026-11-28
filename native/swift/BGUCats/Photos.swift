@@ -1,5 +1,7 @@
+import ImageIO
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Where a picture comes from.
 protocol Photos {
@@ -45,6 +47,51 @@ final class DrawnPhotos: Photos {
             UIColor(hue: hue, saturation: 0.5, brightness: 0.42, alpha: 1).setFill()
             context.cgContext.fillEllipse(in: CGRect(x: 110, y: 130, width: 180, height: 160))
         }
+    }
+
+    /// A file as a camera writes it, for the profile photo under UI tests
+    /// (the simulator has no picker to drive): a drawn picture, wider than
+    /// it is tall and larger than a profile photo, in a JPEG that carries
+    /// made-up EXIF, TIFF and GPS (a camera, a time, a place on campus),
+    /// so that the walk shows what is sent has none of it.
+    static func cameraFile(_ word: String) -> Data? {
+        let seed = word.unicodeScalars.reduce(0) { $0 + Int($1.value) * 7 }
+        let hue = CGFloat(seed % 12) / 12
+        let size = CGSize(width: 1200, height: 900)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(hue: hue, saturation: 0.4, brightness: 0.6, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor(hue: hue, saturation: 0.55, brightness: 0.4, alpha: 1).setFill()
+            context.cgContext.fillEllipse(in: CGRect(x: 380, y: 230, width: 440, height: 440))
+        }
+        guard let picture = image.cgImage else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        let madeUp: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: 0.9,
+            kCGImagePropertyTIFFDictionary: [
+                kCGImagePropertyTIFFMake: "Made-up camera",
+                kCGImagePropertyTIFFModel: "Stand-in 1",
+            ] as [CFString: Any],
+            kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifDateTimeOriginal: "2026:11:28 09:30:00",
+                kCGImagePropertyExifLensModel: "Made-up lens",
+            ] as [CFString: Any],
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 31.2622,
+                kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 34.8013,
+                kCGImagePropertyGPSLongitudeRef: "E",
+            ] as [CFString: Any],
+        ]
+        CGImageDestinationAddImage(destination, picture, madeUp as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return out as Data
     }
 }
 
