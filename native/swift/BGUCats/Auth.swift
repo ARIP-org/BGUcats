@@ -101,6 +101,9 @@ protocol Gate: AnyObject {
     /// Called when a sign-in ends without the person asking: the server
     /// refused the token, or would not renew it. The screens follow.
     var onEnded: (() -> Void)? { get set }
+    /// Called when the account is being deleted (the API answers 403
+    /// `gone`): the sign-in is over, and the person is told why.
+    var onGone: (() -> Void)? { get set }
     func begin() async throws -> SignInStart
     func finish(callback: URL, start: SignInStart) async throws
     func signOut()
@@ -115,6 +118,7 @@ final class Auth: Gate {
     private let defaults: UserDefaults
     private var known: SiteConfig?
     var onEnded: (() -> Void)?
+    var onGone: (() -> Void)?
 
     init(vault: Vault, trail: Trail, now: @escaping () -> Date = Date.init, defaults: UserDefaults = .standard) {
         self.vault = vault
@@ -142,6 +146,14 @@ final class Auth: Gate {
         vault.drop()
         trail.mark("signin: ended (\(why))")
         onEnded?()
+    }
+
+    /// The account is being deleted: the tokens go, as when a sign-in
+    /// ends, and the session says it is the account that went.
+    func accountGone() {
+        vault.drop()
+        trail.mark("signin: ended (the account is being deleted)")
+        onGone?()
     }
 
     /// The site's config.json, read once a launch. With no signal, the one
@@ -337,6 +349,7 @@ final class Auth: Gate {
 final class StandInGate: Gate {
     private(set) var signedIn: Bool
     var onEnded: (() -> Void)?
+    var onGone: (() -> Void)?
 
     init(signedIn: Bool) {
         self.signedIn = signedIn

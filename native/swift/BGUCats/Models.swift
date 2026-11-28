@@ -17,6 +17,9 @@ struct Me: Equatable {
     /// The version of the terms in force (`terms.current`): what accepting
     /// them sends.
     let termsCurrent: String?
+    /// A new display name is waiting to be checked: its owner sees it
+    /// already (`displayName`), everyone else once it has been.
+    var namePending: Bool = false
 }
 
 struct Person: Equatable {
@@ -42,8 +45,26 @@ struct Post: Equatable, Identifiable {
     var liked: Bool
     let createdAt: Date?
     let mine: Bool
-    /// Its author alone is told: "pending" while it is being checked.
+    /// Its author alone is told: "pending" while it is being checked,
+    /// "hidden" when others cannot see it, "visible" when they can.
     let state: String?
+    /// Its author alone is told: it names a new cat an admin has not
+    /// confirmed yet (the proposal is still open), so nobody else sees it.
+    var heldForNewCat: Bool = false
+
+    /// Its state in the web app's words (`post.state.*`,
+    /// `post.waitingNewCat`), when it is not simply public; nil when it is.
+    var stateWords: String? {
+        if heldForNewCat {
+            return "Waiting for an admin to confirm the new cat"
+        }
+        switch state {
+        case "pending": return "Being checked"
+        case "hidden": return "Not published"
+        case "removed": return "Removed"
+        default: return nil
+        }
+    }
 }
 
 /// A campus cat as `GET /cats` lists it. "Which cat?" reads the first
@@ -243,7 +264,8 @@ enum Read {
             catsMet: int(counters?["catsMet"]),
             encounters: int(counters?["encounters"]),
             termsRequired: (terms?["required"] as? Bool) ?? false,
-            termsCurrent: text(terms?["current"])
+            termsCurrent: text(terms?["current"]),
+            namePending: (json["namePending"] as? Bool) ?? false
         )
     }
 
@@ -277,7 +299,8 @@ enum Read {
             liked: (json["liked"] as? Bool) ?? false,
             createdAt: date(json["createdAt"]),
             mine: (json["mine"] as? Bool) ?? false,
-            state: text(json["state"])
+            state: text(json["state"]),
+            heldForNewCat: text((json["proposal"] as? [String: Any])?["status"]) == "open"
         )
     }
 

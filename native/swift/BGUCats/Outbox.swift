@@ -314,6 +314,23 @@ final class Outbox: ObservableObject {
         kick()
     }
 
+    /// The account is being deleted: everything waiting leaves the phone,
+    /// photos, picks, proposals, posts and the scan flow, and the folder
+    /// with them. Nothing of it could be sent any more: every call by the
+    /// person answers `gone`. A launch after this opens an empty queue.
+    func dropEverything() {
+        sleeper?.cancel()
+        index = Index()
+        batch = []
+        states = [:]
+        posts = [:]
+        flow = nil
+        flowThumbs = [:]
+        opened = false
+        try? FileManager.default.removeItem(at: folder)
+        trail.mark("upload: everything waiting dropped")
+    }
+
     // ------------------------------------------------------------ the sending
 
     func kick() {

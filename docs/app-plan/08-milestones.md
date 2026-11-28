@@ -1186,6 +1186,25 @@ What landed before the list below is in the roadmap.
   vote or a suggestion; refusals in the web app's words (`poll.*`).
   Pictured in a simulator only (`cat-poll`, `cat-poll-voted`,
   `cat-poll-suggested`): not tried on a phone yet.
+- **Profile, the name, the username, my posts and deleting the
+  account** (#149, built 2026-11-27; part 1 of 2): `ProfileView.swift`,
+  out of `RootView.swift`. The display name and the username typed in
+  their rows (`PATCH /me`, `PUT /me/username`), the terms first for
+  both; a new name says it is being checked while `namePending`, a
+  username refused says why under the field (`name_taken`,
+  `bad_username`, the daily limit, in the web app's words) and keeps
+  what was typed. "My posts" (`GET /me/posts`) on the feed's own card,
+  each post's state in words when it is not public ("Being checked",
+  "Not published", "Waiting for an admin to confirm the new cat"), and
+  Delete in its menu as in the feed. "Delete account", last: the
+  system's confirmation with D14's sentence, then `DELETE /me` with
+  `{"confirm": "delete"}`; on `{"deleting": true}` the tokens, the upload
+  queue and the kept flow go and the sign-in screen says "Your account
+  is being deleted.", as it does after any call answered 403 `gone`.
+  The profile photo is part 2. Pictured in a simulator only
+  (`profile-name-pending`, `profile-username-taken`, `my-posts`,
+  `delete-account`, `signed-out-deleted`): not tried on a phone yet, and
+  no account has been deleted from it.
 
 ---
 

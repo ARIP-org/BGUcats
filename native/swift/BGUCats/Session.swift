@@ -15,6 +15,12 @@ final class Session: ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .starting
+
+    /// The account, while someone is signed in.
+    var me: Me? {
+        guard case .signedIn(let me) = phase else { return nil }
+        return me
+    }
     /// A sign-in is under way.
     @Published private(set) var busy = false
     /// The terms' dialog is up (`Terms.swift`), waiting for an answer.
@@ -33,6 +39,50 @@ final class Session: ObservableObject {
                 self?.phase = .signedOut(note: "Your sign-in ended. Sign in again.")
             }
         }
+        // Any call answered `gone`: the account is being deleted, from this
+        // phone or another. The same end as a deletion asked here.
+        world.gate.onGone = { [weak self] in
+            Task { @MainActor in
+                self?.world.trail.mark("account: gone")
+                self?.endDeleted()
+            }
+        }
+    }
+
+    /// The line on the sign-in screen once the account is being deleted.
+    nonisolated static let deletedNote = "Your account is being deleted."
+
+    /// The API's answer to every call by an account being deleted (403
+    /// `gone`; a 404 `gone` is a thing that is not there).
+    nonisolated static func isGone(_ error: ApiError) -> Bool {
+        error.status == 403 && error.code == "gone"
+    }
+
+    /// The account as the server answered a change to it (a new name, a
+    /// username): the screens draw it at once.
+    func update(_ me: Me) {
+        guard case .signedIn = phase else { return }
+        phase = .signedIn(me)
+    }
+
+    /// "Delete account", confirmed: `DELETE /me` with `{"confirm":
+    /// "delete"}`. On `{"deleting": true}` the app forgets its tokens and
+    /// what waits to be sent, and shows the sign-in screen with one line.
+    /// Throws, with words for the person, when the server refused.
+    func deleteAccount() async throws {
+        world.trail.mark("account: delete sent")
+        guard try await world.backend.deleteAccount(confirm: "delete") else {
+            throw ApiError(status: 200, code: nil, message: "The server's answer could not be read.")
+        }
+        world.trail.mark("account: deleting")
+        endDeleted()
+    }
+
+    /// The end of a deleted account: no tokens, no queue, no kept flow.
+    private func endDeleted() {
+        world.gate.signOut()
+        world.outbox.dropEverything()
+        phase = .signedOut(note: Session.deletedNote)
     }
 
     /// Reads the account. The app's start, "Try again", and what follows a
@@ -54,6 +104,9 @@ final class Session: ObservableObject {
         } catch let error as ApiError {
             if error.status == 401 {
                 phase = .signedOut(note: "Your sign-in ended. Sign in again.")
+            } else if Session.isGone(error) {
+                // `onGone` drops the rest; the screen says it at once.
+                phase = .signedOut(note: Session.deletedNote)
             } else if error.status == 403 && error.code == "not_admitted" {
                 // This address is not let in: nobody is stuck retrying it.
                 world.gate.signOut()

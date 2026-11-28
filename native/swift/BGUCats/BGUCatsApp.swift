@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The iPhone app, in Swift (docs/ROADMAP.md, 2g): what TestFlight gets.
-/// Built so far: signing in, the feed, the profile's first rows and "App
-/// info". The other tabs say they are not built yet.
+/// Built so far: signing in, the feed, Scan a cat, Cats, Profile and "App
+/// info".
 @main
 struct BGUCatsApp: App {
     private let world: World
