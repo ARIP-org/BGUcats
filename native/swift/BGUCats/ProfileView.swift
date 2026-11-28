@@ -1,9 +1,11 @@
+import PhotosUI
 import SwiftUI
 
 /// Profile (the web app's `Profile` in web/social/home.js, and its words):
-/// who is signed in, the display name and the username changed in their
+/// who is signed in, with the profile photo chosen, replaced or removed
+/// from a menu on it; the display name and the username changed in their
 /// rows, the counters, My posts, App info, Sign out, and Delete account
-/// last. The system's own `List`, fields and alerts.
+/// last. The system's own `List`, fields, menu, picker and alerts.
 struct ProfileView: View {
     let world: World
     @ObservedObject var session: Session
@@ -25,6 +27,13 @@ struct ProfileView: View {
     @State private var refusedUsername: String?
     /// The confirmation before the account goes.
     @State private var deleteAsked = false
+    /// The system's photo picker is up, and what was chosen in it.
+    @State private var picking = false
+    @State private var picked: PhotosPickerItem?
+    /// The confirmation before the photo is removed.
+    @State private var removeAsked = false
+    /// Under UI tests: how many drawn pictures were handed out.
+    @State private var drawn = 0
 
     init(world: World, session: Session, me: Me) {
         self.world = world
@@ -39,24 +48,23 @@ struct ProfileView: View {
         NavigationStack {
             List {
                 Section {
-                    HStack(spacing: 14) {
-                        AvatarView(
-                            person: Person(userId: me.userId, username: me.username, displayName: me.displayName, avatar: me.avatar),
-                            photos: world.photos,
-                            size: 56
-                        )
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(me.displayName)
-                                .font(.headline)
-                            if let username = me.username {
-                                Text("@\(username)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 14) {
+                            photoMenu
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(me.displayName)
+                                    .font(.headline)
+                                if let username = me.username {
+                                    Text("@\(username)")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("profile.me")
                         }
+                        photoNotes
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("profile.me")
                     LabeledContent("Cats met", value: "\(me.catsMet)")
                     LabeledContent("Encounters", value: "\(me.encounters)")
                 }
@@ -118,6 +126,16 @@ struct ProfileView: View {
             } message: {
                 Text(ProfileWords.deleteBody)
             }
+            // Removing the photo asks first, with the system's alert. It
+            // asks no terms: the API needs none for it.
+            .alert(ProfileWords.photoRemoveTitle, isPresented: $removeAsked) {
+                Button(ProfileWords.photoRemove, role: .destructive) {
+                    Task { await model.removePhoto() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(ProfileWords.photoRemoveBody)
+            }
             .alert("That did not work", isPresented: noteShown) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -138,6 +156,115 @@ struct ProfileView: View {
             if let left {
                 commit(left)
             }
+        }
+        // The system's picker: images only, and it needs no permission.
+        .photosPicker(isPresented: $picking, selection: $picked, matching: .images)
+        .onChange(of: picked) { _, item in
+            guard let item else { return }
+            picked = nil
+            Task {
+                // Nil when the phone cannot hand the picture over (not on
+                // this phone yet, or not a picture): said, nothing sent.
+                let file = try? await item.loadTransferable(type: Data.self)
+                await model.choosePhoto(file)
+            }
+        }
+    }
+
+    /// The photo at the top, and the system's menu on it: "Choose a photo",
+    /// and "Remove photo" when there is one.
+    private var photoMenu: some View {
+        Menu {
+            Section(ProfileWords.photoMenu) {
+                Button {
+                    choose()
+                } label: {
+                    Label(ProfileWords.photoChoose, systemImage: "photo.on.rectangle")
+                }
+                if me.avatar != nil {
+                    Button(role: .destructive) {
+                        removeAsked = true
+                    } label: {
+                        Label(ProfileWords.photoRemove, systemImage: "trash")
+                    }
+                }
+            }
+        } label: {
+            AvatarView(
+                person: Person(userId: me.userId, username: me.username, displayName: me.displayName, avatar: me.avatar),
+                photos: world.photos,
+                size: 64
+            )
+            .overlay {
+                if model.photoBusy {
+                    Circle()
+                        .fill(.black.opacity(0.35))
+                    ProgressView()
+                        .tint(.white)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: "pencil.circle.fill")
+                    .font(.title3)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .tint)
+                    .accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(.borderless)
+        .disabled(model.photoBusy)
+        .accessibilityLabel(ProfileWords.photoChange)
+        .accessibilityValue(photoState)
+        .accessibilityIdentifier("profile.photo")
+    }
+
+    /// What the photo is, for VoiceOver and the walk.
+    private var photoState: String {
+        if me.avatar == nil {
+            return "no photo"
+        }
+        return me.avatarPending ? "photo, being checked" : "photo"
+    }
+
+    /// Under the photo: while the new one waits to be checked, the web
+    /// app's sentence; why the last one was refused, in its words, with
+    /// "Try again" when sending it failed; or that it was removed.
+    @ViewBuilder private var photoNotes: some View {
+        if let note = model.photoNote {
+            Text(note)
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .accessibilityIdentifier("profile.photo-note")
+            if model.photoRetry {
+                Button("Try again") {
+                    Task { await model.sendPhoto() }
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("profile.photo-retry")
+            }
+        }
+        if me.avatarPending {
+            Text(ProfileWords.photoChecking)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("profile.photo-pending")
+        } else if let said = model.photoSaid {
+            Text(said)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("profile.photo-said")
+        }
+    }
+
+    /// "Choose a photo": the system's picker, or under UI tests (where
+    /// there is none to drive) a drawn picture with made-up EXIF in it.
+    private func choose() {
+        if world.drawn {
+            drawn += 1
+            let file = DrawnPhotos.cameraFile("avatar \(drawn)")
+            Task { await model.choosePhoto(file) }
+        } else {
+            picking = true
         }
     }
 
@@ -284,6 +411,18 @@ enum ProfileWords {
     static let usernameRule = "A username is 3 to 20 letters a-z, digits, dots or underscores."
     static let usernameLimit = "That's enough username changes for today. Try again tomorrow."
     static let myPosts = "My posts"
+    static let photoChange = "Change profile photo"
+    static let photoMenu = "Profile photo"
+    static let photoChoose = "Choose a photo"
+    static let photoRemove = "Remove photo"
+    static let photoRemoved = "Photo removed"
+    static let photoChecking = "Others see your new photo once it has been checked."
+    static let photoLimit = "That's enough photo changes for today. Try again tomorrow."
+    static let photoBad = "That picture could not be used. Try another one."
+    /// The web app removes with no question; the issue asks for the
+    /// system's confirmation, in these words.
+    static let photoRemoveTitle = "Remove your profile photo?"
+    static let photoRemoveBody = "Everyone will see your initial instead."
     static let deleteAccount = "Delete account"
     static let deleteTitle = "Delete your account?"
     static let deleteBody = "Your posts, badges, points and friends will be removed for good. The cat photos you took stay with the cats' records, with nothing left that points to you."
@@ -308,6 +447,17 @@ final class ProfileModel: ObservableObject {
     /// Something else that failed (deleting the account), in words.
     @Published var note: String?
     @Published private(set) var deleting = false
+    /// The profile photo: a picture is being made ready or sent; why the
+    /// last one failed, in words; whether "Try again" can send it again;
+    /// and that it was removed.
+    @Published private(set) var photoBusy = false
+    @Published private(set) var photoNote: String?
+    @Published private(set) var photoRetry = false
+    @Published private(set) var photoSaid: String?
+    /// The picture made ready and not yet taken by the server, for "Try
+    /// again"; and where it was to go, while that may still be used.
+    private var ready: Data?
+    private var started: AvatarStart?
 
     private let world: World
     private let session: Session
@@ -380,6 +530,141 @@ final class ProfileModel: ObservableObject {
         switch field {
         case .name: nameNote = words
         case .username: usernameNote = words
+        }
+    }
+
+    /// A picture chosen (the file as the picker handed it over; nil when it
+    /// could not): made ready on the phone, away from the screen's thread,
+    /// then sent. One the phone cannot open says so and sends nothing.
+    func choosePhoto(_ file: Data?) async {
+        guard !photoBusy else { return }
+        world.trail.mark("avatar: chosen")
+        photoNote = nil
+        photoRetry = false
+        photoSaid = nil
+        ready = nil
+        started = nil
+        photoBusy = true
+        let made: Data?
+        if let file {
+            made = await Task.detached(priority: .userInitiated) { try? Avatar.ready(file) }.value
+        } else {
+            made = nil
+        }
+        photoBusy = false
+        guard let made else {
+            world.trail.mark("avatar: could not be read")
+            photoNote = ProfileWords.photoBad
+            return
+        }
+        let kb = Int((Double(made.count) / 1000).rounded())
+        world.trail.mark("avatar: made ready, \(kb) KB")
+        ready = made
+        await sendPhoto()
+    }
+
+    /// The three calls, the terms first: where to send it, the bytes, the
+    /// confirmation, whose answer is the account. Until the server has
+    /// taken it the photo shown is the one from before. A refusal is said
+    /// in the web app's words; a failure to reach the server or storage
+    /// keeps the picture for "Try again".
+    func sendPhoto() async {
+        guard let jpeg = ready, !photoBusy else { return }
+        photoBusy = true
+        defer { photoBusy = false }
+        photoNote = nil
+        photoRetry = false
+        // `changed`: refused for the terms although the account said they
+        // were accepted; the account is read again and the person asked.
+        var changed = false
+        while true {
+            do {
+                guard try await session.termsFirst(changed: changed) else {
+                    ready = nil
+                    return
+                }
+            } catch {
+                if FeedModel.signInEnded(error) { return }
+                photoNote = (error as? ApiError)?.message ?? "Try again."
+                photoRetry = true
+                return
+            }
+            do {
+                let target: AvatarStart
+                if let kept = started {
+                    target = kept
+                } else {
+                    target = try await world.backend.startAvatar()
+                    started = target
+                }
+                _ = try await world.backend.uploadAvatar(jpeg, to: target.target)
+                let now = try await world.backend.completeAvatar(avatarId: target.avatarId)
+                session.update(now)
+                ready = nil
+                started = nil
+                world.trail.mark("avatar: saved, being checked")
+                return
+            } catch {
+                let refusal = error as? ApiError
+                let code = refusal?.code
+                if FeedModel.signInEnded(error) { return }
+                if code == "terms_required" && !changed {
+                    world.trail.mark("avatar: refused (terms_required)")
+                    changed = true
+                    continue
+                }
+                if code == "storage" {
+                    // The upload's address may be stale: a new one next time.
+                    started = nil
+                }
+                switch code {
+                case "bad_photo", "rate_limited":
+                    let why = code ?? ""
+                    world.trail.mark("avatar: refused (\(why))")
+                    photoNote = ProfileModel.photoWords(refusal)
+                    ready = nil
+                    started = nil
+                default:
+                    let why = (refusal?.status ?? 0) == 0 ? (code ?? "no answer") : "\(refusal?.status ?? 0)"
+                    world.trail.mark("avatar: not sent (\(why))")
+                    photoNote = ProfileModel.photoWords(refusal)
+                    photoRetry = true
+                }
+                return
+            }
+        }
+    }
+
+    /// A refusal of the photo in the web app's words, never its code
+    /// (`photoPicked` in its `Profile`); any other, the server's sentence.
+    static func photoWords(_ refusal: ApiError?) -> String {
+        switch refusal?.code ?? "" {
+        case "bad_photo": ProfileWords.photoBad
+        case "rate_limited": ProfileWords.photoLimit
+        default: refusal?.message ?? "Try again."
+        }
+    }
+
+    /// "Remove photo", confirmed: the account with no photo, at once.
+    func removePhoto() async {
+        guard !photoBusy else { return }
+        photoBusy = true
+        defer { photoBusy = false }
+        photoNote = nil
+        photoRetry = false
+        photoSaid = nil
+        ready = nil
+        started = nil
+        do {
+            let now = try await world.backend.removeAvatar()
+            session.update(now)
+            world.trail.mark("avatar: removed")
+            photoSaid = ProfileWords.photoRemoved
+        } catch {
+            let status = (error as? ApiError)?.status ?? 0
+            world.trail.mark("avatar: remove refused (\(status))")
+            if FeedModel.signInEnded(error) { return }
+            photoNote = (error as? ApiError)?.message ?? "Try again."
         }
     }
 
