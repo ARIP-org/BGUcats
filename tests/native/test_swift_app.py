@@ -1584,7 +1584,10 @@ def test_the_trail_marks_the_profile_and_never_a_name_or_an_id():
 def test_the_walk_deletes_the_account_once_and_cancel_sends_nothing():
     tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
     walk = tests.split("private func walk(")[1].split("\n    private func ")[0]
-    assert "profile(naming, look: look)" in walk
+    # In the account's walk, in the launch that accepted the terms (#154).
+    account = tests.split("private func account(")[1].split("\n    private func ")[0]
+    assert "profile(naming, look: look)" in account
+    assert "profile(" not in walk
     profile = tests.split("private func profile(")[1].split("\n    private func ")[0]
     assert profile.index('asked.buttons["Cancel"].firstMatch.tap()') < profile.index('asked.buttons["Delete account"].firstMatch.tap()')
     assert 'XCTAssertFalse(served(cancelled).contains { $0.hasPrefix("delete me") }' in profile
