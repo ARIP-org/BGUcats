@@ -25,11 +25,50 @@ struct Me: Equatable {
     var avatarPending: Bool = false
 }
 
-struct Person: Equatable {
+struct Person: Hashable, Identifiable {
     let userId: String
     let username: String?
     let displayName: String
     let avatar: URL?
+
+    var id: String { userId }
+
+    /// The name a screen shows: the display name, or the username when
+    /// there is none (`displayName || username` in the web app).
+    var shownName: String {
+        displayName.isEmpty ? (username ?? "") : displayName
+    }
+}
+
+/// `GET /friends?period=…`: whose cats are counted, this month (an Israel
+/// month) or in all.
+enum FriendsPeriod: String {
+    case month, all
+}
+
+/// One person of `GET /friends`: the member (`me`) or one of their
+/// friends, with how many cats they found in the period. The server sends
+/// them most found first, so the podium is the first three.
+struct Friend: Equatable, Identifiable {
+    let person: Person
+    let found: Int
+    let me: Bool
+
+    var id: String { person.userId }
+}
+
+/// `GET /users/{userId}`: a person as others see them.
+struct PersonDetail: Equatable {
+    let person: Person
+    /// Cats found, in all.
+    let found: Int
+    let me: Bool
+    /// They and the member are friends (`friend == "yes"`), and since when.
+    var friend: Bool
+    var friendSince: Date?
+    /// How many friends the two have in common, never who; nil on one's
+    /// own page.
+    let mutual: Int?
 }
 
 struct Photo: Equatable, Identifiable {
@@ -399,6 +438,28 @@ enum Read {
             },
             total: number(json["total"]),
             locked: text(json["locked"])
+        )
+    }
+
+    /// `GET /friends`: the people in the server's order. One with no id is
+    /// skipped.
+    static func friends(_ json: [String: Any]) -> [Friend] {
+        (json["people"] as? [[String: Any]] ?? []).compactMap { row in
+            guard text(row["userId"]) != nil else { return nil }
+            return Friend(person: person(row), found: int(row["found"]), me: (row["me"] as? Bool) ?? false)
+        }
+    }
+
+    /// `GET /users/{userId}`.
+    static func personDetail(_ json: [String: Any]) -> PersonDetail? {
+        guard let body = json["person"] as? [String: Any], text(body["userId"]) != nil else { return nil }
+        return PersonDetail(
+            person: person(body),
+            found: int(body["found"]),
+            me: (body["me"] as? Bool) ?? false,
+            friend: text(body["friend"]) == "yes",
+            friendSince: date(body["friendSince"]),
+            mutual: number(body["mutual"])
         )
     }
 
