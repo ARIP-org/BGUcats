@@ -1574,7 +1574,7 @@ def test_the_trail_marks_the_profile_and_never_a_name_or_an_id():
     assert 'world.trail.mark("account: deleting")' in session
     for mark in re.findall(r"trail\.mark\((.*)\)", profile):
         for taken in re.findall(r"\\\((.*?)\)", mark):
-            assert taken in ("field.rawValue", "why", "status"), mark
+            assert taken in ("field.rawValue", "why", "status", "kb"), mark
     # The walk reads them back, with the made-up server's record.
     tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
     for line in ('"profile: name saved"', '"profile: username refused (name_taken)"', '"account: delete asked"', '"account: deleting"'):
@@ -1606,3 +1606,182 @@ def test_the_walk_deletes_the_account_once_and_cancel_sends_nothing():
     assert 'NSPredicate(format: "label == %@", sentence)' in profile
     # My posts is mostly photos; its light bar is lower, still far above dark.
     assert 'let photos = name.hasPrefix("my-posts-")' in tests
+
+
+# ------------------------------------------------------- the profile photo
+
+
+def test_the_profile_photo_is_made_with_the_web_apps_and_the_servers_numbers():
+    # web/social/avatar.js and src/common/media.py: a square of 512 px at
+    # most, a JPEG of 200,000 bytes at most, the quality stepped down the
+    # same way, and the same segments refused.
+    avatar = sources()["Avatar.swift"]
+    web = (REPO / "web" / "social" / "avatar.js").read_text()
+    media = (REPO / "src" / "common" / "media.py").read_text()
+    side = re.search(r"const SIDE = (\d+);", web)[1]
+    most = re.search(r"const MAX_BYTES = ([\d_]+);", web)[1]
+    qualities = re.search(r"const QUALITIES = \[([^\]]+)\];", web)[1]
+    smallest = re.search(r"side >= (\d+);", web)[1]
+    assert f"static let side = {side}" in avatar and side == "512"
+    assert f"static let maxBytes = {most}" in avatar and most == "200_000"
+    assert f"AVATAR_MAX_BYTES = {most}" in media
+    assert f"static let qualities: [Double] = [{qualities}]" in avatar
+    assert f"static let smallest = {smallest}" in avatar
+    assert 'static let type = "image/jpeg"' in avatar and 'AVATAR_TYPE = "image/jpeg"' in media
+    assert 'canvas.toBlob(resolve, "image/jpeg", quality)' in web
+    assert "UTType.jpeg.identifier" in avatar.split("private static func encode(")[1]
+    markers = re.search(r"_METADATA_MARKERS = \{([^}]+)\}", media)[1]
+    assert '0xE1: "EXIF or XMP", 0xED: "IPTC"' in markers
+    assert 'static let metadata: [UInt8: String] = [0xE1: "EXIF or XMP", 0xED: "IPTC"]' in avatar
+    # Cut to a centred square, turned upright, drawn anew, and checked the
+    # way the server will check it before it is sent. Core Graphics and
+    # ImageIO, no third-party code.
+    assert "kCGImageSourceCreateThumbnailWithTransform: true" in avatar
+    assert "image.cropping(to: CGRect(" in avatar and "(image.width - cut) / 2" in avatar
+    assert "jpeg.count <= maxBytes, problem(jpeg) == nil" in avatar
+    assert "edge = Int((Double(edge) * 0.75).rounded())" in avatar and "side = Math.round(side * 0.75)" in web
+    imports = set(re.findall(r"^import (\w+)$", avatar, flags=re.MULTILINE))
+    assert imports == {"CoreGraphics", "Foundation", "ImageIO", "UniformTypeIdentifiers"}, imports
+    # The stand-in hands the screen a picture with made-up EXIF, TIFF and
+    # GPS in it, larger than a profile photo and not square.
+    drawn = sources()["Photos.swift"].split("static func cameraFile(")[1]
+    for part in ("kCGImagePropertyExifDictionary", "kCGImagePropertyGPSDictionary", "kCGImagePropertyTIFFDictionary"):
+        assert part in drawn, part
+    assert "CGSize(width: 1200, height: 900)" in drawn
+
+
+def test_the_profile_photo_goes_by_the_three_routes_and_removing_by_the_fourth():
+    code = sources()
+    live = code["Backend.swift"].split("final class StandInBackend")[0]
+    # docs/app-plan/04-api.md, the three avatar rows, as web/social/data.js
+    # calls them: the file last in the presigned POST.
+    assert 'call("POST", "/me/avatar", body: [:], as: "avatar")' in live
+    assert 'call("POST", "/me/avatar/\\(Auth.encode(avatarId))/complete", body: [:], as: "avatar complete")' in live
+    assert 'call("DELETE", "/me/avatar", as: "remove avatar")' in live
+    assert "LiveBackend.form(target.fields, data: jpeg, boundary: boundary)" in live
+    upload = live.split("final class LiveBackend")[1].split("func uploadAvatar(")[1].split("func completeAvatar(")[0]
+    assert "request.timeoutInterval = 20" in upload
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert '("POST", r"^/api/v1/me/avatar$", _start_avatar, "user")' in handler
+    assert "/complete$\",\n        _complete_avatar," in handler
+    assert '("DELETE", r"^/api/v1/me/avatar$", _remove_avatar, "user")' in handler
+    assert 'return {"avatarId": avatar_id, "upload": upload}' in handler
+    api = (REPO / "docs" / "app-plan" / "04-api.md").read_text()
+    for row in ("| `POST /me/avatar` |", "| `POST /me/avatar/{avatarId}/complete` |", "| `DELETE /me/avatar` |"):
+        assert row in api, row
+    web = (REPO / "web" / "social" / "data.js").read_text()
+    assert 'post("/v1/me/avatar")' in web and 'del("/v1/me/avatar")' in web
+    # The account says a new photo waits to be checked.
+    assert '"avatarPending": bool(user.get("pendingAvatarKey"))' in handler
+    assert 'avatarPending: (json["avatarPending"] as? Bool) ?? false' in code["Models.swift"]
+    # The three calls in order, then the account is the session's.
+    send = code["ProfileView.swift"].split("func sendPhoto() async {")[1].split("static func photoWords(")[0]
+    assert send.index("backend.startAvatar()") < send.index("backend.uploadAvatar(") < send.index("backend.completeAvatar(")
+    assert send.index("backend.completeAvatar(") < send.index("session.update(now)")
+
+
+def test_the_terms_come_before_a_photo_and_not_before_removing_one():
+    code = sources()
+    profile = code["ProfileView.swift"]
+    send = profile.split("func sendPhoto() async {")[1].split("static func photoWords(")[0]
+    assert send.index("session.termsFirst(changed: changed)") < send.index("backend.startAvatar()")
+    assert 'if code == "terms_required" && !changed {' in send
+    remove = profile.split("func removePhoto() async {")[1].split("/// \"Delete account\", confirmed.")[0]
+    assert "termsFirst" not in remove
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    assert "require_terms(user)" in handler.split("def _start_avatar(")[1].split("\ndef ")[0]
+    assert "require_terms" not in handler.split("def _remove_avatar(")[1].split("\ndef ")[0]
+    stand_in = code["Backend.swift"].split("final class StandInBackend")[1]
+    assert "try termsFirst()" in stand_in.split("func startAvatar(")[1].split("    func ")[0]
+    assert "termsFirst" not in stand_in.split("func removeAvatar(")[1].split("    func ")[0]
+    # Removing asks first, with the system's alert.
+    assert ".alert(ProfileWords.photoRemoveTitle, isPresented: $removeAsked) {" in profile
+
+
+def test_the_profile_photo_uses_the_web_apps_words_and_never_a_code():
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    profile = sources()["ProfileView.swift"]
+    for name, key in (
+        ("photoChange", "profile.photoChange"),
+        ("photoMenu", "profile.photoMenu"),
+        ("photoRemove", "profile.photoRemove"),
+        ("photoRemoved", "profile.photoRemoved"),
+        ("photoChecking", "profile.photoChecking"),
+        ("photoLimit", "profile.photoLimit"),
+        ("photoBad", "profile.photoBad"),
+    ):
+        assert f'static let {name} = "{words[key]}"' in profile, name
+    # The issue's words for the menu's one way to choose: there is no
+    # camera here, so not the web app's "Choose from library".
+    assert 'static let photoChoose = "Choose a photo"' in profile
+    said = profile.split("static func photoWords(")[1].split("func removePhoto()")[0]
+    assert 'case "bad_photo": ProfileWords.photoBad' in said
+    assert 'case "rate_limited": ProfileWords.photoLimit' in said
+    web = (REPO / "web" / "social" / "home.js").read_text().split("const photoPicked = ")[1].split("const removePhoto")[0]
+    assert 'err.code === "rate_limited"' in web and 't("profile.photoBad")' in web
+    # A picture the phone cannot open says so and sends nothing.
+    choose = profile.split("func choosePhoto(_ file: Data?) async {")[1].split("func sendPhoto()")[0]
+    unread = choose.split("guard let made else {")[1].split("}")[0]
+    assert "photoNote = ProfileWords.photoBad" in unread and "return" in unread
+    assert choose.index("guard let made else {") < choose.index("await sendPhoto()")
+    # A failure to reach the server or storage keeps the picture for
+    # "Try again"; a refusal for good does not.
+    send = profile.split("func sendPhoto() async {")[1].split("static func photoWords(")[0]
+    for_good = send.split('case "bad_photo", "rate_limited":')[1].split("default:")[0]
+    assert "ready = nil" in for_good and "photoRetry" not in for_good
+    assert "photoRetry = true" in send.split('case "bad_photo", "rate_limited":')[1].split("default:")[1]
+    assert 'Button("Try again") {\n                    Task { await model.sendPhoto() }' in profile
+    # Until the server takes the new one, the account (and its photo) is
+    # not changed.
+    assert send.count("session.update(") == 1
+
+
+def test_the_profile_photo_is_the_systems_menu_and_picker():
+    profile = sources()["ProfileView.swift"]
+    menu = profile.split("private var photoMenu: some View {")[1].split("private var photoNotes")[0]
+    assert "Menu {" in menu and "if me.avatar != nil {" in menu
+    assert menu.index("ProfileWords.photoChoose") < menu.index("ProfileWords.photoRemove")
+    assert '.accessibilityIdentifier("profile.photo")' in menu
+    assert ".photosPicker(isPresented: $picking, selection: $picked, matching: .images)" in profile
+    assert "item.loadTransferable(type: Data.self)" in profile
+    # Under UI tests there is no picker to drive: a drawn picture instead.
+    choose = profile.split("private func choose() {")[1].split("\n    }\n")[0]
+    assert "if world.drawn {" in choose and "DrawnPhotos.cameraFile(" in choose and "picking = true" in choose
+
+
+def test_the_trail_marks_the_profile_photo_and_never_a_file_an_id_or_a_place():
+    profile = sources()["ProfileView.swift"]
+    for line in (
+        'world.trail.mark("avatar: chosen")',
+        'world.trail.mark("avatar: made ready, \\(kb) KB")',
+        'world.trail.mark("avatar: refused (\\(why))")',
+        'world.trail.mark("avatar: removed")',
+        'world.trail.mark("avatar: could not be read")',
+    ):
+        assert line in profile, line
+    live = sources()["Backend.swift"].split("final class StandInBackend")[0]
+    assert 'trail.mark("api: avatar upload \\(status) in' in live
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    for line in ('"avatar: chosen"', '"avatar: made ready, "', '"avatar: refused (bad_photo)"', '"avatar: removed"'):
+        assert line in tests, line
+
+
+def test_the_walk_chooses_a_photo_has_it_refused_and_removes_it():
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    profile = tests.split("private func profile(")[1].split("\n    private func ")[0]
+    for name in ("profile-photo-pending", "profile-photo-menu", "profile-photo-refused", "profile-photo-removed"):
+        assert f'keep(app, "{name}-\\(look)")' in profile, name
+    assert profile.index("profile-photo-pending") < profile.index("profile-photo-menu") < profile.index("profile-photo-refused")
+    assert profile.index("profile-photo-refused") < profile.index("profile-photo-removed") < profile.index("profile.delete-account")
+    # The three calls in order, once each, from the stand-in's record; and
+    # what storage was sent, read from its bytes.
+    assert '"avatar start 1", "avatar upload 1", "avatar complete 1"' in profile
+    assert '"avatar complete 2 bad_photo", "avatar remove"' in profile
+    for check in ('words[3], "jpeg"', "200_000", "sides.first, sides.last", "512", 'words[8], "none"'):
+        assert check in profile, check
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    upload = stand_in.split("func uploadAvatar(")[1].split("    func ")[0]
+    assert 'keep("avatar upload \\(number) \\(kind) \\(jpeg.count) bytes \\(size) metadata \\(metadata)")' in upload
+    assert "Avatar.problem(jpeg) == nil" in upload and "Avatar.pixels(jpeg)" in upload
+    # The open menu dims the screen behind it, as a dialog does.
+    assert 'name.hasPrefix("profile-photo-menu-")' in tests
