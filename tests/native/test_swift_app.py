@@ -1785,3 +1785,204 @@ def test_the_walk_chooses_a_photo_has_it_refused_and_removes_it():
     assert "Avatar.problem(jpeg) == nil" in upload and "Avatar.pixels(jpeg)" in upload
     # The open menu dims the screen behind it, as a dialog does.
     assert 'name.hasPrefix("profile-photo-menu-")' in tests
+
+
+# ------------------------------------------------------------- friends
+
+
+def test_friends_go_by_the_routes_of_the_api():
+    live = sources()["Backend.swift"].split("final class StandInBackend")[0]
+    # docs/app-plan/04-api.md, the rows for /friends, /users/{userId},
+    # /users/{userId}/posts and /blocks, word for word.
+    for call in (
+        'call("GET", "/friends?period=\\(period.rawValue)", as: "friends")',
+        'call("GET", "/users/\\(Auth.encode(userId))", as: "person")',
+        'call("GET", "/users/\\(Auth.encode(userId))/posts", cursor: cursor, as: "person posts")',
+        'call("DELETE", "/friends/\\(Auth.encode(userId))", as: "remove friend")',
+        'call("PUT", "/blocks/\\(Auth.encode(userId))", as: "block")',
+    ):
+        assert call in live, call
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    for route in (
+        '("GET", r"^/api/v1/friends$", _get_friends, "user")',
+        '("PUT", rf"^/api/v1/blocks/(?P<user_id>{ID})$", _block, "user")',
+        '("DELETE", rf"^/api/v1/friends/(?P<user_id>{ID})$", _remove_friend, "user")',
+        '("GET", rf"^/api/v1/users/(?P<user_id>{ID})$", _get_user, "user")',
+        '("GET", rf"^/api/v1/users/(?P<user_id>{ID})/posts$", _user_posts, "user")',
+    ):
+        assert route in handler, route
+    assert 'PERIODS = ("month", "all")' in handler
+    api = (REPO / "docs" / "app-plan" / "04-api.md").read_text()
+    for row in (
+        "| `GET /friends?period=month\\|all` |",
+        "| `GET /users/{userId}` |",
+        "| `GET /users/{userId}/posts` |",
+        "| `DELETE /friends/{userId}` |",
+        "| `PUT /blocks/{userId}`,",
+    ):
+        assert row in api, row
+    # A person's posts are a list of posts like the feed's.
+    feed = sources()["FeedView.swift"]
+    assert "case .person(let id):\n            try await world.backend.personPosts(userId: id, cursor: cursor)" in feed
+
+
+def test_a_person_is_read_field_by_field_as_the_server_writes_them():
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    person = handler.split("def person(profile, friendship, me):")[1].split("\ndef ")[0]
+    for key in ('"userId"', '"username"', '"displayName"', '"avatar"', '"friend": "yes" if friendship else "no"', '"friendSince"', '"me"'):
+        assert key in person, key
+    assert 'row["found"] = ' in handler and '"mutual": mutual,' in handler
+    assert 'return {"period": period, "people": people, "requests": 0}' in handler
+    models = sources()["Models.swift"]
+    for read in (
+        'json["people"] as? [[String: Any]]',
+        'found: int(row["found"])',
+        'me: (row["me"] as? Bool) ?? false',
+        'json["person"] as? [String: Any]',
+        'friend: text(body["friend"]) == "yes"',
+        'friendSince: date(body["friendSince"])',
+        'mutual: number(body["mutual"])',
+    ):
+        assert read in models, read
+    # A name to show: the display name, or the username (the web app's
+    # `displayName || username`).
+    assert 'displayName.isEmpty ? (username ?? "") : displayName' in models
+    assert "person.displayName || person.username" in (REPO / "web" / "social" / "friends.js").read_text()
+
+
+def test_friends_use_the_web_apps_words():
+    words = json.loads((REPO / "web" / "i18n" / "en.json").read_text())
+    friends = sources()["FriendsView.swift"]
+    for name, key in (
+        ("title", "home.friends"),
+        ("you", "home.you"),
+        ("period", "friends.period"),
+        ("month", "friends.period.month"),
+        ("allTime", "friends.period.all"),
+        ("catsOne", ("friends.cats", "one")),
+        ("catsOther", ("friends.cats", "other")),
+        ("foundOne", ("home.found", "one")),
+        ("foundOther", ("home.found", "other")),
+        ("search", "friends.search"),
+        ("all", "friends.all"),
+        ("countOne", ("friends.count", "one")),
+        ("countOther", ("friends.count", "other")),
+        ("noMatch", "friends.noMatch"),
+        ("empty", "friends.empty"),
+        ("failed", "friends.failed"),
+        ("optionsFor", "friends.optionsFor"),
+        ("remove", "friends.remove"),
+        ("removeTitle", "friends.removeTitle"),
+        ("removeBody", "friends.removeBody"),
+        ("removeButton", "friends.removeButton"),
+        ("block", "block.block"),
+        ("blockTitle", "block.title"),
+        ("blockBody", "block.body"),
+        ("blockButton", "block.button"),
+        ("report", "report.report"),
+        ("generic", "error.generic"),
+        ("personFoundOne", ("person.found", "one")),
+        ("personFoundOther", ("person.found", "other")),
+        ("friendsSince", "person.friendsSince"),
+        ("mutualOne", ("person.mutual", "one")),
+        ("mutualOther", ("person.mutual", "other")),
+        ("thisIsYou", "person.you"),
+        ("posts", "person.posts"),
+        ("noPosts", "person.noPosts"),
+        ("gone", "person.gone"),
+    ):
+        said = words[key[0]][key[1]] if isinstance(key, tuple) else words[key]
+        assert f'static let {name} = "{said}"' in friends, name
+    # The report sheet's title for a person is the web app's `report.title`.
+    report = sources()["ReportView.swift"]
+    assert words["report.title"] == "Report {name}"
+    assert 'title = "Report \\(person.shownName)"' in report
+
+
+def test_friends_are_built_on_the_systems_own_controls():
+    code = sources()
+    friends, person = code["FriendsView.swift"], code["PersonView.swift"]
+    for control in ("List {", ".pickerStyle(.segmented)", ".searchable(", "Menu {", ".navigationDestination(item: $opened)"):
+        assert control in friends, control
+    # The confirmations are the system's alerts, with the web app's words.
+    assert ".alert(\n                FriendsWords.fill(FriendsWords.removeTitle" in friends
+    assert ".alert(\n                FriendsWords.fill(FriendsWords.blockTitle" in friends
+    assert "Button(FriendsWords.removeButton, role: .destructive)" in friends
+    assert "Button(FriendsWords.blockButton, role: .destructive)" in friends
+    # Each menu: Remove, Block, then Report, last and red; on a person's
+    # page Remove only while they are friends.
+    for menu in (friends.split("Menu {")[1].split("} label:")[0], person.split("Menu {")[1].split("} label:")[0]):
+        assert menu.index("FriendsWords.remove") < menu.index("FriendsWords.block") < menu.index("FriendsWords.report")
+        assert 'Button(FriendsWords.report, systemImage: "flag", role: .destructive)' in menu
+    assert "if detail.friend {" in person.split("Menu {")[1].split("FriendsWords.block")[0]
+    # Report is the app's own sheet, with a person as its target.
+    assert "ReportView(person: person, world: world)" in friends
+    report = code["ReportView.swift"]
+    assert 'targetType = "user"' in report and "targetId = person.userId" in report
+    assert "PostCard(post: post, world: world, model: posts)" in person
+    assert "glass" not in friends.lower().replace(".glassprominent", "")
+    # Profile has the row.
+    assert "FriendsView(world: world, session: session)" in code["ProfileView.swift"]
+    assert '.accessibilityIdentifier("row.friends")' in code["ProfileView.swift"]
+
+
+def test_removing_and_blocking_take_a_person_off_at_once_and_ask_no_terms():
+    code = sources()
+    friends = code["FriendsView.swift"]
+    model = friends.split("final class FriendsModel")[1].split("\nenum People")[0]
+    for action in ("func remove(_ person: Person) async {", "func block(_ person: Person) async {"):
+        body = model.split(action)[1].split("\n    }\n")[0]
+        # Off the list before the call; back where it was if it fails.
+        assert body.index("takeOut(person)") < body.index("try await world.backend.")
+        assert "putBack(row, at: index)" in body.split("} catch {")[1]
+        assert "termsFirst" not in body
+    # A block takes their posts off the lists of posts on screen.
+    assert "People.post(person.userId, .blocked)" in model
+    feed = code["FeedView.swift"]
+    assert "NotificationCenter.default.publisher(for: People.changed)" in feed
+    assert "change.kind == .blocked" in feed and "model.keepApart(change.userId)" in feed
+    # The server needs no terms for either.
+    handler = (REPO / "src" / "app" / "handler.py").read_text()
+    for name in ("def _remove_friend(", "def _block("):
+        assert "require_terms" not in handler.split(name)[1].split("\ndef ")[0], name
+    # The stand-in plays both, and the feed leaves the blocked out.
+    stand_in = code["Backend.swift"].split("final class StandInBackend")[1]
+    assert 'kept.append("unfriend \\(userId)")' in stand_in and 'kept.append("block \\(userId)")' in stand_in
+    assert 'keep("report user \\(report.targetId) \\(report.reason.rawValue)")' in stand_in
+    assert "!apart.contains($0.author.userId)" in stand_in.split("func feed(cursor:")[1].split("    func ")[0]
+
+
+def test_the_trail_marks_friends_and_never_a_name_a_username_or_an_id():
+    code = sources()
+    friends, person, report = code["FriendsView.swift"], code["PersonView.swift"], code["ReportView.swift"]
+    assert 'world.trail.mark("friends: \\(answer.count) people (\\(period.rawValue))")' in friends
+    for line in ('"friends: removed"', '"block: sent"'):
+        assert f"world.trail.mark({line})" in friends and f"world.trail.mark({line})" in person
+    assert 'world.trail.mark("person: opened")' in person
+    assert 'world.trail.mark("report: sent (\\(targetType))")' in report
+    for text in (friends, person):
+        for mark in re.findall(r"trail\.mark\((.*)\)", text):
+            for taken in re.findall(r"\\\((.*?)\)", mark):
+                assert taken in ("answer.count", "period.rawValue", "(error as? ApiError", "(error as? ApiError)?.status ?? 0"), mark
+
+
+def test_the_friends_walk_is_a_launch_of_its_own_in_both_looks():
+    tests = (SWIFT / "BGUCatsUITests" / "ScreensUITests.swift").read_text()
+    assert 'func testFriendsInLight() {\n        friends(look: "light")' in tests
+    assert 'func testFriendsInDark() {\n        friends(look: "dark")' in tests
+    walk = tests.split("private func friends(look: String) {")[1].split("\n    private func ")[0]
+    assert 'app.launchArguments = ["-uiTesting", "-look", look]' in walk
+    # Each picture the issue asks for, in both looks.
+    for name in ("friends", "friends-all-time", "friends-search-none", "friends-menu", "friends-remove", "person", "person-gone"):
+        assert f'keep(app, "{name}-\\(look)")' in walk, name
+    # Cancel first, then the call, each once, from the stand-in's record.
+    assert walk.index('removing.buttons["Cancel"]') < walk.index('removing.buttons["Remove"]')
+    assert walk.index('blocking.buttons["Cancel"]') < walk.index('blocking.buttons["Block"]')
+    for record in ('["unfriend u-c"]', '["block u-b"]', '["report user u-a harassment"]'):
+        assert record in walk, record
+    # The menus and the confirmation dim the screen, as a dialog does.
+    assert 'name.hasPrefix("friends-menu-")' in tests and 'name.hasPrefix("friends-remove-")' in tests
+    # The made-up friends have no real names.
+    stand_in = sources()["Backend.swift"].split("final class StandInBackend")[1]
+    friends = stand_in.split("private static let madeUpFriends = [")[1].split("]\n")[0]
+    assert re.findall(r'displayName: "(\w+ Tester)"', friends) == ["First Tester", "Second Tester", "Third Tester", "Fourth Tester"]
