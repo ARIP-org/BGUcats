@@ -640,6 +640,191 @@ final class ScreensUITests: XCTestCase {
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: had + 2) + text + "\n")
     }
 
+    func testFriendsInLight() {
+        friends(look: "light")
+    }
+
+    func testFriendsInDark() {
+        friends(look: "dark")
+    }
+
+    /// Friends, a launch of its own: the page from Profile, this month and
+    /// in all; a friend's menu; Remove and Block, each cancelled first and
+    /// then confirmed; Report with a person as its target; a friend's page
+    /// with its chips and posts, and the page of one who left; then what
+    /// the made-up server was asked, and the search that finds nobody.
+    private func friends(look: String) {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-look", look]
+        app.launch()
+        let tab = app.tabBars.buttons["Profile"]
+        XCTAssertTrue(tab.waitForExistence(timeout: patience), "The tabs did not open. \(onScreen(app))")
+        tab.tap()
+        openFriends(app)
+
+        // This month: First Tester first, the member second, as the
+        // stand-in answers; every friend in the list, the member not.
+        let first = find(app, "podium.1")
+        XCTAssertTrue(first.waitForExistence(timeout: patience), "The friends page has no podium. \(onScreen(app))")
+        XCTAssertEqual(first.label, "1. First Tester, 6 cats")
+        XCTAssertEqual(find(app, "podium.2").label, "2. You, 4 cats", "The member is not on the podium as \"You\".")
+        XCTAssertEqual(find(app, "podium.3").label, "3. Second Tester, 2 cats")
+        let firstRow = find(app, "friend.u-a")
+        XCTAssertTrue(firstRow.waitForExistence(timeout: patience), "The friends list has no First Tester. \(onScreen(app))")
+        XCTAssertEqual(firstRow.label, "First Tester, @first.tester, found 6 cats")
+        XCTAssertFalse(find(app, "friend.u-test").exists, "The member is in their own friends list. \(onScreen(app))")
+        XCTAssertTrue(app.searchFields.firstMatch.exists, "The friends page has no search field. \(onScreen(app))")
+        keep(app, "friends-\(look)")
+
+        // All time: another order, the stand-in's.
+        app.segmentedControls.buttons["All time"].firstMatch.tap()
+        expect(app, "podium.1", "1. Second Tester, 14 cats")
+        XCTAssertEqual(find(app, "podium.2").label, "2. First Tester, 9 cats")
+        XCTAssertEqual(find(app, "podium.3").label, "3. You, 7 cats")
+        let order = ["u-b", "u-a", "u-c", "u-d"].map { find(app, "friend.\($0)") }
+        for (above, below) in zip(order, order.dropFirst()) {
+            reveal(below, in: app)
+            XCTAssertLessThan(above.frame.minY, below.frame.minY, "The list is not in the stand-in's order. \(onScreen(app))")
+        }
+        keep(app, "friends-all-time-\(look)")
+
+        // A friend's menu: Remove from friends, Block, and Report.
+        let third = app.buttons["friend.menu.u-c"].firstMatch
+        reveal(third, in: app)
+        third.tap()
+        let removeItem = item(app, "Remove from friends")
+        XCTAssertTrue(removeItem.waitForExistence(timeout: patience), "A friend's menu has no Remove from friends. \(onScreen(app))")
+        XCTAssertTrue(item(app, "Block").exists, "A friend's menu has no Block. \(onScreen(app))")
+        XCTAssertTrue(item(app, "Report").exists, "A friend's menu has no Report. \(onScreen(app))")
+        keep(app, "friends-menu-\(look)")
+
+        // Remove: the system's confirmation. Cancel leaves them; Remove
+        // takes them off the list.
+        removeItem.tap()
+        let removing = app.alerts["Remove Third Tester from friends?"]
+        XCTAssertTrue(removing.waitForExistence(timeout: patience), "Remove did not ask first. \(onScreen(app))")
+        keep(app, "friends-remove-\(look)")
+        removing.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(gone(removing), "The confirmation stayed after Cancel.")
+        XCTAssertTrue(find(app, "friend.u-c").exists, "Cancel took the friend off the list. \(onScreen(app))")
+        third.tap()
+        item(app, "Remove from friends").tap()
+        XCTAssertTrue(removing.waitForExistence(timeout: patience), "Remove did not ask the second time. \(onScreen(app))")
+        removing.buttons["Remove"].firstMatch.tap()
+        XCTAssertTrue(gone(find(app, "friend.u-c")), "A friend removed is still in the list. \(onScreen(app))")
+        keep(app, "friends-removed-\(look)")
+
+        // Block: the same, with its own words.
+        let second = app.buttons["friend.menu.u-b"].firstMatch
+        reveal(second, in: app)
+        second.tap()
+        let blockItem = item(app, "Block")
+        XCTAssertTrue(blockItem.waitForExistence(timeout: patience), "A friend's menu has no Block. \(onScreen(app))")
+        blockItem.tap()
+        let blocking = app.alerts["Block Second Tester?"]
+        XCTAssertTrue(blocking.waitForExistence(timeout: patience), "Block did not ask first. \(onScreen(app))")
+        blocking.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(gone(blocking), "The confirmation stayed after Cancel.")
+        XCTAssertTrue(find(app, "friend.u-b").exists, "Cancel blocked the friend. \(onScreen(app))")
+        second.tap()
+        item(app, "Block").tap()
+        XCTAssertTrue(blocking.waitForExistence(timeout: patience), "Block did not ask the second time. \(onScreen(app))")
+        blocking.buttons["Block"].firstMatch.tap()
+        XCTAssertTrue(gone(find(app, "friend.u-b")), "A friend blocked is still in the list. \(onScreen(app))")
+
+        // Report: the report sheet, for a person.
+        let firstMenu = app.buttons["friend.menu.u-a"].firstMatch
+        reveal(firstMenu, in: app)
+        firstMenu.tap()
+        let reportItem = item(app, "Report")
+        XCTAssertTrue(reportItem.waitForExistence(timeout: patience), "A friend's menu has no Report. \(onScreen(app))")
+        reportItem.tap()
+        XCTAssertTrue(app.navigationBars["Report First Tester"].waitForExistence(timeout: patience), "The report sheet is not about the person. \(onScreen(app))")
+        let harassment = find(app, "reason.harassment")
+        XCTAssertTrue(harassment.waitForExistence(timeout: patience), "The report sheet has no reasons. \(onScreen(app))")
+        harassment.tap()
+        app.buttons["report.send"].firstMatch.tap()
+        let thanks = find(app, "report.thanks")
+        XCTAssertTrue(thanks.waitForExistence(timeout: patience), "Reporting a person did not say thank you. \(onScreen(app))")
+        find(app, "report.done").tap()
+        XCTAssertTrue(thanks.waitForNonExistence(timeout: patience), "Done did not close the report. \(onScreen(app))")
+
+        // A friend's page: the chips, and their post on the feed's card.
+        reveal(firstRow, in: app)
+        firstRow.tap()
+        let found = find(app, "person.chip.found")
+        XCTAssertTrue(found.waitForExistence(timeout: patience), "A friend's page did not open. \(onScreen(app))")
+        XCTAssertEqual(found.label, "9 cats found")
+        XCTAssertTrue(find(app, "person.chip.since").label.hasPrefix("Friends since "), "A friend's page does not say since when. \(onScreen(app))")
+        XCTAssertEqual(find(app, "person.chip.mutual").label, "2 friends in common")
+        XCTAssertFalse(find(app, "person.chip.you").exists, "A friend's page says it is the member's. \(onScreen(app))")
+        XCTAssertTrue(find(app, "like.p1").waitForExistence(timeout: patience), "A friend's page has no post. \(onScreen(app))")
+        XCTAssertTrue(find(app, "person.menu").exists, "A friend's page has no menu. \(onScreen(app))")
+        keep(app, "person-\(look)")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // One who left between the list and the tap: the web app's words.
+        let leaving = find(app, "friend.u-d")
+        XCTAssertTrue(leaving.waitForExistence(timeout: patience), "Back did not come to the friends page. \(onScreen(app))")
+        reveal(leaving, in: app)
+        leaving.tap()
+        let left = find(app, "person.gone")
+        XCTAssertTrue(left.waitForExistence(timeout: patience), "A person not here any more is not said. \(onScreen(app))")
+        XCTAssertEqual(left.label, "This person is not here any more.")
+        XCTAssertFalse(find(app, "person.menu").exists, "A page of nobody has a menu. \(onScreen(app))")
+        keep(app, "person-gone-\(look)")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // What the made-up server was asked: each once, Cancel nothing.
+        XCTAssertTrue(find(app, "friend.u-a").waitForExistence(timeout: patience), "Back did not come to the friends page. \(onScreen(app))")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let shown = appInfo(app)
+        let asked = served(shown)
+        XCTAssertEqual(asked.filter { $0.hasPrefix("unfriend") }, ["unfriend u-c"], "Not one DELETE /friends of the friend removed: \(asked)")
+        XCTAssertEqual(asked.filter { $0.hasPrefix("block") }, ["block u-b"], "Not one PUT /blocks of the friend blocked: \(asked)")
+        XCTAssertEqual(asked.filter { $0.hasPrefix("report") }, ["report user u-a harassment"], "Not one report of a user: \(asked)")
+        let trail = shown.components(separatedBy: "stand-in server:").first ?? shown
+        for line in [
+            "friends: 5 people (month)",
+            "friends: 5 people (all)",
+            "friends: remove cancelled",
+            "friends: removed",
+            "block: cancelled",
+            "block: sent",
+            "report: sent (user)",
+            "person: opened",
+            "person: gone",
+        ] {
+            XCTAssertTrue(trail.contains(line), "App info did not keep \"\(line)\".")
+        }
+        for word in ["Tester", "tester", "u-a", "u-b", "u-c", "u-d"] {
+            XCTAssertFalse(trail.contains(word), "The trail holds \"\(word)\".")
+        }
+
+        // The search, on the phone, last: it leaves the keyboard up. Two
+        // friends are left, and a search that finds neither says so.
+        app.navigationBars["App info"].buttons.element(boundBy: 0).tap()
+        openFriends(app)
+        XCTAssertTrue(find(app, "friend.u-a").waitForExistence(timeout: patience), "The friends page did not open again. \(onScreen(app))")
+        let field = app.searchFields.firstMatch
+        field.tap()
+        field.typeText("Nobody")
+        XCTAssertTrue(gone(find(app, "friend.u-a")), "A search for nobody left a friend. \(onScreen(app))")
+        expect(app, "friends.none", "No friends match “Nobody”.")
+        keep(app, "friends-search-none-\(look)")
+        app.terminate()
+    }
+
+    /// From Profile, the Friends row, below the others.
+    private func openFriends(_ app: XCUIApplication) {
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: patience), "Profile did not open. \(onScreen(app))")
+        let row = find(app, "row.friends")
+        XCTAssertTrue(row.waitForExistence(timeout: patience), "Profile has no Friends row. \(onScreen(app))")
+        reveal(row, in: app)
+        row.tap()
+        XCTAssertTrue(app.navigationBars["Friends"].waitForExistence(timeout: patience), "Friends did not open. \(onScreen(app))")
+    }
+
     func testScanInLight() {
         scan(look: "light")
     }
@@ -1047,9 +1232,11 @@ final class ScreensUITests: XCTestCase {
         let bright = ScreensUITests.brightness(shot.image)
         // An open menu dims it the same way.
         let dimmed = name.hasPrefix("terms-") || name.hasPrefix("delete-account-") || name.hasPrefix("profile-photo-menu-")
+            || name.hasPrefix("friends-menu-") || name.hasPrefix("friends-remove-")
         // My posts is the stand-in's photos almost edge to edge, under an
         // inline title: a light one measured 0.64. Still far above dark.
-        let photos = name.hasPrefix("my-posts-")
+        // A friend's page has their post's photos under the chips.
+        let photos = name.hasPrefix("my-posts-") || name.hasPrefix("person-")
         let light = dimmed ? 0.52 : photos ? 0.58 : 0.65
         if name.hasSuffix("-dark") {
             XCTAssertLessThan(bright, 0.35, "\(name) is not dark: the screen's brightness is \(bright).")

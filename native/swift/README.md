@@ -10,8 +10,8 @@ a post's menu: Delete on one's own, Report on anyone else's), Scan a
 cat (photos taken or chosen, sent as one encounter, then "Which cat?",
 the new-cat form for a cat that isn't here, and the post), Cats (the
 gallery and a cat's page with its name poll), Profile (the photo, the
-name, the username, my posts, signing out and deleting the account),
-and "App info".
+name, the username, my posts, friends and a person's page, signing out
+and deleting the account), and "App info".
 
 | File | |
 |---|---|
@@ -23,14 +23,15 @@ and "App info".
 | `Session.swift` | who is signed in, whether the app has started, and the terms first |
 | `Terms.swift` | the terms' words and their dialog |
 | `RootView.swift` | the first screen by state, and the tabs |
-| `ProfileView.swift`, `MyPostsView.swift` | Profile: the photo, the name, the username, the counters, My posts, App info, Sign out, Delete account; and the member's own posts |
+| `ProfileView.swift`, `MyPostsView.swift` | Profile: the photo, the name, the username, the counters, My posts, App info, Friends, Sign out, Delete account; and the member's own posts |
+| `FriendsView.swift`, `PersonView.swift` | Friends: the podium and the list, a friend's menu (remove, block, report); and a person's page |
 | `Avatar.swift` | a profile photo made ready on the phone: square, upright, 512 px, a new JPEG of 200 KB at most with no metadata |
 | `SignInView.swift`, `FeedView.swift`, `ScanView.swift`, `AppInfoView.swift` | those screens |
 | `CatsView.swift`, `CatView.swift` | Cats: the gallery, and a cat's page pushed on the tab's stack |
 | `NamePoll.swift` | the name poll on a cat's page: voting, taking a vote back, suggesting a name |
 | `ScanPages.swift` | Scan a cat after "Send": "Which cat?", the new-cat form and the post |
 | `ScanFlow.swift` | where the member is in Scan a cat after "Send", kept on the phone and checked before it is used |
-| `ReportView.swift` | the report sheet: the server's six reasons, an optional note |
+| `ReportView.swift` | the report sheet, for a post or a person: the server's six reasons, an optional note |
 | `Outbox.swift` | the upload queue: photos kept on the phone until the server has them, then the pick or the proposal, and the post; and the scan flow beside it |
 | `Places.swift` | where the phone is when a photo is taken |
 | `Ulid.swift` | an id made on the phone (a report's, an encounter's, a photo's), so a retry is the same request |
@@ -82,7 +83,8 @@ defined, one iOS version, nothing that signs.
   test may take eight minutes on the Mac, for a hang; one that nears
   half of that is split by launch the same way, in both looks. Profile
   took the one walk there was past its limit with every step passing
-  (#150, 2026-11-27). The step holds nine tests at their longest, seven now;
+  (#150, 2026-11-27). The step holds nine tests at their longest, nine now
+  (Friends' pair, #159, is the last that fits);
   past that its limit is raised in `.github/workflows/ios.yml`, an
   owner path.
 - **The walk's waits are one `patience`, and the simulator is woken
@@ -96,7 +98,9 @@ defined, one iOS version, nothing that signs.
   `-uiTesting` gets a made-up world (`World.standIn()`): a clock that
   stands still, a trail kept in memory, a made-up member with three
   made-up posts (the second the member's own, being checked; My posts
-  adds an older public one) and a campus of three cats (`StandInBackend`: Shachor is
+  adds an older public one), four made-up friends with no real names
+  (the first two the authors of the other posts; the fourth left, and
+  their page answers `gone`) and a campus of three cats (`StandInBackend`: Shachor is
   the cat of the day, the member met Mitzi twice, and the third has no
   name, place, coat, description, grade or meeting), and pictures that are drawn
   (`DrawnPhotos`), so two pictures of one screen are the same picture.
@@ -131,8 +135,11 @@ defined, one iOS version, nothing that signs.
   the app reads and sends. Today: the trail in UserDefaults; and, since
   it signs in, the account (email, name, user id), what a person does (a
   like), and the servers' counters and logs; since Scan a cat, photos
-  and the precise place a photo was taken. Friends and the phone's
-  notification address join it with the screen that first sends them: a
+  and the precise place a photo was taken; since Friends, who a
+  person's friends are and whom they blocked (Apple's Contacts, which
+  takes in a social graph: the phone's address book is never read). The
+  phone's notification address joins it with the screen that first
+  sends it: a
   test fails a pull request that adds one without the other
   (`docs/privacy-data.md` has the answers). A report and its note are
   content a person made, a kind already declared for the like.
@@ -405,16 +412,55 @@ defined, one iOS version, nothing that signs.
   name, an id or a place. A profile photo is a photo the person gives,
   shown with their account: the manifest's photos, declared with Scan a
   cat, and `docs/privacy-data.md` already say so, so it gains no line.
+- **Friends** (`FriendsView.swift`, `PersonView.swift`; the web app's
+  `Friends`, `PersonPage`, `blockPerson` and `reportItem` in
+  `web/social/friends.js`, and their `friends.*`, `person.*`, `block.*`
+  and `report.*` words). A "Friends" row in Profile, in a section of its
+  own below App info, opens a system `List`: a segmented `Picker` for
+  "This month" and "All time" (`GET /friends?period=month|all`, read
+  again at each change), the podium of the first three of `people` in
+  the server's order (the member among them as "You", each with their
+  face and "N cats"), then every friend but the member (face, name,
+  `@username`, "found N cats"), filtered on the phone by name or
+  username through `.searchable`, with "No friends match “…”." when
+  nobody does. Loading, "Your friends could not be loaded." with Try
+  again, and `friends.empty` when there is nobody. **Each friend's
+  menu** is the system's: "Remove from friends" (the system's alert with
+  `friends.removeTitle` and `removeBody`, then `DELETE /friends/{id}`),
+  "Block" (the alert with `block.title` and `block.body`, then `PUT
+  /blocks/{id}`), and "Report", last and red, which opens the app's
+  report sheet with `targetType: "user"` ("Report {name}"). Neither
+  removing nor blocking asks for the terms: the API needs none. The
+  person leaves the list at once and is put back where they were, with
+  the web app's "Something went wrong: …", if the call fails. A block
+  also takes their posts off every list of posts on screen (`People`, a
+  notification `PostActions` hears; the web app's `keptApart`). **A
+  person's page** (`GET /users/{id}`, then `GET /users/{id}/posts` on
+  Home's `PostCard` through `FeedModel`, `Source.person`), opened from a
+  row or the podium: the face, the name and the username, chips for "N
+  cats found", "Friends since {month year}" while they are friends, "N
+  friends in common" when there are any, and "This is you" on the
+  member's own; the same menu in the bar (Remove only while they are
+  friends; blocked, the page goes back). An answer `gone` says "This
+  person is not here any more.". The stand-in records "unfriend u-c",
+  "block u-b" and "report user u-a harassment" (made-up ids; a post's
+  report says no id), and the walk, a launch and a test pair of their
+  own (`testFriendsIn…`), reads them in App info, Cancel first. The
+  trail says "friends: 5 people (month)", "friends: removed", "friends:
+  remove cancelled", "block: sent", "report: sent (user)", "person:
+  opened", "person: gone", never a name, a username or an id. Friends
+  are the privacy manifest's Contacts.
 
 ## Not here yet
 
 In the feed: friends' votes on a name (the API sends those cards; this
-app skips them for now), the area, and a page with the full terms (the
+app skips them for now), a post's author opening their page, the area, and a page with the full terms (the
 dialog has their short text). In Scan a cat: the model and its three
 guesses, "My proposals" (`GET /me/proposals`), video, and uploading
 while the app is closed. On a cat's page: the map, and "Feed a cat".
-In Profile: taking the profile photo with the camera, friends, the invite,
-achievements, "My proposals", and the language, theme and notification
+In Profile: taking the profile photo with the camera, the invite (your
+link, the share sheet, a friend's link pasted), "Blocked people" with
+Unblock, achievements, "My proposals", and the language, theme and notification
 settings (the app follows the phone's). Then the recognition model, and a string catalog
 for the four languages. Each is
 its own issue, in the plan's order.

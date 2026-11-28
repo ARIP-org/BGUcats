@@ -1224,6 +1224,31 @@ What landed before the list below is in the roadmap.
   `profile-photo-refused`, `profile-photo-removed`), the bytes sent
   checked by the walk: not tried on a phone yet, and no photo from a
   real gallery has been sent from it.
+- **Friends, the friends page and a person's page** (#159, built
+  2026-11-28; part 1 of 2): a "Friends" row in Profile opens
+  `FriendsView.swift`. `GET /friends?period=month|all` behind the
+  system's segmented control ("This month", "All time"): the podium of
+  the first three, the member among them as "You", then every friend
+  (face, name, `@username`, cats found) with a search on the phone and
+  the web app's "No friends match" line; loading, "could not be loaded"
+  with Try again, and `friends.empty`. Each friend's menu (the system's):
+  "Remove from friends" and "Block", each after the system's
+  confirmation in the web app's words (`DELETE /friends/{id}`, `PUT
+  /blocks/{id}`; no terms asked, the API needs none), the person off the
+  list at once and back if the call fails, a block taking their posts off
+  the lists on screen; and "Report", last and red, the report sheet with
+  `targetType: "user"`. A person's page (`PersonView.swift`, `GET
+  /users/{id}` and their posts on the feed's card): chips for cats found,
+  "Friends since", friends in common and "This is you", the same menu in
+  the bar, and `person.gone` for one who is not here any more. The
+  privacy manifest gains Contacts (friends and blocks). The walk is a
+  launch and a test pair of its own (`testFriendsIn…`), the ninth test
+  the step holds. Pictured in a simulator only (`friends`,
+  `friends-all-time`, `friends-search-none`, `friends-menu`,
+  `friends-remove`, `friends-removed`, `person`, `person-gone`): not
+  tried on a phone yet. The invite, "Blocked people" with Unblock, a
+  post's author opening their page and friends' name-vote cards are
+  part 2.
 
 ---
 

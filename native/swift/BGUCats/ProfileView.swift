@@ -89,6 +89,17 @@ struct ProfileView: View {
                     .accessibilityIdentifier("row.app-info")
                 }
 
+                // A section of its own, below the two rows above, so they
+                // stay where the account's walk finds them.
+                Section {
+                    NavigationLink {
+                        FriendsView(world: world, session: session)
+                    } label: {
+                        Label(FriendsWords.title, systemImage: "person.2")
+                    }
+                    .accessibilityIdentifier("row.friends")
+                }
+
                 Section {
                     Button("Sign out", role: .destructive) {
                         session.signOut()

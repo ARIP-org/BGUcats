@@ -107,6 +107,14 @@ struct PostActions: ViewModifier {
             .sheet(item: $model.reporting) { post in
                 ReportView(post: post, world: world)
             }
+            // Someone blocked, from a friend's menu or their page: their
+            // posts leave the list already on screen (`keptApart` in the
+            // web app's feed).
+            .onReceive(NotificationCenter.default.publisher(for: People.changed)) { note in
+                if let change = People.read(note), change.kind == .blocked {
+                    model.keepApart(change.userId)
+                }
+            }
     }
 
     private var noteShown: Binding<Bool> {
@@ -142,12 +150,14 @@ final class FeedModel: ObservableObject {
         case failed(String)
     }
 
-    /// Which posts: the feed's, one cat's (`GET /cats/{catId}/posts`), or
-    /// the member's own (`GET /me/posts`, with each one's state).
+    /// Which posts: the feed's, one cat's (`GET /cats/{catId}/posts`), the
+    /// member's own (`GET /me/posts`, with each one's state), or one
+    /// person's (`GET /users/{userId}/posts`).
     enum Source {
         case feed
         case cat(String)
         case mine
+        case person(String)
     }
 
     @Published private(set) var posts: [Post] = []
@@ -182,6 +192,7 @@ final class FeedModel: ObservableObject {
         case .feed: "feed"
         case .cat: "cat"
         case .mine: "my posts"
+        case .person: "person"
         }
     }
 
@@ -193,6 +204,8 @@ final class FeedModel: ObservableObject {
             try await world.backend.catPosts(id: id, cursor: cursor)
         case .mine:
             try await world.backend.myPosts()
+        case .person(let id):
+            try await world.backend.personPosts(userId: id, cursor: cursor)
         }
     }
 
@@ -315,6 +328,12 @@ final class FeedModel: ObservableObject {
             if FeedModel.signInEnded(error) { return }
             note = (error as? ApiError)?.message ?? "Try again."
         }
+    }
+
+    /// A person blocked: their posts leave this list at once. The server
+    /// leaves them out of every list read after.
+    func keepApart(_ userId: String) {
+        posts.removeAll { $0.author.userId == userId }
     }
 
     /// The sign-in is over: the server refused the token, or the account

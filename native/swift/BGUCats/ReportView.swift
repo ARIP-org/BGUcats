@@ -25,11 +25,15 @@ enum ReportReason: String, CaseIterable, Identifiable {
     }
 }
 
-/// Reporting a post: a reason from the list and, if the person wants, a
-/// line of their own. The answer is always the same, so the sheet says
-/// thank you and nothing else: nobody learns what others reported.
+/// Reporting a post or a person: a reason from the list and, if the person
+/// wants, a line of their own. The answer is always the same, so the sheet
+/// says thank you and nothing else: nobody learns what others reported.
 struct ReportView: View {
-    let post: Post
+    /// What is reported, as the API names it (`post` or `user`), and its id.
+    let targetType: String
+    let targetId: String
+    /// The web app's `report.title`, with `report.postOf` for a post.
+    let title: String
     let world: World
     @Environment(\.dismiss) private var dismiss
 
@@ -43,6 +47,22 @@ struct ReportView: View {
 
     static let noteLimit = 280
 
+    /// Someone's post, from its menu.
+    init(post: Post, world: World) {
+        targetType = "post"
+        targetId = post.id
+        title = "Report \(post.author.displayName)'s post"
+        self.world = world
+    }
+
+    /// A person, from a friend's menu or their page (`targetType: "user"`).
+    init(person: Person, world: World) {
+        targetType = "user"
+        targetId = person.userId
+        title = "Report \(person.shownName)"
+        self.world = world
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -52,7 +72,7 @@ struct ReportView: View {
                     form
                 }
             }
-            .navigationTitle("Report \(post.author.displayName)'s post")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if sent {
@@ -146,12 +166,17 @@ struct ReportView: View {
         do {
             try await world.backend.report(Report(
                 reportId: reportId,
-                targetType: "post",
-                targetId: post.id,
+                targetType: targetType,
+                targetId: targetId,
                 reason: reason,
                 note: trimmed.isEmpty ? nil : trimmed
             ))
-            world.trail.mark("report: sent (\(reason.rawValue))")
+            if targetType == "post" {
+                world.trail.mark("report: sent (\(reason.rawValue))")
+            } else {
+                // A person: what kind was reported, never who.
+                world.trail.mark("report: sent (\(targetType))")
+            }
             sent = true
         } catch {
             let status = (error as? ApiError)?.status ?? 0
