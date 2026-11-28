@@ -407,18 +407,21 @@ jobs:
               whole="$RUNNER_TEMP/whole.log"
               why="$RUNNER_TEMP/why.txt"
               : >"$whole"
-              # A job's log can be refused for a while after the job has
-              # ended, while it is being stored: on 2026-11-27 both reads of
-              # the Mac's log, 42 s after it ended, were refused, and #150
-              # spent both of its answers blind (#151). So: asked again for
-              # two minutes, saying each time what the answer was.
-              for try in 1 2 3 4 5 6; do
-                if gh api "repos/$REPO/actions/jobs/$id/logs" >"$whole" 2>"$why" && [ -s "$whole" ]; then
+              # Read with curl, not `gh api`: gh refuses to write a response
+              # that holds terminal escape sequences, and a job's log holds
+              # its colours. That refusal, thrown away, was why #150 spent
+              # both of its answers blind (#151), and why six tries of gh
+              # failed on 2026-11-27 until the kept files below were read.
+              # Asked again a little, for a log still being stored.
+              for try in 1 2 3; do
+                if curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                  "${GITHUB_API_URL:-https://api.github.com}/repos/$REPO/actions/jobs/$id/logs" \
+                  -o "$whole" 2>"$why" && [ -s "$whole" ]; then
                   break
                 fi
-                echo "$name: its log was refused, try $try of 6: $(head -c 300 "$why" | tr '\n' ' ')"
+                echo "$name: its log was refused, try $try of 3: $(head -c 300 "$why" | tr '\n' ' ')"
                 : >"$whole"
-                [ "$try" = 6 ] || sleep 20
+                [ "$try" = 3 ] || sleep 10
               done
               # Then the files its run kept: the Mac's job keeps the whole of
               # xcodebuild's output in its artifact (ios.yml, "the pictures").

@@ -320,11 +320,12 @@ def test_the_builder_is_shown_what_a_failed_check_said():
     assert logs["env"] == {"GH_TOKEN": "${{ github.token }}"}
     assert "commits/$SHA/check-runs" in logs["run"] and "actions/jobs/$id/logs" in logs["run"]
     assert '"$RUNNER_TEMP/failed/$id.log"' in logs["run"]
-    # Asked again while the log is being stored, and then read from the
-    # run's kept files: on 2026-11-27 both reads of the Mac's log, 42 s
-    # after it ended, were refused, and #150 spent its two answers blind
-    # (#151). Why a read was refused is said, never thrown away.
-    assert "for try in 1 2 3 4 5 6" in logs["run"] and "sleep 20" in logs["run"]
+    # Read with curl: `gh api` refuses to write a log, which holds terminal
+    # escape sequences, and that refusal thrown away left #150's builder
+    # blind twice (#151). Asked again a little, then read from the run's
+    # kept files. Why a read was refused is said, never thrown away.
+    assert "curl -sSfL" in logs["run"] and 'gh api "repos/$REPO/actions/jobs/$id/logs"' not in logs["run"]
+    assert "for try in 1 2 3;" in logs["run"] and "sleep 10" in logs["run"]
     assert 'gh run download "$run"' in logs["run"] and "-name '*.log'" in logs["run"]
     assert "2>/dev/null; then" not in logs["run"]
     assert '2>"$why"' in logs["run"] and "::warning::" in logs["run"]
